@@ -24,6 +24,21 @@ def get_memory_repository() -> MemoryRepository:
     return FileMemoryRepository(get_memory_storage_path())
 
 
+def build_chat_messages(
+    memory_repository: MemoryRepository,
+    user_message: str,
+    limit: int = 6,
+) -> list[ChatMessage]:
+    recent_events = list(reversed(memory_repository.list_recent(limit=limit)))
+    messages = [
+        ChatMessage(role=event.role, content=event.content)
+        for event in recent_events
+        if event.kind == "chat" and event.role in {"user", "assistant"}
+    ]
+    messages.append(ChatMessage(role="user", content=user_message))
+    return messages
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -45,7 +60,9 @@ def chat(
     gateway: ChatGateway = Depends(get_chat_gateway),
     memory_repository: MemoryRepository = Depends(get_memory_repository),
 ) -> ChatResult:
-    result = gateway.create_response([ChatMessage(role="user", content=request.message)])
+    result = gateway.create_response(
+        build_chat_messages(memory_repository, request.message)
+    )
     memory_repository.save_event(
         MemoryEvent(
             kind="chat",
