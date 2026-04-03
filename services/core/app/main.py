@@ -5,8 +5,10 @@ from threading import Event, Thread
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_memory_storage_path
+from app.config import get_goal_storage_path, get_memory_storage_path
 from app.agent.loop import AutonomyLoop
+from app.goals.models import Goal
+from app.goals.repository import FileGoalRepository, GoalRepository
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import (
     ChatHistoryMessage,
@@ -53,8 +55,9 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
 
     state_store = StateStore()
     memory_repository = FileMemoryRepository(get_memory_storage_path())
+    goal_repository = FileGoalRepository(get_goal_storage_path())
     stop_event = Event()
-    loop = AutonomyLoop(state_store, memory_repository)
+    loop = AutonomyLoop(state_store, memory_repository, goal_repository)
 
     def run_loop() -> None:
         while not stop_event.wait(5.0):
@@ -65,6 +68,7 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
 
     target_app.state.state_store = state_store
     target_app.state.memory_repository = memory_repository
+    target_app.state.goal_repository = goal_repository
     target_app.state.stop_event = stop_event
     target_app.state.autonomy_thread = worker
 
@@ -85,6 +89,11 @@ def get_memory_repository() -> MemoryRepository:
 def get_state_store() -> StateStore:
     _ensure_runtime_initialized(app)
     return app.state.state_store
+
+
+def get_goal_repository() -> GoalRepository:
+    _ensure_runtime_initialized(app)
+    return app.state.goal_repository
 
 
 def build_chat_messages(
@@ -125,6 +134,13 @@ def get_messages(
         if event.kind == "chat" and event.role in {"user", "assistant"}
     ]
     return ChatHistoryResponse(messages=messages)
+
+
+@app.get("/goals")
+def get_goals(
+    goal_repository: GoalRepository = Depends(get_goal_repository),
+) -> dict[str, list[Goal]]:
+    return {"goals": goal_repository.list_goals()}
 
 
 @app.post("/lifecycle/wake")

@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 from app.memory.models import MemoryEvent
 from app.agent.autonomy import choose_next_action
 from app.domain.models import WakeMode
+from app.goals.models import Goal
+from app.goals.repository import GoalRepository, InMemoryGoalRepository
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
 
@@ -12,10 +14,12 @@ class AutonomyLoop:
         self,
         state_store: StateStore,
         memory_repository: MemoryRepository,
+        goal_repository: GoalRepository | None = None,
         now_provider=None,
     ) -> None:
         self.state_store = state_store
         self.memory_repository = memory_repository
+        self.goal_repository = goal_repository or InMemoryGoalRepository()
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
 
     def tick_once(self):
@@ -29,6 +33,37 @@ class AutonomyLoop:
             state.last_proactive_at is None
             or now - state.last_proactive_at >= timedelta(seconds=60)
         )
+
+        if not state.active_goal_ids and cooldown_ready:
+            latest_user_event = _find_latest_user_event(recent_events)
+            if latest_user_event is not None:
+                goal = self.goal_repository.save_goal(
+                    Goal(
+                        title=_build_goal_title(latest_user_event.content),
+                        source=latest_user_event.content,
+                    )
+                )
+                proactive_message = _build_proactive_message(
+                    latest_user_event.content,
+                    now,
+                )
+                self.memory_repository.save_event(
+                    MemoryEvent(
+                        kind="chat",
+                        role="assistant",
+                        content=proactive_message,
+                    )
+                )
+                next_state = state.model_copy(
+                    update={
+                        "active_goal_ids": [goal.id],
+                        "current_thought": proactive_message,
+                        "last_proactive_source": latest_user_event.content,
+                        "last_proactive_at": now,
+                    }
+                )
+                return self.state_store.set(next_state)
+
         action = choose_next_action(
             state=state,
             pending_goals=state.active_goal_ids,
@@ -41,9 +76,11 @@ class AutonomyLoop:
             return state
 
         if action.kind == "act":
+            current_goal = self.goal_repository.get_goal(state.active_goal_ids[0])
+            goal_title = current_goal.title if current_goal is not None else state.active_goal_ids[0]
             next_state = state.model_copy(
                 update={
-                    "current_thought": _build_goal_focus(state.active_goal_ids[0], now),
+                    "current_thought": _build_goal_focus(goal_title, now),
                 }
             )
             return self.state_store.set(next_state)
@@ -98,6 +135,10 @@ def _build_proactive_message(content: str, now: datetime) -> str:
 
 def _build_goal_focus(goal: str, now: datetime) -> str:
     return f"{_time_prefix(now)}我还惦记着“{goal}”，想继续把它推进。"
+
+
+def _build_goal_title(content: str) -> str:
+    return f"持续理解用户最近在意的话题：{content[:24]}"
 
 
 def _time_prefix(now: datetime) -> str:

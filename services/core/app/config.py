@@ -32,3 +32,12 @@ def get_memory_storage_path() -> Path:
         return Path(configured).expanduser()
 
     return get_service_root() / ".data" / "memory.jsonl"
+
+
+def get_goal_storage_path() -> Path:
+    load_local_env()
+    configured = os.getenv("GOAL_STORAGE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+
+    return get_service_root() / ".data" / "goals.json"
