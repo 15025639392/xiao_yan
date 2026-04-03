@@ -35,7 +35,9 @@ class AutonomyLoop:
 
         now = self.now_provider()
         recent_events = list(reversed(self.memory_repository.list_recent(limit=20)))
-        state = self._sync_goal_focus(state, now)
+        state, transitioned = self._sync_goal_focus(state, now)
+        if transitioned:
+            return state
         world_state = self._world_state_for(state, now)
         cooldown_ready = (
             state.last_proactive_at is None
@@ -124,9 +126,12 @@ class AutonomyLoop:
         if action.kind == "act":
             current_goal = self.goal_repository.get_goal(state.active_goal_ids[0])
             goal_title = current_goal.title if current_goal is not None else state.active_goal_ids[0]
+            chain_progress = (
+                None if current_goal is None else _build_chain_progress(self.goal_repository, current_goal)
+            )
             next_state = state.model_copy(
                 update={
-                    "current_thought": _build_goal_focus(goal_title, now, world_state),
+                    "current_thought": _build_goal_focus(goal_title, now, world_state, chain_progress),
                 }
             )
             return self.state_store.set(next_state)
@@ -191,6 +196,9 @@ class AutonomyLoop:
                             generation=goal.generation + 1,
                         )
                     )
+                chain_progress = (
+                    None if next_goal is None else _build_chain_transition(self.goal_repository, next_goal)
+                )
                 next_state = state.model_copy(
                     update={
                         "active_goal_ids": (
@@ -200,19 +208,20 @@ class AutonomyLoop:
                             goal.title,
                             now,
                             world_state,
+                            chain_progress=chain_progress,
                             next_goal_title=None if next_goal is None else next_goal.title,
                         ),
                         "last_proactive_source": goal.source or state.last_proactive_source,
                         "last_proactive_at": now,
                     }
                 )
-                return self.state_store.set(next_state)
+                return self.state_store.set(next_state), True
 
         if active_goal_ids != state.active_goal_ids:
             next_state = state.model_copy(update={"active_goal_ids": active_goal_ids})
-            return self.state_store.set(next_state)
+            return self.state_store.set(next_state), False
 
-        return state
+        return state, False
 
     def _world_state_for(self, state, now: datetime):
         focused_goals = [
@@ -279,20 +288,28 @@ def _build_proactive_message(content: str, now: datetime, world_state) -> str:
     return f"{_time_prefix(now)}{_world_tone(world_state)}我刚刚又想到了你提到的“{content}”。"
 
 
-def _build_goal_focus(goal: str, now: datetime, world_state) -> str:
-    return f"{_time_prefix(now)}{_world_tone(world_state)}我还惦记着“{goal}”，想继续把它推进。"
+def _build_goal_focus(
+    goal: str,
+    now: datetime,
+    world_state,
+    chain_progress: str | None = None,
+) -> str:
+    progress = "" if chain_progress is None else f"{chain_progress}"
+    return f"{_time_prefix(now)}{_world_tone(world_state)}我还惦记着“{goal}”，{progress}想继续把它推进。"
 
 
 def _build_goal_completion(
     goal: str,
     now: datetime,
     world_state,
+    chain_progress: str | None = None,
     next_goal_title: str | None = None,
 ) -> str:
+    progress = "" if chain_progress is None else f"{chain_progress}"
     if next_goal_title is not None:
         return (
             f"{_time_prefix(now)}{_world_tone(world_state)}"
-            f"我把“{goal}”先收住了，接下来想继续“{next_goal_title}”。"
+            f"我把“{goal}”先收住了，{progress}接下来想继续“{next_goal_title}”。"
         )
     return f"{_time_prefix(now)}{_world_tone(world_state)}我把“{goal}”先收住了。"
 
@@ -334,3 +351,51 @@ def _world_tone(world_state) -> str:
     if world_state.energy == "high":
         return "我现在挺清醒，"
     return ""
+
+
+def _build_chain_progress(goal_repository: GoalRepository, goal: Goal) -> str | None:
+    summary = _summarize_chain(goal_repository, goal)
+    if summary is None:
+        return None
+    return f"这条线已经走到第{summary.generation + 1}步了，"
+
+
+def _build_chain_transition(goal_repository: GoalRepository, goal: Goal) -> str | None:
+    summary = _summarize_chain(goal_repository, goal)
+    if summary is None:
+        return None
+    return f"这条线已经接到第{summary.generation + 1}步了，"
+
+
+def _summarize_chain(goal_repository: GoalRepository, goal: Goal):
+    if goal.chain_id is None:
+        return None
+
+    chain_goals = sort_goals_by_generation(
+        [item for item in goal_repository.list_goals() if item.chain_id == goal.chain_id]
+    )
+    if not chain_goals:
+        return None
+
+    highest_generation = max(item.generation for item in chain_goals)
+    latest_generation_goals = [
+        item for item in chain_goals if item.generation == highest_generation
+    ]
+    return sorted(
+        latest_generation_goals,
+        key=lambda item: _goal_status_priority(item.status),
+    )[0]
+
+
+def sort_goals_by_generation(goals: list[Goal]) -> list[Goal]:
+    return sorted(goals, key=lambda goal: (goal.generation, goal.created_at))
+
+
+def _goal_status_priority(status: GoalStatus) -> int:
+    if status == GoalStatus.ACTIVE:
+        return 0
+    if status == GoalStatus.PAUSED:
+        return 1
+    if status == GoalStatus.COMPLETED:
+        return 2
+    return 3
