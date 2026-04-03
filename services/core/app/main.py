@@ -3,11 +3,18 @@ from contextlib import asynccontextmanager
 from threading import Event, Thread
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_memory_storage_path
 from app.agent.loop import AutonomyLoop
 from app.llm.gateway import ChatGateway
-from app.llm.schemas import ChatMessage, ChatRequest, ChatResult
+from app.llm.schemas import (
+    ChatHistoryMessage,
+    ChatHistoryResponse,
+    ChatMessage,
+    ChatRequest,
+    ChatResult,
+)
 from app.memory.models import MemoryEvent
 from app.memory.repository import FileMemoryRepository, MemoryRepository
 from app.runtime import StateStore
@@ -28,6 +35,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _ensure_runtime_initialized(target_app: FastAPI) -> None:
@@ -95,6 +112,19 @@ def get_state(
     state_store: StateStore = Depends(get_state_store),
 ) -> dict:
     return state_store.get().model_dump()
+
+
+@app.get("/messages")
+def get_messages(
+    memory_repository: MemoryRepository = Depends(get_memory_repository),
+) -> ChatHistoryResponse:
+    recent_events = list(reversed(memory_repository.list_recent(limit=20)))
+    messages = [
+        ChatHistoryMessage(role=event.role, content=event.content)
+        for event in recent_events
+        if event.kind == "chat" and event.role in {"user", "assistant"}
+    ]
+    return ChatHistoryResponse(messages=messages)
 
 
 @app.post("/lifecycle/wake")

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
 import { StatusPanel } from "./components/StatusPanel";
-import type { BeingState } from "./lib/api";
-import { chat, sleep, wake } from "./lib/api";
+import type { BeingState, ChatHistoryMessage } from "./lib/api";
+import { chat, fetchMessages, fetchState, sleep, wake } from "./lib/api";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -18,6 +18,42 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncRuntime() {
+      try {
+        const [nextState, nextMessages] = await Promise.all([
+          fetchState(),
+          fetchMessages(),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setState(nextState);
+        setMessages((current) =>
+          mergeMessages(current, nextMessages.messages)
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "sync failed");
+        }
+      }
+    }
+
+    void syncRuntime();
+    const timer = window.setInterval(() => {
+      void syncRuntime();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   async function handleWake() {
     try {
@@ -90,4 +126,26 @@ export default function App() {
       </button>
     </main>
   );
+}
+
+function mergeMessages(
+  current: ChatEntry[],
+  incoming: ChatHistoryMessage[],
+): ChatEntry[] {
+  const merged = new Map<string, ChatEntry>();
+
+  for (const message of current) {
+    merged.set(`${message.role}:${message.content}`, message);
+  }
+
+  incoming.forEach((message, index) => {
+    const key = `${message.role}:${message.content}`;
+    merged.set(key, {
+      id: `${message.role}-${index}-${message.content}`,
+      role: message.role,
+      content: message.content,
+    });
+  });
+
+  return Array.from(merged.values());
 }

@@ -123,3 +123,34 @@ def test_post_chat_prefers_relevant_memory_over_only_recent_memory():
         assert gateway.last_messages[-1].content == "你还记得我们聊过的星星吗"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_get_messages_returns_recent_chat_events():
+    memory_repository = InMemoryMemoryRepository()
+    memory_repository.save_event(
+        MemoryEvent(kind="chat", role="user", content="第一句")
+    )
+    memory_repository.save_event(
+        MemoryEvent(kind="assistant_note", role="assistant", content="内部笔记")
+    )
+    memory_repository.save_event(
+        MemoryEvent(kind="chat", role="assistant", content="第二句")
+    )
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+
+    try:
+        client = TestClient(app)
+        response = client.get("/messages")
+        assert response.status_code == 200
+        assert response.json() == {
+            "messages": [
+                {"role": "user", "content": "第一句"},
+                {"role": "assistant", "content": "第二句"},
+            ]
+        }
+    finally:
+        app.dependency_overrides.clear()

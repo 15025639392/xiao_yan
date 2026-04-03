@@ -9,6 +9,15 @@ export type ChatResult = {
   output_text: string;
 };
 
+export type ChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type ChatHistoryResponse = {
+  messages: ChatHistoryMessage[];
+};
+
 const BASE_URL = "http://127.0.0.1:8000";
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -27,6 +36,16 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return response.json();
 }
 
+async function get<T>(path: string): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`);
+
+  if (!response.ok) {
+    throw new Error(`request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export function wake(): Promise<BeingState> {
   return post<BeingState>("/lifecycle/wake");
 }
@@ -37,4 +56,12 @@ export function sleep(): Promise<BeingState> {
 
 export function chat(message: string): Promise<ChatResult> {
   return post<ChatResult>("/chat", { message });
+}
+
+export function fetchState(): Promise<BeingState> {
+  return get<BeingState>("/state");
+}
+
+export function fetchMessages(): Promise<ChatHistoryResponse> {
+  return get<ChatHistoryResponse>("/messages");
 }
