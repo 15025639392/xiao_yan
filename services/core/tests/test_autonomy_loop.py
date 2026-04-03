@@ -255,6 +255,49 @@ def test_tick_once_goal_focus_mentions_chain_progress():
     assert "继续推进" in state.current_thought
 
 
+def test_tick_once_late_chain_stage_prefers_consolidation_thought():
+    now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    root = goals.save_goal(
+        Goal(
+            title="继续消化自己刚经历的状态：整理今天的对话",
+            source="清晨很安静，我还惦记着“整理今天的对话记忆”。",
+            status=GoalStatus.COMPLETED,
+            chain_id="chain-1",
+            generation=0,
+        )
+    )
+    middle = goals.save_goal(
+        Goal(
+            title="继续推进：继续消化自己刚经历的状态：整理今天的对话",
+            source=root.source,
+            status=GoalStatus.COMPLETED,
+            chain_id="chain-1",
+            parent_goal_id=root.id,
+            generation=1,
+        )
+    )
+    leaf = goals.save_goal(
+        Goal(
+            title="继续推进：继续推进：继续消化自己刚经历的状态：整理今天的对话",
+            source=root.source,
+            status=GoalStatus.ACTIVE,
+            chain_id="chain-1",
+            parent_goal_id=middle.id,
+            generation=2,
+        )
+    )
+    store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[leaf.id]))
+    repo = InMemoryMemoryRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.current_thought is not None
+    assert "第3步" in state.current_thought
+    assert "回看" in state.current_thought
+
+
 def test_tick_once_completion_thought_reflects_calm_world_state():
     now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
     goals = InMemoryGoalRepository()

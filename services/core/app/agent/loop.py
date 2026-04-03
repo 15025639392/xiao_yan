@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from app.memory.models import MemoryEvent
-from app.agent.autonomy import choose_next_action
+from app.agent.autonomy import GoalFocusSummary, choose_next_action
 from app.domain.models import WakeMode
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import GoalRepository, InMemoryGoalRepository
+from app.memory.models import MemoryEvent
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
 from app.world.service import WorldStateService
@@ -112,9 +112,20 @@ class AutonomyLoop:
 
         self._maybe_record_world_event(state, recent_events, world_state, now)
 
+        current_goal = (
+            None
+            if not state.active_goal_ids
+            else self.goal_repository.get_goal(state.active_goal_ids[0])
+        )
+        focus_summary = (
+            None
+            if current_goal is None
+            else _build_goal_focus_summary(self.goal_repository, current_goal)
+        )
         action = choose_next_action(
             state=state,
             pending_goals=state.active_goal_ids,
+            focus_summary=focus_summary,
             recent_events=[event.content for event in recent_events],
             cooldown_ready=cooldown_ready,
             now=now,
@@ -124,7 +135,6 @@ class AutonomyLoop:
             return state
 
         if action.kind == "act":
-            current_goal = self.goal_repository.get_goal(state.active_goal_ids[0])
             goal_title = current_goal.title if current_goal is not None else state.active_goal_ids[0]
             chain_progress = (
                 None if current_goal is None else _build_chain_progress(self.goal_repository, current_goal)
@@ -132,6 +142,23 @@ class AutonomyLoop:
             next_state = state.model_copy(
                 update={
                     "current_thought": _build_goal_focus(goal_title, now, world_state, chain_progress),
+                }
+            )
+            return self.state_store.set(next_state)
+
+        if action.kind == "consolidate":
+            goal_title = current_goal.title if current_goal is not None else state.active_goal_ids[0]
+            chain_progress = (
+                None if current_goal is None else _build_chain_progress(self.goal_repository, current_goal)
+            )
+            next_state = state.model_copy(
+                update={
+                    "current_thought": _build_chain_consolidation(
+                        goal_title,
+                        now,
+                        world_state,
+                        chain_progress,
+                    ),
                 }
             )
             return self.state_store.set(next_state)
@@ -314,6 +341,19 @@ def _build_goal_completion(
     return f"{_time_prefix(now)}{_world_tone(world_state)}我把“{goal}”先收住了。"
 
 
+def _build_chain_consolidation(
+    goal: str,
+    now: datetime,
+    world_state,
+    chain_progress: str | None = None,
+) -> str:
+    progress = "" if chain_progress is None else f"{chain_progress}"
+    return (
+        f"{_time_prefix(now)}{_world_tone(world_state)}"
+        f"我想先回看一下，{progress}看看怎么把“{goal}”收束得更完整。"
+    )
+
+
 def _build_goal_title(content: str) -> str:
     return f"持续理解用户最近在意的话题：{content[:24]}"
 
@@ -367,6 +407,29 @@ def _build_chain_transition(goal_repository: GoalRepository, goal: Goal) -> str 
     return f"这条线已经接到第{summary.generation + 1}步了，"
 
 
+def _build_goal_focus_summary(
+    goal_repository: GoalRepository,
+    goal: Goal,
+) -> GoalFocusSummary:
+    if goal.chain_id is None:
+        return GoalFocusSummary(goal_title=goal.title)
+
+    chain_goals = [
+        item for item in goal_repository.list_goals() if item.chain_id == goal.chain_id
+    ]
+    chain_length = len(chain_goals)
+    generation = goal.generation
+    stage = _chain_stage_for(generation)
+
+    return GoalFocusSummary(
+        goal_title=goal.title,
+        chain_id=goal.chain_id,
+        chain_length=chain_length,
+        chain_generation=generation,
+        stage=stage,
+    )
+
+
 def _summarize_chain(goal_repository: GoalRepository, goal: Goal):
     if goal.chain_id is None:
         return None
@@ -399,3 +462,11 @@ def _goal_status_priority(status: GoalStatus) -> int:
     if status == GoalStatus.COMPLETED:
         return 2
     return 3
+
+
+def _chain_stage_for(generation: int) -> str:
+    if generation >= 2:
+        return "consolidate"
+    if generation == 1:
+        return "deepen"
+    return "start"
