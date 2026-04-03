@@ -19,3 +19,16 @@ def load_local_env() -> None:
 
             key, value = item.split("=", 1)
             os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+def get_service_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def get_memory_storage_path() -> Path:
+    load_local_env()
+    configured = os.getenv("MEMORY_STORAGE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+
+    return get_service_root() / ".data" / "memory.jsonl"
