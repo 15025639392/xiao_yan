@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from app.memory.models import MemoryEvent
 from app.agent.autonomy import choose_next_action
 from app.domain.models import WakeMode
-from app.goals.models import Goal
+from app.goals.models import Goal, GoalStatus
 from app.goals.repository import GoalRepository, InMemoryGoalRepository
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
@@ -29,6 +29,7 @@ class AutonomyLoop:
 
         now = self.now_provider()
         recent_events = list(reversed(self.memory_repository.list_recent(limit=4)))
+        state = self._sync_goal_focus(state, now)
         cooldown_ready = (
             state.last_proactive_at is None
             or now - state.last_proactive_at >= timedelta(seconds=60)
@@ -36,7 +37,10 @@ class AutonomyLoop:
 
         if not state.active_goal_ids and cooldown_ready:
             latest_user_event = _find_latest_user_event(recent_events)
-            if latest_user_event is not None:
+            if (
+                latest_user_event is not None
+                and latest_user_event.content != state.last_proactive_source
+            ):
                 goal = self.goal_repository.save_goal(
                     Goal(
                         title=_build_goal_title(latest_user_event.content),
@@ -114,6 +118,36 @@ class AutonomyLoop:
 
         return state
 
+    def _sync_goal_focus(self, state, now: datetime):
+        active_goal_ids: list[str] = []
+
+        for goal_id in state.active_goal_ids:
+            goal = self.goal_repository.get_goal(goal_id)
+            if goal is None:
+                active_goal_ids.append(goal_id)
+                continue
+
+            if goal.status == GoalStatus.ACTIVE:
+                active_goal_ids.append(goal_id)
+                continue
+
+            if goal.status == GoalStatus.COMPLETED:
+                next_state = state.model_copy(
+                    update={
+                        "active_goal_ids": active_goal_ids,
+                        "current_thought": _build_goal_completion(goal.title, now),
+                        "last_proactive_source": goal.source or state.last_proactive_source,
+                        "last_proactive_at": now,
+                    }
+                )
+                return self.state_store.set(next_state)
+
+        if active_goal_ids != state.active_goal_ids:
+            next_state = state.model_copy(update={"active_goal_ids": active_goal_ids})
+            return self.state_store.set(next_state)
+
+        return state
+
 
 def _build_proactive_thought(recent_events, now: datetime) -> str:
     prefix = _time_prefix(now)
@@ -135,6 +169,10 @@ def _build_proactive_message(content: str, now: datetime) -> str:
 
 def _build_goal_focus(goal: str, now: datetime) -> str:
     return f"{_time_prefix(now)}我还惦记着“{goal}”，想继续把它推进。"
+
+
+def _build_goal_completion(goal: str, now: datetime) -> str:
+    return f"{_time_prefix(now)}我把“{goal}”先收住了。"
 
 
 def _build_goal_title(content: str) -> str:

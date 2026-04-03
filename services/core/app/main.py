@@ -155,7 +155,7 @@ def update_goal_status(
         raise HTTPException(status_code=404, detail="goal not found")
 
     state = state_store.get()
-    if request.status != GoalStatus.ACTIVE and goal_id in state.active_goal_ids:
+    if request.status in {GoalStatus.PAUSED, GoalStatus.ABANDONED} and goal_id in state.active_goal_ids:
         remaining_goal_ids = [item for item in state.active_goal_ids if item != goal_id]
         state_store.set(state.model_copy(update={"active_goal_ids": remaining_goal_ids}))
     elif request.status == GoalStatus.ACTIVE and goal_id not in state.active_goal_ids:

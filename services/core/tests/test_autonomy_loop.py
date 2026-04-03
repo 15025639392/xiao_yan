@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.agent.loop import AutonomyLoop
 from app.domain.models import BeingState, WakeMode
+from app.goals.models import Goal, GoalStatus
 from app.goals.repository import InMemoryGoalRepository
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
@@ -114,3 +115,92 @@ def test_tick_once_generates_goal_from_latest_user_topic_when_no_active_goals():
     assert "星星和夜空" in active_goals[0].title
     assert state.active_goal_ids == [active_goals[0].id]
     assert "星星和夜空" in state.current_thought
+
+
+def test_tick_once_clears_paused_goal_from_focus_without_continuing_it():
+    now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(
+        Goal(
+            title="整理今天的对话记忆",
+            source="你还记得星星吗",
+            status=GoalStatus.PAUSED,
+        )
+    )
+    store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            active_goal_ids=[goal.id],
+            last_proactive_source="你还记得星星吗",
+            last_proactive_at=now - timedelta(seconds=20),
+        )
+    )
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="你还记得星星吗"))
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.active_goal_ids == []
+    assert state.current_thought is None
+
+
+def test_tick_once_emits_completion_thought_once_for_completed_goal():
+    now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
+    later = now + timedelta(seconds=61)
+    times = iter([now, later])
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(
+        Goal(
+            title="整理今天的对话记忆",
+            source="最近总在想星星和夜空",
+            status=GoalStatus.COMPLETED,
+        )
+    )
+    store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            active_goal_ids=[goal.id],
+            last_proactive_source="最近总在想星星和夜空",
+        )
+    )
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="最近总在想星星和夜空"))
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: next(times))
+
+    first_state = loop.tick_once()
+    second_state = loop.tick_once()
+
+    assert first_state.active_goal_ids == []
+    assert first_state.current_thought is not None
+    assert "整理今天的对话记忆" in first_state.current_thought
+    assert second_state.active_goal_ids == []
+    assert second_state.current_thought is not None
+    assert "整理今天的对话记忆" not in second_state.current_thought
+    assert goals.list_active_goals() == []
+
+
+def test_tick_once_clears_abandoned_goal_without_completion_thought():
+    now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(
+        Goal(
+            title="继续理解用户关于夜空的话题",
+            source="你喜欢夜空吗",
+            status=GoalStatus.ABANDONED,
+        )
+    )
+    store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            active_goal_ids=[goal.id],
+            last_proactive_at=now - timedelta(seconds=20),
+        )
+    )
+    repo = InMemoryMemoryRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.active_goal_ids == []
+    assert state.current_thought is None
