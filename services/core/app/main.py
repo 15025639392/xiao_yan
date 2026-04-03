@@ -195,11 +195,37 @@ def get_messages(
     return ChatHistoryResponse(messages=messages)
 
 
+@app.get("/autobio")
+def get_autobio(
+    memory_repository: MemoryRepository = Depends(get_memory_repository),
+) -> dict[str, list[str]]:
+    recent_events = list(reversed(memory_repository.list_recent(limit=20)))
+    entries = [
+        event.content
+        for event in recent_events
+        if event.kind == "autobio"
+    ]
+    return {"entries": _deduplicate_entries(entries)}
+
+
 @app.get("/goals")
 def get_goals(
     goal_repository: GoalRepository = Depends(get_goal_repository),
 ) -> dict[str, list[Goal]]:
     return {"goals": goal_repository.list_goals()}
+
+
+def _deduplicate_entries(entries: list[str]) -> list[str]:
+    unique_entries: list[str] = []
+    seen: set[str] = set()
+
+    for entry in entries:
+        if entry in seen:
+            continue
+        seen.add(entry)
+        unique_entries.append(entry)
+
+    return unique_entries
 
 
 @app.get("/world")

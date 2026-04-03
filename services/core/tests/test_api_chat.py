@@ -257,3 +257,64 @@ def test_get_messages_returns_recent_chat_events():
         }
     finally:
         app.dependency_overrides.clear()
+
+
+def test_get_autobio_returns_recent_autobio_memories():
+    memory_repository = InMemoryMemoryRepository()
+    memory_repository.save_event(
+        MemoryEvent(kind="inner", content="我感觉自己已经走到第2步。")
+    )
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="autobio",
+            content="我最近像是一路从第1步走到第3步，开始学着把这些变化连成自己的经历。",
+        )
+    )
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+
+    try:
+        client = TestClient(app)
+        response = client.get("/autobio")
+        assert response.status_code == 200
+        assert response.json() == {
+            "entries": [
+                "我最近像是一路从第1步走到第3步，开始学着把这些变化连成自己的经历。"
+            ]
+        }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_autobio_deduplicates_entries_while_preserving_order():
+    memory_repository = InMemoryMemoryRepository()
+    memory_repository.save_event(
+        MemoryEvent(kind="autobio", content="我最近像是一路从第1步走到第2步。")
+    )
+    memory_repository.save_event(
+        MemoryEvent(kind="autobio", content="我最近像是一路从第1步走到第2步。")
+    )
+    memory_repository.save_event(
+        MemoryEvent(kind="autobio", content="我最近像是一路从第1步走到第3步。")
+    )
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+
+    try:
+        client = TestClient(app)
+        response = client.get("/autobio")
+        assert response.status_code == 200
+        assert response.json() == {
+            "entries": [
+                "我最近像是一路从第1步走到第2步。",
+                "我最近像是一路从第1步走到第3步。",
+            ]
+        }
+    finally:
+        app.dependency_overrides.clear()

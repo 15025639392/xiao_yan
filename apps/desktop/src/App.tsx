@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { AutobioPanel } from "./components/AutobioPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
 import { GoalsPanel } from "./components/GoalsPanel";
@@ -9,6 +10,7 @@ import type { BeingState, ChatHistoryMessage, Goal, InnerWorldState } from "./li
 import {
   chat,
   fetchGoals,
+  fetchAutobio,
   fetchMessages,
   fetchState,
   fetchWorld,
@@ -26,6 +28,7 @@ const initialState: BeingState = {
 export default function App() {
   const [state, setState] = useState<BeingState>(initialState);
   const [world, setWorld] = useState<InnerWorldState | null>(null);
+  const [autobioEntries, setAutobioEntries] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [draft, setDraft] = useState("");
@@ -37,11 +40,12 @@ export default function App() {
 
     async function syncRuntime() {
       try {
-        const [nextState, nextMessages, nextGoals, nextWorld] = await Promise.all([
+        const [nextState, nextMessages, nextGoals, nextWorld, nextAutobio] = await Promise.all([
           fetchState(),
           fetchMessages(),
           fetchGoals(),
           fetchWorld(),
+          fetchAutobio(),
         ]);
 
         if (cancelled) {
@@ -52,6 +56,7 @@ export default function App() {
         setMessages((current) => mergeMessages(current, nextMessages.messages));
         setGoals(nextGoals.goals);
         setWorld(nextWorld);
+        setAutobioEntries(nextAutobio.entries);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "sync failed");
@@ -144,6 +149,7 @@ export default function App() {
       <h1>Digital Being</h1>
       <StatusPanel error={error} state={state} />
       <WorldPanel world={world} />
+      <AutobioPanel entries={autobioEntries} />
       <GoalsPanel goals={goals} onUpdateGoalStatus={handleUpdateGoalStatus} />
       <ChatPanel
         draft={draft}

@@ -41,6 +41,10 @@ export type GoalsResponse = {
   goals: Goal[];
 };
 
+export type AutobioResponse = {
+  entries: string[];
+};
+
 const BASE_URL = "http://127.0.0.1:8000";
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -95,6 +99,10 @@ export function fetchGoals(): Promise<GoalsResponse> {
 
 export function fetchWorld(): Promise<InnerWorldState> {
   return get<InnerWorldState>("/world");
+}
+
+export function fetchAutobio(): Promise<AutobioResponse> {
+  return get<AutobioResponse>("/autobio");
 }
 
 export function updateGoalStatus(

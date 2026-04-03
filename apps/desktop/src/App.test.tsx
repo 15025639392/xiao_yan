@@ -13,6 +13,12 @@ test("renders wake and sleep controls", () => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/autobio")) {
+        return new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.endsWith("/world")) {
         return new Response(
           JSON.stringify({
@@ -79,6 +85,13 @@ test("sends a chat message and renders the assistant reply", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -206,6 +219,20 @@ test("polls state and messages so proactive replies appear in the chat panel", a
       });
     }
 
+    if (url.endsWith("/autobio")) {
+      return new Response(
+        JSON.stringify({
+          entries: [
+            "我最近像是一路从第1步走到第3步，开始学着把这些变化连成自己的经历。",
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     if (url.endsWith("/world")) {
       return new Response(
         JSON.stringify({
@@ -257,6 +284,9 @@ test("polls state and messages so proactive replies appear in the chat panel", a
   });
   expect(screen.getByText("Mode: awake")).toBeInTheDocument();
   expect(screen.getByText("持续理解用户最近在意的话题：星星")).toBeInTheDocument();
+  expect(
+    screen.getByText("我最近像是一路从第1步走到第3步，开始学着把这些变化连成自己的经历。"),
+  ).toBeInTheDocument();
 
   await act(async () => {
     await vi.advanceTimersByTimeAsync(5000);
@@ -320,6 +350,13 @@ test("updates a goal status from the app and refreshes the rendered goal", async
           headers: { "Content-Type": "application/json" },
         }
       );
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     if (url.endsWith("/goals/goal-1/status")) {
@@ -408,6 +445,13 @@ test("polls world state and renders the inner world panel", async () => {
           headers: { "Content-Type": "application/json" },
         }
       );
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     throw new Error(`unexpected request: ${url}`);
