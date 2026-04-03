@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { ChatPanel } from "./components/ChatPanel";
+import { StatusPanel } from "./components/StatusPanel";
 import type { BeingState } from "./lib/api";
 import { sleep, wake } from "./lib/api";
 
@@ -34,15 +36,14 @@ export default function App() {
   return (
     <main>
       <h1>Digital Being</h1>
-      <p>Mode: {state.mode}</p>
-      <p>Thought: {state.current_thought ?? "..."}</p>
+      <StatusPanel error={error} state={state} />
+      <ChatPanel />
       <button onClick={handleWake} type="button">
         Wake
       </button>
       <button onClick={handleSleep} type="button">
         Sleep
       </button>
-      {error ? <p>{error}</p> : null}
     </main>
   );
 }
