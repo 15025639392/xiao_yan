@@ -29,10 +29,10 @@ def build_chat_messages(
     user_message: str,
     limit: int = 6,
 ) -> list[ChatMessage]:
-    recent_events = list(reversed(memory_repository.list_recent(limit=limit)))
+    relevant_events = memory_repository.search_relevant(user_message, limit=limit)
     messages = [
         ChatMessage(role=event.role, content=event.content)
-        for event in recent_events
+        for event in relevant_events
         if event.kind == "chat" and event.role in {"user", "assistant"}
     ]
     messages.append(ChatMessage(role="user", content=user_message))

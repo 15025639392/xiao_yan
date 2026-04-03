@@ -30,3 +30,17 @@ def test_file_repository_persists_events_across_instances(tmp_path: Path):
     assert recent[0].kind == "chat"
     assert recent[0].role == "user"
     assert recent[0].content == "你好，小燕"
+
+
+def test_in_memory_repository_returns_relevant_events_before_irrelevant_recent_ones():
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="我们讨论过星星和夜空"))
+    repo.save_event(MemoryEvent(kind="chat", role="assistant", content="后来又聊了早餐"))
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="今天想整理文件"))
+
+    relevant = repo.search_relevant("还记得星星吗", limit=2)
+
+    assert [event.content for event in relevant] == [
+        "我们讨论过星星和夜空",
+        "后来又聊了早餐",
+    ]
