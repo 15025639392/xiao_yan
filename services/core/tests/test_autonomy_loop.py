@@ -304,6 +304,39 @@ def test_tick_once_generates_goal_from_latest_world_event_when_no_user_topic():
     active_goals = goals.list_active_goals()
 
     assert len(active_goals) == 1
+    assert active_goals[0].chain_id is not None
+    assert active_goals[0].parent_goal_id is None
+    assert active_goals[0].generation == 0
     assert "整理今天的对话记忆" in active_goals[0].source
     assert state.active_goal_ids == [active_goals[0].id]
     assert "整理今天的对话记忆" in state.current_thought
+
+
+def test_tick_once_completed_chain_goal_spawns_next_generation_goal():
+    now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(
+        Goal(
+            title="继续消化自己刚经历的状态：整理今天的对话",
+            source="清晨很安静，我还惦记着“整理今天的对话记忆”。",
+            status=GoalStatus.COMPLETED,
+            chain_id="chain-1",
+            generation=0,
+        )
+    )
+    store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[goal.id]))
+    repo = InMemoryMemoryRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    state = loop.tick_once()
+    all_goals = goals.list_goals()
+    child_goals = [item for item in all_goals if item.parent_goal_id == goal.id]
+
+    assert len(child_goals) == 1
+    child = child_goals[0]
+    assert child.chain_id == "chain-1"
+    assert child.generation == 1
+    assert child.status == GoalStatus.ACTIVE
+    assert state.active_goal_ids == [child.id]
+    assert state.current_thought is not None
+    assert "继续" in state.current_thought

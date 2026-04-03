@@ -21,7 +21,12 @@ def test_file_goal_repository_persists_goals_across_instances(tmp_path: Path):
     storage_path = tmp_path / "goals.json"
 
     writer = FileGoalRepository(storage_path)
-    goal = Goal(title="继续回应用户关于夜空的话题")
+    goal = Goal(
+        title="继续回应用户关于夜空的话题",
+        chain_id="chain-1",
+        parent_goal_id="goal-root",
+        generation=1,
+    )
     writer.save_goal(goal)
 
     reader = FileGoalRepository(storage_path)
@@ -29,6 +34,9 @@ def test_file_goal_repository_persists_goals_across_instances(tmp_path: Path):
 
     assert len(loaded_goals) == 1
     assert loaded_goals[0].title == "继续回应用户关于夜空的话题"
+    assert loaded_goals[0].chain_id == "chain-1"
+    assert loaded_goals[0].parent_goal_id == "goal-root"
+    assert loaded_goals[0].generation == 1
 
 
 def test_in_memory_goal_repository_updates_goal_status():

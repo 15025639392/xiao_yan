@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from app.memory.models import MemoryEvent
 from app.agent.autonomy import choose_next_action
@@ -89,6 +90,7 @@ class AutonomyLoop:
                     Goal(
                         title=_build_world_goal_title(latest_world_event.content),
                         source=latest_world_event.content,
+                        chain_id=uuid4().hex,
                     )
                 )
                 proactive_thought = _build_world_goal_start(
@@ -178,10 +180,28 @@ class AutonomyLoop:
                     focused_goals=[goal],
                     now=now,
                 )
+                next_goal = None
+                if goal.chain_id:
+                    next_goal = self.goal_repository.save_goal(
+                        Goal(
+                            title=_build_next_goal_title(goal.title),
+                            source=goal.source,
+                            chain_id=goal.chain_id,
+                            parent_goal_id=goal.id,
+                            generation=goal.generation + 1,
+                        )
+                    )
                 next_state = state.model_copy(
                     update={
-                        "active_goal_ids": active_goal_ids,
-                        "current_thought": _build_goal_completion(goal.title, now, world_state),
+                        "active_goal_ids": (
+                            [next_goal.id] if next_goal is not None else active_goal_ids
+                        ),
+                        "current_thought": _build_goal_completion(
+                            goal.title,
+                            now,
+                            world_state,
+                            next_goal_title=None if next_goal is None else next_goal.title,
+                        ),
                         "last_proactive_source": goal.source or state.last_proactive_source,
                         "last_proactive_at": now,
                     }
@@ -263,7 +283,17 @@ def _build_goal_focus(goal: str, now: datetime, world_state) -> str:
     return f"{_time_prefix(now)}{_world_tone(world_state)}我还惦记着“{goal}”，想继续把它推进。"
 
 
-def _build_goal_completion(goal: str, now: datetime, world_state) -> str:
+def _build_goal_completion(
+    goal: str,
+    now: datetime,
+    world_state,
+    next_goal_title: str | None = None,
+) -> str:
+    if next_goal_title is not None:
+        return (
+            f"{_time_prefix(now)}{_world_tone(world_state)}"
+            f"我把“{goal}”先收住了，接下来想继续“{next_goal_title}”。"
+        )
     return f"{_time_prefix(now)}{_world_tone(world_state)}我把“{goal}”先收住了。"
 
 
@@ -273,6 +303,10 @@ def _build_goal_title(content: str) -> str:
 
 def _build_world_goal_title(content: str) -> str:
     return f"继续消化自己刚经历的状态：{content[:24]}"
+
+
+def _build_next_goal_title(goal_title: str) -> str:
+    return f"继续推进：{goal_title[:24]}"
 
 
 def _build_world_goal_start(content: str, now: datetime, world_state) -> str:
