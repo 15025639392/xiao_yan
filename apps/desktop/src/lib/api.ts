@@ -24,6 +24,13 @@ export type Goal = {
   status: "active" | "paused" | "completed" | "abandoned";
 };
 
+export type InnerWorldState = {
+  time_of_day: "morning" | "afternoon" | "evening" | "night";
+  energy: "low" | "medium" | "high";
+  mood: "calm" | "engaged" | "tired";
+  focus_tension: "low" | "medium" | "high";
+};
+
 export type GoalsResponse = {
   goals: Goal[];
 };
@@ -78,6 +85,10 @@ export function fetchMessages(): Promise<ChatHistoryResponse> {
 
 export function fetchGoals(): Promise<GoalsResponse> {
   return get<GoalsResponse>("/goals");
+}
+
+export function fetchWorld(): Promise<InnerWorldState> {
+  return get<InnerWorldState>("/world");
 }
 
 export function updateGoalStatus(

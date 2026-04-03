@@ -41,3 +41,12 @@ def get_goal_storage_path() -> Path:
         return Path(configured).expanduser()
 
     return get_service_root() / ".data" / "goals.json"
+
+
+def get_world_storage_path() -> Path:
+    load_local_env()
+    configured = os.getenv("WORLD_STORAGE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+
+    return get_service_root() / ".data" / "world.json"

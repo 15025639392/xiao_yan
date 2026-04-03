@@ -4,12 +4,14 @@ import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
 import { GoalsPanel } from "./components/GoalsPanel";
 import { StatusPanel } from "./components/StatusPanel";
-import type { BeingState, ChatHistoryMessage, Goal } from "./lib/api";
+import { WorldPanel } from "./components/WorldPanel";
+import type { BeingState, ChatHistoryMessage, Goal, InnerWorldState } from "./lib/api";
 import {
   chat,
   fetchGoals,
   fetchMessages,
   fetchState,
+  fetchWorld,
   sleep,
   updateGoalStatus,
   wake,
@@ -23,6 +25,7 @@ const initialState: BeingState = {
 
 export default function App() {
   const [state, setState] = useState<BeingState>(initialState);
+  const [world, setWorld] = useState<InnerWorldState | null>(null);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [draft, setDraft] = useState("");
@@ -34,10 +37,11 @@ export default function App() {
 
     async function syncRuntime() {
       try {
-        const [nextState, nextMessages, nextGoals] = await Promise.all([
+        const [nextState, nextMessages, nextGoals, nextWorld] = await Promise.all([
           fetchState(),
           fetchMessages(),
           fetchGoals(),
+          fetchWorld(),
         ]);
 
         if (cancelled) {
@@ -47,6 +51,7 @@ export default function App() {
         setState(nextState);
         setMessages((current) => mergeMessages(current, nextMessages.messages));
         setGoals(nextGoals.goals);
+        setWorld(nextWorld);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "sync failed");
@@ -138,6 +143,7 @@ export default function App() {
     <main>
       <h1>Digital Being</h1>
       <StatusPanel error={error} state={state} />
+      <WorldPanel world={world} />
       <GoalsPanel goals={goals} onUpdateGoalStatus={handleUpdateGoalStatus} />
       <ChatPanel
         draft={draft}

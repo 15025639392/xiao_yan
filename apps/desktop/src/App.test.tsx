@@ -13,6 +13,20 @@ test("renders wake and sleep controls", () => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/world")) {
+        return new Response(
+          JSON.stringify({
+            time_of_day: "night",
+            energy: "low",
+            mood: "tired",
+            focus_tension: "low",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
       if (url.endsWith("/goals")) {
         return new Response(JSON.stringify({ goals: [] }), {
           status: 200,
@@ -75,6 +89,21 @@ test("sends a chat message and renders the assistant reply", async () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     if (url.endsWith("/chat")) {
@@ -177,6 +206,21 @@ test("polls state and messages so proactive replies appear in the chat panel", a
       });
     }
 
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "night",
+          energy: "low",
+          mood: "tired",
+          focus_tension: "high",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     if (url.endsWith("/chat")) {
       return new Response(
         JSON.stringify({
@@ -262,6 +306,21 @@ test("updates a goal status from the app and refreshes the rendered goal", async
       );
     }
 
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "afternoon",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "high",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     if (url.endsWith("/goals/goal-1/status")) {
       expect(init?.method).toBe("POST");
       expect(init?.body).toBe(JSON.stringify({ status: "paused" }));
@@ -293,4 +352,71 @@ test("updates a goal status from the app and refreshes the rendered goal", async
     expect(screen.getByText("paused")).toBeInTheDocument();
     expect(screen.getByText("Resume")).toBeInTheDocument();
   });
+});
+
+test("polls world state and renders the inner world panel", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: "我有点困，但还惦记着今天的整理。",
+          active_goal_ids: ["goal-1"],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(
+        JSON.stringify({
+          goals: [
+            { id: "goal-1", title: "整理今天的对话记忆", status: "active" },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "night",
+          energy: "low",
+          mood: "tired",
+          focus_tension: "high",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<App />);
+
+  expect(await screen.findByText("Time: night")).toBeInTheDocument();
+  expect(screen.getByText("Energy: low")).toBeInTheDocument();
+  expect(screen.getByText("Mood: tired")).toBeInTheDocument();
+  expect(screen.getByText("Focus: high")).toBeInTheDocument();
 });

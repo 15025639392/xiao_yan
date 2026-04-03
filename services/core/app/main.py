@@ -5,7 +5,7 @@ from threading import Event, Thread
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_goal_storage_path, get_memory_storage_path
+from app.config import get_goal_storage_path, get_memory_storage_path, get_world_storage_path
 from app.agent.loop import AutonomyLoop
 from app.goals.models import Goal, GoalStatus, GoalStatusUpdate
 from app.goals.repository import FileGoalRepository, GoalRepository
@@ -20,6 +20,9 @@ from app.llm.schemas import (
 from app.memory.models import MemoryEvent
 from app.memory.repository import FileMemoryRepository, MemoryRepository
 from app.runtime import StateStore
+from app.world.models import WorldState
+from app.world.repository import FileWorldRepository, WorldRepository
+from app.world.service import WorldStateService
 
 
 @asynccontextmanager
@@ -56,6 +59,7 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
     state_store = StateStore()
     memory_repository = FileMemoryRepository(get_memory_storage_path())
     goal_repository = FileGoalRepository(get_goal_storage_path())
+    world_repository = FileWorldRepository(get_world_storage_path())
     stop_event = Event()
     loop = AutonomyLoop(state_store, memory_repository, goal_repository)
 
@@ -69,6 +73,7 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.state_store = state_store
     target_app.state.memory_repository = memory_repository
     target_app.state.goal_repository = goal_repository
+    target_app.state.world_repository = world_repository
     target_app.state.stop_event = stop_event
     target_app.state.autonomy_thread = worker
 
@@ -96,6 +101,15 @@ def get_goal_repository() -> GoalRepository:
     return app.state.goal_repository
 
 
+def get_world_repository() -> WorldRepository:
+    _ensure_runtime_initialized(app)
+    return app.state.world_repository
+
+
+def get_world_state_service() -> WorldStateService:
+    return WorldStateService()
+
+
 def build_chat_messages(
     memory_repository: MemoryRepository,
     user_message: str,
@@ -109,6 +123,25 @@ def build_chat_messages(
     ]
     messages.append(ChatMessage(role="user", content=user_message))
     return messages
+
+
+def build_world_state(
+    state_store: StateStore,
+    goal_repository: GoalRepository,
+    world_repository: WorldRepository,
+    world_state_service: WorldStateService,
+) -> WorldState:
+    state = state_store.get()
+    focused_goals = [
+        goal
+        for goal_id in state.active_goal_ids
+        if (goal := goal_repository.get_goal(goal_id)) is not None
+    ]
+    world_state = world_state_service.bootstrap(
+        being_state=state,
+        focused_goals=focused_goals,
+    )
+    return world_repository.save_world_state(world_state)
 
 
 @app.get("/health")
@@ -141,6 +174,21 @@ def get_goals(
     goal_repository: GoalRepository = Depends(get_goal_repository),
 ) -> dict[str, list[Goal]]:
     return {"goals": goal_repository.list_goals()}
+
+
+@app.get("/world")
+def get_world(
+    state_store: StateStore = Depends(get_state_store),
+    goal_repository: GoalRepository = Depends(get_goal_repository),
+    world_repository: WorldRepository = Depends(get_world_repository),
+    world_state_service: WorldStateService = Depends(get_world_state_service),
+) -> WorldState:
+    return build_world_state(
+        state_store,
+        goal_repository,
+        world_repository,
+        world_state_service,
+    )
 
 
 @app.post("/goals/{goal_id}/status")
