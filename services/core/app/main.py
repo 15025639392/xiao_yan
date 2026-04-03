@@ -1,15 +1,55 @@
 from collections.abc import Generator
+from contextlib import asynccontextmanager
+from threading import Event, Thread
 
 from fastapi import Depends, FastAPI
 
 from app.config import get_memory_storage_path
+from app.agent.loop import AutonomyLoop
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import ChatMessage, ChatRequest, ChatResult
 from app.memory.models import MemoryEvent
 from app.memory.repository import FileMemoryRepository, MemoryRepository
-from app.usecases.lifecycle import go_to_sleep, wake_up
+from app.runtime import StateStore
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _ensure_runtime_initialized(app)
+
+    try:
+        yield
+    finally:
+        stop_event = app.state.stop_event
+        worker = app.state.autonomy_thread
+        if worker.is_alive():
+            stop_event.set()
+            worker.join(timeout=1.0)
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+def _ensure_runtime_initialized(target_app: FastAPI) -> None:
+    if hasattr(target_app.state, "state_store"):
+        return
+
+    state_store = StateStore()
+    memory_repository = FileMemoryRepository(get_memory_storage_path())
+    stop_event = Event()
+    loop = AutonomyLoop(state_store, memory_repository)
+
+    def run_loop() -> None:
+        while not stop_event.wait(5.0):
+            loop.tick_once()
+
+    worker = Thread(target=run_loop, name="autonomy-loop", daemon=True)
+    worker.start()
+
+    target_app.state.state_store = state_store
+    target_app.state.memory_repository = memory_repository
+    target_app.state.stop_event = stop_event
+    target_app.state.autonomy_thread = worker
 
 
 def get_chat_gateway() -> Generator[ChatGateway, None, None]:
@@ -21,7 +61,13 @@ def get_chat_gateway() -> Generator[ChatGateway, None, None]:
 
 
 def get_memory_repository() -> MemoryRepository:
-    return FileMemoryRepository(get_memory_storage_path())
+    _ensure_runtime_initialized(app)
+    return app.state.memory_repository
+
+
+def get_state_store() -> StateStore:
+    _ensure_runtime_initialized(app)
+    return app.state.state_store
 
 
 def build_chat_messages(
@@ -44,14 +90,21 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/state")
+def get_state(
+    state_store: StateStore = Depends(get_state_store),
+) -> dict:
+    return state_store.get().model_dump()
+
+
 @app.post("/lifecycle/wake")
 def wake() -> dict:
-    return wake_up().model_dump()
+    return get_state_store().wake().model_dump()
 
 
 @app.post("/lifecycle/sleep")
 def sleep() -> dict:
-    return go_to_sleep().model_dump()
+    return get_state_store().sleep().model_dump()
 
 
 @app.post("/chat")

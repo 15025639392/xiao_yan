@@ -12,6 +12,7 @@ class BeingState(BaseModel):
     mode: WakeMode
     current_thought: str | None = None
     active_goal_ids: list[str] = Field(default_factory=list)
+    last_proactive_source: str | None = None
 
     @classmethod
     def default(cls) -> "BeingState":
