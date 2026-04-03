@@ -256,6 +256,14 @@ def _select_wake_goal(
     )[0]
 
 
+def _build_wake_plan(goal: Goal) -> str:
+    if goal.chain_id and goal.generation >= 2:
+        return f" 先回看“{goal.title}”停在了哪里，再决定是继续推进还是先收束。"
+    if goal.chain_id:
+        return f" 先顺着“{goal.title}”把今天要推进的一小步理清，再开始行动。"
+    return f" 先把“{goal.title}”的轮廓理一下，再开始动手。"
+
+
 @app.get("/world")
 def get_world(
     state_store: StateStore = Depends(get_state_store),
@@ -312,6 +320,7 @@ def wake(
                 "active_goal_ids": [selected_goal.id],
                 "current_thought": (
                     f"{waking_state.current_thought} 今天想先接着“{selected_goal.title}”。"
+                    f"{_build_wake_plan(selected_goal)}"
                 ),
             }
         )
