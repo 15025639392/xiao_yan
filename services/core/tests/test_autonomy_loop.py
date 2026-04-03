@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from app.agent.loop import AutonomyLoop
 from app.domain.models import BeingState, WakeMode
 from app.memory.models import MemoryEvent
@@ -46,3 +48,50 @@ def test_tick_once_adds_one_proactive_assistant_message_for_latest_user_message(
     assert [event.role for event in recent_after_first_tick] == ["user", "assistant"]
     assert [event.role for event in recent_after_second_tick] == ["user", "assistant"]
     assert "星星" in recent_after_first_tick[-1].content
+
+
+def test_tick_once_respects_proactive_cooldown():
+    now = datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc)
+    store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            last_proactive_source="之前的话题",
+            last_proactive_at=now - timedelta(seconds=20),
+        )
+    )
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="你现在在想什么"))
+    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
+
+    state = loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+
+    assert state.current_thought is None
+    assert [event.role for event in recent] == ["user"]
+
+
+def test_tick_once_generates_time_aware_proactive_message():
+    now = datetime(2026, 4, 4, 22, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="你喜欢夜空吗"))
+    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.current_thought is not None
+    assert "晚上" in state.current_thought
+
+
+def test_tick_once_surfaces_pending_goal_as_current_focus():
+    now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
+    store = StateStore(
+        BeingState(mode=WakeMode.AWAKE, active_goal_ids=["整理今天的对话记忆"])
+    )
+    repo = InMemoryMemoryRepository()
+    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.current_thought is not None
+    assert "整理今天的对话记忆" in state.current_thought
