@@ -52,3 +52,18 @@ def test_world_state_for_completed_focus_becomes_calm():
     assert state.energy == "high"
     assert state.mood == "calm"
     assert state.focus_tension == "low"
+
+
+def test_world_service_builds_tired_night_event_with_goal_context():
+    service = WorldStateService()
+    world_state = service.bootstrap(
+        being_state=BeingState(mode=WakeMode.AWAKE, active_goal_ids=["goal-1"]),
+        focused_goals=[Goal(title="整理今天的对话记忆", status=GoalStatus.ACTIVE)],
+        now=datetime(2026, 4, 4, 23, 0),
+    )
+
+    event = service.build_event(world_state, goal_title="整理今天的对话记忆")
+
+    assert "夜里" in event
+    assert "有点困" in event
+    assert "整理今天的对话记忆" in event

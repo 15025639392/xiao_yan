@@ -29,6 +29,7 @@ export type InnerWorldState = {
   energy: "low" | "medium" | "high";
   mood: "calm" | "engaged" | "tired";
   focus_tension: "low" | "medium" | "high";
+  latest_event?: string | null;
 };
 
 export type GoalsResponse = {

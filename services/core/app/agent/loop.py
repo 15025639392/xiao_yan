@@ -11,6 +11,8 @@ from app.world.service import WorldStateService
 
 
 class AutonomyLoop:
+    WORLD_EVENT_COOLDOWN = timedelta(minutes=30)
+
     def __init__(
         self,
         state_store: StateStore,
@@ -31,9 +33,10 @@ class AutonomyLoop:
             return state
 
         now = self.now_provider()
-        recent_events = list(reversed(self.memory_repository.list_recent(limit=4)))
+        recent_events = list(reversed(self.memory_repository.list_recent(limit=20)))
         state = self._sync_goal_focus(state, now)
         world_state = self._world_state_for(state, now)
+        self._maybe_record_world_event(state, recent_events, world_state, now)
         cooldown_ready = (
             state.last_proactive_at is None
             or now - state.last_proactive_at >= timedelta(seconds=60)
@@ -176,6 +179,32 @@ class AutonomyLoop:
             now=now,
         )
 
+    def _maybe_record_world_event(self, state, recent_events, world_state, now: datetime) -> None:
+        if _find_latest_user_event(recent_events) is not None:
+            return
+
+        latest_world_event = _find_latest_world_event(recent_events)
+        if (
+            latest_world_event is not None
+            and now - latest_world_event.created_at < self.WORLD_EVENT_COOLDOWN
+        ):
+            return
+
+        goal_title = None
+        if state.active_goal_ids:
+            current_goal = self.goal_repository.get_goal(state.active_goal_ids[0])
+            goal_title = (
+                current_goal.title if current_goal is not None else state.active_goal_ids[0]
+            )
+
+        self.memory_repository.save_event(
+            MemoryEvent(
+                kind="world",
+                content=self.world_state_service.build_event(world_state, goal_title),
+                created_at=now,
+            )
+        )
+
 
 def _build_proactive_thought(recent_events, now: datetime, world_state) -> str:
     prefix = _time_prefix(now)
@@ -188,6 +217,13 @@ def _build_proactive_thought(recent_events, now: datetime, world_state) -> str:
 def _find_latest_user_event(recent_events):
     for event in reversed(recent_events):
         if event.kind == "chat" and event.role == "user":
+            return event
+    return None
+
+
+def _find_latest_world_event(recent_events):
+    for event in reversed(recent_events):
+        if event.kind == "world":
             return event
     return None
 

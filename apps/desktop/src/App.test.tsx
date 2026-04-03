@@ -213,6 +213,7 @@ test("polls state and messages so proactive replies appear in the chat panel", a
           energy: "low",
           mood: "tired",
           focus_tension: "high",
+          latest_event: "夜里很安静，我有点困，但还惦记着整理今天的对话记忆。",
         }),
         {
           status: 200,
@@ -400,6 +401,7 @@ test("polls world state and renders the inner world panel", async () => {
           energy: "low",
           mood: "tired",
           focus_tension: "high",
+          latest_event: "夜里很安静，我有点困，但还惦记着整理今天的对话记忆。",
         }),
         {
           status: 200,
@@ -419,4 +421,7 @@ test("polls world state and renders the inner world panel", async () => {
   expect(screen.getByText("Energy: low")).toBeInTheDocument();
   expect(screen.getByText("Mood: tired")).toBeInTheDocument();
   expect(screen.getByText("Focus: high")).toBeInTheDocument();
+  expect(
+    screen.getByText("Latest Event: 夜里很安静，我有点困，但还惦记着整理今天的对话记忆。")
+  ).toBeInTheDocument();
 });

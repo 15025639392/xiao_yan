@@ -128,6 +128,7 @@ def build_chat_messages(
 def build_world_state(
     state_store: StateStore,
     goal_repository: GoalRepository,
+    memory_repository: MemoryRepository,
     world_repository: WorldRepository,
     world_state_service: WorldStateService,
 ) -> WorldState:
@@ -137,9 +138,19 @@ def build_world_state(
         for goal_id in state.active_goal_ids
         if (goal := goal_repository.get_goal(goal_id)) is not None
     ]
+    latest_world_event = next(
+        (
+            event
+            for event in memory_repository.list_recent(limit=20)
+            if event.kind == "world"
+        ),
+        None,
+    )
     world_state = world_state_service.bootstrap(
         being_state=state,
         focused_goals=focused_goals,
+        latest_event=None if latest_world_event is None else latest_world_event.content,
+        latest_event_at=None if latest_world_event is None else latest_world_event.created_at,
     )
     return world_repository.save_world_state(world_state)
 
@@ -180,12 +191,14 @@ def get_goals(
 def get_world(
     state_store: StateStore = Depends(get_state_store),
     goal_repository: GoalRepository = Depends(get_goal_repository),
+    memory_repository: MemoryRepository = Depends(get_memory_repository),
     world_repository: WorldRepository = Depends(get_world_repository),
     world_state_service: WorldStateService = Depends(get_world_state_service),
 ) -> WorldState:
     return build_world_state(
         state_store,
         goal_repository,
+        memory_repository,
         world_repository,
         world_state_service,
     )

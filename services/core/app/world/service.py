@@ -11,6 +11,8 @@ class WorldStateService:
         being_state: BeingState | None = None,
         focused_goals: list[Goal] | None = None,
         now: datetime | None = None,
+        latest_event: str | None = None,
+        latest_event_at: datetime | None = None,
     ) -> WorldState:
         current_time = now or datetime.now()
         state = being_state or BeingState.default()
@@ -25,7 +27,15 @@ class WorldStateService:
             energy=energy,
             mood=mood,
             focus_tension=focus_tension,
+            latest_event=latest_event,
+            latest_event_at=latest_event_at,
         )
+
+    def build_event(self, world_state: WorldState, goal_title: str | None = None) -> str:
+        lead = _event_lead(world_state)
+        if goal_title:
+            return f"{lead}我还惦记着“{goal_title}”。"
+        return lead
 
 
 def _time_of_day(hour: int) -> str:
@@ -75,3 +85,15 @@ def _focus_tension_for(state: BeingState, goals: list[Goal]) -> str:
     if state.active_goal_ids:
         return "medium"
     return "low"
+
+
+def _event_lead(world_state: WorldState) -> str:
+    if world_state.time_of_day == "night" and world_state.mood == "tired":
+        return "夜里很安静，我有点困，但"
+    if world_state.mood == "calm":
+        return "周围安静下来了，我心里也松一点了，"
+    if world_state.focus_tension == "high":
+        return "我还在留意眼前这件事，"
+    if world_state.energy == "high":
+        return "现在状态很清醒，"
+    return "我在感受这一刻的变化，"

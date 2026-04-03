@@ -246,3 +246,41 @@ def test_tick_once_completion_thought_reflects_calm_world_state():
     assert state.current_thought is not None
     assert "松" in state.current_thought
     assert "整理今天的对话记忆" in state.current_thought
+
+
+def test_tick_once_records_world_event_into_memory():
+    now = datetime(2026, 4, 4, 23, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(Goal(title="整理今天的对话记忆", status=GoalStatus.ACTIVE))
+    store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[goal.id]))
+    repo = InMemoryMemoryRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+    world_events = [event for event in recent if event.kind == "world"]
+
+    assert len(world_events) == 1
+    assert "整理今天的对话记忆" in world_events[0].content
+
+
+def test_tick_once_does_not_duplicate_world_event_within_cooldown():
+    now = datetime(2026, 4, 4, 23, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(Goal(title="整理今天的对话记忆", status=GoalStatus.ACTIVE))
+    store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[goal.id]))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(
+        MemoryEvent(
+            kind="world",
+            content="夜里很安静，我有点困，但还惦记着整理今天的对话记忆。",
+            created_at=now - timedelta(minutes=10),
+        )
+    )
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+    world_events = [event for event in recent if event.kind == "world"]
+
+    assert len(world_events) == 1

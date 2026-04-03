@@ -8,10 +8,13 @@ from app.goals.repository import InMemoryGoalRepository
 from app.main import (
     app,
     get_goal_repository,
+    get_memory_repository,
     get_state_store,
     get_world_repository,
     get_world_state_service,
 )
+from app.memory.models import MemoryEvent
+from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore
 from app.world.models import WorldState
 from app.world.repository import InMemoryWorldRepository
@@ -23,6 +26,13 @@ def test_get_world_returns_current_world_snapshot_and_persists_it():
     goal_repository = InMemoryGoalRepository()
     goal_repository.save_goal(Goal(id="goal-1", title="整理今天的对话记忆"))
     world_repository = InMemoryWorldRepository()
+    memory_repository = InMemoryMemoryRepository()
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="world",
+            content="夜里很安静，我有点困，但还惦记着整理今天的对话记忆。",
+        )
+    )
 
     def override_state_store():
         return state_store
@@ -33,12 +43,24 @@ def test_get_world_returns_current_world_snapshot_and_persists_it():
     def override_world_repository():
         return world_repository
 
+    def override_memory_repository():
+        return memory_repository
+
     class FixedWorldStateService(WorldStateService):
-        def bootstrap(self, being_state=None, focused_goals=None, now=None):
+        def bootstrap(
+            self,
+            being_state=None,
+            focused_goals=None,
+            now=None,
+            latest_event=None,
+            latest_event_at=None,
+        ):
             return super().bootstrap(
                 being_state=being_state,
                 focused_goals=focused_goals,
                 now=datetime(2026, 4, 4, 14, 0),
+                latest_event=latest_event,
+                latest_event_at=latest_event_at,
             )
 
     def override_world_state_service():
@@ -46,6 +68,7 @@ def test_get_world_returns_current_world_snapshot_and_persists_it():
 
     app.dependency_overrides[get_state_store] = override_state_store
     app.dependency_overrides[get_goal_repository] = override_goal_repository
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
     app.dependency_overrides[get_world_repository] = override_world_repository
     app.dependency_overrides[get_world_state_service] = override_world_state_service
 
@@ -59,6 +82,7 @@ def test_get_world_returns_current_world_snapshot_and_persists_it():
         assert body["energy"] in {"low", "medium", "high"}
         assert body["mood"] == "engaged"
         assert body["focus_tension"] == "high"
+        assert "整理今天的对话记忆" in body["latest_event"]
 
         saved = world_repository.get_world_state()
         assert saved == WorldState.model_validate(body)
