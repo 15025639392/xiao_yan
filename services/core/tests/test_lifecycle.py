@@ -6,6 +6,7 @@ def test_wake_up_transitions_state_and_generates_brief():
     state = wake_up()
     assert state.mode == WakeMode.AWAKE
     assert state.current_thought is not None
+    assert "整理一下现在的状态" in state.current_thought
 
 
 def test_go_to_sleep_transitions_state():

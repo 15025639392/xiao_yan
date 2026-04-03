@@ -20,6 +20,7 @@ from app.llm.schemas import (
 from app.memory.models import MemoryEvent
 from app.memory.repository import FileMemoryRepository, MemoryRepository
 from app.runtime import StateStore
+from app.usecases.lifecycle import wake_up
 from app.world.models import WorldState
 from app.world.repository import FileWorldRepository, WorldRepository
 from app.world.service import WorldStateService
@@ -56,8 +57,8 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
     if hasattr(target_app.state, "state_store"):
         return
 
-    state_store = StateStore()
     memory_repository = FileMemoryRepository(get_memory_storage_path())
+    state_store = StateStore(memory_repository=memory_repository)
     goal_repository = FileGoalRepository(get_goal_storage_path())
     world_repository = FileWorldRepository(get_world_storage_path())
     stop_event = Event()
@@ -228,6 +229,11 @@ def _deduplicate_entries(entries: list[str]) -> list[str]:
     return unique_entries
 
 
+def _find_recent_autobio(memory_repository: MemoryRepository) -> str | None:
+    recent_events = memory_repository.list_recent(limit=20)
+    return next((event.content for event in recent_events if event.kind == "autobio"), None)
+
+
 @app.get("/world")
 def get_world(
     state_store: StateStore = Depends(get_state_store),
@@ -269,8 +275,12 @@ def update_goal_status(
 
 
 @app.post("/lifecycle/wake")
-def wake() -> dict:
-    return get_state_store().wake().model_dump()
+def wake(
+    state_store: StateStore = Depends(get_state_store),
+    memory_repository: MemoryRepository = Depends(get_memory_repository),
+) -> dict:
+    recent_autobio = _find_recent_autobio(memory_repository)
+    return state_store.set(wake_up(recent_autobio=recent_autobio)).model_dump()
 
 
 @app.post("/lifecycle/sleep")
