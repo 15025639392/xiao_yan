@@ -40,6 +40,7 @@ class AutonomyLoop:
             return state
         world_state = self._world_state_for(state, now)
         self._maybe_record_inner_stage_memory(state, recent_events, world_state, now)
+        self._maybe_record_autobio_memory(now)
         cooldown_ready = (
             state.last_proactive_at is None
             or now - state.last_proactive_at >= timedelta(seconds=60)
@@ -315,6 +316,25 @@ class AutonomyLoop:
             )
         )
 
+    def _maybe_record_autobio_memory(self, now: datetime) -> None:
+        recent_events = list(reversed(self.memory_repository.list_recent(limit=20)))
+        inner_events = [event for event in recent_events if event.kind == "inner"]
+        if len(inner_events) < 3:
+            return
+
+        autobio_memory = _build_autobio_memory(inner_events[-3:])
+        latest_autobio_event = _find_latest_autobio_event(recent_events)
+        if latest_autobio_event is not None and latest_autobio_event.content == autobio_memory:
+            return
+
+        self.memory_repository.save_event(
+            MemoryEvent(
+                kind="autobio",
+                content=autobio_memory,
+                created_at=now,
+            )
+        )
+
 
 def _build_proactive_thought(recent_events, now: datetime, world_state) -> str:
     prefix = _time_prefix(now)
@@ -341,6 +361,13 @@ def _find_latest_world_event(recent_events):
 def _find_latest_inner_event(recent_events):
     for event in reversed(recent_events):
         if event.kind == "inner":
+            return event
+    return None
+
+
+def _find_latest_autobio_event(recent_events):
+    for event in reversed(recent_events):
+        if event.kind == "autobio":
             return event
     return None
 
@@ -411,6 +438,12 @@ def _build_inner_stage_memory(world_state, goal_title: str | None = None) -> str
         f"我感觉自己已经走到第{world_state.focus_step}步，"
         f"正在进入{stage_label}{goal_suffix}。"
     )
+
+
+def _build_autobio_memory(inner_events: list[MemoryEvent]) -> str:
+    steps = [_extract_focus_step(event.content) for event in inner_events]
+    rendered_steps = "、".join(f"第{step}步" for step in steps if step is not None)
+    return f"我最近像是一路从{rendered_steps}走过来，开始学着把这些变化连成自己的经历。"
 
 
 def _time_prefix(now: datetime) -> str:
@@ -523,3 +556,20 @@ def _focus_stage_label(stage: str) -> str:
     if stage == "start":
         return "起步阶段"
     return "当前阶段"
+
+
+def _extract_focus_step(content: str) -> int | None:
+    marker = "第"
+    suffix = "步"
+    if marker not in content or suffix not in content:
+        return None
+
+    start = content.find(marker) + len(marker)
+    end = content.find(suffix, start)
+    if end <= start:
+        return None
+
+    step_text = content[start:end]
+    if not step_text.isdigit():
+        return None
+    return int(step_text)

@@ -126,13 +126,18 @@ def build_chat_messages(
         for event in relevant_events
         if event.kind == "inner"
     ]
+    autobio_messages = [
+        ChatMessage(role="system", content=f"最近你的自传式回顾：{event.content}")
+        for event in relevant_events
+        if event.kind == "autobio"
+    ]
     messages = [
         ChatMessage(role=event.role, content=event.content)
         for event in relevant_events
         if event.kind == "chat" and event.role in {"user", "assistant"}
     ]
     messages.append(ChatMessage(role="user", content=user_message))
-    return [*world_messages, *inner_messages, *messages]
+    return [*world_messages, *inner_messages, *autobio_messages, *messages]
 
 
 def build_world_state(

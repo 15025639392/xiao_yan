@@ -193,6 +193,41 @@ def test_post_chat_includes_relevant_inner_memory_as_system_context():
         app.dependency_overrides.clear()
 
 
+def test_post_chat_includes_relevant_autobio_memory_as_system_context():
+    memory_repository = InMemoryMemoryRepository()
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="autobio",
+            content="我最近像是一路从第1步走到第3步，已经开始学着把这些变化收束起来。",
+        )
+    )
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "你最近是怎么变化的"})
+        assert response.status_code == 200
+        assert (
+            "system",
+            "最近你的自传式回顾：我最近像是一路从第1步走到第3步，已经开始学着把这些变化收束起来。",
+        ) in [(message.role, message.content) for message in gateway.last_messages]
+        assert gateway.last_messages[-1].content == "你最近是怎么变化的"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_get_messages_returns_recent_chat_events():
     memory_repository = InMemoryMemoryRepository()
     memory_repository.save_event(

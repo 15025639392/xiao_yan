@@ -392,6 +392,33 @@ def test_tick_once_records_inner_stage_memory_when_chain_progress_changes():
     assert len(second_inner_events) == 1
 
 
+def test_tick_once_compresses_inner_stage_memories_into_autobio_memory():
+    now = datetime(2026, 4, 4, 16, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(
+        Goal(
+            title="继续推进：继续推进：整理今天的对话记忆",
+            status=GoalStatus.ACTIVE,
+            chain_id="chain-1",
+            generation=2,
+        )
+    )
+    store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[goal.id]))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="inner", content="我感觉自己已经走到第1步，正在进入起步阶段。"))
+    repo.save_event(MemoryEvent(kind="inner", content="我感觉自己已经走到第2步，正在进入深入阶段。"))
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    loop.tick_once()
+    autobio_events = [event for event in reversed(repo.list_recent(limit=10)) if event.kind == "autobio"]
+
+    assert len(autobio_events) == 1
+    assert "第1步" in autobio_events[0].content
+    assert "第2步" in autobio_events[0].content
+    assert "第3步" in autobio_events[0].content
+    assert "一路" in autobio_events[0].content
+
+
 def test_tick_once_does_not_duplicate_world_event_within_cooldown():
     now = datetime(2026, 4, 4, 23, 0, tzinfo=timezone.utc)
     goals = InMemoryGoalRepository()
