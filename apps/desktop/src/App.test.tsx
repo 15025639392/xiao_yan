@@ -13,6 +13,12 @@ test("renders wake and sleep controls", () => {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/goals")) {
+        return new Response(JSON.stringify({ goals: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.endsWith("/messages")) {
         return new Response(JSON.stringify({ messages: [] }), {
           status: 200,
@@ -64,6 +70,13 @@ test("sends a chat message and renders the assistant reply", async () => {
       });
     }
 
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     if (url.endsWith("/chat")) {
       expect(init?.method).toBe("POST");
       expect(init?.body).toBe(JSON.stringify({ message: "hello xiao yan" }));
@@ -102,6 +115,7 @@ test("polls state and messages so proactive replies appear in the chat panel", a
 
   let stateCallCount = 0;
   let messagesCallCount = 0;
+  let goalsCallCount = 0;
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -134,6 +148,27 @@ test("polls state and messages so proactive replies appear in the chat panel", a
           : {
               messages: [
                 { role: "assistant", content: "我刚刚又想到你提到的星星了。" },
+              ],
+            };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      goalsCallCount += 1;
+      const body =
+        goalsCallCount === 1
+          ? {
+              goals: [
+                { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
+              ],
+            }
+          : {
+              goals: [
+                { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
+                { id: "goal-2", title: "整理昨晚关于夜空的聊天", status: "active" },
               ],
             };
       return new Response(JSON.stringify(body), {
@@ -176,6 +211,7 @@ test("polls state and messages so proactive replies appear in the chat panel", a
     await vi.advanceTimersByTimeAsync(0);
   });
   expect(screen.getByText("Mode: awake")).toBeInTheDocument();
+  expect(screen.getByText("持续理解用户最近在意的话题：星星")).toBeInTheDocument();
 
   await act(async () => {
     await vi.advanceTimersByTimeAsync(5000);
@@ -184,4 +220,5 @@ test("polls state and messages so proactive replies appear in the chat panel", a
 
   expect(screen.getByText("Thought: 我刚刚又想到星星了。")).toBeInTheDocument();
   expect(screen.getByText("Xiao Yan: 我刚刚又想到你提到的星星了。")).toBeInTheDocument();
+  expect(screen.getByText("整理昨晚关于夜空的聊天")).toBeInTheDocument();
 });

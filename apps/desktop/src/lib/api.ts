@@ -18,6 +18,16 @@ export type ChatHistoryResponse = {
   messages: ChatHistoryMessage[];
 };
 
+export type Goal = {
+  id: string;
+  title: string;
+  status: "active" | "completed";
+};
+
+export type GoalsResponse = {
+  goals: Goal[];
+};
+
 const BASE_URL = "http://127.0.0.1:8000";
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -64,4 +74,8 @@ export function fetchState(): Promise<BeingState> {
 
 export function fetchMessages(): Promise<ChatHistoryResponse> {
   return get<ChatHistoryResponse>("/messages");
+}
+
+export function fetchGoals(): Promise<GoalsResponse> {
+  return get<GoalsResponse>("/goals");
 }

@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 
 import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
+import { GoalsPanel } from "./components/GoalsPanel";
 import { StatusPanel } from "./components/StatusPanel";
-import type { BeingState, ChatHistoryMessage } from "./lib/api";
-import { chat, fetchMessages, fetchState, sleep, wake } from "./lib/api";
+import type { BeingState, ChatHistoryMessage, Goal } from "./lib/api";
+import { chat, fetchGoals, fetchMessages, fetchState, sleep, wake } from "./lib/api";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -15,6 +16,7 @@ const initialState: BeingState = {
 export default function App() {
   const [state, setState] = useState<BeingState>(initialState);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
@@ -24,9 +26,10 @@ export default function App() {
 
     async function syncRuntime() {
       try {
-        const [nextState, nextMessages] = await Promise.all([
+        const [nextState, nextMessages, nextGoals] = await Promise.all([
           fetchState(),
           fetchMessages(),
+          fetchGoals(),
         ]);
 
         if (cancelled) {
@@ -34,9 +37,8 @@ export default function App() {
         }
 
         setState(nextState);
-        setMessages((current) =>
-          mergeMessages(current, nextMessages.messages)
-        );
+        setMessages((current) => mergeMessages(current, nextMessages.messages));
+        setGoals(nextGoals.goals);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "sync failed");
@@ -111,6 +113,7 @@ export default function App() {
     <main>
       <h1>Digital Being</h1>
       <StatusPanel error={error} state={state} />
+      <GoalsPanel goals={goals} />
       <ChatPanel
         draft={draft}
         isSending={isSending}
