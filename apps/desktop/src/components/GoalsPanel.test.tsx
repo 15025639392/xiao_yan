@@ -68,3 +68,75 @@ test("renders chained goals as a timeline ordered by generation", () => {
   const generationLabels = screen.getAllByText(/Generation:/).map((item) => item.textContent);
   expect(generationLabels).toEqual(["Generation: 0", "Generation: 1"]);
 });
+
+
+test("renders a chain summary with current step and progress", () => {
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-3",
+          title: "准备把新观察写进世界模型",
+          status: "paused",
+          chain_id: "chain-2",
+          parent_goal_id: "goal-2",
+          generation: 2,
+        },
+        {
+          id: "goal-1",
+          title: "从一次世界事件里提炼方向",
+          status: "completed",
+          chain_id: "chain-2",
+          parent_goal_id: null,
+          generation: 0,
+        },
+        {
+          id: "goal-2",
+          title: "追踪这条方向在最近对话里的回声",
+          status: "active",
+          chain_id: "chain-2",
+          parent_goal_id: "goal-1",
+          generation: 1,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />
+  );
+
+  expect(
+    screen.getByText(
+      "Summary: 3 steps, current generation 2, paused now on 准备把新观察写进世界模型",
+    ),
+  ).toBeInTheDocument();
+});
+
+
+test("prefers an in-progress goal in the summary when generations tie", () => {
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-2",
+          title: "继续沿着这条结论追问",
+          status: "active",
+          chain_id: "chain-3",
+          parent_goal_id: "goal-1",
+          generation: 1,
+        },
+        {
+          id: "goal-1",
+          title: "把第一次观察收束成结论",
+          status: "completed",
+          chain_id: "chain-3",
+          parent_goal_id: null,
+          generation: 1,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />
+  );
+
+  expect(
+    screen.getByText("Summary: 2 steps, current generation 1, active now on 继续沿着这条结论追问"),
+  ).toBeInTheDocument();
+});
