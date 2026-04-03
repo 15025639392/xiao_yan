@@ -37,3 +37,34 @@ test("renders goals and forwards status updates", () => {
   expect(onUpdateGoalStatus).toHaveBeenNthCalledWith(2, "goal-1", "completed");
   expect(onUpdateGoalStatus).toHaveBeenNthCalledWith(3, "goal-1", "abandoned");
 });
+
+
+test("renders chained goals as a timeline ordered by generation", () => {
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-2",
+          title: "继续推进：整理今天的对话",
+          status: "active",
+          chain_id: "chain-1",
+          parent_goal_id: "goal-1",
+          generation: 1,
+        },
+        {
+          id: "goal-1",
+          title: "继续消化自己刚经历的状态：整理今天的对话",
+          status: "completed",
+          chain_id: "chain-1",
+          parent_goal_id: null,
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />
+  );
+
+  expect(screen.getByText("Timeline: chain-1")).toBeInTheDocument();
+  const generationLabels = screen.getAllByText(/Generation:/).map((item) => item.textContent);
+  expect(generationLabels).toEqual(["Generation: 0", "Generation: 1"]);
+});
