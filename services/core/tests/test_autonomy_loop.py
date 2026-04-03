@@ -284,3 +284,26 @@ def test_tick_once_does_not_duplicate_world_event_within_cooldown():
     world_events = [event for event in recent if event.kind == "world"]
 
     assert len(world_events) == 1
+
+
+def test_tick_once_generates_goal_from_latest_world_event_when_no_user_topic():
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(
+        MemoryEvent(
+            kind="world",
+            content="清晨很安静，我还在留意眼前这件事，我还惦记着“整理今天的对话记忆”。",
+            created_at=now - timedelta(minutes=40),
+        )
+    )
+    goals = InMemoryGoalRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    state = loop.tick_once()
+    active_goals = goals.list_active_goals()
+
+    assert len(active_goals) == 1
+    assert "整理今天的对话记忆" in active_goals[0].source
+    assert state.active_goal_ids == [active_goals[0].id]
+    assert "整理今天的对话记忆" in state.current_thought

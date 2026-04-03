@@ -36,7 +36,6 @@ class AutonomyLoop:
         recent_events = list(reversed(self.memory_repository.list_recent(limit=20)))
         state = self._sync_goal_focus(state, now)
         world_state = self._world_state_for(state, now)
-        self._maybe_record_world_event(state, recent_events, world_state, now)
         cooldown_ready = (
             state.last_proactive_at is None
             or now - state.last_proactive_at >= timedelta(seconds=60)
@@ -80,6 +79,34 @@ class AutonomyLoop:
                     }
                 )
                 return self.state_store.set(next_state)
+
+            latest_world_event = _find_latest_world_event(recent_events)
+            if (
+                latest_world_event is not None
+                and latest_world_event.content != state.last_proactive_source
+            ):
+                goal = self.goal_repository.save_goal(
+                    Goal(
+                        title=_build_world_goal_title(latest_world_event.content),
+                        source=latest_world_event.content,
+                    )
+                )
+                proactive_thought = _build_world_goal_start(
+                    latest_world_event.content,
+                    now,
+                    world_state,
+                )
+                next_state = state.model_copy(
+                    update={
+                        "active_goal_ids": [goal.id],
+                        "current_thought": proactive_thought,
+                        "last_proactive_source": latest_world_event.content,
+                        "last_proactive_at": now,
+                    }
+                )
+                return self.state_store.set(next_state)
+
+        self._maybe_record_world_event(state, recent_events, world_state, now)
 
         action = choose_next_action(
             state=state,
@@ -242,6 +269,14 @@ def _build_goal_completion(goal: str, now: datetime, world_state) -> str:
 
 def _build_goal_title(content: str) -> str:
     return f"持续理解用户最近在意的话题：{content[:24]}"
+
+
+def _build_world_goal_title(content: str) -> str:
+    return f"继续消化自己刚经历的状态：{content[:24]}"
+
+
+def _build_world_goal_start(content: str, now: datetime, world_state) -> str:
+    return f"{_time_prefix(now)}{_world_tone(world_state)}我还在回味刚才那件事：“{content}”。"
 
 
 def _time_prefix(now: datetime) -> str:
