@@ -363,6 +363,35 @@ def test_tick_once_records_world_event_into_memory():
     assert "整理今天的对话记忆" in world_events[0].content
 
 
+def test_tick_once_records_inner_stage_memory_when_chain_progress_changes():
+    first_now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
+    second_now = first_now + timedelta(seconds=61)
+    times = iter([first_now, second_now])
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(
+        Goal(
+            title="继续推进：继续推进：整理今天的对话记忆",
+            status=GoalStatus.ACTIVE,
+            chain_id="chain-1",
+            generation=2,
+        )
+    )
+    store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[goal.id]))
+    repo = InMemoryMemoryRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: next(times))
+
+    loop.tick_once()
+    first_inner_events = [event for event in reversed(repo.list_recent(limit=10)) if event.kind == "inner"]
+
+    loop.tick_once()
+    second_inner_events = [event for event in reversed(repo.list_recent(limit=10)) if event.kind == "inner"]
+
+    assert len(first_inner_events) == 1
+    assert "第3步" in first_inner_events[0].content
+    assert "收束阶段" in first_inner_events[0].content
+    assert len(second_inner_events) == 1
+
+
 def test_tick_once_does_not_duplicate_world_event_within_cooldown():
     now = datetime(2026, 4, 4, 23, 0, tzinfo=timezone.utc)
     goals = InMemoryGoalRepository()

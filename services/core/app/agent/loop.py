@@ -39,6 +39,7 @@ class AutonomyLoop:
         if transitioned:
             return state
         world_state = self._world_state_for(state, now)
+        self._maybe_record_inner_stage_memory(state, recent_events, world_state, now)
         cooldown_ready = (
             state.last_proactive_at is None
             or now - state.last_proactive_at >= timedelta(seconds=60)
@@ -288,6 +289,32 @@ class AutonomyLoop:
             )
         )
 
+    def _maybe_record_inner_stage_memory(self, state, recent_events, world_state, now: datetime) -> None:
+        if world_state.focus_stage == "none" or world_state.focus_step is None:
+            return
+
+        current_goal = None
+        if state.active_goal_ids:
+            current_goal = self.goal_repository.get_goal(state.active_goal_ids[0])
+
+        if current_goal is None or current_goal.chain_id is None:
+            return
+
+        goal_title = current_goal.title
+
+        inner_memory = _build_inner_stage_memory(world_state, goal_title)
+        latest_inner_event = _find_latest_inner_event(recent_events)
+        if latest_inner_event is not None and latest_inner_event.content == inner_memory:
+            return
+
+        self.memory_repository.save_event(
+            MemoryEvent(
+                kind="inner",
+                content=inner_memory,
+                created_at=now,
+            )
+        )
+
 
 def _build_proactive_thought(recent_events, now: datetime, world_state) -> str:
     prefix = _time_prefix(now)
@@ -307,6 +334,13 @@ def _find_latest_user_event(recent_events):
 def _find_latest_world_event(recent_events):
     for event in reversed(recent_events):
         if event.kind == "world":
+            return event
+    return None
+
+
+def _find_latest_inner_event(recent_events):
+    for event in reversed(recent_events):
+        if event.kind == "inner":
             return event
     return None
 
@@ -368,6 +402,15 @@ def _build_next_goal_title(goal_title: str) -> str:
 
 def _build_world_goal_start(content: str, now: datetime, world_state) -> str:
     return f"{_time_prefix(now)}{_world_tone(world_state)}我还在回味刚才那件事：“{content}”。"
+
+
+def _build_inner_stage_memory(world_state, goal_title: str | None = None) -> str:
+    stage_label = _focus_stage_label(world_state.focus_stage)
+    goal_suffix = "" if goal_title is None else f"，还在围绕“{goal_title}”"
+    return (
+        f"我感觉自己已经走到第{world_state.focus_step}步，"
+        f"正在进入{stage_label}{goal_suffix}。"
+    )
 
 
 def _time_prefix(now: datetime) -> str:
@@ -470,3 +513,13 @@ def _chain_stage_for(generation: int) -> str:
     if generation == 1:
         return "deepen"
     return "start"
+
+
+def _focus_stage_label(stage: str) -> str:
+    if stage == "consolidate":
+        return "收束阶段"
+    if stage == "deepen":
+        return "深入阶段"
+    if stage == "start":
+        return "起步阶段"
+    return "当前阶段"
