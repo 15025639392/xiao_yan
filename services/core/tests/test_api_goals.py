@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.goals.models import Goal
+from app.goals.models import Goal, GoalStatus
 from app.goals.repository import InMemoryGoalRepository
 from app.main import app, get_goal_repository
 
@@ -21,5 +21,26 @@ def test_get_goals_returns_saved_goals():
         body = response.json()
         assert body["goals"][0]["title"] == "继续理解用户的睡眠作息"
         assert body["goals"][0]["status"] == "active"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_goal_status_updates_goal():
+    repository = InMemoryGoalRepository()
+    goal = repository.save_goal(Goal(title="继续理解用户的睡眠作息"))
+
+    def override_goal_repository():
+        return repository
+
+    app.dependency_overrides[get_goal_repository] = override_goal_repository
+
+    try:
+        client = TestClient(app)
+        response = client.post(f"/goals/{goal.id}/status", json={"status": "paused"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == goal.id
+        assert body["status"] == "paused"
+        assert repository.get_goal(goal.id).status == GoalStatus.PAUSED
     finally:
         app.dependency_overrides.clear()

@@ -222,3 +222,75 @@ test("polls state and messages so proactive replies appear in the chat panel", a
   expect(screen.getByText("Xiao Yan: 我刚刚又想到你提到的星星了。")).toBeInTheDocument();
   expect(screen.getByText("整理昨晚关于夜空的聊天")).toBeInTheDocument();
 });
+
+test("updates a goal status from the app and refreshes the rendered goal", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: "正在想用户刚刚说的话。",
+          active_goal_ids: ["goal-1"],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(
+        JSON.stringify({
+          goals: [
+            { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/goals/goal-1/status")) {
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ status: "paused" }));
+      return new Response(
+        JSON.stringify({
+          id: "goal-1",
+          title: "持续理解用户最近在意的话题：星星",
+          status: "paused",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<App />);
+
+  expect(await screen.findByText("active")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByText("Pause"));
+
+  await waitFor(() => {
+    expect(screen.getByText("paused")).toBeInTheDocument();
+    expect(screen.getByText("Resume")).toBeInTheDocument();
+  });
+});

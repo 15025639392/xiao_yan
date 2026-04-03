@@ -2,12 +2,12 @@ from collections.abc import Generator
 from contextlib import asynccontextmanager
 from threading import Event, Thread
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_goal_storage_path, get_memory_storage_path
 from app.agent.loop import AutonomyLoop
-from app.goals.models import Goal
+from app.goals.models import Goal, GoalStatus, GoalStatusUpdate
 from app.goals.repository import FileGoalRepository, GoalRepository
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import (
@@ -141,6 +141,29 @@ def get_goals(
     goal_repository: GoalRepository = Depends(get_goal_repository),
 ) -> dict[str, list[Goal]]:
     return {"goals": goal_repository.list_goals()}
+
+
+@app.post("/goals/{goal_id}/status")
+def update_goal_status(
+    goal_id: str,
+    request: GoalStatusUpdate,
+    goal_repository: GoalRepository = Depends(get_goal_repository),
+    state_store: StateStore = Depends(get_state_store),
+) -> Goal:
+    goal = goal_repository.update_status(goal_id, request.status)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="goal not found")
+
+    state = state_store.get()
+    if request.status != GoalStatus.ACTIVE and goal_id in state.active_goal_ids:
+        remaining_goal_ids = [item for item in state.active_goal_ids if item != goal_id]
+        state_store.set(state.model_copy(update={"active_goal_ids": remaining_goal_ids}))
+    elif request.status == GoalStatus.ACTIVE and goal_id not in state.active_goal_ids:
+        state_store.set(
+            state.model_copy(update={"active_goal_ids": [*state.active_goal_ids, goal_id]})
+        )
+
+    return goal
 
 
 @app.post("/lifecycle/wake")

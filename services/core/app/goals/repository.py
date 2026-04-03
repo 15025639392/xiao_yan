@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Protocol
@@ -18,6 +19,9 @@ class GoalRepository(Protocol):
     def get_goal(self, goal_id: str) -> Goal | None:
         ...
 
+    def update_status(self, goal_id: str, status: GoalStatus) -> Goal | None:
+        ...
+
 
 class InMemoryGoalRepository:
     def __init__(self) -> None:
@@ -35,6 +39,20 @@ class InMemoryGoalRepository:
 
     def get_goal(self, goal_id: str) -> Goal | None:
         return self._goals.get(goal_id)
+
+    def update_status(self, goal_id: str, status: GoalStatus) -> Goal | None:
+        goal = self._goals.get(goal_id)
+        if goal is None:
+            return None
+
+        updated = goal.model_copy(
+            update={
+                "status": status,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
+        self._goals[goal_id] = updated
+        return updated
 
 
 class FileGoalRepository:
@@ -65,3 +83,16 @@ class FileGoalRepository:
             if goal.id == goal_id:
                 return goal
         return None
+
+    def update_status(self, goal_id: str, status: GoalStatus) -> Goal | None:
+        goal = self.get_goal(goal_id)
+        if goal is None:
+            return None
+
+        updated = goal.model_copy(
+            update={
+                "status": status,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
+        return self.save_goal(updated)

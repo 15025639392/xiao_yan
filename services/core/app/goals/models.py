@@ -7,7 +7,9 @@ from pydantic import BaseModel, Field
 
 class GoalStatus(str, Enum):
     ACTIVE = "active"
+    PAUSED = "paused"
     COMPLETED = "completed"
+    ABANDONED = "abandoned"
 
 
 class Goal(BaseModel):
@@ -18,3 +20,6 @@ class Goal(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+
+class GoalStatusUpdate(BaseModel):
+    status: GoalStatus

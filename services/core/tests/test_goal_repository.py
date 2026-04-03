@@ -29,3 +29,14 @@ def test_file_goal_repository_persists_goals_across_instances(tmp_path: Path):
 
     assert len(loaded_goals) == 1
     assert loaded_goals[0].title == "继续回应用户关于夜空的话题"
+
+
+def test_in_memory_goal_repository_updates_goal_status():
+    repository = InMemoryGoalRepository()
+    goal = repository.save_goal(Goal(title="继续理解用户关于夜空的话题"))
+
+    updated = repository.update_status(goal.id, GoalStatus.PAUSED)
+
+    assert updated is not None
+    assert updated.status == GoalStatus.PAUSED
+    assert repository.get_goal(goal.id).status == GoalStatus.PAUSED

@@ -5,7 +5,15 @@ import type { ChatEntry } from "./components/ChatPanel";
 import { GoalsPanel } from "./components/GoalsPanel";
 import { StatusPanel } from "./components/StatusPanel";
 import type { BeingState, ChatHistoryMessage, Goal } from "./lib/api";
-import { chat, fetchGoals, fetchMessages, fetchState, sleep, wake } from "./lib/api";
+import {
+  chat,
+  fetchGoals,
+  fetchMessages,
+  fetchState,
+  sleep,
+  updateGoalStatus,
+  wake,
+} from "./lib/api";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -109,11 +117,28 @@ export default function App() {
     }
   }
 
+  async function handleUpdateGoalStatus(goalId: string, status: Goal["status"]) {
+    try {
+      setError("");
+      const updatedGoal = await updateGoalStatus(goalId, status);
+
+      setGoals((current) =>
+        current.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal))
+      );
+      setState((current) => ({
+        ...current,
+        active_goal_ids: syncActiveGoalIds(current.active_goal_ids, updatedGoal),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "goal update failed");
+    }
+  }
+
   return (
     <main>
       <h1>Digital Being</h1>
       <StatusPanel error={error} state={state} />
-      <GoalsPanel goals={goals} />
+      <GoalsPanel goals={goals} onUpdateGoalStatus={handleUpdateGoalStatus} />
       <ChatPanel
         draft={draft}
         isSending={isSending}
@@ -151,4 +176,12 @@ function mergeMessages(
   });
 
   return Array.from(merged.values());
+}
+
+function syncActiveGoalIds(activeGoalIds: string[], goal: Goal): string[] {
+  if (goal.status === "active") {
+    return activeGoalIds.includes(goal.id) ? activeGoalIds : [...activeGoalIds, goal.id];
+  }
+
+  return activeGoalIds.filter((goalId) => goalId !== goal.id);
 }

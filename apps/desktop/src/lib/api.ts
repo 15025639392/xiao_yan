@@ -21,7 +21,7 @@ export type ChatHistoryResponse = {
 export type Goal = {
   id: string;
   title: string;
-  status: "active" | "completed";
+  status: "active" | "paused" | "completed" | "abandoned";
 };
 
 export type GoalsResponse = {
@@ -78,4 +78,11 @@ export function fetchMessages(): Promise<ChatHistoryResponse> {
 
 export function fetchGoals(): Promise<GoalsResponse> {
   return get<GoalsResponse>("/goals");
+}
+
+export function updateGoalStatus(
+  goalId: string,
+  status: Goal["status"],
+): Promise<Goal> {
+  return post<Goal>(`/goals/${goalId}/status`, { status });
 }
