@@ -125,6 +125,40 @@ def test_post_chat_prefers_relevant_memory_over_only_recent_memory():
         app.dependency_overrides.clear()
 
 
+def test_post_chat_includes_relevant_world_event_as_system_context():
+    memory_repository = InMemoryMemoryRepository()
+    memory_repository.save_event(
+        MemoryEvent(kind="world", content="夜里很安静，我有点困，但还惦记着整理今天的对话记忆。")
+    )
+    memory_repository.save_event(
+        MemoryEvent(kind="chat", role="assistant", content="我刚刚还在想着今天的整理。")
+    )
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "你刚刚经历了什么"})
+        assert response.status_code == 200
+        assert ("system", "最近你的世界事件：夜里很安静，我有点困，但还惦记着整理今天的对话记忆。") in [
+            (message.role, message.content) for message in gateway.last_messages
+        ]
+        assert gateway.last_messages[-1].content == "你刚刚经历了什么"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_get_messages_returns_recent_chat_events():
     memory_repository = InMemoryMemoryRepository()
     memory_repository.save_event(

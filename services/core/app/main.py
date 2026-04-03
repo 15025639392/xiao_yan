@@ -116,13 +116,18 @@ def build_chat_messages(
     limit: int = 6,
 ) -> list[ChatMessage]:
     relevant_events = memory_repository.search_relevant(user_message, limit=limit)
+    world_messages = [
+        ChatMessage(role="system", content=f"最近你的世界事件：{event.content}")
+        for event in relevant_events
+        if event.kind == "world"
+    ]
     messages = [
         ChatMessage(role=event.role, content=event.content)
         for event in relevant_events
         if event.kind == "chat" and event.role in {"user", "assistant"}
     ]
     messages.append(ChatMessage(role="user", content=user_message))
-    return messages
+    return [*world_messages, *messages]
 
 
 def build_world_state(
