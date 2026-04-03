@@ -22,6 +22,9 @@ export type Goal = {
   id: string;
   title: string;
   status: "active" | "paused" | "completed" | "abandoned";
+  chain_id?: string | null;
+  parent_goal_id?: string | null;
+  generation?: number;
 };
 
 export type InnerWorldState = {

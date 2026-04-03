@@ -15,6 +15,9 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
           <li key={goal.id}>
             <span>{goal.title}</span>
             <span> {goal.status}</span>
+            {goal.chain_id ? <p>Chain: {goal.chain_id}</p> : null}
+            <p>Generation: {goal.generation ?? 0}</p>
+            {goal.parent_goal_id ? <p>Parent: {goal.parent_goal_id}</p> : null}
             {goal.status !== "paused" ? (
               <button type="button" onClick={() => onUpdateGoalStatus(goal.id, "paused")}>
                 Pause

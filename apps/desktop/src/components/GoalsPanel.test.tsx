@@ -14,6 +14,9 @@ test("renders goals and forwards status updates", () => {
           id: "goal-1",
           title: "持续理解用户最近在意的话题：星星",
           status: "active",
+          chain_id: "chain-1",
+          parent_goal_id: "goal-root",
+          generation: 1,
         },
       ]}
       onUpdateGoalStatus={onUpdateGoalStatus}
@@ -22,6 +25,9 @@ test("renders goals and forwards status updates", () => {
 
   expect(screen.getByText("持续理解用户最近在意的话题：星星")).toBeInTheDocument();
   expect(screen.getByText("active")).toBeInTheDocument();
+  expect(screen.getByText("Chain: chain-1")).toBeInTheDocument();
+  expect(screen.getByText("Generation: 1")).toBeInTheDocument();
+  expect(screen.getByText("Parent: goal-root")).toBeInTheDocument();
 
   fireEvent.click(screen.getByText("Pause"));
   fireEvent.click(screen.getByText("Complete"));
