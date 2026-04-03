@@ -4,11 +4,20 @@ export type BeingState = {
   active_goal_ids: string[];
 };
 
+export type ChatResult = {
+  response_id: string | null;
+  output_text: string;
+};
+
 const BASE_URL = "http://127.0.0.1:8000";
 
-async function post(path: string): Promise<BeingState> {
+async function post<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
 
   if (!response.ok) {
@@ -19,9 +28,13 @@ async function post(path: string): Promise<BeingState> {
 }
 
 export function wake(): Promise<BeingState> {
-  return post("/lifecycle/wake");
+  return post<BeingState>("/lifecycle/wake");
 }
 
 export function sleep(): Promise<BeingState> {
-  return post("/lifecycle/sleep");
+  return post<BeingState>("/lifecycle/sleep");
+}
+
+export function chat(message: string): Promise<ChatResult> {
+  return post<ChatResult>("/chat", { message });
 }
