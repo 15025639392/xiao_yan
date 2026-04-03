@@ -32,6 +32,8 @@ export type InnerWorldState = {
   energy: "low" | "medium" | "high";
   mood: "calm" | "engaged" | "tired";
   focus_tension: "low" | "medium" | "high";
+  focus_stage?: "none" | "start" | "deepen" | "consolidate";
+  focus_step?: number | null;
   latest_event?: string | null;
 };
 

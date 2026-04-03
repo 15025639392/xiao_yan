@@ -82,6 +82,8 @@ def test_get_world_returns_current_world_snapshot_and_persists_it():
         assert body["energy"] in {"low", "medium", "high"}
         assert body["mood"] == "engaged"
         assert body["focus_tension"] == "high"
+        assert body["focus_stage"] == "start"
+        assert body["focus_step"] == 1
         assert "整理今天的对话记忆" in body["latest_event"]
 
         saved = world_repository.get_world_state()

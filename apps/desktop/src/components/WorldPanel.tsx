@@ -14,6 +14,10 @@ export function WorldPanel({ world }: WorldPanelProps) {
           <p>Energy: {world.energy}</p>
           <p>Mood: {world.mood}</p>
           <p>Focus: {world.focus_tension}</p>
+          {world.focus_stage && world.focus_stage !== "none" ? (
+            <p>Phase: {world.focus_stage}</p>
+          ) : null}
+          {world.focus_step ? <p>Step: {world.focus_step}</p> : null}
           {world.latest_event ? <p>Latest Event: {world.latest_event}</p> : null}
         </>
       ) : (

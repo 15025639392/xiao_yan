@@ -17,16 +17,19 @@ class WorldStateService:
         current_time = now or datetime.now()
         state = being_state or BeingState.default()
         goals = focused_goals or []
+        focus_stage, focus_step = _focus_stage_for(goals)
         time_of_day = _time_of_day(current_time.hour)
         energy = _energy_for(time_of_day, state)
-        mood = _mood_for(state, goals, energy)
-        focus_tension = _focus_tension_for(state, goals)
+        mood = _mood_for(state, goals, energy, focus_stage)
+        focus_tension = _focus_tension_for(state, goals, focus_stage)
 
         return WorldState(
             time_of_day=time_of_day,
             energy=energy,
             mood=mood,
             focus_tension=focus_tension,
+            focus_stage=focus_stage,
+            focus_step=focus_step,
             latest_event=latest_event,
             latest_event_at=latest_event_at,
         )
@@ -59,12 +62,14 @@ def _energy_for(time_of_day: str, state: BeingState) -> str:
     return "low"
 
 
-def _mood_for(state: BeingState, goals: list[Goal], energy: str) -> str:
+def _mood_for(state: BeingState, goals: list[Goal], energy: str, focus_stage: str) -> str:
     if state.mode != WakeMode.AWAKE:
         return "tired"
 
     statuses = {goal.status for goal in goals}
     if GoalStatus.COMPLETED in statuses:
+        return "calm"
+    if focus_stage == "consolidate":
         return "calm"
     if energy == "low":
         return "tired"
@@ -73,11 +78,13 @@ def _mood_for(state: BeingState, goals: list[Goal], energy: str) -> str:
     return "calm"
 
 
-def _focus_tension_for(state: BeingState, goals: list[Goal]) -> str:
+def _focus_tension_for(state: BeingState, goals: list[Goal], focus_stage: str) -> str:
     if state.mode != WakeMode.AWAKE:
         return "low"
 
     statuses = {goal.status for goal in goals}
+    if focus_stage == "consolidate":
+        return "medium"
     if GoalStatus.ACTIVE in statuses:
         return "high"
     if GoalStatus.COMPLETED in statuses or GoalStatus.ABANDONED in statuses:
@@ -88,6 +95,8 @@ def _focus_tension_for(state: BeingState, goals: list[Goal]) -> str:
 
 
 def _event_lead(world_state: WorldState) -> str:
+    if world_state.focus_stage == "consolidate" and world_state.focus_step is not None:
+        return f"我想先把第{world_state.focus_step}步慢慢收束一下，"
     if world_state.time_of_day == "night" and world_state.mood == "tired":
         return "夜里很安静，我有点困，但"
     if world_state.mood == "calm":
@@ -97,3 +106,16 @@ def _event_lead(world_state: WorldState) -> str:
     if world_state.energy == "high":
         return "现在状态很清醒，"
     return "我在感受这一刻的变化，"
+
+
+def _focus_stage_for(goals: list[Goal]) -> tuple[str, int | None]:
+    if not goals:
+        return "none", None
+
+    current_goal = goals[0]
+    step = current_goal.generation + 1
+    if current_goal.generation >= 2:
+        return "consolidate", step
+    if current_goal.generation == 1:
+        return "deepen", step
+    return "start", step
