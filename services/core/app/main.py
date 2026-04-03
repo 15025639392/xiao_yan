@@ -234,6 +234,28 @@ def _find_recent_autobio(memory_repository: MemoryRepository) -> str | None:
     return next((event.content for event in recent_events if event.kind == "autobio"), None)
 
 
+def _select_wake_goal(
+    goal_repository: GoalRepository,
+    recent_autobio: str | None,
+) -> Goal | None:
+    active_goals = goal_repository.list_active_goals()
+    if not active_goals:
+        return None
+
+    if recent_autobio is None:
+        return active_goals[0]
+
+    chained_goals = [goal for goal in active_goals if goal.chain_id is not None]
+    if not chained_goals:
+        return active_goals[0]
+
+    return sorted(
+        chained_goals,
+        key=lambda goal: (goal.generation, goal.updated_at, goal.created_at),
+        reverse=True,
+    )[0]
+
+
 @app.get("/world")
 def get_world(
     state_store: StateStore = Depends(get_state_store),
@@ -278,9 +300,23 @@ def update_goal_status(
 def wake(
     state_store: StateStore = Depends(get_state_store),
     memory_repository: MemoryRepository = Depends(get_memory_repository),
+    goal_repository: GoalRepository = Depends(get_goal_repository),
 ) -> dict:
     recent_autobio = _find_recent_autobio(memory_repository)
-    return state_store.set(wake_up(recent_autobio=recent_autobio)).model_dump()
+    selected_goal = _select_wake_goal(goal_repository, recent_autobio)
+    waking_state = wake_up(recent_autobio=recent_autobio)
+
+    if selected_goal is not None:
+        waking_state = waking_state.model_copy(
+            update={
+                "active_goal_ids": [selected_goal.id],
+                "current_thought": (
+                    f"{waking_state.current_thought} 今天想先接着“{selected_goal.title}”。"
+                ),
+            }
+        )
+
+    return state_store.set(waking_state).model_dump()
 
 
 @app.post("/lifecycle/sleep")
