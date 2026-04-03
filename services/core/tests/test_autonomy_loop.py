@@ -204,3 +204,45 @@ def test_tick_once_clears_abandoned_goal_without_completion_thought():
 
     assert state.active_goal_ids == []
     assert state.current_thought is None
+
+
+def test_tick_once_goal_focus_reflects_low_energy_world_state():
+    now = datetime(2026, 4, 4, 23, 0, tzinfo=timezone.utc)
+    store = StateStore(
+        BeingState(mode=WakeMode.AWAKE, active_goal_ids=["整理今天的对话记忆"])
+    )
+    repo = InMemoryMemoryRepository()
+    goals = InMemoryGoalRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.current_thought is not None
+    assert "有点困" in state.current_thought
+    assert "整理今天的对话记忆" in state.current_thought
+
+
+def test_tick_once_completion_thought_reflects_calm_world_state():
+    now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(
+        Goal(
+            title="整理今天的对话记忆",
+            source="最近总在想星星和夜空",
+            status=GoalStatus.COMPLETED,
+        )
+    )
+    store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            active_goal_ids=[goal.id],
+        )
+    )
+    repo = InMemoryMemoryRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.current_thought is not None
+    assert "松" in state.current_thought
+    assert "整理今天的对话记忆" in state.current_thought

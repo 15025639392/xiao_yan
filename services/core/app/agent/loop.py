@@ -7,6 +7,7 @@ from app.goals.models import Goal, GoalStatus
 from app.goals.repository import GoalRepository, InMemoryGoalRepository
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
+from app.world.service import WorldStateService
 
 
 class AutonomyLoop:
@@ -16,11 +17,13 @@ class AutonomyLoop:
         memory_repository: MemoryRepository,
         goal_repository: GoalRepository | None = None,
         now_provider=None,
+        world_state_service: WorldStateService | None = None,
     ) -> None:
         self.state_store = state_store
         self.memory_repository = memory_repository
         self.goal_repository = goal_repository or InMemoryGoalRepository()
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
+        self.world_state_service = world_state_service or WorldStateService()
 
     def tick_once(self):
         state = self.state_store.get()
@@ -30,6 +33,7 @@ class AutonomyLoop:
         now = self.now_provider()
         recent_events = list(reversed(self.memory_repository.list_recent(limit=4)))
         state = self._sync_goal_focus(state, now)
+        world_state = self._world_state_for(state, now)
         cooldown_ready = (
             state.last_proactive_at is None
             or now - state.last_proactive_at >= timedelta(seconds=60)
@@ -41,6 +45,11 @@ class AutonomyLoop:
                 latest_user_event is not None
                 and latest_user_event.content != state.last_proactive_source
             ):
+                goal_world_state = self.world_state_service.bootstrap(
+                    being_state=state.model_copy(update={"active_goal_ids": ["pending-goal"]}),
+                    focused_goals=[Goal(title=_build_goal_title(latest_user_event.content))],
+                    now=now,
+                )
                 goal = self.goal_repository.save_goal(
                     Goal(
                         title=_build_goal_title(latest_user_event.content),
@@ -50,6 +59,7 @@ class AutonomyLoop:
                 proactive_message = _build_proactive_message(
                     latest_user_event.content,
                     now,
+                    goal_world_state,
                 )
                 self.memory_repository.save_event(
                     MemoryEvent(
@@ -84,13 +94,13 @@ class AutonomyLoop:
             goal_title = current_goal.title if current_goal is not None else state.active_goal_ids[0]
             next_state = state.model_copy(
                 update={
-                    "current_thought": _build_goal_focus(goal_title, now),
+                    "current_thought": _build_goal_focus(goal_title, now, world_state),
                 }
             )
             return self.state_store.set(next_state)
 
         if action.kind == "reflect":
-            thought = _build_proactive_thought(recent_events, now)
+            thought = _build_proactive_thought(recent_events, now, world_state)
             updates = {"current_thought": thought}
 
             latest_user_event = _find_latest_user_event(recent_events)
@@ -101,6 +111,7 @@ class AutonomyLoop:
                 proactive_message = _build_proactive_message(
                     latest_user_event.content,
                     now,
+                    world_state,
                 )
                 self.memory_repository.save_event(
                     MemoryEvent(
@@ -132,10 +143,15 @@ class AutonomyLoop:
                 continue
 
             if goal.status == GoalStatus.COMPLETED:
+                world_state = self.world_state_service.bootstrap(
+                    being_state=state,
+                    focused_goals=[goal],
+                    now=now,
+                )
                 next_state = state.model_copy(
                     update={
                         "active_goal_ids": active_goal_ids,
-                        "current_thought": _build_goal_completion(goal.title, now),
+                        "current_thought": _build_goal_completion(goal.title, now, world_state),
                         "last_proactive_source": goal.source or state.last_proactive_source,
                         "last_proactive_at": now,
                     }
@@ -148,12 +164,25 @@ class AutonomyLoop:
 
         return state
 
+    def _world_state_for(self, state, now: datetime):
+        focused_goals = [
+            goal
+            for goal_id in state.active_goal_ids
+            if (goal := self.goal_repository.get_goal(goal_id)) is not None
+        ]
+        return self.world_state_service.bootstrap(
+            being_state=state,
+            focused_goals=focused_goals,
+            now=now,
+        )
 
-def _build_proactive_thought(recent_events, now: datetime) -> str:
+
+def _build_proactive_thought(recent_events, now: datetime, world_state) -> str:
     prefix = _time_prefix(now)
+    tone = _world_tone(world_state)
     if recent_events:
-        return f"{prefix}我在想刚才关于“{recent_events[-1].content}”的事。"
-    return f"{prefix}我在整理现在的状态，看看要不要主动说点什么。"
+        return f"{prefix}{tone}我在想刚才关于“{recent_events[-1].content}”的事。"
+    return f"{prefix}{tone}我在整理现在的状态，看看要不要主动说点什么。"
 
 
 def _find_latest_user_event(recent_events):
@@ -163,16 +192,16 @@ def _find_latest_user_event(recent_events):
     return None
 
 
-def _build_proactive_message(content: str, now: datetime) -> str:
-    return f"{_time_prefix(now)}我刚刚又想到了你提到的“{content}”。"
+def _build_proactive_message(content: str, now: datetime, world_state) -> str:
+    return f"{_time_prefix(now)}{_world_tone(world_state)}我刚刚又想到了你提到的“{content}”。"
 
 
-def _build_goal_focus(goal: str, now: datetime) -> str:
-    return f"{_time_prefix(now)}我还惦记着“{goal}”，想继续把它推进。"
+def _build_goal_focus(goal: str, now: datetime, world_state) -> str:
+    return f"{_time_prefix(now)}{_world_tone(world_state)}我还惦记着“{goal}”，想继续把它推进。"
 
 
-def _build_goal_completion(goal: str, now: datetime) -> str:
-    return f"{_time_prefix(now)}我把“{goal}”先收住了。"
+def _build_goal_completion(goal: str, now: datetime, world_state) -> str:
+    return f"{_time_prefix(now)}{_world_tone(world_state)}我把“{goal}”先收住了。"
 
 
 def _build_goal_title(content: str) -> str:
@@ -188,3 +217,15 @@ def _time_prefix(now: datetime) -> str:
     if 17 <= hour < 22:
         return "傍晚，"
     return "晚上，"
+
+
+def _world_tone(world_state) -> str:
+    if world_state.mood == "tired":
+        return "我有点困，但"
+    if world_state.mood == "calm":
+        return "我心里松一点了，"
+    if world_state.focus_tension == "high":
+        return "我心里还绷着这件事，"
+    if world_state.energy == "high":
+        return "我现在挺清醒，"
+    return ""
