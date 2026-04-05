@@ -34,11 +34,36 @@ export type AppRealtimeSnapshot = {
   persona: AppPersonaRealtimePayload;
 };
 
+export type AppChatStartedPayload = {
+  assistant_message_id: string;
+  response_id: string | null;
+};
+
+export type AppChatDeltaPayload = {
+  assistant_message_id: string;
+  delta: string;
+};
+
+export type AppChatCompletedPayload = {
+  assistant_message_id: string;
+  response_id: string | null;
+  content: string;
+};
+
+export type AppChatFailedPayload = {
+  assistant_message_id: string;
+  error: string;
+};
+
 export type AppRealtimeEvent =
   | { type: "snapshot"; payload: AppRealtimeSnapshot }
   | { type: "runtime_updated"; payload: AppRuntimeRealtimePayload }
   | { type: "memory_updated"; payload: AppMemoryRealtimePayload }
-  | { type: "persona_updated"; payload: AppPersonaRealtimePayload };
+  | { type: "persona_updated"; payload: AppPersonaRealtimePayload }
+  | { type: "chat_started"; payload: AppChatStartedPayload }
+  | { type: "chat_delta"; payload: AppChatDeltaPayload }
+  | { type: "chat_completed"; payload: AppChatCompletedPayload }
+  | { type: "chat_failed"; payload: AppChatFailedPayload };
 
 type AppRealtimeListener = (event: AppRealtimeEvent) => void;
 

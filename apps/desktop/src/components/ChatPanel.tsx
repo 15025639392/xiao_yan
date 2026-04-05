@@ -6,6 +6,8 @@ export type ChatEntry = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  state?: "streaming" | "failed";
+  requestMessage?: string;
 };
 
 type ChatPanelProps = {
@@ -20,6 +22,7 @@ type ChatPanelProps = {
   modeLabel: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;
+  onResume?: (message: ChatEntry) => void;
   onCompleteGoal?: (goalId: string) => Promise<void>;
 };
 
@@ -33,6 +36,7 @@ export function ChatPanel({
   activeGoals,
   onDraftChange,
   onSend,
+  onResume,
   onCompleteGoal,
 }: ChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -123,20 +127,30 @@ export function ChatPanel({
             {messages.map((message) => (
               <article
                 key={message.id}
-                className={`chat-message chat-message--${message.role}`}
+                className={`chat-message chat-message--${message.role} ${message.state === "failed" ? "chat-message--failed" : ""}`}
               >
                 <div className="chat-message__bubble">
                   {message.role === "assistant" ? (
                     <div className="chat-message__markdown">
-                      <MarkdownMessage content={message.content} />
+                      <MarkdownMessage content={message.state === "streaming" ? `${message.content}▍` : message.content} />
                     </div>
                   ) : (
                     <p className="chat-message__content">{message.content}</p>
                   )}
                 </div>
+                {message.role === "assistant" && message.state === "failed" && message.requestMessage ? (
+                  <button
+                    className="chat-page__action-btn"
+                    onClick={() => onResume?.(message)}
+                    type="button"
+                    disabled={isSending}
+                  >
+                    继续生成
+                  </button>
+                ) : null}
               </article>
             ))}
-            {isSending && (
+            {isSending && !messages.some((message) => message.role === "assistant" && message.state === "streaming") && (
               <article className="chat-message chat-message--loading">
                 <div className="chat-message__bubble chat-message__bubble--loading">
                   <div className="chat-message__dots">

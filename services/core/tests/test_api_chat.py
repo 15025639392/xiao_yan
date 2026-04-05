@@ -1,3 +1,6 @@
+import time
+from threading import Thread
+
 from fastapi.testclient import TestClient
 
 from app.domain.models import BeingState, FocusMode, WakeMode
@@ -32,11 +35,54 @@ class StubGateway:
             output_text=f"echo:{messages[-1].content}",
         )
 
+    def stream_response(self, messages, instructions=None):
+        self.last_messages = list(messages)
+        self.last_instructions = instructions
+        yield {
+            "type": "response_started",
+            "response_id": "resp_test",
+        }
+        for chunk in ("echo:", messages[-1].content):
+            time.sleep(0.01)
+            yield {
+                "type": "text_delta",
+                "delta": chunk,
+            }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_test",
+            "output_text": f"echo:{messages[-1].content}",
+        }
+
     def close(self) -> None:
         return None
 
 
-def test_post_chat_returns_gateway_response():
+class ResumeStubGateway(StubGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stream_call_count = 0
+
+    def stream_response(self, messages, instructions=None):
+        self.last_messages = list(messages)
+        self.last_instructions = instructions
+        self.stream_call_count += 1
+        yield {
+            "type": "response_started",
+            "response_id": "resp_resume",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "继续的一半",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_resume",
+            "output_text": "继续的一半",
+        }
+
+
+def test_post_chat_returns_submission_confirmation():
     memory_repository = InMemoryMemoryRepository()
     memory_service = MemoryService(repository=memory_repository)
     gateway = StubGateway()
@@ -61,13 +107,186 @@ def test_post_chat_returns_gateway_response():
         client = TestClient(app)
         response = client.post("/chat", json={"message": "hello"})
         assert response.status_code == 200
-        assert response.json() == {
-            "response_id": "resp_test",
-            "output_text": "echo:hello",
-        }
+        assert response.json()["response_id"] == "resp_test"
+        assert response.json()["assistant_message_id"].startswith("assistant_")
         recent = memory_repository.list_recent(limit=5)
         assert [event.role for event in reversed(recent)] == ["user", "assistant"]
         assert [event.content for event in reversed(recent)] == ["hello", "echo:hello"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_streams_reply_over_realtime_socket():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_memory_service():
+        return memory_service
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        client = TestClient(app)
+        with client.websocket_connect("/ws/app") as websocket:
+            assert websocket.receive_json()["type"] == "snapshot"
+
+            response_box: dict[str, object] = {}
+
+            def receive_until(event_type: str) -> dict:
+                while True:
+                    event = websocket.receive_json()
+                    if event["type"] == event_type:
+                        return event
+
+            def submit_chat() -> None:
+                response_box["response"] = client.post("/chat", json={"message": "hello"})
+
+            worker = Thread(target=submit_chat)
+            worker.start()
+
+            started_event = receive_until("chat_started")
+            delta_event_first = receive_until("chat_delta")
+            delta_event_second = receive_until("chat_delta")
+            completed_event = receive_until("chat_completed")
+
+            worker.join(timeout=5)
+            response = response_box["response"]
+
+        assert started_event["type"] == "chat_started"
+        assert started_event["payload"]["assistant_message_id"].startswith("assistant_")
+        assert delta_event_first == {
+            "type": "chat_delta",
+            "payload": {
+                "assistant_message_id": started_event["payload"]["assistant_message_id"],
+                "delta": "echo:",
+            },
+        }
+        assert delta_event_second == {
+            "type": "chat_delta",
+            "payload": {
+                "assistant_message_id": started_event["payload"]["assistant_message_id"],
+                "delta": "hello",
+            },
+        }
+        assert completed_event == {
+            "type": "chat_completed",
+            "payload": {
+                "assistant_message_id": started_event["payload"]["assistant_message_id"],
+                "response_id": "resp_test",
+                "content": "echo:hello",
+            },
+        }
+        assert response.status_code == 200
+        assert response.json()["assistant_message_id"] == started_event["payload"]["assistant_message_id"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_resume_reuses_original_assistant_message_id_and_continues_stream():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    gateway = ResumeStubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_memory_service():
+        return memory_service
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        client = TestClient(app)
+        with client.websocket_connect("/ws/app") as websocket:
+            assert websocket.receive_json()["type"] == "snapshot"
+
+            response_box: dict[str, object] = {}
+
+            def receive_until(event_type: str) -> dict:
+                while True:
+                    event = websocket.receive_json()
+                    if event["type"] == event_type:
+                        return event
+
+            def submit_resume() -> None:
+                response_box["response"] = client.post(
+                    "/chat/resume",
+                    json={
+                        "message": "请继续",
+                        "assistant_message_id": "assistant_resume_1",
+                        "partial_content": "前半句，",
+                    },
+                )
+
+            worker = Thread(target=submit_resume)
+            worker.start()
+
+            deadline = time.time() + 0.2
+            while "response" not in response_box and time.time() < deadline:
+                time.sleep(0.01)
+
+            if "response" in response_box:
+                early_response = response_box["response"]
+                assert early_response.status_code == 200
+
+            started_event = receive_until("chat_started")
+            delta_event = receive_until("chat_delta")
+            completed_event = receive_until("chat_completed")
+
+            worker.join(timeout=5)
+            response = response_box["response"]
+
+        assert started_event == {
+            "type": "chat_started",
+            "payload": {
+                "assistant_message_id": "assistant_resume_1",
+                "response_id": "resp_resume",
+            },
+        }
+        assert delta_event == {
+            "type": "chat_delta",
+            "payload": {
+                "assistant_message_id": "assistant_resume_1",
+                "delta": "继续的一半",
+            },
+        }
+        assert completed_event == {
+            "type": "chat_completed",
+            "payload": {
+                "assistant_message_id": "assistant_resume_1",
+                "response_id": "resp_resume",
+                "content": "前半句，继续的一半",
+            },
+        }
+        assert response.status_code == 200
+        assert response.json() == {
+            "response_id": "resp_resume",
+            "assistant_message_id": "assistant_resume_1",
+        }
+        assert gateway.last_instructions is not None
+        assert "前半句，" in gateway.last_instructions
+        assert "继续生成" in gateway.last_instructions
+        assert "不要重复" in gateway.last_instructions
     finally:
         app.dependency_overrides.clear()
 

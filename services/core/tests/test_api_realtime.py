@@ -112,3 +112,43 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
     assert memory_event["payload"]["timeline"][0]["content"] == "新的记忆"
     assert persona_event["type"] == "persona_updated"
     assert persona_event["payload"]["profile"]["personality"]["openness"] == 81
+
+
+def test_realtime_socket_pushes_chat_stream_events():
+    _install_runtime_for_realtime_test()
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws/app") as websocket:
+        assert websocket.receive_json()["type"] == "snapshot"
+
+        app.state.realtime_hub.publish_chat_started("assistant_1", response_id="resp_1")
+        started_event = websocket.receive_json()
+
+        app.state.realtime_hub.publish_chat_delta("assistant_1", "你")
+        delta_event = websocket.receive_json()
+
+        app.state.realtime_hub.publish_chat_completed("assistant_1", "resp_1", "你好")
+        completed_event = websocket.receive_json()
+
+    assert started_event == {
+        "type": "chat_started",
+        "payload": {
+            "assistant_message_id": "assistant_1",
+            "response_id": "resp_1",
+        },
+    }
+    assert delta_event == {
+        "type": "chat_delta",
+        "payload": {
+            "assistant_message_id": "assistant_1",
+            "delta": "你",
+        },
+    }
+    assert completed_event == {
+        "type": "chat_completed",
+        "payload": {
+            "assistant_message_id": "assistant_1",
+            "response_id": "resp_1",
+            "content": "你好",
+        },
+    }

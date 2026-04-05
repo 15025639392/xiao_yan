@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AutobioPanel } from "./components/AutobioPanel";
 import { ChatPanel } from "./components/ChatPanel";
@@ -19,6 +19,7 @@ import {
   fetchMessages,
   fetchState,
   fetchWorld,
+  resumeChat,
   sleep,
   updateGoalStatus,
   wake,
@@ -51,6 +52,7 @@ export default function App() {
   const [theme, setTheme] = useState<"dark" | "light">(() => loadThemePreference());
   const [showBrandMenu, setShowBrandMenu] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const pendingRequestMessageRef = useRef<string | null>(null);
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
   const assistantName = persona?.name?.trim() || "小晏";
   const assistantIdentity = persona?.identity?.trim() || "AI Agent Desktop";
@@ -87,6 +89,34 @@ export default function App() {
     void syncRuntime();
     const unsubscribe = subscribeAppRealtime((event) => {
       if (cancelled) {
+        return;
+      }
+
+      if (event.type === "chat_started") {
+        const requestMessage = pendingRequestMessageRef.current ?? undefined;
+        setMessages((current) =>
+          upsertAssistantMessage(current, event.payload.assistant_message_id, "", "streaming", requestMessage)
+        );
+        pendingRequestMessageRef.current = null;
+        setError("");
+        return;
+      }
+
+      if (event.type === "chat_delta") {
+        setMessages((current) => appendAssistantDelta(current, event.payload.assistant_message_id, event.payload.delta));
+        setError("");
+        return;
+      }
+
+      if (event.type === "chat_completed") {
+        setMessages((current) => finalizeAssistantMessage(current, event.payload.assistant_message_id, event.payload.content));
+        setError("");
+        return;
+      }
+
+      if (event.type === "chat_failed") {
+        setMessages((current) => markAssistantMessageFailed(current, event.payload.assistant_message_id));
+        setError(event.payload.error);
         return;
       }
 
@@ -181,20 +211,35 @@ export default function App() {
     setError("");
     setDraft("");
     setMessages((current) => [...current, userMessage]);
+    pendingRequestMessageRef.current = content;
     setIsSending(true);
 
     try {
-      const result = await chat(content);
-      setMessages((current) => [
-        ...current,
-        {
-          id: result.response_id ?? `assistant-${Date.now()}`,
-          role: "assistant",
-          content: result.output_text,
-        },
-      ]);
+      await chat(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : "发送失败");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function handleResume(message: ChatEntry) {
+    if (message.role !== "assistant" || !message.requestMessage) {
+      return;
+    }
+
+    setError("");
+    setIsSending(true);
+    setMessages((current) => markAssistantMessageStreaming(current, message.id));
+
+    try {
+      await resumeChat({
+        message: message.requestMessage,
+        assistant_message_id: message.id,
+        partial_content: message.content,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "继续生成失败");
     } finally {
       setIsSending(false);
     }
@@ -423,6 +468,7 @@ export default function App() {
             activeGoals={goals.filter(g => g.status === "active")}
             onDraftChange={setDraft}
             onSend={handleSend}
+            onResume={handleResume}
             onCompleteGoal={(goalId) => handleUpdateGoalStatus(goalId, "completed")}
           />
         ) : route === "persona" ? (
@@ -634,6 +680,123 @@ function mergeMessages(
   });
 
   return Array.from(merged.values());
+}
+
+function upsertAssistantMessage(
+  current: ChatEntry[],
+  assistantMessageId: string,
+  content: string,
+  state?: ChatEntry["state"],
+  requestMessage?: string,
+): ChatEntry[] {
+  const existing = current.find((message) => message.id === assistantMessageId);
+  if (existing) {
+    return current.map((message) =>
+      message.id === assistantMessageId
+        ? {
+            ...message,
+            content: content || message.content,
+            state,
+            requestMessage: requestMessage ?? message.requestMessage,
+          }
+        : message
+    );
+  }
+
+  return [
+    ...current,
+    {
+      id: assistantMessageId,
+      role: "assistant",
+      content,
+      state,
+      requestMessage,
+    },
+  ];
+}
+
+function appendAssistantDelta(
+  current: ChatEntry[],
+  assistantMessageId: string,
+  delta: string,
+): ChatEntry[] {
+  const existing = current.find((message) => message.id === assistantMessageId);
+  if (!existing) {
+    return upsertAssistantMessage(current, assistantMessageId, delta, "streaming");
+  }
+
+  return current.map((message) =>
+    message.id === assistantMessageId
+      ? {
+          ...message,
+          content: mergeAssistantStreamContent(message.content, delta),
+          state: "streaming",
+        }
+      : message
+  );
+}
+
+function mergeAssistantStreamContent(currentContent: string, delta: string): string {
+  if (!currentContent) {
+    return delta;
+  }
+
+  if (!delta) {
+    return currentContent;
+  }
+
+  // Some compatible gateways send cumulative text snapshots instead of pure deltas.
+  if (delta.startsWith(currentContent)) {
+    return delta;
+  }
+
+  if (currentContent.startsWith(delta) || currentContent.includes(delta)) {
+    return currentContent;
+  }
+
+  const maxOverlap = Math.min(currentContent.length, delta.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (currentContent.slice(-overlap) === delta.slice(0, overlap)) {
+      return `${currentContent}${delta.slice(overlap)}`;
+    }
+  }
+
+  return `${currentContent}${delta}`;
+}
+
+function finalizeAssistantMessage(
+  current: ChatEntry[],
+  assistantMessageId: string,
+  content: string,
+): ChatEntry[] {
+  return upsertAssistantMessage(current, assistantMessageId, content, undefined);
+}
+
+function markAssistantMessageFailed(
+  current: ChatEntry[],
+  assistantMessageId: string,
+): ChatEntry[] {
+  const existing = current.find((message) => message.id === assistantMessageId);
+  if (!existing) {
+    return upsertAssistantMessage(current, assistantMessageId, "", "failed");
+  }
+
+  return current.map((message) =>
+    message.id === assistantMessageId
+      ? { ...message, state: "failed" }
+      : message
+  );
+}
+
+function markAssistantMessageStreaming(
+  current: ChatEntry[],
+  assistantMessageId: string,
+): ChatEntry[] {
+  return current.map((message) =>
+    message.id === assistantMessageId
+      ? { ...message, state: "streaming" }
+      : message
+  );
 }
 
 // ═════════════════════════════════════════

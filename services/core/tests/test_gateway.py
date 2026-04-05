@@ -60,3 +60,66 @@ def test_gateway_posts_to_responses_api():
     }
     assert result.response_id == "resp_123"
     assert result.output_text == "hello from gateway"
+
+
+def test_gateway_streams_responses_api_events():
+    class StubStreamResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self):
+            return iter(
+                [
+                    'event: response.created',
+                    'data: {"response":{"id":"resp_123"}}',
+                    "",
+                    'event: response.output_text.delta',
+                    'data: {"delta":"hello "}',
+                    "",
+                    'event: response.output_text.delta',
+                    'data: {"delta":"world"}',
+                    "",
+                    'event: response.completed',
+                    'data: {"response":{"id":"resp_123"}}',
+                    "",
+                ]
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class StubStreamClient:
+        def stream(self, method: str, url: str, headers: dict, json: dict):
+            assert method == "POST"
+            assert url == "http://example.test/v1/responses"
+            assert headers["Authorization"] == "Bearer test-key"
+            assert json["input"] == [{"role": "user", "content": "hi"}]
+            return StubStreamResponse()
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="gpt-5.4",
+        base_url="http://example.test/v1",
+        http_client=StubStreamClient(),
+    )
+
+    events = list(
+        gateway.stream_response(
+            [ChatMessage(role="user", content="hi")],
+            instructions="be helpful",
+        )
+    )
+
+    assert events == [
+        {"type": "response_started", "response_id": "resp_123"},
+        {"type": "text_delta", "delta": "hello "},
+        {"type": "text_delta", "delta": "world"},
+        {
+            "type": "response_completed",
+            "response_id": "resp_123",
+            "output_text": "hello world",
+        },
+    ]

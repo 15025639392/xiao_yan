@@ -98,9 +98,15 @@ export type BeingState = {
   self_programming_job?: SelfProgrammingJob | null;
 };
 
-export type ChatResult = {
+export type ChatSubmissionResult = {
   response_id: string | null;
-  output_text: string;
+  assistant_message_id: string;
+};
+
+export type ChatResumeRequest = {
+  message: string;
+  assistant_message_id: string;
+  partial_content: string;
 };
 
 export type ChatHistoryMessage = {
@@ -191,8 +197,12 @@ export function sleep(): Promise<BeingState> {
   return post<BeingState>("/lifecycle/sleep");
 }
 
-export function chat(message: string): Promise<ChatResult> {
-  return post<ChatResult>("/chat", { message });
+export function chat(message: string): Promise<ChatSubmissionResult> {
+  return post<ChatSubmissionResult>("/chat", { message });
+}
+
+export function resumeChat(body: ChatResumeRequest): Promise<ChatSubmissionResult> {
+  return post<ChatSubmissionResult>("/chat/resume", body);
 }
 
 export function fetchState(): Promise<BeingState> {

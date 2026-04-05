@@ -40,6 +40,48 @@ class AppRealtimeHub:
     def publish_persona(self) -> None:
         self._schedule_broadcast("persona_updated", lambda snapshot: snapshot["persona"])
 
+    def publish_chat_started(self, assistant_message_id: str, response_id: str | None = None) -> None:
+        self._schedule_payload(
+            "chat_started",
+            {
+                "assistant_message_id": assistant_message_id,
+                "response_id": response_id,
+            },
+        )
+
+    def publish_chat_delta(self, assistant_message_id: str, delta: str) -> None:
+        self._schedule_payload(
+            "chat_delta",
+            {
+                "assistant_message_id": assistant_message_id,
+                "delta": delta,
+            },
+        )
+
+    def publish_chat_completed(
+        self,
+        assistant_message_id: str,
+        response_id: str | None,
+        content: str,
+    ) -> None:
+        self._schedule_payload(
+            "chat_completed",
+            {
+                "assistant_message_id": assistant_message_id,
+                "response_id": response_id,
+                "content": content,
+            },
+        )
+
+    def publish_chat_failed(self, assistant_message_id: str, error: str) -> None:
+        self._schedule_payload(
+            "chat_failed",
+            {
+                "assistant_message_id": assistant_message_id,
+                "error": error,
+            },
+        )
+
     def _schedule_broadcast(
         self,
         event_type: str,
@@ -50,6 +92,16 @@ class AppRealtimeHub:
 
         future: Future[None] = asyncio.run_coroutine_threadsafe(
             self._broadcast(event_type, payload_selector),
+            self._loop,
+        )
+        future.add_done_callback(self._log_future_error)
+
+    def _schedule_payload(self, event_type: str, payload: Any) -> None:
+        if self._loop.is_closed():
+            return
+
+        future: Future[None] = asyncio.run_coroutine_threadsafe(
+            self._broadcast_payload(event_type, payload),
             self._loop,
         )
         future.add_done_callback(self._log_future_error)
@@ -66,6 +118,25 @@ class AppRealtimeHub:
         payload = payload_selector(snapshot)
         stale_connections: list[WebSocket] = []
 
+        for websocket in list(self._connections):
+            try:
+                await websocket.send_json(
+                    {
+                        "type": event_type,
+                        "payload": payload,
+                    }
+                )
+            except Exception:
+                stale_connections.append(websocket)
+
+        for websocket in stale_connections:
+            self._connections.discard(websocket)
+
+    async def _broadcast_payload(self, event_type: str, payload: Any) -> None:
+        if not self._connections:
+            return
+
+        stale_connections: list[WebSocket] = []
         for websocket in list(self._connections):
             try:
                 await websocket.send_json(
