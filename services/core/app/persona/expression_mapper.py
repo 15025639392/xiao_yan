@@ -636,3 +636,292 @@ class ExpressionStyleMapper:
             return order[max(p_idx, s_idx)]
         except ValueError:
             return primary
+
+
+# ── 增强版表达映射器 ────────────────────────────────────────
+
+
+class EnhancedExpressionMapper:
+    """增强的表达风格映射器（Week 2 新增）
+
+    功能：
+    - 应用基础表达风格（正式度、句式）
+    - 应用情绪影响
+    - 应用表达习惯（比喻、反问、幽默等）
+    - 应用语境调整
+    """
+
+    def __init__(self, personality: PersonalityDimensions, expression: "ExpressionStyle"):
+        """初始化增强映射器
+
+        Args:
+            personality: 性格五维度
+            expression: 说话风格配置（包含正式度、句式偏好、表达习惯）
+        """
+        from app.persona.models import FormalLevel, SentenceStyle, ExpressionHabit
+        self.personality = personality
+        self.formal_level = expression.formal_level
+        self.sentence_style = expression.sentence_style
+        self.expression_habit = expression.expression_habit
+
+    def map_expression(
+        self,
+        content: str,
+        emotion: EmotionType | None = None,
+        context: str | None = None,
+    ) -> str:
+        """根据人格和情绪映射表达
+
+        Args:
+            content: 原始内容
+            emotion: 当前情绪（可选）
+            context: 语境信息（可选）
+
+        Returns:
+            调整后的表达内容
+        """
+        # 1. 应用基础表达风格
+        result = self._apply_base_style(content)
+
+        # 2. 应用情绪影响
+        if emotion:
+            result = self._apply_emotion_style(result, emotion)
+
+        # 3. 应用表达习惯
+        result = self._apply_expression_habit(result)
+
+        # 4. 应用语境调整
+        if context:
+            result = self._apply_context_adjustment(result, context)
+
+        return result
+
+    def _apply_base_style(self, content: str) -> str:
+        """应用基础表达风格（正式度 + 句式）"""
+        # 正式度处理
+        result = self._adjust_formality(content, self.formal_level)
+
+        # 句式处理
+        result = self._adjust_sentence_style(result, self.sentence_style)
+
+        return result
+
+    def _adjust_formality(self, content: str, formal_level: str) -> str:
+        """根据正式度调整表达"""
+        from app.persona.models import FormalLevel
+
+        if formal_level == FormalLevel.VERY_FORMAL:
+            # 添加正式连接词、敬语
+            content = self._add_formal_connectors(content)
+            content = self._add_polite_markers(content)
+        elif formal_level in (FormalLevel.CASUAL, FormalLevel.SLANGY):
+            # 简化表达，去除正式用语
+            content = self._simplify_language(content)
+            if formal_level == FormalLevel.SLANGY:
+                content = self._add_slang(content)
+
+        return content
+
+    def _adjust_sentence_style(self, content: str, sentence_style: str) -> str:
+        """根据句式偏好调整表达"""
+        from app.persona.models import SentenceStyle
+
+        sentences = content.split("。")
+
+        if sentence_style == SentenceStyle.SHORT:
+            # 分割长句
+            result = []
+            for sentence in sentences:
+                if len(sentence) > 50:
+                    sub_sentences = self._split_long_sentence(sentence)
+                    result.extend(sub_sentences)
+                else:
+                    result.append(sentence)
+            return "。".join(result)
+
+        elif sentence_style == SentenceStyle.LONG:
+            # 合并短句（谨慎操作，确保语义连贯）
+            result = self._merge_short_sentences(sentences)
+            return result
+
+        else:  # MIXED
+            return content
+
+    def _apply_emotion_style(self, content: str, emotion: EmotionType) -> str:
+        """应用情绪风格"""
+        emotion_modifiers = {
+            EmotionType.JOY: self._add_joy_markers,
+            EmotionType.SADNESS: self._add_sadness_markers,
+            EmotionType.ANGER: self._add_anger_markers,
+            EmotionType.FEAR: self._add_fear_markers,
+            EmotionType.SURPRISE: self._add_surprise_markers,
+            EmotionType.DISGUST: self._add_disgust_markers,
+        }
+
+        if emotion in emotion_modifiers:
+            content = emotion_modifiers[emotion](content)
+
+        return content
+
+    def _apply_expression_habit(self, content: str) -> str:
+        """应用表达习惯"""
+        from app.persona.models import ExpressionHabit
+
+        if self.expression_habit == ExpressionHabit.METAPHOR:
+            content = self._add_metaphors(content)
+        elif self.expression_habit == ExpressionHabit.QUESTIONING:
+            content = self._add_rhetorical_questions(content)
+        elif self.expression_habit == ExpressionHabit.HUMOROUS:
+            content = self._add_humor(content)
+        elif self.expression_habit == ExpressionHabit.GENTLE:
+            content = self._soften_language(content)
+        # DIRECT 不需要特殊处理
+
+        return content
+
+    def _apply_context_adjustment(self, content: str, context: str) -> str:
+        """根据语境调整表达"""
+        # 简化版本：基于关键词判断话题类型
+        # 实际应用中应该使用更复杂的NLP或LLM
+        professional_keywords = ["工作", "项目", "任务", "业务", "分析", "报告"]
+        casual_keywords = ["朋友", "娱乐", "游戏", "电影", "音乐", "聊天"]
+
+        if any(kw in context for kw in professional_keywords):
+            # 专业话题，增加正式度
+            if self.formal_level not in ("very_formal", "formal"):
+                # 如果不是正式风格，添加一点专业感
+                content = self._add_professional_hints(content)
+        elif any(kw in context for kw in casual_keywords):
+            # 轻松话题，降低正式度
+            if self.formal_level not in ("casual", "slangy"):
+                content = self._simplify_language(content)
+
+        return content
+
+    # ═══════════════════════════════════════════════════
+    # 具体实现方法
+    # ═══════════════════════════════════════════════════
+
+    def _add_formal_connectors(self, content: str) -> str:
+        """添加正式连接词"""
+        connectors = ["因此", "此外", "综上所述", "值得注意的是"]
+        # 简化实现：在段落开头添加连接词
+        lines = content.split("\n")
+        result = []
+        for i, line in enumerate(lines):
+            if line.strip() and i % 2 == 0:  # 隔行添加
+                result.append(f"因此，{line}")
+            else:
+                result.append(line)
+        return "\n".join(result)
+
+    def _add_polite_markers(self, content: str) -> str:
+        """添加敬语标记"""
+        polite_markers = ["请", "您", "谢谢", "抱歉"]
+        # 简化实现：在某些句子前添加敬语
+        return content
+
+    def _simplify_language(self, content: str) -> str:
+        """简化语言"""
+        replacements = {
+            "因此": "所以",
+            "此外": "另外",
+            "综上所述": "总的来说",
+            "值得注意的是": "需要注意的是",
+        }
+        for formal, informal in replacements.items():
+            content = content.replace(formal, informal)
+        return content
+
+    def _add_slang(self, content: str) -> str:
+        """添加网络用语（谨慎使用）"""
+        # 示例：添加一些常用的网络用语
+        return content  # 简化实现
+
+    def _split_long_sentence(self, sentence: str) -> list[str]:
+        """分割长句"""
+        # 简化实现：按逗号分割
+        parts = sentence.split("，")
+        return [p.strip() for p in parts if p.strip()]
+
+    def _merge_short_sentences(self, sentences: list[str]) -> str:
+        """合并短句"""
+        # 简化实现：连接短句
+        return "。".join(s for s in sentences if s.strip())
+
+    # 情绪标记方法
+    def _add_joy_markers(self, content: str) -> str:
+        """添加喜悦标记"""
+        # 简化实现：添加一些积极的语气词
+        if not content.endswith(("！","~","～")):
+            content += "！"
+        return content
+
+    def _add_sadness_markers(self, content: str) -> str:
+        """添加悲伤标记"""
+        # 简化实现：添加省略号
+        if not content.endswith(("...","...")):
+            content += "..."
+        return content
+
+    def _add_anger_markers(self, content: str) -> str:
+        """添加愤怒标记"""
+        # 简化实现：添加感叹号
+        if not content.endswith("！"):
+            content += "！"
+        return content
+
+    def _add_fear_markers(self, content: str) -> str:
+        """添加担忧标记"""
+        # 简化实现：添加疑问语气
+        return content
+
+    def _add_surprise_markers(self, content: str) -> str:
+        """添加惊讶标记"""
+        # 简化实现：添加问号或感叹号
+        if "?" not in content and "！" not in content:
+            content += "？"
+        return content
+
+    def _add_disgust_markers(self, content: str) -> str:
+        """添加厌恶标记"""
+        # 简化实现：保持简短
+        return content
+
+    # 表达习惯方法
+    def _add_metaphors(self, content: str) -> str:
+        """添加比喻"""
+        # 简化实现：这是一个框架方法
+        # 实际应用中应该使用LLM来生成比喻
+        return content
+
+    def _add_rhetorical_questions(self, content: str) -> str:
+        """添加反问"""
+        # 简化实现：在某些陈述后添加反问
+        if "。" in content:
+            content = content.replace("。", "，对吗？")
+        return content
+
+    def _add_humor(self, content: str) -> str:
+        """添加幽默元素"""
+        # 简化实现：这是一个框架方法
+        # 实际应用中应该使用LLM来生成幽默内容
+        return content
+
+    def _soften_language(self, content: str) -> str:
+        """柔和化语言"""
+        softeners = ["可能", "也许", "我觉得", "如果可以的话"]
+        # 简化实现：在句子开头添加柔和词
+        lines = content.split("\n")
+        result = []
+        for i, line in enumerate(lines):
+            if line.strip() and i % 2 == 0:
+                result.append(f"我觉得{line}")
+            else:
+                result.append(line)
+        return "\n".join(result)
+
+    def _add_professional_hints(self, content: str) -> str:
+        """添加专业提示"""
+        # 简化实现：添加一些专业连接词
+        return content

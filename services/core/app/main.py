@@ -42,10 +42,13 @@ from app.persona.models import (
     FormalLevel,
     ExpressionHabit,
     SentenceStyle,
+    PersonaProfile,
 )
 from app.persona.expression_mapper import ExpressionStyleMapper
 from app.persona.prompt_builder import build_chat_instructions
 from app.persona.service import FilePersonaRepository, PersonaService
+from app.persona.templates import PersonaTemplateManager, PERSONA_TYPES
+from app.persona.validator import PersonaValidator
 from app.planning.morning_plan import (
     LLMMorningPlanDraftGenerator,
     MorningPlanDraftGenerator,
@@ -1075,6 +1078,61 @@ class SpeakingStyleUpdateRequest(BaseModel):
     emoji_usage: str | None = None
     verbal_tics: list[str] | None = None
     response_length: str | None = None
+
+
+class PersonaCreateFromTemplateRequest(BaseModel):
+    """从模板创建人格请求体"""
+    template_type: PERSONA_TYPES = Field(..., description="选择的人格模板类型")
+    customizations: dict | None = Field(None, description="自定义配置")
+
+
+# ============ 人格模板API ============
+
+@app.get("/persona/templates")
+async def list_persona_templates():
+    """获取所有可用的人格模板"""
+    manager = PersonaTemplateManager()
+    templates = manager.list_templates()
+    
+    return {
+        "templates": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "description": t.description,
+                "personality": t.personality.model_dump(),
+                "speaking_style": t.speaking_style.model_dump(),
+            }
+            for t in templates
+        ]
+    }
+
+
+@app.post("/persona/from-template")
+async def create_persona_from_template(request: PersonaCreateFromTemplateRequest):
+    """从模板创建人格"""
+    manager = PersonaTemplateManager()
+    persona = manager.create_persona_from_template(
+        request.template_type,
+        request.customizations
+    )
+    
+    # 验证创建的人格
+    validator = PersonaValidator()
+    report = validator.get_validation_report(persona)
+    
+    return {
+        "persona": persona.model_dump(),
+        "validation": report
+    }
+
+
+@app.post("/persona/validate")
+async def validate_persona(persona: PersonaProfile):
+    """验证人格配置"""
+    validator = PersonaValidator()
+    report = validator.get_validation_report(persona)
+    return report
 
 
 @app.get("/persona")

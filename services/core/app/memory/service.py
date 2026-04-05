@@ -15,7 +15,7 @@
 - 记忆注入 prompt 时不是简单堆砌，而是按相关性和重要性精选
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from logging import getLogger
 from typing import Protocol
 
@@ -28,7 +28,10 @@ from app.memory.models import (
     MemoryStrength,
 )
 from app.memory.repository import MemoryRepository
+from app.memory.extractor import MemoryExtractor
+from app.memory.associator import MemoryAssociator
 from app.persona.models import PersonalityDimensions
+from app.llm.schemas import ChatMessage
 
 logger = getLogger(__name__)
 
@@ -46,9 +49,22 @@ class MemoryService:
         self,
         repository: MemoryRepository | None = None,
         personality: PersonalityDimensions | None = None,
+        llm_gateway=None,
     ) -> None:
         self.repository = repository
         self.personality = personality or PersonalityDimensions()
+
+        # 初始化记忆提取器
+        self.extractor = MemoryExtractor(
+            personality=self.personality,
+            llm_gateway=llm_gateway
+        )
+
+        # 初始化记忆关联器
+        if repository:
+            self.associator = MemoryAssociator(repository=repository)
+        else:
+            self.associator = None
 
     # ══════════════════════════════════════════════
     # 1. 基础 CRUD
@@ -388,6 +404,58 @@ class MemoryService:
         return extracted
 
     # ══════════════════════════════════════════════
+    # Week 7: 记忆系统集成和自动化
+    # ══════════════════════════════════════════════
+
+    def process_dialogue(
+        self,
+        dialogue: list[ChatMessage],
+        context: dict | None = None
+    ) -> list[MemoryEvent]:
+        """处理对话，自动提取和存储记忆
+
+        Args:
+            dialogue: 对话消息列表
+            context: 上下文信息（可选）
+
+        Returns:
+            提取的记忆事件列表
+        """
+        if not self.repository:
+            logger.warning("Cannot process dialogue: no repository")
+            return []
+
+        # 1. 提取记忆事件
+        events = self.extractor.extract_from_dialogue(dialogue, context)
+
+        # 2. 存储记忆事件
+        for event in events:
+            self.repository.save_event(event)
+
+        # 3. 建立记忆关联（如果有关联器）
+        if self.associator:
+            self.associator.associate_events(events)
+
+        logger.info("Processed %d memory events from dialogue", len(events))
+        return events
+
+    def extract_and_save(
+        self,
+        message: ChatMessage,
+        context: dict | None = None
+    ) -> list[MemoryEvent]:
+        """从单条消息中提取并保存记忆
+
+        Args:
+            message: 对话消息
+            context: 上下文信息（可选）
+
+        Returns:
+            提取的记忆事件列表
+        """
+        return self.process_dialogue([message], context)
+
+    # ══════════════════════════════════════════════
     # 3. 记忆生命周期
     # ══════════════════════════════════════════════
 
@@ -624,3 +692,250 @@ class MemoryService:
         except ValueError:
             pass
         return strength
+
+    # ══════════════════════════════════════════════
+    # Week 6: 增强检索功能
+    # ══════════════════════════════════════════════
+
+    def search_context(
+        self,
+        query: str,
+        context_type: str = "all",
+        limit: int = 10,
+    ) -> MemoryCollection:
+        """智能搜索相关记忆上下文
+
+        Args:
+            query: 查询内容
+            context_type: 上下文类型（all/conversation/preferences）
+            limit: 返回数量限制
+
+        Returns:
+            记忆集合
+        """
+        if self.repository is None:
+            return MemoryCollection(entries=[], total_count=0)
+
+        # 基础搜索
+        events = self.repository.search_relevant(query, limit=limit * 2)
+        entries = [e.to_entry() for e in events]
+
+        # 根据上下文类型过滤
+        if context_type == "conversation":
+            entries = [e for e in entries if e.kind == MemoryKind.EPISODIC]
+        elif context_type == "preferences":
+            entries = [
+                e for e in entries
+                if "偏好" in e.content or "习惯" in e.content
+            ]
+
+        # 按重要性和时间排序
+        entries.sort(
+            key=lambda e: (
+                self._importance_score(e),
+                e.created_at
+            ),
+            reverse=True
+        )
+
+        return MemoryCollection(
+            entries=entries[:limit],
+            total_count=len(entries),
+            query_summary=f"搜索「{query[:20]}」的{context_type}上下文",
+        )
+
+    def get_conversation_history(
+        self,
+        days: int = 7,
+        emotion_filter: MemoryEmotion | None = None,
+    ) -> MemoryCollection:
+        """获取对话历史
+
+        Args:
+            days: 天数范围
+            emotion_filter: 情绪过滤（可选）
+
+        Returns:
+            记忆集合
+        """
+        if self.repository is None:
+            return MemoryCollection(entries=[], total_count=0)
+
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        events = self.repository.list_recent(limit=1000)
+        entries = [e.to_entry() for e in events]
+
+        # 过滤时间范围
+        entries = [
+            e for e in entries
+            if e.created_at >= cutoff_date
+        ]
+
+        # 过滤情绪
+        if emotion_filter:
+            entries = [
+                e for e in entries
+                if e.emotion_tag == emotion_filter
+            ]
+
+        # 过滤对话类型记忆
+        entries = [
+            e for e in entries
+            if e.kind == MemoryKind.EPISODIC
+        ]
+
+        return MemoryCollection(
+            entries=entries[:50],
+            total_count=len(entries),
+            query_summary=f"最近{days}天的对话历史",
+        )
+
+    def _importance_score(self, entry: MemoryEntry) -> int:
+        """计算重要性分数
+
+        Args:
+            entry: 记忆条目
+
+        Returns:
+            重要性分数（0-10）
+        """
+        score = 0
+
+        # 记忆强度
+        if entry.strength == MemoryStrength.CORE:
+            score += 5
+        elif entry.strength == MemoryStrength.VIVID:
+            score += 3
+        elif entry.strength == MemoryStrength.NORMAL:
+            score += 2
+        elif entry.strength == MemoryStrength.WEAK:
+            score += 1
+
+        # 情绪强度
+        if entry.emotion_tag in [MemoryEmotion.POSITIVE, MemoryEmotion.NEGATIVE]:
+            score += 2
+
+        # 关联数量
+        if len(entry.related_memory_ids) > 3:
+            score += 1
+
+        # 基础重要性
+        score += min(entry.importance, 10)
+
+        return min(score, 10)
+
+    # ══════════════════════════════════════════════
+    # Week 6: 时间衰减机制
+    # ══════════════════════════════════════════════
+
+    def apply_time_decay(self) -> int:
+        """应用时间衰减，返回衰减的记忆数量
+
+        Returns:
+            衰减的记忆数量
+        """
+        if self.repository is None:
+            return 0
+
+        events = self.repository.list_recent(limit=10000)
+        decayed_count = 0
+
+        current_time = datetime.now(timezone.utc)
+
+        for event in events:
+            # 将event转为entry以获取strength
+            entry = event.to_entry()
+
+            # 计算记忆年龄（天）
+            age_days = (current_time - entry.created_at).total_seconds() / 86400
+
+            # 根据年龄调整强度
+            new_strength = self._calculate_decay(
+                entry.strength,
+                age_days
+            )
+
+            if new_strength != entry.strength:
+                self.repository.update_event(
+                    event.entry_id,
+                    strength=new_strength.value
+                )
+                decayed_count += 1
+
+        if decayed_count > 0:
+            logger.info("Applied time decay to %d memories", decayed_count)
+
+        return decayed_count
+
+    def _calculate_decay(
+        self,
+        current_strength: MemoryStrength,
+        age_days: float
+    ) -> MemoryStrength:
+        """计算衰减后的强度
+
+        衰减曲线：
+        - 7天内不衰减
+        - 7-30天：HIGH→MEDIUM
+        - 30-90天：MEDIUM→LOW
+        - 90天以上：LOW
+
+        Args:
+            current_strength: 当前强度
+            age_days: 记忆年龄（天）
+
+        Returns:
+            衰减后的强度
+        """
+        if age_days < 7:
+            return current_strength  # 7天内不衰减
+        elif age_days < 30:
+            if current_strength == MemoryStrength.CORE:
+                return MemoryStrength.VIVID
+            elif current_strength == MemoryStrength.VIVID:
+                return MemoryStrength.NORMAL
+            elif current_strength == MemoryStrength.NORMAL:
+                return MemoryStrength.WEAK
+        elif age_days < 90:
+            if current_strength == MemoryStrength.VIVID:
+                return MemoryStrength.NORMAL
+            elif current_strength == MemoryStrength.NORMAL:
+                return MemoryStrength.WEAK
+            elif current_strength == MemoryStrength.WEAK:
+                return MemoryStrength.FAINT
+        else:
+            return MemoryStrength.FAINT
+
+        return current_strength
+
+    def cleanup_old_memories(self, max_age_days: int = 365) -> int:
+        """清理过期记忆
+
+        只删除低强度且过期的记忆
+
+        Args:
+            max_age_days: 最大年龄（天）
+
+        Returns:
+            删除的记忆数量
+        """
+        if self.repository is None:
+            return 0
+
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        events = self.repository.list_recent(limit=10000)
+
+        deleted_count = 0
+        for event in events:
+            # 将event转为entry以获取strength
+            entry = event.to_entry()
+            if entry.created_at < cutoff_date:
+                if entry.strength == MemoryStrength.FAINT:
+                    # 删除低强度且过期的记忆
+                    if self.repository.delete_event(event.entry_id):
+                        deleted_count += 1
+
+        if deleted_count > 0:
+            logger.info("Cleaned up %d old memories", deleted_count)
+
+        return deleted_count

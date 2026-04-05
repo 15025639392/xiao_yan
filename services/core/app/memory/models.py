@@ -261,6 +261,10 @@ class MemoryEvent(BaseModel):
         default_factory=lambda: _generate_id(),
         description="关联的 MemoryEntry ID（用于删除/更新匹配）",
     )
+    related_memory_ids: list[str] = Field(
+        default_factory=list,
+        description="关联的其他记忆 ID",
+    )
 
     @classmethod
     def from_entry(cls, entry: MemoryEntry) -> "MemoryEvent":
@@ -308,6 +312,7 @@ class MemoryEvent(BaseModel):
             source_context=self.source_context,
             created_at=self.created_at,
             importance=default_importance,
+            related_memory_ids=self.related_memory_ids,
         )
 
 
