@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react";
 import type { TodayPlan, Goal } from "../lib/api";
+import { MarkdownMessage } from "./MarkdownMessage";
 
 export type ChatEntry = {
   id: string;
@@ -123,7 +124,13 @@ export function ChatPanel({
                 className={`chat-message chat-message--${message.role}`}
               >
                 <div className="chat-message__bubble">
-                  <p className="chat-message__content">{message.content}</p>
+                  {message.role === "assistant" ? (
+                    <div className="chat-message__markdown">
+                      <MarkdownMessage content={message.content} />
+                    </div>
+                  ) : (
+                    <p className="chat-message__content">{message.content}</p>
+                  )}
                 </div>
               </article>
             ))}
