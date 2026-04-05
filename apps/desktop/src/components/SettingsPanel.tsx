@@ -37,8 +37,6 @@ export function SettingsPanel({ theme, onThemeChange }: SettingsPanelProps) {
                     className={`theme-option ${theme === "light" ? "theme-option--active" : ""}`}
                     onClick={() => onThemeChange("light")}
                     type="button"
-                    disabled
-                    title="浅色主题即将推出"
                   >
                     <SunIcon />
                     <span>浅色</span>

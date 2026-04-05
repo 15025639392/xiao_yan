@@ -42,7 +42,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">(() => loadThemePreference());
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
 
   useEffect(() => {
@@ -84,6 +84,12 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, []);
+
+  // 主题切换：更新 DOM 和 localStorage
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -436,4 +442,19 @@ function mergeMessages(
   });
 
   return Array.from(merged.values());
+}
+
+function loadThemePreference(): "dark" | "light" {
+  if (typeof window === "undefined") {
+    return "dark";
+  }
+  const saved = localStorage.getItem("theme");
+  if (saved === "light" || saved === "dark") {
+    return saved;
+  }
+  // 检测系统偏好
+  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+    return "light";
+  }
+  return "dark";
 }
