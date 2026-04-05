@@ -338,6 +338,19 @@
   flex-shrink: 0;
 }
 
+.personality-intro__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.personality-intro__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .personality-intro__text {
   margin: 0;
   font-size: 0.875rem;
@@ -345,119 +358,252 @@
   line-height: 1.6;
 }
 
-/* ── 性格滑块区域 ── */
+/* ── 性格维度卡片区域 ── */
+.personality-dimensions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ── 性格维度卡片 ── */
+.personality-dimension {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.personality-dimension:hover {
+  border-color: var(--border-default);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ── 卡片头部 ── */
+.personality-dimension__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.personality-dimension__title-group {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.personality-dimension__icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.personality-dimension__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.personality-dimension__title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.personality-dimension__label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.personality-dimension__english {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.personality-dimension__short-desc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+/* ── 数值显示 ── */
+.personality-dimension__value-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.personality-dimension__value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  min-width: 40px;
+  text-align: right;
+}
+
+.personality-dimension__value.neutral {
+  color: var(--text-tertiary);
+}
+
+.personality-dimension__value.high {
+  color: var(--success);
+}
+
+.personality-dimension__value.low {
+  color: var(--primary);
+}
+
+.personality-dimension__tendency {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  padding: 2px 8px;
+  background: var(--bg-surface-overlay);
+  border-radius: var(--radius-full);
+}
+
+/* ── 滑块区域 ── */
+.personality-dimension__slider-area {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+.personality-dimension__endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.personality-dimension__endpoint--left {
+  text-align: right;
+  align-items: flex-end;
+}
+
+.personality-dimension__endpoint--right {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.endpoint-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.endpoint-desc {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* ── 滑块轨道包装 ── */
+.personality-dimension__track-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: 6px;
+}
+
+.personality-dimension__range {
+  width: 100%;
+  height: 10px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(to right, 
+    rgba(59, 130, 246, 0.3) 0%, 
+    rgba(148, 163, 184, 0.3) 50%, 
+    rgba(16, 185, 129, 0.3) 100%
+  );
+  border-radius: 5px;
+  outline: none;
+  cursor: pointer;
+}
+
+.personality-dimension__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(59, 130, 246, 0.2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.personality-dimension__range::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(59, 130, 246, 0.3);
+}
+
+.personality-dimension__range::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+/* ── 刻度标记 ── */
+.personality-dimension__markers {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  padding: 0 2px;
+}
+
+.personality-dimension__markers .marker-center {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+/* ── 影响说明 ── */
+.personality-dimension__impact {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.06) 0%, rgba(139, 92, 246, 0.04) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.12);
+  border-radius: var(--radius-md);
+}
+
+.impact-label {
+  font-size: 0.8125rem;
+  flex-shrink: 0;
+}
+
+.impact-text {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── 旧版样式兼容（保留） ── */
 .personality-sliders {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
 }
 
-/* ── 性格维度滑块 ── */
 .personality-slider {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-}
-
-.personality-slider__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.personality-slider__title {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-
-.personality-slider__label {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.personality-slider__english {
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-}
-
-.personality-slider__value {
-  font-size: 0.9375rem;
-  font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  min-width: 32px;
-  text-align: right;
-}
-
-.personality-slider__value.neutral {
-  color: var(--text-tertiary);
-}
-
-.personality-slider__value.high {
-  color: var(--success);
-}
-
-.personality-slider__value.low {
-  color: var(--danger);
-}
-
-.personality-slider__track {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.personality-slider__endpoint {
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
-  width: 32px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.personality-slider__range {
-  flex: 1;
-  height: 8px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--bg-surface-overlay);
-  border-radius: 4px;
-  outline: none;
-  cursor: pointer;
-}
-
-.personality-slider__range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  background: var(--primary);
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  transition: transform 0.1s ease;
-}
-
-.personality-slider__range::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-}
-
-.personality-slider__range::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
-  background: var(--primary);
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-}
-
-.personality-slider__desc {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--text-tertiary);
 }
 
 /* ── 风格选项 ── */

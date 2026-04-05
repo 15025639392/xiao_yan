@@ -394,45 +394,38 @@ function PersonaWorkbench({ onUpdated }: { onUpdated?: () => void }) {
           <div className="persona-form">
             <div className="personality-intro">
               <span className="personality-intro__icon">🧬</span>
-              <p className="personality-intro__text">
-                大五人格模型（Big Five）— 每个维度 0~100，50 为中性。
-                调整后数字人的情绪反应和行为倾向会相应变化。
-              </p>
+              <div className="personality-intro__content">
+                <p className="personality-intro__title">大五人格模型（OCEAN）</p>
+                <p className="personality-intro__text">
+                  五个核心维度共同塑造数字人的性格特征。每个维度 0~100，50 为中性平衡点。
+                  调整后会直接影响数字人的情绪反应、表达方式和行为倾向。
+                </p>
+              </div>
             </div>
 
-            <div className="personality-sliders">
+            <div className="personality-dimensions">
               <DimensionSlider 
-                label="开放性" 
-                english="Openness" 
-                desc="求新 vs 守旧" 
+                dimensionKey="openness"
                 value={openness} 
                 onChange={setOpenness} 
               />
               <DimensionSlider 
-                label="尽责性" 
-                english="Conscientiousness" 
-                desc="自律 vs 随性" 
+                dimensionKey="conscientiousness"
                 value={conscientiousness} 
                 onChange={setConscientiousness} 
               />
               <DimensionSlider 
-                label="外向性" 
-                english="Extraversion" 
-                desc="外向 vs 内向" 
+                dimensionKey="extraversion"
                 value={extraversion} 
                 onChange={setExtraversion} 
               />
               <DimensionSlider 
-                label="宜人性" 
-                english="Agreeableness" 
-                desc="合作 vs 竞争" 
+                dimensionKey="agreeableness"
                 value={agreeableness} 
                 onChange={setAgreeableness} 
               />
               <DimensionSlider 
-                label="神经质" 
-                english="Neuroticism" 
-                desc="敏感 vs 稳定" 
+                dimensionKey="neuroticism"
                 value={neuroticism} 
                 onChange={setNeuroticism} 
               />
@@ -573,50 +566,153 @@ function PersonaWorkbenchSkeleton() {
 }
 
 // ═══════════════════════════════════════════════════
-// 性格维度滑块组件
+// 性格维度滑块组件（带详细说明）
 // ═══════════════════════════════════════════════════
 
+interface DimensionInfo {
+  label: string;
+  english: string;
+  shortDesc: string;
+  lowLabel: string;
+  highLabel: string;
+  lowDesc: string;
+  highDesc: string;
+  impact: string;
+  icon: string;
+}
+
+const DIMENSIONS: Record<string, DimensionInfo> = {
+  openness: {
+    label: "开放性",
+    english: "Openness",
+    shortDesc: "对新经验的接受程度",
+    lowLabel: "务实",
+    highLabel: "好奇",
+    lowDesc: "偏好熟悉的事物，注重实际，决策谨慎保守",
+    highDesc: "富有想象力，喜欢探索新事物，创意丰富",
+    impact: "高开放性 → 更愿意尝试新话题、提出创新观点；低开放性 → 回答更务实、偏向已知领域",
+    icon: "🎨",
+  },
+  conscientiousness: {
+    label: "尽责性",
+    english: "Conscientiousness",
+    shortDesc: "自我约束与目标导向程度",
+    lowLabel: "随性",
+    highLabel: "自律",
+    lowDesc: "灵活应变，不拘泥于计划，更随性自然",
+    highDesc: "有条理、有计划，注重细节和完成质量",
+    impact: "高尽责性 → 回答更有结构、会主动跟进任务；低尽责性 → 更灵活随意、即兴发挥",
+    icon: "📋",
+  },
+  extraversion: {
+    label: "外向性",
+    english: "Extraversion",
+    shortDesc: "社交能量与外部世界互动倾向",
+    lowLabel: "内敛",
+    highLabel: "外向",
+    lowDesc: "享受独处，深度思考，表达更内敛含蓄",
+    highDesc: "精力充沛，喜欢社交互动，表达热情直接",
+    impact: "高外向性 → 更主动、热情、使用更多表情；低外向性 → 更安静、深思熟虑、简洁",
+    icon: "⚡",
+  },
+  agreeableness: {
+    label: "宜人性",
+    english: "Agreeableness",
+    shortDesc: "与他人合作和共情的倾向",
+    lowLabel: "独立",
+    highLabel: "亲和",
+    lowDesc: "直率坦诚，坚持己见，不轻易妥协",
+    highDesc: "善解人意，乐于助人，注重和谐关系",
+    impact: "高宜人性 → 更温和、体贴、避免冲突；低宜人性 → 更直接、敢于质疑、保持独立",
+    icon: "🤝",
+  },
+  neuroticism: {
+    label: "神经质",
+    english: "Neuroticism",
+    shortDesc: "情绪稳定与压力反应程度",
+    lowLabel: "稳定",
+    highLabel: "敏感",
+    lowDesc: "情绪平稳，抗压能力强，心态平和",
+    highDesc: "情绪丰富敏感，对变化反应强烈，体验深刻",
+    impact: "高神经质 → 情绪波动更明显、表达更强烈；低神经质 → 冷静沉着、不易焦虑",
+    icon: "🌊",
+  },
+};
+
 function DimensionSlider({
-  label,
-  english,
-  desc,
+  dimensionKey,
   value,
   onChange,
 }: {
-  label: string;
-  english: string;
-  desc: string;
+  dimensionKey: keyof typeof DIMENSIONS;
   value: number;
   onChange: (v: number) => void;
 }) {
-  const leftLabel = label === "外向性" ? "内向" : label === "神经质" ? "稳定" : "低";
-  const rightLabel = label === "外向性" ? "外向" : label === "神经质" ? "敏感" : "高";
+  const info = DIMENSIONS[dimensionKey];
   const isNeutral = Math.abs(value - 50) < 10;
+  const isHigh = value > 50;
+  const intensity = Math.abs(value - 50);
 
   return (
-    <div className="personality-slider">
-      <div className="personality-slider__header">
-        <div className="personality-slider__title">
-          <span className="personality-slider__label">{label}</span>
-          <span className="personality-slider__english">{english}</span>
+    <div className="personality-dimension">
+      {/* 头部：图标 + 标题 + 数值 */}
+      <div className="personality-dimension__header">
+        <div className="personality-dimension__title-group">
+          <span className="personality-dimension__icon">{info.icon}</span>
+          <div className="personality-dimension__titles">
+            <div className="personality-dimension__title-row">
+              <span className="personality-dimension__label">{info.label}</span>
+              <span className="personality-dimension__english">{info.english}</span>
+            </div>
+            <span className="personality-dimension__short-desc">{info.shortDesc}</span>
+          </div>
         </div>
-        <span className={`personality-slider__value ${isNeutral ? "neutral" : value > 50 ? "high" : "low"}`}>
-          {value}
-        </span>
+        <div className="personality-dimension__value-group">
+          <span className={`personality-dimension__value ${isNeutral ? "neutral" : isHigh ? "high" : "low"}`}>
+            {value}
+          </span>
+          <span className="personality-dimension__tendency">
+            {isNeutral ? "平衡" : isHigh ? info.highLabel : info.lowLabel}
+          </span>
+        </div>
       </div>
-      <div className="personality-slider__track">
-        <span className="personality-slider__endpoint">{leftLabel}</span>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="personality-slider__range"
-        />
-        <span className="personality-slider__endpoint">{rightLabel}</span>
+
+      {/* 滑块区域 */}
+      <div className="personality-dimension__slider-area">
+        <div className="personality-dimension__endpoint personality-dimension__endpoint--left">
+          <span className="endpoint-label">{info.lowLabel}</span>
+          <span className="endpoint-desc">{info.lowDesc}</span>
+        </div>
+        
+        <div className="personality-dimension__track-wrapper">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="personality-dimension__range"
+          />
+          <div className="personality-dimension__markers">
+            <span>0</span>
+            <span>25</span>
+            <span className="marker-center">50</span>
+            <span>75</span>
+            <span>100</span>
+          </div>
+        </div>
+
+        <div className="personality-dimension__endpoint personality-dimension__endpoint--right">
+          <span className="endpoint-label">{info.highLabel}</span>
+          <span className="endpoint-desc">{info.highDesc}</span>
+        </div>
       </div>
-      <p className="personality-slider__desc">{desc}</p>
+
+      {/* 影响说明 */}
+      <div className="personality-dimension__impact">
+        <span className="impact-label">💡 影响</span>
+        <span className="impact-text">{info.impact}</span>
+      </div>
     </div>
   );
 }
