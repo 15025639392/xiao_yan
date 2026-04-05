@@ -73,3 +73,16 @@ def get_persona_storage_path() -> Path:
 def is_morning_plan_llm_enabled() -> bool:
     load_local_env()
     return os.getenv("MORNING_PLAN_LLM_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+
+
+def get_chat_context_limit() -> int:
+    """获取聊天上下文中相关事件的数量限制"""
+    load_local_env()
+    configured = os.getenv("CHAT_CONTEXT_LIMIT")
+    if configured:
+        try:
+            value = int(configured)
+            return max(1, min(20, value))  # 限制在 1-20 之间
+        except ValueError:
+            pass
+    return 6  # 默认值

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Generator
 from contextlib import asynccontextmanager
@@ -11,6 +13,7 @@ from threading import Event, Thread
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from typing import ClassVar
 
 from app.config import (
     get_goal_storage_path,
@@ -19,6 +22,7 @@ from app.config import (
     get_state_storage_path,
     get_world_storage_path,
     is_morning_plan_llm_enabled,
+    get_chat_context_limit,
 )
 from app.agent.loop import AutonomyLoop
 from app.domain.models import BeingState, FocusMode, SelfProgrammingStatus, WakeMode
@@ -62,6 +66,40 @@ from app.world.models import WorldState
 from app.world.repository import FileWorldRepository, WorldRepository
 from app.world.service import WorldStateService
 from typing import Any
+
+
+# ═══════════════════════════════════════════════════
+# 运行时配置管理
+# ═══════════════════════════════════════════════════
+
+class RuntimeConfig:
+    """运行时配置（可在运行时更新）"""
+
+    _instance: ClassVar["RuntimeConfig"] | None = None
+
+    def __new__(cls) -> "RuntimeConfig":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._chat_context_limit = get_chat_context_limit()
+        return cls._instance
+
+    @property
+    def chat_context_limit(self) -> int:
+        return self._chat_context_limit
+
+    @chat_context_limit.setter
+    def chat_context_limit(self, value: int) -> None:
+        self._chat_context_limit = max(1, min(20, value))
+
+
+def get_runtime_config() -> RuntimeConfig:
+    """获取运行时配置实例"""
+    return RuntimeConfig()
+
+
+# ═══════════════════════════════════════════════════
+# FastAPI 应用和生命周期
+# ═══════════════════════════════════════════════════
 
 
 @asynccontextmanager
@@ -324,8 +362,12 @@ def build_chat_messages(
     state_store: StateStore,
     goal_repository: GoalRepository,
     user_message: str,
-    limit: int = 6,
+    limit: int | None = None,
 ) -> list[ChatMessage]:
+    # 使用运行时配置，如果未指定则使用默认值
+    if limit is None:
+        config = get_runtime_config()
+        limit = config.chat_context_limit
     relevant_events = memory_repository.search_relevant(user_message, limit=limit)
     state = state_store.get()
     focus_goal = (
@@ -897,6 +939,16 @@ class ApprovalRequest(BaseModel):
     reason: str | None = None  # 可选：拒绝原因或审批备注
 
 
+class ConfigUpdateRequest(BaseModel):
+    """配置更新请求体"""
+    chat_context_limit: int = Field(..., ge=1, le=20, description="聊天上下文相关事件数量限制（1-20）")
+
+
+class ConfigResponse(BaseModel):
+    """配置响应"""
+    chat_context_limit: int
+
+
 @app.post("/self-programming/{job_id}/approve")
 def approve_job(
     job_id: str,
@@ -1047,6 +1099,26 @@ def rollback_job_endpoint(
     except Exception as exc:
         logger.exception("Rollback failed")
         raise HTTPException(status_code=500, detail=f"回滚失败: {exc}")
+
+
+# ═══════════════════════════════════════════════════
+# 配置 API
+# ═══════════════════════════════════════════════════
+
+
+@app.get("/config")
+def get_config() -> ConfigResponse:
+    """获取当前配置"""
+    config = get_runtime_config()
+    return ConfigResponse(chat_context_limit=config.chat_context_limit)
+
+
+@app.put("/config")
+def update_config(request: ConfigUpdateRequest) -> ConfigResponse:
+    """更新配置"""
+    config = get_runtime_config()
+    config.chat_context_limit = request.chat_context_limit
+    return ConfigResponse(chat_context_limit=config.chat_context_limit)
 
 
 # ═══════════════════════════════════════════════════
