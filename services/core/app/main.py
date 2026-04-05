@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Generator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -6,7 +7,7 @@ from logging import getLogger
 logger = getLogger(__name__)
 from threading import Event, Thread
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -32,6 +33,7 @@ from app.llm.schemas import (
 )
 from app.memory.models import MemoryEntry, MemoryKind, MemoryEmotion, MemoryStrength
 from app.memory.repository import FileMemoryRepository, MemoryRepository
+from app.realtime import AppRealtimeHub
 from app.memory.service import MemoryService
 from app.persona.models import (
     FormalLevel,
@@ -139,6 +141,113 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.memory_service = memory_service
     target_app.state.stop_event = stop_event
     target_app.state.autonomy_thread = worker
+
+
+def _compose_world_state(
+    state_store: StateStore,
+    goal_repository: GoalRepository,
+    memory_repository: MemoryRepository,
+    world_state_service: WorldStateService,
+) -> WorldState:
+    state = state_store.get()
+    focused_goals = [
+        goal
+        for goal_id in state.active_goal_ids
+        if (goal := goal_repository.get_goal(goal_id)) is not None
+    ]
+    latest_world_event = next(
+        (
+            event
+            for event in memory_repository.list_recent(limit=20)
+            if event.kind == "world"
+        ),
+        None,
+    )
+    return world_state_service.bootstrap(
+        being_state=state,
+        focused_goals=focused_goals,
+        latest_event=None if latest_world_event is None else latest_world_event.content,
+        latest_event_at=None if latest_world_event is None else latest_world_event.created_at,
+    )
+
+
+def _build_runtime_payload(target_app: FastAPI) -> dict:
+    state_store = target_app.state.state_store
+    memory_repository = target_app.state.memory_repository
+    goal_repository = target_app.state.goal_repository
+
+    messages = [
+        ChatHistoryMessage(role=event.role, content=event.content).model_dump()
+        for event in reversed(memory_repository.list_recent(limit=20))
+        if event.kind == "chat" and event.role in {"user", "assistant"}
+    ]
+    autobio_entries = [
+        event.content
+        for event in reversed(memory_repository.list_recent(limit=20))
+        if event.kind == "autobio"
+    ]
+    world_state = _compose_world_state(
+        state_store,
+        goal_repository,
+        memory_repository,
+        WorldStateService(),
+    )
+
+    return {
+        "state": state_store.get().model_dump(mode="json"),
+        "messages": messages,
+        "goals": [goal.model_dump(mode="json") for goal in goal_repository.list_goals()],
+        "world": world_state.model_dump(mode="json"),
+        "autobio": _deduplicate_entries(autobio_entries),
+    }
+
+
+def _build_memory_payload(target_app: FastAPI) -> dict:
+    memory_service = target_app.state.memory_service
+    return {
+        "summary": memory_service.get_memory_summary(),
+        "timeline": memory_service.get_memory_timeline(limit=40),
+    }
+
+
+def _build_persona_payload(target_app: FastAPI) -> dict:
+    persona_service = target_app.state.persona_service
+    return {
+        "profile": persona_service.get_profile().model_dump(mode="json"),
+        "emotion": persona_service.get_emotion_summary(),
+    }
+
+
+def _build_app_snapshot(target_app: FastAPI) -> dict:
+    return {
+        "runtime": _build_runtime_payload(target_app),
+        "memory": _build_memory_payload(target_app),
+        "persona": _build_persona_payload(target_app),
+    }
+
+
+def _ensure_realtime_hub_initialized(target_app: FastAPI) -> None:
+    existing_hub = getattr(target_app.state, "realtime_hub", None)
+    if existing_hub is not None and not existing_hub.loop.is_closed():
+        return
+
+    loop = asyncio.get_running_loop()
+    hub = AppRealtimeHub(loop=loop, snapshot_builder=lambda: _build_app_snapshot(target_app))
+    target_app.state.realtime_hub = hub
+
+    state_store = target_app.state.state_store
+    memory_repository = target_app.state.memory_repository
+    goal_repository = target_app.state.goal_repository
+    persona_service = target_app.state.persona_service
+
+    if hasattr(state_store, "set_on_change_callback"):
+        state_store.set_on_change_callback(hub.publish_runtime)
+    if hasattr(memory_repository, "set_on_change_callback"):
+        memory_repository.set_on_change_callback(lambda: (hub.publish_runtime(), hub.publish_memory()))
+    if hasattr(goal_repository, "set_on_change_callback"):
+        goal_repository.set_on_change_callback(hub.publish_runtime)
+    if hasattr(persona_service, "set_on_change_callback"):
+        persona_service.set_on_change_callback(hub.publish_persona)
 
 
 def get_persona_service() -> PersonaService:
@@ -267,25 +376,11 @@ def build_world_state(
     world_repository: WorldRepository,
     world_state_service: WorldStateService,
 ) -> WorldState:
-    state = state_store.get()
-    focused_goals = [
-        goal
-        for goal_id in state.active_goal_ids
-        if (goal := goal_repository.get_goal(goal_id)) is not None
-    ]
-    latest_world_event = next(
-        (
-            event
-            for event in memory_repository.list_recent(limit=20)
-            if event.kind == "world"
-        ),
-        None,
-    )
-    world_state = world_state_service.bootstrap(
-        being_state=state,
-        focused_goals=focused_goals,
-        latest_event=None if latest_world_event is None else latest_world_event.content,
-        latest_event_at=None if latest_world_event is None else latest_world_event.created_at,
+    world_state = _compose_world_state(
+        state_store,
+        goal_repository,
+        memory_repository,
+        world_state_service,
     )
     return world_repository.save_world_state(world_state)
 
@@ -293,6 +388,20 @@ def build_world_state(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.websocket("/ws/app")
+async def app_realtime(websocket: WebSocket) -> None:
+    _ensure_runtime_initialized(app)
+    _ensure_realtime_hub_initialized(app)
+    hub = app.state.realtime_hub
+    await hub.connect(websocket)
+
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await hub.disconnect(websocket)
 
 
 @app.get("/state")

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import re
+from typing import Callable
 from typing import Protocol
 
 from app.memory.models import MemoryEvent
@@ -27,11 +28,13 @@ class MemoryRepository(Protocol):
 
 
 class InMemoryMemoryRepository:
-    def __init__(self) -> None:
+    def __init__(self, on_change: Callable[[], None] | None = None) -> None:
         self._events: list[MemoryEvent] = []
+        self._on_change = on_change
 
     def save_event(self, event: MemoryEvent) -> None:
         self._events.append(event)
+        self._notify_change()
 
     def list_recent(self, limit: int) -> list[MemoryEvent]:
         return list(reversed(self._events[-limit:]))
@@ -43,7 +46,10 @@ class InMemoryMemoryRepository:
         """通过 entry_id 匹配删除"""
         original_len = len(self._events)
         self._events = [e for e in self._events if e.entry_id != event_id]
-        return len(self._events) < original_len
+        deleted = len(self._events) < original_len
+        if deleted:
+            self._notify_change()
+        return deleted
 
     def update_event(self, event_id: str, **kwargs) -> bool:
         """更新事件 — 通过 entry_id 精确匹配"""
@@ -51,19 +57,29 @@ class InMemoryMemoryRepository:
             if e.entry_id == event_id:
                 updated = e.model_copy(update=kwargs)
                 self._events[i] = updated
+                self._notify_change()
                 return True
         return False
 
+    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_change = callback
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()
+
 
 class FileMemoryRepository:
-    def __init__(self, storage_path: Path) -> None:
+    def __init__(self, storage_path: Path, on_change: Callable[[], None] | None = None) -> None:
         self.storage_path = storage_path
+        self._on_change = on_change
 
     def save_event(self, event: MemoryEvent) -> None:
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         with self.storage_path.open("a", encoding="utf-8") as handle:
             handle.write(event.model_dump_json())
             handle.write("\n")
+        self._notify_change()
 
     def list_recent(self, limit: int) -> list[MemoryEvent]:
         if not self.storage_path.exists():
@@ -98,6 +114,7 @@ class FileMemoryRepository:
 
         if deleted:
             self._write_all_events(filtered)
+            self._notify_change()
 
         return deleted
 
@@ -118,6 +135,7 @@ class FileMemoryRepository:
 
         if updated:
             self._write_all_events(events)
+            self._notify_change()
 
         return updated
 
@@ -158,6 +176,13 @@ class FileMemoryRepository:
             for event in events:
                 handle.write(event.model_dump_json())
                 handle.write("\n")
+
+    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_change = callback
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()
 
 
 def _search_relevant_events(

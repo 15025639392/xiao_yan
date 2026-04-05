@@ -1,0 +1,87 @@
+import asyncio
+from concurrent.futures import Future
+from logging import getLogger
+from typing import Any, Callable
+
+from fastapi import WebSocket
+
+logger = getLogger(__name__)
+
+
+class AppRealtimeHub:
+    def __init__(self, loop: asyncio.AbstractEventLoop, snapshot_builder: Callable[[], dict[str, Any]]) -> None:
+        self._loop = loop
+        self._snapshot_builder = snapshot_builder
+        self._connections: set[WebSocket] = set()
+
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop:
+        return self._loop
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self._connections.add(websocket)
+        await websocket.send_json(
+            {
+                "type": "snapshot",
+                "payload": self._snapshot_builder(),
+            }
+        )
+
+    async def disconnect(self, websocket: WebSocket) -> None:
+        self._connections.discard(websocket)
+
+    def publish_runtime(self) -> None:
+        self._schedule_broadcast("runtime_updated", lambda snapshot: snapshot["runtime"])
+
+    def publish_memory(self) -> None:
+        self._schedule_broadcast("memory_updated", lambda snapshot: snapshot["memory"])
+
+    def publish_persona(self) -> None:
+        self._schedule_broadcast("persona_updated", lambda snapshot: snapshot["persona"])
+
+    def _schedule_broadcast(
+        self,
+        event_type: str,
+        payload_selector: Callable[[dict[str, Any]], Any],
+    ) -> None:
+        if self._loop.is_closed():
+            return
+
+        future: Future[None] = asyncio.run_coroutine_threadsafe(
+            self._broadcast(event_type, payload_selector),
+            self._loop,
+        )
+        future.add_done_callback(self._log_future_error)
+
+    async def _broadcast(
+        self,
+        event_type: str,
+        payload_selector: Callable[[dict[str, Any]], Any],
+    ) -> None:
+        if not self._connections:
+            return
+
+        snapshot = self._snapshot_builder()
+        payload = payload_selector(snapshot)
+        stale_connections: list[WebSocket] = []
+
+        for websocket in list(self._connections):
+            try:
+                await websocket.send_json(
+                    {
+                        "type": event_type,
+                        "payload": payload,
+                    }
+                )
+            except Exception:
+                stale_connections.append(websocket)
+
+        for websocket in stale_connections:
+            self._connections.discard(websocket)
+
+    @staticmethod
+    def _log_future_error(future: Future[None]) -> None:
+        exception = future.exception()
+        if exception is not None:
+            logger.warning("Realtime broadcast failed: %s", exception)

@@ -12,6 +12,7 @@ import {
   type MemorySummary,
   type MemoryKind,
 } from "../lib/api";
+import { subscribeAppRealtime } from "../lib/realtime";
 
 type MemoryPanelProps = {
   className?: string;
@@ -341,8 +342,18 @@ export function MemoryPanel({ className }: MemoryPanelProps) {
   // 初始化加载 + 定时刷新（30秒）
   useEffect(() => {
     loadData();
-    const id = setInterval(loadData, 30000);
-    return () => clearInterval(id);
+    const unsubscribe = subscribeAppRealtime((event) => {
+      const memoryPayload =
+        event.type === "snapshot" ? event.payload.memory : event.type === "memory_updated" ? event.payload : null;
+      if (!memoryPayload) {
+        return;
+      }
+
+      setSummary(memoryPayload.summary);
+      setEntries(memoryPayload.timeline);
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, [loadData]);
 
   // 防抖搜索

@@ -3,10 +3,42 @@ import { afterEach, vi } from "vitest";
 
 import App from "./App";
 
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
+  readyState = 0;
+
+  constructor(public url: string) {
+    MockWebSocket.instances.push(this);
+  }
+
+  open() {
+    this.readyState = 1;
+    this.onopen?.(new Event("open"));
+  }
+
+  emit(data: unknown) {
+    this.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify(data),
+      }),
+    );
+  }
+
+  close() {
+    this.readyState = 3;
+    this.onclose?.(new CloseEvent("close"));
+  }
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   window.location.hash = "";
+  MockWebSocket.instances = [];
 });
 
 test("renders wake and sleep controls", () => {
@@ -164,11 +196,7 @@ test("sends a chat message and renders the assistant reply", async () => {
   });
 });
 
-test("polls state and messages so proactive replies appear in the chat panel", async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
-
-  let messagesCallCount = 0;
-
+test("renders proactive replies from realtime runtime updates in the chat panel", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
@@ -187,16 +215,7 @@ test("polls state and messages so proactive replies appear in the chat panel", a
     }
 
     if (url.endsWith("/messages")) {
-      messagesCallCount += 1;
-      const body =
-        messagesCallCount === 1
-          ? { messages: [] }
-          : {
-              messages: [
-                { role: "assistant", content: "我刚刚又想到你提到的星星了。" },
-              ],
-            };
-      return new Response(JSON.stringify(body), {
+      return new Response(JSON.stringify({ messages: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -242,6 +261,7 @@ test("polls state and messages so proactive replies appear in the chat panel", a
   });
 
   vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
   render(<App />);
@@ -251,17 +271,42 @@ test("polls state and messages so proactive replies appear in the chat panel", a
     expect(screen.getByText("自由对话")).toBeInTheDocument();
   });
 
-  // 推进时间触发轮询
+  const socket = MockWebSocket.instances[0];
+  socket.open();
+
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(5000);
+    socket.emit({
+      type: "runtime_updated",
+      payload: {
+        state: {
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: "我刚刚又想到你提到的星星了。",
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+          self_programming_job: null,
+        },
+        messages: [
+          { role: "assistant", content: "我刚刚又想到你提到的星星了。" },
+        ],
+        goals: [
+          { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
+        ],
+        world: {
+          time_of_day: "night",
+          energy: "low",
+          mood: "tired",
+          focus_tension: "high",
+        },
+        autobio: [],
+      },
+    });
   });
 
-  // 验证消息被渲染
   await waitFor(() => {
     expect(screen.getByText("我刚刚又想到你提到的星星了。")).toBeInTheDocument();
   });
-
-  vi.useRealTimers();
 }, 10000);
 
 test("updates a goal status from the app and refreshes the rendered goal", async () => {

@@ -23,6 +23,7 @@ import {
   updateGoalStatus,
   wake,
 } from "./lib/api";
+import { subscribeAppRealtime } from "./lib/realtime";
 
 type AppRoute = "overview" | "chat" | "persona" | "memory" | "history" | "tools";
 
@@ -81,13 +82,28 @@ export default function App() {
     }
 
     void syncRuntime();
-    const timer = window.setInterval(() => {
-      void syncRuntime();
-    }, 5000);
+    const unsubscribe = subscribeAppRealtime((event) => {
+      if (cancelled) {
+        return;
+      }
+
+      const runtimePayload =
+        event.type === "snapshot" ? event.payload.runtime : event.type === "runtime_updated" ? event.payload : null;
+      if (!runtimePayload) {
+        return;
+      }
+
+      setState(runtimePayload.state);
+      setMessages((current) => mergeMessages(current, runtimePayload.messages));
+      setGoals(runtimePayload.goals);
+      setWorld(runtimePayload.world);
+      setAutobioEntries(runtimePayload.autobio);
+      setError("");
+    });
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      unsubscribe();
     };
   }, []);
 

@@ -12,6 +12,7 @@ import {
   updateSpeakingStyle,
   resetPersona,
 } from "../lib/api";
+import { subscribeAppRealtime } from "../lib/realtime";
 
 type PersonaPanelProps = {
   onPersonaUpdated?: () => void;
@@ -57,8 +58,17 @@ function PersonaStatusBar() {
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 30000);
-    return () => clearInterval(timer);
+    const unsubscribe = subscribeAppRealtime((event) => {
+      const personaPayload =
+        event.type === "snapshot" ? event.payload.persona : event.type === "persona_updated" ? event.payload : null;
+      if (!personaPayload) {
+        return;
+      }
+
+      setProfile(personaPayload.profile);
+      setEmotion(personaPayload.emotion);
+    });
+    return () => unsubscribe();
   }, []);
 
   async function load() {
@@ -716,4 +726,3 @@ function DimensionSlider({
     </div>
   );
 }
-

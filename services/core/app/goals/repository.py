@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from typing import Callable
 from typing import Protocol
 
 from app.goals.models import Goal, GoalStatus
@@ -24,11 +25,13 @@ class GoalRepository(Protocol):
 
 
 class InMemoryGoalRepository:
-    def __init__(self) -> None:
+    def __init__(self, on_change: Callable[[], None] | None = None) -> None:
         self._goals: dict[str, Goal] = {}
+        self._on_change = on_change
 
     def save_goal(self, goal: Goal) -> Goal:
         self._goals[goal.id] = goal
+        self._notify_change()
         return goal
 
     def list_goals(self) -> list[Goal]:
@@ -52,12 +55,21 @@ class InMemoryGoalRepository:
             }
         )
         self._goals[goal_id] = updated
+        self._notify_change()
         return updated
+
+    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_change = callback
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()
 
 
 class FileGoalRepository:
-    def __init__(self, storage_path: Path) -> None:
+    def __init__(self, storage_path: Path, on_change: Callable[[], None] | None = None) -> None:
         self.storage_path = storage_path
+        self._on_change = on_change
 
     def save_goal(self, goal: Goal) -> Goal:
         goals = {item.id: item for item in self.list_goals()}
@@ -67,6 +79,7 @@ class FileGoalRepository:
             json.dumps([item.model_dump(mode="json") for item in goals.values()], ensure_ascii=False),
             encoding="utf-8",
         )
+        self._notify_change()
         return goal
 
     def list_goals(self) -> list[Goal]:
@@ -96,3 +109,10 @@ class FileGoalRepository:
             }
         )
         return self.save_goal(updated)
+
+    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_change = callback
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()

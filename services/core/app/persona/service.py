@@ -10,6 +10,7 @@
 from pathlib import Path
 from datetime import datetime, timezone
 from logging import getLogger
+from typing import Callable
 from typing import Protocol
 
 from app.persona.models import (
@@ -79,9 +80,11 @@ class PersonaService:
         self,
         repository: PersonaRepository | None = None,
         profile: PersonaProfile | None = None,
+        on_change: Callable[[], None] | None = None,
     ) -> None:
         self.repository = repository
         self._profile: PersonaProfile | None = profile
+        self._on_change = on_change
         # 延迟创建引擎（需要 personality 配置）
         self._engine: EmotionEngine | None = None
 
@@ -260,6 +263,7 @@ class PersonaService:
                 self.repository.save(profile)
             except Exception as exc:
                 logger.warning("Failed to persist persona: %s", exc)
+        self._notify_change()
 
     def _save_silent(self, profile: PersonaProfile) -> None:
         """静默保存（不记录警告）"""
@@ -268,3 +272,10 @@ class PersonaService:
                 self.repository.save(profile)
             except Exception:
                 pass
+
+    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_change = callback
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from threading import Lock
+from typing import Callable
 
 from app.domain.models import BeingState, SelfProgrammingJob, TodayPlan
 from app.memory.repository import MemoryRepository
@@ -13,10 +14,12 @@ class StateStore:
         initial_state: BeingState | None = None,
         memory_repository: MemoryRepository | None = None,
         storage_path: Path | None = None,
+        on_change: Callable[[], None] | None = None,
     ) -> None:
         self._lock = Lock()
         self._memory_repository = memory_repository
         self._storage_path = storage_path
+        self._on_change = on_change
         self._state = self._load_state(initial_state)
 
     def get(self) -> BeingState:
@@ -43,6 +46,7 @@ class StateStore:
                 deep=True,
             )
             self._persist_state(self._state)
+            self._notify_change()
             return self._state.model_copy(deep=True)
 
     def wake(self) -> BeingState:
@@ -73,3 +77,10 @@ class StateStore:
             json.dumps(state.model_dump(mode="json"), ensure_ascii=False),
             encoding="utf-8",
         )
+
+    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_change = callback
+
+    def _notify_change(self) -> None:
+        if self._on_change is not None:
+            self._on_change()
