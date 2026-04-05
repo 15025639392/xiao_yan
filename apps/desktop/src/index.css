@@ -8,6 +8,12 @@
   --bg-surface-elevated: #1a2233;
   --bg-surface-overlay: #1e293b;
 
+  /* === Chat Message Colors === */
+  --chat-user-bg: linear-gradient(135deg, #007AFF 0%, #0051D5 100%);
+  --chat-user-text: white;
+  --chat-assistant-bg: var(--bg-surface-elevated);
+  --chat-assistant-border: var(--border-default);
+
   /* === Semantic Colors === */
   --primary: #3b82f6;
   --primary-hover: #2563eb;
@@ -75,6 +81,12 @@
   --bg-surface: #ffffff;
   --bg-surface-elevated: #f1f5f9;
   --bg-surface-overlay: #e2e8f0;
+
+  /* === Chat Message Colors === */
+  --chat-user-bg: linear-gradient(135deg, #0A84FF 0%, #0066CC 100%);
+  --chat-user-text: white;
+  --chat-assistant-bg: #f8fafc;
+  --chat-assistant-border: #e2e8f0;
 
   /* === Semantic Colors (保持相同，但调整muted) === */
   --primary: #2563eb;
@@ -882,15 +894,17 @@ textarea {
   font-size: 0.9375rem;
 }
 
+/* 用户消息气泡 - 使用CSS变量适配主题 */
 .chat-message--user .chat-message__bubble {
-  background: linear-gradient(135deg, #007AFF 0%, #0051D5 100%);
-  color: white;
+  background: var(--chat-user-bg);
+  color: var(--chat-user-text);
   border-bottom-right-radius: 4px;
 }
 
+/* AI消息气泡 */
 .chat-message--assistant .chat-message__bubble {
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-default);
+  background: var(--chat-assistant-bg);
+  border: 1px solid var(--chat-assistant-border);
   color: var(--text-primary);
   border-bottom-left-radius: 4px;
 }
