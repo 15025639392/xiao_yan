@@ -1,6 +1,7 @@
 import os
 import json
 from collections.abc import Generator
+from typing import Optional, List, Dict
 
 import httpx
 
@@ -213,3 +214,227 @@ def _iter_sse_events(lines) -> Generator[tuple[str | None, str], None, None]:
 
     if data_lines:
         yield event_name, "\n".join(data_lines)
+
+
+class EnhancedChatGateway:
+    """增强的聊天网关，集成了人格和记忆功能"""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str = "https://api.openai.com/v1",
+        wire_api: str = "responses",
+        http_client: httpx.Client | None = None,
+        memory_service=None,
+        persona=None,
+    ):
+        """初始化增强聊天网关
+
+        Args:
+            api_key: API密钥
+            model: 模型名称
+            base_url: API基础URL
+            wire_api: API类型
+            http_client: HTTP客户端
+            memory_service: 记忆服务（可选）
+            persona: 人格配置（可选）
+        """
+        self.gateway = ChatGateway(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            wire_api=wire_api,
+            http_client=http_client,
+        )
+        self.memory_service = memory_service
+        self.persona = persona
+
+        # 如果提供了人格和记忆服务，初始化辅助组件
+        if memory_service and persona:
+            from app.chat.context_builder import DialogueContextBuilder
+            from app.chat.persona_injector import PersonaInjector
+            from app.chat.emotion_handler import EmotionHandler
+
+            self.context_builder = DialogueContextBuilder(memory_service, persona)
+            self.persona_injector = PersonaInjector(persona)
+            self.emotion_handler = EmotionHandler()
+        else:
+            self.context_builder = None
+            self.persona_injector = None
+            self.emotion_handler = None
+
+    @classmethod
+    def from_env(cls, memory_service=None, persona=None) -> "EnhancedChatGateway":
+        """从环境变量创建增强聊天网关"""
+        load_local_env()
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is not configured")
+
+        return cls(
+            api_key=api_key,
+            model=os.getenv("OPENAI_MODEL", "gpt-5.4"),
+            base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            wire_api=os.getenv("OPENAI_WIRE_API", "responses"),
+            memory_service=memory_service,
+            persona=persona,
+        )
+
+    def chat(
+        self,
+        user_message: str,
+        conversation_history: Optional[List[Dict]] = None,
+        context: Optional[Dict] = None,
+    ) -> str:
+        """发送聊天消息并获取回复
+
+        Args:
+            user_message: 用户消息
+            conversation_history: 对话历史（可选）
+            context: 上下文信息（可选）
+
+        Returns:
+            AI回复文本
+        """
+        # 如果没有人格和记忆服务，使用简单模式
+        if not self.persona or not self.memory_service:
+            return self._simple_chat(user_message)
+
+        # 使用完整的人格和记忆模式
+        return self._enhanced_chat(user_message, conversation_history, context)
+
+    def _simple_chat(self, user_message: str) -> str:
+        """简单聊天模式（无人格和记忆）"""
+        messages = [ChatMessage(role="user", content=user_message)]
+        result = self.gateway.create_response(messages)
+        return result.output_text
+
+    def _enhanced_chat(
+        self,
+        user_message: str,
+        conversation_history: Optional[List[Dict]] = None,
+        context: Optional[Dict] = None,
+    ) -> str:
+        """增强聊天模式（使用人格和记忆）"""
+        # 1. 构建对话上下文
+        dialogue_context = self.context_builder.build_context(
+            user_message,
+            conversation_history=conversation_history,
+        )
+
+        # 2. 检测用户消息中的情绪
+        detected_emotion = self.emotion_handler.detect_emotion(user_message)
+
+        # 3. 更新情绪状态
+        self.emotion_handler.update_emotion(detected_emotion)
+
+        # 4. 注入人格特征
+        persona_instructions = self.persona_injector.inject_personality(
+            dialogue_context,
+            emotion=detected_emotion.emotion_type,
+        )
+
+        # 5. 调用LLM生成回复
+        messages = [ChatMessage(role="system", content=persona_instructions)]
+        messages.append(ChatMessage(role="user", content=user_message))
+
+        if conversation_history:
+            for turn in conversation_history[-5:]:  # 只保留最近5轮对话
+                role = turn.get("role", "user")
+                content = turn.get("content", "")
+                if content:
+                    messages.append(ChatMessage(role=role, content=content))
+
+        result = self.gateway.create_response(messages)
+
+        # 6. 调整回复风格
+        response = self.persona_injector.adapt_response_style(
+            result.output_text,
+            emotion=detected_emotion.emotion_type,
+        )
+
+        return response
+
+    def stream_chat(
+        self,
+        user_message: str,
+        conversation_history: Optional[List[Dict]] = None,
+        context: Optional[Dict] = None,
+    ):
+        """流式聊天
+
+        Args:
+            user_message: 用户消息
+            conversation_history: 对话历史（可选）
+            context: 上下文信息（可选）
+
+        Yields:
+            流式响应事件字典
+        """
+        # 如果没有人格和记忆服务，使用简单模式
+        if not self.persona or not self.memory_service:
+            yield from self._simple_stream_chat(user_message)
+            return
+
+        # 使用完整的人格和记忆模式
+        yield from self._enhanced_stream_chat(user_message, conversation_history, context)
+
+    def _simple_stream_chat(self, user_message: str):
+        """简单流式聊天模式"""
+        messages = [ChatMessage(role="user", content=user_message)]
+        yield from self.gateway.stream_response(messages)
+
+    def _enhanced_stream_chat(
+        self,
+        user_message: str,
+        conversation_history: Optional[List[Dict]] = None,
+        context: Optional[Dict] = None,
+    ):
+        """增强流式聊天模式"""
+        # 1. 构建对话上下文
+        dialogue_context = self.context_builder.build_context(
+            user_message,
+            conversation_history=conversation_history,
+        )
+
+        # 2. 检测用户消息中的情绪
+        detected_emotion = self.emotion_handler.detect_emotion(user_message)
+
+        # 3. 注入人格特征
+        persona_instructions = self.persona_injector.inject_personality(
+            dialogue_context,
+            emotion=detected_emotion.emotion_type,
+        )
+
+        # 4. 构建消息列表
+        messages = [ChatMessage(role="system", content=persona_instructions)]
+        messages.append(ChatMessage(role="user", content=user_message))
+
+        if conversation_history:
+            for turn in conversation_history[-5:]:
+                role = turn.get("role", "user")
+                content = turn.get("content", "")
+                if content:
+                    messages.append(ChatMessage(role=role, content=content))
+
+        # 5. 流式生成回复
+        yield from self.gateway.stream_response(messages)
+
+    def extract_and_store_memory(self, message: ChatMessage) -> List:
+        """从消息中提取并存储记忆
+
+        Args:
+            message: 聊天消息
+
+        Returns:
+            提取的记忆事件列表
+        """
+        if self.memory_service:
+            return self.memory_service.extract_and_save(message)
+        return []
+
+    def close(self) -> None:
+        """关闭网关"""
+        self.gateway.close()

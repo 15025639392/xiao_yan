@@ -3,8 +3,9 @@ import type {
   BeingState,
   SelfProgrammingEdit,
   SelfProgrammingJob,
+  EmotionState,
 } from "../lib/api";
-import { rollbackSelfProgrammingJob } from "../lib/api";
+import { rollbackSelfProgrammingJob, fetchEmotionState } from "../lib/api";
 import { ApprovalPanel } from "./ApprovalPanel";
 
 type StatusPanelProps = {
@@ -20,6 +21,13 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
     state.today_plan?.steps.length &&
     state.today_plan.steps.every((step) => step.status === "completed");
   const selfProgrammingJob = state.self_programming_job;
+  const [emotionState, setEmotionState] = useState<EmotionState | null>(null);
+  const [showEmotionDetails, setShowEmotionDetails] = useState(false);
+
+  // 获取情绪状态
+  useEffect(() => {
+    fetchEmotionState().then(setEmotionState).catch(console.error);
+  }, [state.mode, state.focus_mode]);
 
   return (
     <section className="panel">
@@ -87,6 +95,15 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
               ))}
             </ul>
           </section>
+        ) : null}
+
+        {/* 情绪状态面板 */}
+        {emotionState ? (
+          <EmotionPanel
+            emotionState={emotionState}
+            showDetails={showEmotionDetails}
+            onToggleDetails={() => setShowEmotionDetails(!showEmotionDetails)}
+          />
         ) : null}
 
         {/* 自我编程面板 */}
@@ -618,4 +635,223 @@ function healthColor(score: number): string {
   if (score >= 60) return "var(--info)";
   if (score >= 40) return "var(--warning)";
   return "var(--danger)";
+}
+
+// ══════════════════════════════════════════════
+// 🎭 情绪状态面板组件
+// ══════════════════════════════════════════════
+
+function EmotionPanel({
+  emotionState,
+  showDetails,
+  onToggleDetails,
+}: {
+  emotionState: EmotionState;
+  showDetails: boolean;
+  onToggleDetails: () => void;
+}) {
+  return (
+    <section className="emotion-panel" style={{ marginTop: "var(--space-5)" }}>
+      {/* 头部 */}
+      <div
+        className="emotion-panel__header"
+        onClick={onToggleDetails}
+        style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <span className="emotion-panel__icon">{getEmotionIcon(emotionState.primary_emotion)}</span>
+          <h3 style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600 }}>情绪状态</h3>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <span className="emotion-badge" style={{ background: getEmotionBgColor(emotionState.primary_emotion) }}>
+            {getEmotionLabel(emotionState.primary_emotion)}
+          </span>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            style={{ transform: showDetails ? "rotate(180deg)" : "rotate(0)", transition: "transform 200ms ease" }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      {/* 详情内容 */}
+      {showDetails && (
+        <div className="emotion-panel__body">
+          {/* 主要情绪 */}
+          <div className="emotion-section">
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+              <span className="emotion-icon--primary">{getEmotionIcon(emotionState.primary_emotion)}</span>
+              <span style={{ fontSize: "0.875rem", fontWeight: 500 }}>
+                主要情绪: {getEmotionLabel(emotionState.primary_emotion)}
+              </span>
+              <span className="intensity-badge" style={{ fontSize: "0.75rem", padding: "var(--space-1) var(--space-2)", borderRadius: "var(--radius-full)" }}>
+                {getIntensityLabel(emotionState.primary_intensity)}
+              </span>
+            </div>
+            {emotionState.secondary_emotion && (
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+                <span className="emotion-icon--secondary">{getEmotionIcon(emotionState.secondary_emotion)}</span>
+                <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+                  次要情绪: {getEmotionLabel(emotionState.secondary_emotion)}
+                </span>
+                <span className="intensity-badge" style={{ fontSize: "0.75rem", padding: "var(--space-1) var(--space-2)", borderRadius: "var(--radius-full)", opacity: 0.8 }}>
+                  {getIntensityLabel(emotionState.secondary_intensity)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* 心理状态 */}
+          <div className="emotion-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
+            <div className="emotion-card" style={{ padding: "var(--space-2)", background: "var(--bg-surface-elevated)", borderRadius: "var(--radius-md)" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginBottom: "var(--space-1)" }}>情绪基调</div>
+              <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>
+                {emotionState.mood_valence > 0 ? "积极" : emotionState.mood_valence < 0 ? "消极" : "中立"}
+                <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginLeft: "var(--space-1)" }}>
+                  ({emotionState.mood_valence.toFixed(1)})
+                </span>
+              </div>
+            </div>
+            <div className="emotion-card" style={{ padding: "var(--space-2)", background: "var(--bg-surface-elevated)", borderRadius: "var(--radius-md)" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginBottom: "var(--space-1)" }}>活跃度</div>
+              <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>
+                {emotionState.arousal > 0.5 ? "高" : "低"}
+                <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginLeft: "var(--space-1)" }}>
+                  ({emotionState.arousal.toFixed(1)})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 活跃情绪条目 */}
+          {emotionState.active_entries.length > 0 && (
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <h4 style={{ margin: "0 0 var(--space-2)", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+                活跃情绪 ({emotionState.active_entry_count})
+              </h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                {emotionState.active_entries.slice(0, 3).map((entry, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      padding: "var(--space-2)",
+                      background: "var(--bg-surface-elevated)",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: "0.8125rem",
+                      borderLeft: `2px solid ${getEmotionBorderColor(entry.emotion_type)}`,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>
+                      <span>{getEmotionIcon(entry.emotion_type)}</span>
+                      <span style={{ fontWeight: 500 }}>{getEmotionLabel(entry.emotion_type)}</span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+                        {getIntensityLabel(entry.intensity)}
+                      </span>
+                    </div>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem" }}>{entry.reason}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 更新时间 */}
+          {emotionState.last_updated && (
+            <div style={{ marginTop: "var(--space-3)", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+              更新于: {new Date(emotionState.last_updated).toLocaleString("zh-CN")}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function getEmotionIcon(emotion: string): string {
+  const icons: Record<string, string> = {
+    joy: "😊",
+    sadness: "😢",
+    anger: "😠",
+    fear: "😨",
+    surprise: "😲",
+    disgust: "🤢",
+    calm: "😌",
+    engaged: "🎯",
+    proud: "😤",
+    lonely: "😔",
+    grateful: "🙏",
+    frustrated: "😤",
+  };
+  return icons[emotion] || "😐";
+}
+
+function getEmotionLabel(emotion: string): string {
+  const labels: Record<string, string> = {
+    joy: "喜悦",
+    sadness: "悲伤",
+    anger: "愤怒",
+    fear: "恐惧",
+    surprise: "惊讶",
+    disgust: "厌恶",
+    calm: "平静",
+    engaged: "专注",
+    proud: "自豪",
+    lonely: "孤独",
+    grateful: "感激",
+    frustrated: "挫折",
+  };
+  return labels[emotion] || emotion;
+}
+
+function getIntensityLabel(intensity: string): string {
+  const labels: Record<string, string> = {
+    none: "无",
+    mild: "轻微",
+    moderate: "中等",
+    strong: "强烈",
+    intense: "强烈",
+  };
+  return labels[intensity] || intensity;
+}
+
+function getEmotionBgColor(emotion: string): string {
+  const colors: Record<string, string> = {
+    joy: "var(--success-muted)",
+    sadness: "var(--info-muted)",
+    anger: "var(--danger-muted)",
+    fear: "var(--warning-muted)",
+    surprise: "var(--info-muted)",
+    disgust: "var(--warning-muted)",
+    calm: "var(--success-muted)",
+    engaged: "var(--info-muted)",
+    proud: "var(--success-muted)",
+    lonely: "var(--info-muted)",
+    grateful: "var(--success-muted)",
+    frustrated: "var(--danger-muted)",
+  };
+  return colors[emotion] || "var(--bg-surface-elevated)";
+}
+
+function getEmotionBorderColor(emotion: string): string {
+  const colors: Record<string, string> = {
+    joy: "var(--success)",
+    sadness: "var(--info)",
+    anger: "var(--danger)",
+    fear: "var(--warning)",
+    surprise: "var(--info)",
+    disgust: "var(--warning)",
+    calm: "var(--success)",
+    engaged: "var(--info)",
+    proud: "var(--success)",
+    lonely: "var(--info)",
+    grateful: "var(--success)",
+    frustrated: "var(--danger)",
+  };
+  return colors[emotion] || "var(--border-default)";
 }

@@ -1,5 +1,10 @@
 import { useState } from "react";
-import type { Goal } from "../lib/api";
+import type { Goal, TaskExecution, TaskExecutionStats, GoalDecompositionResult } from "../lib/api";
+import {
+  decomposeGoal,
+  fetchTaskExecutionStats,
+  fetchActiveTaskExecutions,
+} from "../lib/api";
 
 type GoalsPanelProps = {
   goals: Goal[];
@@ -15,6 +20,11 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     action: "abandon" | "complete";
   }>({ isOpen: false, goalId: "", goalTitle: "", action: "abandon" });
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set(["closed"]));
+  const [showExecutionPanel, setShowExecutionPanel] = useState(false);
+  const [executionStats, setExecutionStats] = useState<TaskExecutionStats | null>(null);
+  const [activeExecutions, setActiveExecutions] = useState<TaskExecution[]>([]);
+  const [decomposedGoals, setDecomposedGoals] = useState<Set<string>>(new Set());
+  const [loadingDecompose, setLoadingDecompose] = useState<Set<string>>(new Set());
 
   function handleAbandonClick(goalId: string, goalTitle: string) {
     setConfirmModal({
@@ -60,6 +70,46 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     });
   }
 
+  // 加载执行统计
+  async function loadExecutionStats() {
+    try {
+      const stats = await fetchTaskExecutionStats();
+      setExecutionStats(stats);
+      const executions = await fetchActiveTaskExecutions();
+      setActiveExecutions(executions);
+    } catch (error) {
+      console.error("Failed to load execution stats:", error);
+    }
+  }
+
+  // 分解目标
+  async function handleDecomposeGoal(goalId: string) {
+    if (loadingDecompose.has(goalId)) return;
+
+    setLoadingDecompose((prev) => new Set([...prev, goalId]));
+    try {
+      const result = await decomposeGoal(goalId);
+      setDecomposedGoals((prev) => new Set([...prev, goalId]));
+      // TODO: 显示分解结果，更新goals列表
+    } catch (error) {
+      console.error("Failed to decompose goal:", error);
+    } finally {
+      setLoadingDecompose((prev) => {
+        const next = new Set(prev);
+        next.delete(goalId);
+        return next;
+      });
+    }
+  }
+
+  // 切换执行面板显示
+  function toggleExecutionPanel() {
+    if (!showExecutionPanel) {
+      loadExecutionStats();
+    }
+    setShowExecutionPanel(!showExecutionPanel);
+  }
+
   return (
     <section className="panel">
       <div className="panel__header">
@@ -70,12 +120,53 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
             <p className="panel__subtitle">管理和追踪所有目标</p>
           </div>
         </div>
-        <span className="status-badge status-badge--awake">
-          {goals.length} 个目标
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <button
+            className="btn btn--secondary btn--sm"
+            type="button"
+            onClick={toggleExecutionPanel}
+            style={{ fontSize: "0.75rem" }}
+          >
+            {showExecutionPanel ? "📊 隐藏统计" : "📊 执行统计"}
+          </button>
+          <span className="status-badge status-badge--awake">
+            {goals.length} 个目标
+          </span>
+        </div>
       </div>
 
       <div className="panel__content">
+        {/* 任务执行统计面板 */}
+        {showExecutionPanel && executionStats ? (
+          <section style={{ marginBottom: "var(--space-5)" }}>
+            <h3 style={{ margin: "0 0 var(--space-3)", fontSize: "0.875rem", fontWeight: 600 }}>任务执行统计</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "var(--space-3)" }}>
+              <StatCard label="总任务数" value={executionStats.total_tasks} />
+              <StatCard label="已完成" value={executionStats.completed} color="success" />
+              <StatCard label="失败" value={executionStats.failed} color="danger" />
+              <StatCard label="活跃中" value={executionStats.active} color="info" />
+              <StatCard
+                label="成功率"
+                value={`${executionStats.success_rate.toFixed(1)}%`}
+                color={executionStats.success_rate >= 80 ? "success" : executionStats.success_rate >= 50 ? "warning" : "danger"}
+              />
+            </div>
+
+            {activeExecutions.length > 0 && (
+              <div style={{ marginTop: "var(--space-4)" }}>
+                <h4 style={{ margin: "0 0 var(--space-2)", fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
+                  活跃任务 ({activeExecutions.length})
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                  {activeExecutions.map((exec) => (
+                    <ExecutionCard key={exec.goal_id} execution={exec} allGoals={goals} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        ) : null}
+
         {goals.length === 0 ? (
           <div className="empty-state empty-state--small">
             <p>还没有目标。</p>
@@ -146,9 +237,12 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
                             <GoalItem
                               key={goal.id}
                               goal={goal}
+                              allGoals={goals}
                               onAbandonClick={handleAbandonClick}
                               onCompleteClick={handleCompleteClick}
                               onUpdateGoalStatus={onUpdateGoalStatus}
+                              onDecomposeGoal={handleDecomposeGoal}
+                              loadingDecompose={loadingDecompose}
                             />
                           ))}
                         </ul>
@@ -192,9 +286,12 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
                           <GoalItem
                             key={goal.id}
                             goal={goal}
+                            allGoals={goals}
                             onAbandonClick={handleAbandonClick}
                             onCompleteClick={handleCompleteClick}
                             onUpdateGoalStatus={onUpdateGoalStatus}
+                            onDecomposeGoal={handleDecomposeGoal}
+                            loadingDecompose={loadingDecompose}
                           />
                         ))}
                       </ul>
@@ -244,12 +341,17 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
 
 type GoalItemProps = {
   goal: Goal;
+  allGoals: Goal[];
   onAbandonClick: (goalId: string, goalTitle: string) => void;
   onCompleteClick: (goalId: string, goalTitle: string) => void;
   onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
+  onDecomposeGoal: (goalId: string) => void;
+  loadingDecompose: Set<string>;
 };
 
-function GoalItem({ goal, onAbandonClick, onCompleteClick, onUpdateGoalStatus }: GoalItemProps) {
+function GoalItem({ goal, allGoals, onAbandonClick, onCompleteClick, onUpdateGoalStatus, onDecomposeGoal, loadingDecompose }: GoalItemProps) {
+  const [isDecomposed, setIsDecomposed] = useState(false);
+
   return (
     <li className="goal-card">
       <div className="goal-card__top">
@@ -260,12 +362,30 @@ function GoalItem({ goal, onAbandonClick, onCompleteClick, onUpdateGoalStatus }:
               <span className="goal-card__meta-item">链 {goal.chain_id}</span>
             ) : null}
             <span className="goal-card__meta-item">G{goal.generation ?? 0}</span>
+            {goal.source ? (
+              <span className="goal-card__meta-item" title={goal.source}>📌</span>
+            ) : null}
           </div>
         </div>
         <span className={`status-badge status-badge--${goal.status}`}>
           {renderGoalStatus(goal.status)}
         </span>
       </div>
+
+      {/* 目标详情区域 */}
+      {(goal.generation === 0 && goal.status === "active") && (
+        <div style={{ marginTop: "var(--space-2)", paddingTop: "var(--space-2)", borderTop: "1px solid var(--border-default)" }}>
+          <button
+            className="btn btn--secondary btn--sm"
+            type="button"
+            onClick={() => onDecomposeGoal(goal.id)}
+            disabled={loadingDecompose.has(goal.id)}
+            style={{ fontSize: "0.75rem", padding: "var(--space-1) var(--space-2)" }}
+          >
+            {loadingDecompose.has(goal.id) ? "⏳ 分解中..." : "🔧 分解任务"}
+          </button>
+        </div>
+      )}
 
       {goal.status !== "completed" && goal.status !== "abandoned" ? (
         <div className="goal-card__actions">
@@ -408,4 +528,63 @@ function getStatusPriority(status: Goal["status"]): number {
     case "abandoned":
       return 3;
   }
+}
+
+// ══════════════════════════════════════════════
+// 辅助组件
+// ══════════════════════════════════════════════
+
+function StatCard({ label, value, color = "default" }: { label: string; value: number | string; color?: string }) {
+  const colorVar = color === "success" ? "var(--success)" : color === "danger" ? "var(--danger)" : color === "warning" ? "var(--warning)" : color === "info" ? "var(--info)" : "var(--text-primary)";
+  return (
+    <div style={{
+      padding: "var(--space-3)",
+      background: "var(--bg-surface-elevated)",
+      borderRadius: "var(--radius-md)",
+      border: "1px solid var(--border-default)",
+    }}>
+      <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginBottom: "var(--space-1)" }}>{label}</div>
+      <div style={{ fontSize: "1.5rem", fontWeight: 600, color: colorVar }}>{value}</div>
+    </div>
+  );
+}
+
+function ExecutionCard({ execution, allGoals }: { execution: TaskExecution; allGoals: Goal[] }) {
+  const goal = allGoals.find((g) => g.id === execution.goal_id);
+
+  return (
+    <div style={{
+      padding: "var(--space-3)",
+      background: "var(--bg-surface-elevated)",
+      borderRadius: "var(--radius-md)",
+      border: "1px solid var(--border-default)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-2)" }}>
+        <span style={{ fontSize: "0.875rem", fontWeight: 500 }}>{goal?.title || execution.goal_id}</span>
+        <span className="intensity-badge" style={{ fontSize: "0.75rem", padding: "var(--space-1) var(--space-2)", borderRadius: "var(--radius-full)" }}>
+          {(execution.progress * 100).toFixed(0)}%
+        </span>
+      </div>
+      <div style={{ marginBottom: "var(--space-2)" }}>
+        <div style={{
+          height: "4px",
+          background: "var(--bg-surface)",
+          borderRadius: "var(--radius-full)",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            height: "100%",
+            background: execution.status === "completed" ? "var(--success)" : execution.status === "abandoned" ? "var(--danger)" : "var(--info)",
+            borderRadius: "var(--radius-full)",
+            transition: "width 300ms ease",
+            width: `${execution.progress * 100}%`,
+          }} />
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+        <span>{renderGoalStatus(execution.status)}</span>
+        <span>{new Date(execution.started_at).toLocaleString("zh-CN")}</span>
+      </div>
+    </div>
+  );
 }
