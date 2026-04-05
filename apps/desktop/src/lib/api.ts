@@ -157,6 +157,22 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return response.json();
 }
 
+async function put<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    throw new Error(`request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 async function get<T>(path: string): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`);
 
@@ -334,7 +350,7 @@ export function updatePersona(data: {
   identity?: string;
   origin_story?: string;
 }): Promise<{ success: boolean; profile: PersonaProfile }> {
-  return post<{ success: boolean; profile: PersonaProfile }>("/persona", data);
+  return put<{ success: boolean; profile: PersonaProfile }>("/persona", data);
 }
 
 /** 更新性格维度 */
@@ -345,7 +361,7 @@ export function updatePersonality(data: {
   agreeableness?: number;
   neuroticism?: number;
 }): Promise<{ success: boolean; profile: PersonaProfile }> {
-  return post<{ success: boolean; profile: PersonaProfile }>("/persona/personality", data);
+  return put<{ success: boolean; profile: PersonaProfile }>("/persona/personality", data);
 }
 
 /** 更新说话风格 */
@@ -357,7 +373,7 @@ export function updateSpeakingStyle(data: {
   verbal_tics?: string[];
   response_length?: string;
 }): Promise<{ success: boolean; profile: PersonaProfile }> {
-  return post<{ success: boolean; profile: PersonaProfile }>("/persona/speaking-style", data);
+  return put<{ success: boolean; profile: PersonaProfile }>("/persona/speaking-style", data);
 }
 
 /** 重置为默认人格 */
