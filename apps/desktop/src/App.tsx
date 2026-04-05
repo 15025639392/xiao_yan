@@ -4,6 +4,8 @@ import { AutobioPanel } from "./components/AutobioPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
 import { GoalsPanel } from "./components/GoalsPanel";
+import { HistoryPanel } from "./components/HistoryPanel";
+import type { SelfImprovementHistoryEntry } from "./lib/api";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPanel } from "./components/StatusPanel";
 import { WorldPanel } from "./components/WorldPanel";
@@ -20,7 +22,7 @@ import {
   wake,
 } from "./lib/api";
 
-type AppRoute = "overview" | "chat" | "settings";
+type AppRoute = "overview" | "chat" | "settings" | "history";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -43,6 +45,7 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">(() => loadThemePreference());
+  const [showHistory, setShowHistory] = useState(false);
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
 
   useEffect(() => {
@@ -175,6 +178,28 @@ export default function App() {
     }
   }
 
+  async function handleRollback(jobId: string) {
+    try {
+      setError("");
+      // 回滚后刷新状态
+      const refreshedState = await fetchState();
+      setState(refreshedState);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "回滚失败");
+    }
+  }
+
+  async function handleApprovalDecision(jobId: string, approved: boolean) {
+    try {
+      setError("");
+      // 审批操作已由 ApprovalPanel 内部调用 API 完成，这里只做状态刷新
+      const refreshedState = await fetchState();
+      setState(refreshedState);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "审批状态更新失败");
+    }
+  }
+
   function handleNavigate(nextRoute: AppRoute) {
     const nextHash = routeToHash(nextRoute);
     if (window.location.hash !== nextHash) {
@@ -227,6 +252,16 @@ export default function App() {
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             <span>对话</span>
+          </button>
+          <button
+            className={`app-sidebar__nav-item ${route === "history" ? "app-sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNavigate("history")}
+            type="button"
+          >
+            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span>历史</span>
           </button>
         </nav>
 
@@ -292,6 +327,8 @@ export default function App() {
           />
         ) : route === "settings" ? (
           <SettingsPanel theme={theme} onThemeChange={setTheme} />
+        ) : route === "history" ? (
+          <HistoryPage onSelectRollback={handleRollback} />
         ) : (
           <OverviewPanel
             focusGoalTitle={focusGoalTitle}
@@ -302,6 +339,8 @@ export default function App() {
             state={state}
             world={world}
             autobioEntries={autobioEntries}
+            onRollback={handleRollback}
+            onApprovalDecision={handleApprovalDecision}
           />
         )}
       </main>
@@ -319,6 +358,8 @@ function OverviewPanel({
   state,
   world,
   autobioEntries,
+  onRollback,
+  onApprovalDecision,
 }: {
   focusGoalTitle: string | null;
   goals: Goal[];
@@ -328,6 +369,8 @@ function OverviewPanel({
   state: BeingState;
   world: InnerWorldState | null;
   autobioEntries: string[];
+  onRollback?: (jobId: string) => void;
+  onApprovalDecision?: (jobId: string, approved: boolean) => void;
 }) {
   const isAwake = mode === "awake";
 
@@ -367,7 +410,7 @@ function OverviewPanel({
       <section className="inspector-grid">
         <div className="inspector-grid__rail">
           <div className="inspector-grid__main">
-            <StatusPanel error={""} focusGoalTitle={focusGoalTitle} state={state} />
+            <StatusPanel error={""} focusGoalTitle={focusGoalTitle} state={state} onRollback={onRollback} onApprovalDecision={onApprovalDecision} />
           </div>
           <div className="inspector-grid__side">
             <WorldPanel world={world} />
@@ -389,12 +432,14 @@ function OverviewPanel({
 function resolveRoute(hash: string): AppRoute {
   if (hash === "#/chat") return "chat";
   if (hash === "#/settings") return "settings";
+  if (hash === "#/history") return "history";
   return "overview";
 }
 
 function routeToHash(route: AppRoute): string {
   if (route === "chat") return "#/chat";
   if (route === "settings") return "#/settings";
+  if (route === "history") return "#/history";
   return "#/";
 }
 
@@ -442,6 +487,98 @@ function mergeMessages(
   });
 
   return Array.from(merged.values());
+}
+
+// ═════════════════════════════════════════
+// History Page — 自编程历史记录页面
+// ═════════════════════════════════════════
+
+function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: string) => void }) {
+  const [selectedEntry, setSelectedEntry] = useState<SelfImprovementHistoryEntry | null>(null);
+
+  return (
+    <div className="history-page">
+      <HistoryPanel
+        visible={true}
+        onSelectEntry={(entry) => setSelectedEntry(entry)}
+      />
+
+      {/* 选中详情侧栏（可选） */}
+      {selectedEntry ? (
+        <aside className="history-detail">
+          <header className="history-detail__header">
+            <h3>详情</h3>
+            <button type="button" className="btn btn--sm" onClick={() => setSelectedEntry(null)}>关闭</button>
+          </header>
+          <div className="history-detail__body">
+            <dl className="history-detail__list">
+              <dt>Job ID</dt><dd>{selectedEntry.job_id}</dd>
+              <dt>目标区域</dt><dd>{selectedEntry.target_area}</dd>
+              <dt>原因</dt><dd>{selectedEntry.reason}</dd>
+              <dt>结果</dt><dd>{selectedEntry.outcome}</dd>
+              <dt>状态</dt><dd>{historyStatusLabel(selectedEntry.status)}</dd>
+              <dt>创建时间</dt><dd>{new Date(selectedEntry.created_at).toLocaleString("zh-CN")}</dd>
+            </dl>
+
+            {selectedEntry.touched_files.length > 0 ? (
+              <div className="history-detail__section">
+                <h4>触碰文件</h4>
+                <ul className="history-detail__files">
+                  {selectedEntry.touched_files.map((f: string) => <li key={f}><code>{f}</code></li>)}
+                </ul>
+              </div>
+            ) : null}
+
+            {selectedEntry.health_score != null ? (
+              <div className="history-detail__section">
+                <h4>健康度</h4>
+                <span style={{ fontSize: "1.5rem", fontWeight: 700, color: healthColor(selectedEntry.health_score) }}>
+                  {selectedEntry.health_score.toFixed(0)}
+                </span>
+                <span style={{ color: "var(--text-tertiary)", marginLeft: varStr("space-2") }}>分</span>
+              </div>
+            ) : null}
+
+            {/* 回滚按钮 */}
+            {onSelectRollback && selectedEntry.status === "applied" ? (
+              <button
+                type="button"
+                className="btn btn--danger"
+                onClick={() => {
+                  onSelectRollback(selectedEntry.job_id);
+                  setSelectedEntry(null);
+                }}
+                style={{ marginTop: varStr("space-4"), width: "100%" }}
+              >
+                ↩️ 回滚此操作
+              </button>
+            ) : null}
+          </div>
+        </aside>
+      ) : null}
+    </div>
+  );
+}
+
+/** 辅助：获取 CSS 变量值 */
+function varStr(name: string): string {
+  return `var(--${name})`;
+}
+
+function historyStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    applied: "已生效", failed: "失败", verifying: "验证中",
+    patching: "修补中", diagnosing: "诊断中", pending: "待开始",
+    pending_approval: "待审批", rejected: "已拒绝",
+  };
+  return map[status] ?? status;
+}
+
+function healthColor(score: number): string {
+  if (score >= 80) return "var(--success)";
+  if (score >= 60) return "var(--info)";
+  if (score >= 40) return "var(--warning)";
+  return "var(--danger)";
 }
 
 function loadThemePreference(): "dark" | "light" {

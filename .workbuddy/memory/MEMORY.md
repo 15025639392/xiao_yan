@@ -1,5 +1,66 @@
 # 项目长期记忆
 
+## 数字人自编程系统（services/core/app/self_improvement）
+
+- 技术栈：Python 3.11 + Pydantic + pytest
+- 架构：Planner → Executor → Service 三层
+
+### 自编程能力三阶段完成（2026-04-05）
+
+**Phase 1: LLM 补丁生成器** ✅
+- LLMPlanner 包装 ChatGateway，结构化 JSON 输出补丁
+- 支持 REPLACE/CREATE/INSERT 三种编辑类型
+- 安全护栏禁止修改核心模块
+- 向后兼容：无 API Key 时行为不变
+
+**Phase 2: 多候选评分选优** ✅
+- CandidateScorer 4 维度评分（confidence/risk/simplicity/safety）
+- Executor.try_best() A/B 测试模式
+- Service 层自动检测 plan_all 并走多候选路径
+
+**Phase 3: Git 工作流 + 新文件能力** ✅
+- GitWorkflowManager：分支管理、自动 commit、回滚、合并
+- commit message 结构化：`[self-fix] {area}: {summary}` 含 Job ID 和 Candidate label
+- Executor.commit_job() 在 APPLIED 后自动 create_branch → stage → commit
+- CREATE kind 增强：LLM 提示词要求生成完整可运行代码
+- 安全原则：从不 push/force-push/amend，dry_run 模式可用
+
+**测试总计：180 passed, 0 failed**
+
+**Phase 4: 安全沙箱 + 冲突检测 + 历史记录（2026-04-05）✅**
+- SandboxEnvironment：隔离临时目录预验证补丁（超时/资源限制/自动清理）
+- ConflictDetector：受保护路径 BLOCKING、文件重叠 WARNING、循环自改 WARNING
+- SelfImprovementHistory：内存/JSON 文件双后端，完整审计追踪
+- Executor.preflight_check()：apply 前一步完成冲突+沙箱预检
+- 智能降级：沙箱环境不完整时跳过而非阻塞（向后兼容）
+
+**四阶段总计：222 passed, 0 failed**
+
+**Phase 5: 回滚恢复 + 健康检查/自愈闭环（2026-04-05）✅**
+- RollbackRecovery：差异快照（apply 前自动保存原始文件状态）+ 精确回滚
+- RollbackPlan/RollbackResult：回滚计划和结果数据模型，含级联依赖检测
+- HealthChecker：5 维度健康评分（测试通过率35%/自编程频率20%/回滚率20%/冲突率15%/文件稳定性10%）
+- HealthReport：综合健康报告 + 等级(excellent/good/fair/poor/critical) + 趋势判断 + 回滚建议
+- Executor 集成：apply 前自动快照 + smart_rollback() API
+- Service 集成：APPLIED 后自动健康评估，低分时标记回滚建议
+
+**五阶段总计：275 passed, 0 failed**
+
+**Phase 6: 审批交互系统（2026-04-05）✅**
+- 新增 `PENDING_APPROVAL` + `REJECTED` 状态枚举
+- Service 层门控：apply 后不再直接 VERIFYING，先进入 pending_approval 等待用户操作
+- 3 个审批 API：GET /pending（查询）、POST /approve（批准→VERIFYING）、POST /reject（拒绝→REJECTED）
+- 前端 ApprovalPanel：展示变更摘要 + 文件列表 + Diff 查看器 + 批准/拒绝按钮（拒绝需填原因）
+- StatusPanel 自动检测 pending_approval 状态并切换渲染 ApprovalPanel
+
+**六阶段总计：TypeScript 0 错误，后端 lint 通过**
+
+**Phase 6 测试补全 + 导入修复（2026-04-05）✅**
+- 修复 main.py 缺失导入（Any/logger/datetime/WorldRepository/WorldStateService）导致 7 个测试文件无法 collect
+- 适配 test_self_improvement_service.py 7 个测试到 PENDING_APPROVAL 门控（_approve_pending_job 辅助函数）
+- 新增 test_phase6_approval.py 14 个测试（审批 API、状态门控、辅助函数）
+- **最终: 288 passed, 0 failed**
+
 ## 数字人控制台（apps/desktop）
 
 - 技术栈：React + TypeScript + 纯 CSS（无 Tailwind）

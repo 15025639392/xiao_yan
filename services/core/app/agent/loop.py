@@ -11,6 +11,7 @@ from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanPlanner
 from app.runtime import StateStore
 from app.self_improvement.executor import SelfImprovementExecutor
+from app.self_improvement.llm_planner import LLMPlanner
 from app.self_improvement.planner import SelfImprovementPlanner
 from app.self_improvement.service import SelfImprovementService
 from app.tools.runner import CommandRunner
@@ -31,6 +32,7 @@ class AutonomyLoop:
         command_runner: CommandRunner | None = None,
         morning_plan_planner: MorningPlanPlanner | None = None,
         self_improvement_service: SelfImprovementService | None = None,
+        gateway=None,
     ) -> None:
         self.state_store = state_store
         self.memory_repository = memory_repository
@@ -42,10 +44,26 @@ class AutonomyLoop:
         )
         self.morning_plan_planner = morning_plan_planner or MorningPlanPlanner()
         workspace_root = _workspace_root()
-        self.self_improvement_service = self_improvement_service or SelfImprovementService(
-            planner=SelfImprovementPlanner(workspace_root=workspace_root),
-            executor=SelfImprovementExecutor(workspace_root),
-        )
+
+        # 构建自编程服务：优先使用 LLMPlanner（如果提供了 gateway）
+        if self_improvement_service is not None:
+            self.self_improvement_service = self_improvement_service
+        else:
+            rule_planner = SelfImprovementPlanner(workspace_root=workspace_root)
+            executor = SelfImprovementExecutor(workspace_root)
+            if gateway is not None:
+                llm_planner = LLMPlanner(
+                    gateway=gateway,
+                    workspace_root=workspace_root,
+                    fallback_planner=rule_planner,
+                )
+                planner = llm_planner  # type: ignore[assignment]
+            else:
+                planner = rule_planner  # type: ignore[assignment]
+            self.self_improvement_service = SelfImprovementService(
+                planner=planner,  # type: ignore[arg-type]
+                executor=executor,
+            )
 
     def tick_once(self):
         state = self.state_store.get()

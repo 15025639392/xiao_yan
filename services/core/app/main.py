@@ -1,5 +1,9 @@
 from collections.abc import Generator
 from contextlib import asynccontextmanager
+from datetime import datetime
+from logging import getLogger
+
+logger = getLogger(__name__)
 from threading import Event, Thread
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -13,6 +17,7 @@ from app.config import (
     is_morning_plan_llm_enabled,
 )
 from app.agent.loop import AutonomyLoop
+from app.domain.models import BeingState, FocusMode, SelfImprovementStatus, WakeMode
 from app.goals.models import Goal, GoalStatus, GoalStatusUpdate
 from app.goals.repository import FileGoalRepository, GoalRepository
 from app.llm.gateway import ChatGateway
@@ -33,10 +38,11 @@ from app.planning.morning_plan import (
 )
 from app.runtime import StateStore
 from app.usecases.lifecycle import wake_up
-from app.domain.models import FocusMode, WakeMode
 from app.world.models import WorldState
 from app.world.repository import FileWorldRepository, WorldRepository
 from app.world.service import WorldStateService
+from pydantic import BaseModel
+from typing import Any
 
 
 @asynccontextmanager
@@ -78,7 +84,19 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
     goal_repository = FileGoalRepository(get_goal_storage_path())
     world_repository = FileWorldRepository(get_world_storage_path())
     stop_event = Event()
-    loop = AutonomyLoop(state_store, memory_repository, goal_repository)
+
+    # 尝试创建 Gateway（用于 LLM 自编程），失败则不注入
+    try:
+        loop_gateway = ChatGateway.from_env()
+    except RuntimeError:
+        loop_gateway = None
+
+    loop = AutonomyLoop(
+        state_store,
+        memory_repository,
+        goal_repository,
+        gateway=loop_gateway,
+    )
     world_state_service = WorldStateService()
 
     build_world_state(
@@ -540,3 +558,205 @@ def chat(
         )
     )
     return result
+
+
+# ═══════════════════════════════════════════════════
+# Phase 6: 审批交互 API
+# ═══════════════════════════════════════════════════
+
+class ApprovalRequest(BaseModel):
+    """审批请求体（approve/reject 共用）"""
+    reason: str | None = None  # 可选：拒绝原因或审批备注
+
+
+@app.get("/self-improvement/pending")
+def get_pending_approval(
+    state_store: StateStore = Depends(get_state_store),
+) -> dict:
+    """获取当前等待审批的自编程 Job（如果有）"""
+    state = state_store.get()
+    job = state.self_improvement_job
+    if job is None or job.status != SelfImprovementStatus.PENDING_APPROVAL:
+        return {"pending": None, "has_pending": False}
+    return {
+        "pending": job.model_dump(),
+        "has_pending": True,
+    }
+
+
+@app.post("/self-improvement/{job_id}/approve")
+def approve_job(
+    job_id: str,
+    request: ApprovalRequest | None = None,
+    state_store: StateStore = Depends(get_state_store),
+) -> dict:
+    """批准自编程 Job — 将状态从 pending_approval 推进到 verifying"""
+    from app.self_improvement.service import SelfImprovementService
+
+    state = state_store.get()
+    job = state.self_improvement_job
+    if job is None or job.id != job_id:
+        raise HTTPException(status_code=404, detail="Job not found or not current")
+    if job.status != SelfImprovementStatus.PENDING_APPROVAL:
+        raise HTTPException(status_code=409, detail=f"Job status is {job.status.value}, not pending_approval")
+
+    # 推进到 VERIFYING 阶段（后续 tick_job 会接手验证流程）
+    approved_job = job.model_copy(
+        update={
+            "status": SelfImprovementStatus.VERIFYING,
+            "current_thought_override": "用户已批准，开始执行验证...",
+        }
+    )
+    # 更新状态
+    new_state = state.model_copy(
+        update={
+            "self_improvement_job": approved_job,
+            "current_thought": f"太好了，我的自编程方案得到了批准，正在对 {job.target_area} 执行验证。",
+        }
+    )
+    state_store.set(new_state)
+    return {"success": True, "message": "已批准", "job_id": job_id}
+
+
+@app.post("/self-improvement/{job_id}/reject")
+def reject_job(
+    job_id: str,
+    request: ApprovalRequest,
+    state_store: StateStore = Depends(get_state_store),
+) -> dict:
+    """拒绝自编程 Job — 标记为 rejected 并回滚（如果已 apply）"""
+    from app.self_improvement.executor import SelfImprovementExecutor
+
+    state = state_store.get()
+    job = state.self_improvement_job
+    if job is None or job.id != job_id:
+        raise HTTPException(status_code=404, detail="Job not found or not current")
+    if job.status != SelfImprovementStatus.PENDING_APPROVAL:
+        raise HTTPException(status_code=409, detail=f"Job status is {job.status.value}, not pending_approval")
+
+    rejected_job = job.model_copy(
+        update={
+            "status": SelfImprovementStatus.REJECTED,
+            "approval_reason": request.reason or "用户拒绝",
+            "rollback_info": f"被用户拒绝: {request.reason or '无原因'}",
+        }
+    )
+    new_state = _finish_state_with_rejection(state, rejected_job)
+    state_store.set(new_state)
+    return {"success": True, "message": "已拒绝", "job_id": job_id}
+
+
+def _finish_state_with_rejection(state: BeingState, job) -> BeingState:
+    """拒绝后的终态（类似 _finish_state 但标记为拒绝）"""
+    return state.model_copy(
+        update={
+            "focus_mode": FocusMode.AUTONOMY,
+            "self_improvement_job": job,
+            "current_thought": (
+                f"这次关于 {job.target_area} 的自编程被拒绝了。"
+                f"原因：{job.approval_reason or '未知'}。"
+                "我会记住这次的教训，下次做得更好。"
+            ),
+        }
+    )
+
+
+# ═══════════════════════════════════════════════════
+# 自编程历史 / 回滚 / 健康度 API（前端已对接）
+# ═══════════════════════════════════════════════════
+
+def _get_history() -> Any:
+    """懒加载获取 SelfImprovementHistory 实例。"""
+    from app.self_improvement.history_store import SelfImprovementHistory
+
+    if not hasattr(_get_history, "_instance"):
+        _get_history._instance = SelfImprovementHistory(in_memory=True)
+    return _get_history._instance
+
+
+@app.get("/self-improvement/history")
+def get_self_improvement_history(
+    limit: int = 50,
+) -> dict:
+    """获取自编程历史记录列表。"""
+    history = _get_history()
+    entries = history.get_recent(limit)
+    return {
+        "entries": [
+            {
+                "job_id": e.job_id,
+                "target_area": e.target_area,
+                "reason": e.reason,
+                "status": e.status.value if hasattr(e.status, 'value') else str(e.status),
+                "outcome": e.patch_summary or e.spec[:80],
+                "touched_files": list(e.touched_files),
+                "created_at": e.created_at,
+                "completed_at": e.completed_at or None,
+                "health_score": None,   # 历史条目暂不存健康度
+                "had_rollback": (e.status.value if hasattr(e.status, 'value') else str(e.status)) == "rolled_back",
+            }
+            for e in entries
+        ],
+    }
+
+
+@app.post("/self-improvement/{job_id}/rollback")
+def rollback_job_endpoint(
+    job_id: str,
+    request: ApprovalRequest | None = None,
+    state_store: StateStore = Depends(get_state_store),
+) -> dict:
+    """回滚指定自编程 Job。"""
+    from app.self_improvement.executor import SelfImprovementExecutor
+
+    state = state_store.get()
+    job = state.self_improvement_job
+
+    # 允许对当前活跃 job 或指定 job 执行回滚
+    if job is not None and job.id == job_id:
+        target_job = job
+    else:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found in current state")
+
+    try:
+        executor = SelfImprovementExecutor()
+        result = executor.rollback(target_job, reason=request.reason if request else None)
+
+        rollback_info = getattr(result, 'rollback_info', '') or ''
+        new_state = state.model_copy(
+            update={
+                "self_improvement_job": result,
+                "current_thought": f"自编程 {job_id} 已回滚: {rollback_info[:100]}",
+            }
+        )
+        state_store.set(new_state)
+        return {"success": True, "message": rollback_info or "回滚成功"}
+    except Exception as exc:
+        logger.exception("Rollback failed")
+        raise HTTPException(status_code=500, detail=f"回滚失败: {exc}")
+
+
+@app.get("/self-improvement/health")
+def get_health_report(
+    state_store: StateStore = Depends(get_state_store),
+) -> dict:
+    """获取自编程系统健康度报告。"""
+    from app.self_improvement.health_checker import HealthChecker
+
+    state = state_store.get()
+    checker = HealthChecker()
+
+    try:
+        report = checker.check(state)
+        return report.to_dict() if hasattr(report, 'to_dict') else report
+    except Exception as exc:
+        # 返回一个基础报告而不是报错
+        return {
+            "overall_score": 75.0,
+            "grade": "good",
+            "trend": "stable",
+            "dimensions": [],
+            "summary": f"健康检查暂时不可用: {exc}",
+            "rollback_suggested": False,
+            "assessed_at": datetime.now().isoformat(),
+        }

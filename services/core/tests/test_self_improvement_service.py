@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.agent.loop import AutonomyLoop
-from app.domain.models import BeingState, SelfImprovementEdit, WakeMode
+from app.domain.models import BeingState, SelfImprovementEdit, SelfImprovementStatus, WakeMode
 from app.goals.repository import InMemoryGoalRepository
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
@@ -11,6 +11,15 @@ from app.self_improvement.executor import SelfImprovementExecutor
 from app.self_improvement.models import SelfImprovementCandidate, SelfImprovementTrigger
 from app.self_improvement.planner import SelfImprovementPlanner
 from app.self_improvement.service import SelfImprovementService
+
+
+def _approve_pending_job(store: StateStore) -> None:
+    """模拟用户审批：将 pending_approval 的 job 推进到 verifying（供测试用）。"""
+    state = store.get()
+    job = state.self_improvement_job
+    if job and job.status == SelfImprovementStatus.PENDING_APPROVAL:
+        approved = job.model_copy(update={"status": SelfImprovementStatus.VERIFYING})
+        store.set(state.model_copy(update={"self_improvement_job": approved}))
 
 
 class StubEvaluator:
@@ -146,15 +155,19 @@ def test_self_improvement_service_can_complete_patch_and_verification_cycle(tmp_
     first = loop.tick_once()
     second = loop.tick_once()
     third = loop.tick_once()
-    fourth = loop.tick_once()
 
     assert first.focus_mode == "self_improvement"
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.status == "diagnosing"
     assert second.self_improvement_job.status == "patching"
-    assert third.self_improvement_job.status == "verifying"
-    assert third.self_improvement_job.red_verification is not None
-    assert third.self_improvement_job.red_verification.passed is False
+    # Phase 6: PATCHING 后进入 PENDING_APPROVAL 等待用户审批
+    assert third.self_improvement_job.status == "pending_approval"
+    assert third.self_improvement_job.approval_requested_at is not None
+
+    # 模拟用户批准 → 推进到 VERIFYING
+    _approve_pending_job(store)
+
+    fourth = loop.tick_once()
     assert fourth.focus_mode == "autonomy"
     assert fourth.self_improvement_job is not None
     assert fourth.self_improvement_job.status == "applied"
@@ -191,12 +204,18 @@ def test_self_improvement_service_can_use_failure_driven_planner_for_existing_te
     first = loop.tick_once()
     second = loop.tick_once()
     third = loop.tick_once()
-    fourth = loop.tick_once()
 
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "calculator.py"
     assert second.self_improvement_job.status == "patching"
-    assert third.self_improvement_job.status == "verifying"
+    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    assert third.self_improvement_job.status == "pending_approval"
+    assert third.self_improvement_job.approval_requested_at is not None
+
+    # 模拟用户批准
+    _approve_pending_job(store)
+
+    fourth = loop.tick_once()
     assert fourth.self_improvement_job is not None
     assert fourth.self_improvement_job.status == "applied"
     assert (workspace / "calculator.py").read_text(encoding="utf-8") == "VALUE = 2\n"
@@ -233,18 +252,20 @@ def test_self_improvement_service_can_fix_zero_arg_function_from_existing_test(t
     first = loop.tick_once()
     second = loop.tick_once()
     third = loop.tick_once()
-    fourth = loop.tick_once()
 
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert second.self_improvement_job.status == "patching"
-    assert third.self_improvement_job.status == "verifying"
+    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    assert third.self_improvement_job.status == "pending_approval"
+    assert third.self_improvement_job.approval_requested_at is not None
+
+    _approve_pending_job(store)
+
+    fourth = loop.tick_once()
     assert fourth.self_improvement_job is not None
     assert fourth.self_improvement_job.status == "applied"
     assert (workspace / "greeter.py").read_text(encoding="utf-8") == 'def greet():\n    return "hello"\n'
-
-
-def test_self_improvement_service_can_follow_single_hop_call_chain_from_existing_test(tmp_path: Path):
     workspace = tmp_path
     (workspace / "facade.py").write_text(
         "from greeter import greet\n\n\ndef wrapper():\n    return greet()\n",
@@ -279,12 +300,17 @@ def test_self_improvement_service_can_follow_single_hop_call_chain_from_existing
     first = loop.tick_once()
     second = loop.tick_once()
     third = loop.tick_once()
-    fourth = loop.tick_once()
 
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert second.self_improvement_job.status == "patching"
-    assert third.self_improvement_job.status == "verifying"
+    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    assert third.self_improvement_job.status == "pending_approval"
+    assert third.self_improvement_job.approval_requested_at is not None
+
+    _approve_pending_job(store)
+
+    fourth = loop.tick_once()
     assert fourth.self_improvement_job is not None
     assert fourth.self_improvement_job.status == "applied"
     assert (workspace / "greeter.py").read_text(encoding="utf-8") == 'def greet():\n    return "hello"\n'
@@ -330,7 +356,13 @@ def test_self_improvement_service_can_follow_assignment_then_return_chain_from_e
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert second.self_improvement_job.status == "patching"
-    assert third.self_improvement_job.status == "verifying"
+    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    assert third.self_improvement_job.status == "pending_approval"
+    assert third.self_improvement_job.approval_requested_at is not None
+
+    _approve_pending_job(store)
+
+    fourth = loop.tick_once()
     assert fourth.self_improvement_job is not None
     assert fourth.self_improvement_job.status == "applied"
     assert (workspace / "greeter.py").read_text(encoding="utf-8") == 'def greet():\n    return "hello"\n'
@@ -378,12 +410,17 @@ def test_self_improvement_service_can_follow_multi_step_assignment_chain_from_ex
     first = loop.tick_once()
     second = loop.tick_once()
     third = loop.tick_once()
-    fourth = loop.tick_once()
 
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert second.self_improvement_job.status == "patching"
-    assert third.self_improvement_job.status == "verifying"
+    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    assert third.self_improvement_job.status == "pending_approval"
+    assert third.self_improvement_job.approval_requested_at is not None
+
+    _approve_pending_job(store)
+
+    fourth = loop.tick_once()
     assert fourth.self_improvement_job is not None
     assert fourth.self_improvement_job.status == "applied"
     assert (workspace / "greeter.py").read_text(encoding="utf-8") == 'def greet():\n    return "hello"\n'
@@ -430,13 +467,18 @@ def test_self_improvement_service_chooses_returned_call_from_multi_import_candid
     first = loop.tick_once()
     second = loop.tick_once()
     third = loop.tick_once()
-    fourth = loop.tick_once()
 
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert first.self_improvement_job.edits[0].search_text == 'return "bye"'
     assert second.self_improvement_job.status == "patching"
-    assert third.self_improvement_job.status == "verifying"
+    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    assert third.self_improvement_job.status == "pending_approval"
+    assert third.self_improvement_job.approval_requested_at is not None
+
+    _approve_pending_job(store)
+
+    fourth = loop.tick_once()
     assert fourth.self_improvement_job is not None
     assert fourth.self_improvement_job.status == "applied"
     assert (workspace / "greeter.py").read_text(encoding="utf-8") == (
