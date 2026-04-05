@@ -670,6 +670,18 @@
   color: var(--text-primary);
 }
 
+/* ── 记忆模块（无嵌套边框） ── */
+.workbench-memory {
+  height: 100%;
+  min-height: 600px;
+}
+
+.workbench-memory .memory-panel {
+  border: none;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+}
+
 /* ── 响应式适配 ── */
 @media (max-width: 1024px) {
   .workbench-sidebar {

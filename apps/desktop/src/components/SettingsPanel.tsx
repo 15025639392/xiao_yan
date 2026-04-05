@@ -566,14 +566,8 @@ function DimensionSlider({
 
 function MemoryWorkbench() {
   return (
-    <div className="workbench-panel workbench-panel--full">
-      <header className="workbench-panel__header">
-        <h3 className="workbench-panel__title">记忆库</h3>
-        <p className="workbench-panel__subtitle">浏览、搜索和管理数字人的记忆</p>
-      </header>
-      <div className="workbench-panel__body workbench-panel__body--padded">
-        <MemoryPanel />
-      </div>
+    <div className="workbench-memory">
+      <MemoryPanel />
     </div>
   );
 }
