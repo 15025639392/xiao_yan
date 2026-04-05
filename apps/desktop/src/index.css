@@ -3257,3 +3257,964 @@ textarea {
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.05));
   border-bottom-color: var(--danger);
 }
+
+/* ═════════════════════════════════════════
+   🛠️ 工具箱面板 (Tool Panel)
+   ═════════════════════════════════════════ */
+
+/* 页面容器 */
+.tool-page {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: var(--bg-canvas);
+}
+
+/* 主面板 */
+.tool-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 头部 */
+.tool-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+/* 标签导航 */
+.tool-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.tool-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.tool-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-elevated);
+}
+
+.tool-tab--active {
+  color: var(--primary);
+  background: var(--primary-muted);
+}
+
+/* 内容区 */
+.tool-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5);
+  background: var(--bg-canvas);
+}
+
+/* ═══ 命令执行 Tab (Execute) ═══ */
+
+.execute-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 输入区域 */
+.execute-input-group {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-fast);
+}
+
+.execute-input-group:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-muted);
+}
+
+.execute-prompt {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--success);
+  align-self: center;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.execute-textarea {
+  flex: 1;
+  min-height: 36px;
+  max-height: 120px;
+  padding: var(--space-1) 0;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+
+.execute-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* 快捷命令 */
+.quick-commands {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.quick-commands__label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.quick-cmd-btn {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.quick-cmd-btn:hover {
+  background: var(--primary-muted);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* 错误提示 */
+.tool-error {
+  padding: var(--space-3) var(--space-4);
+  background: var(--danger-muted);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  color: var(--danger);
+  font-size: 0.875rem;
+}
+
+/* 结果展示 */
+.execute-result {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.execute-result--success {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.execute-result--error {
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.execute-result__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.execute-result__badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.execute-result--success .execute-result__badge {
+  background: var(--success-muted);
+  color: var(--success);
+}
+
+.execute-result--error .execute-result__badge {
+  background: var(--danger-muted);
+  color: var(--danger);
+}
+
+.execute-result__duration {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.execute-result__tool {
+  padding: 1px 8px;
+  background: var(--primary-muted);
+  color: var(--primary);
+  border-radius: var(--radius-sm);
+  font-size: 0.71875rem;
+  font-weight: 500;
+}
+
+/* 输出内容 */
+.execute-result__output,
+.execute-result__error-msg,
+.execute-result__stderr {
+  margin: 0;
+  padding: var(--space-4);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.execute-result__output {
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+}
+
+.execute-result__error-msg {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.execute-result__stderr {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.05);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 滚动条统一 */
+.execute-result__output::-webkit-scrollbar,
+.execute-result__stderr::-webkit-scrollbar,
+.file-viewer__content::-webkit-scrollbar,
+.dir-list::-webkit-scrollbar,
+.tools-browse-tab::-webkit-scrollbar,
+.history-list::-webkit-scrollbar,
+.search-results table::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.execute-result__output::-webkit-scrollbar-track,
+.execute-result__stderr::-webkit-scrollbar-track,
+.file-viewer__content::-webkit-scrollbar-track,
+.dir-list::-webkit-scrollbar-track,
+.tools-browse-tab::-webkit-scrollbar-track,
+.history-list::-webkit-scrollbar-track,
+.search-results table::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.execute-result__output::-webkit-scrollbar-thumb,
+.execute-result__stderr::-webkit-scrollbar-thumb,
+.file-viewer__content::-webkit-scrollbar-thumb,
+.dir-list::-webkit-scrollbar-thumb,
+.tools-browse-tab::-webkit-scrollbar-thumb,
+.history-list::-webkit-scrollbar-thumb,
+.search-results table::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+
+/* 截断提示 */
+.execute-result__trunc-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.75rem;
+  color: var(--warning);
+  background: var(--warning-muted);
+  text-align: center;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 完整命令 */
+.execute-result__full-cmd {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  background: var(--bg-surface-elevated);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ═══ 工具浏览 Tab (Tools Browse) ═══ */
+
+.tools-browse-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tools-search {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.tools-search:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-muted);
+}
+
+.tools-search::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* 分类区块 */
+.tools-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tools-category__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tools-category__count {
+  margin-left: auto;
+  padding: 1px 8px;
+  background: var(--bg-surface-elevated);
+  border-radius: var(--radius-full);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+/* 工具网格 */
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+
+/* 工具卡片 */
+.tool-card {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.tool-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+  background: var(--bg-surface-overlay);
+}
+
+.tool-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.tool-card__name {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.tool-card__level {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+}
+
+.tool-card__desc {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* 示例按钮 */
+.tool-card__examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.tool-example-btn {
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--info);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.71875rem;
+  cursor: default;
+  transition: all var(--transition-fast);
+}
+
+.tool-example-btn:hover {
+  background: var(--primary-muted);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ═══ 文件操作 Tab (Files) ═══ */
+
+.files-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* 路径导航栏 */
+.files-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.files-current-path {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 搜索栏 */
+.files-search-bar {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.files-search-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.files-search-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-muted);
+}
+
+.files-search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* 文件查看器 */
+.file-viewer {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.file-viewer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.file-viewer__header code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--info);
+}
+
+.file-viewer__meta {
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+}
+
+.file-viewer__content {
+  margin: 0;
+  padding: var(--space-4);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text-primary);
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* 目录列表 */
+.dir-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+}
+
+.dir-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.dir-entry:hover {
+  background: var(--bg-surface-elevated);
+}
+
+.dir-entry__icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.dir-entry__name {
+  flex: 1;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dir-entry--file .dir-entry__name {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--info);
+}
+
+.dir-entry__size {
+  font-size: 0.71875rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* 搜索结果 */
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.search-results h4 {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.search-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.search-results-table th,
+.search-results-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border: 1px solid var(--border-default);
+}
+
+.search-results-table th {
+  background: var(--bg-surface-elevated);
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.search-results-table td {
+  color: var(--text-secondary);
+}
+
+.search-file-link {
+  background: none;
+  border: none;
+  color: var(--info);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.search-file-link:hover {
+  text-decoration: underline;
+  color: var(--primary);
+}
+
+.search-context code {
+  background: transparent;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+
+/* ═══ 执行历史 Tab (History) ═══ */
+
+.history-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.history-tab__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.history-count {
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-surface-elevated);
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+/* 历史列表项（工具版）*/
+.history-item {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  border-left: 3px solid transparent;
+  transition: all var(--transition-fast);
+}
+
+.history-item--ok {
+  border-left-color: var(--success);
+}
+
+.history-item--ok:hover {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: var(--bg-surface-elevated);
+}
+
+.history-item--fail {
+  border-left-color: var(--danger);
+}
+
+.history-item--fail:hover {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: var(--bg-surface-elevated);
+}
+
+.history-item__main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.history-item__cmd {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: none;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item__time {
+  font-size: 0.71875rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.history-item__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.history-badge {
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.history-badge--ok {
+  background: var(--success-muted);
+  color: var(--success);
+}
+
+.history-badge--fail {
+  background: var(--danger-muted);
+  color: var(--danger);
+}
+
+.history-tool-name {
+  font-size: 0.71875rem;
+  color: var(--text-tertiary);
+  padding: 1px 6px;
+  background: var(--bg-surface-elevated);
+  border-radius: var(--radius-sm);
+}
+
+/* ═══ 系统状态 Tab (Status) ═══ */
+
+.status-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* 统计网格 */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+}
+
+.status-metric {
+  padding: var(--space-4) var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.status-metric__value {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.status-metric__label {
+  margin: var(--space-1) 0 0;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* 配置信息 */
+.status-config {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.status-config h4 {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.status-dl {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-4);
+  align-items: baseline;
+}
+
+.status-dl dt {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.status-dl dd {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.status-dl dd code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--info);
+  background: var(--bg-canvas);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+/* 最近使用工具 */
+.status-recent-tools {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.status-recent-tools h4 {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.recent-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+}
+
+.recent-tool-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-canvas);
+  border-radius: var(--radius-sm);
+}
+
+.recent-tool-item code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.recent-tool-count {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══ ToolPanel 响应式适配 ═══ */
+
+@media (max-width: 900px) {
+  .status-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .tools-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .status-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .execute-input-group {
+    flex-wrap: wrap;
+  }
+
+  .tool-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .status-dl {
+    grid-template-columns: 1fr;
+  }
+}

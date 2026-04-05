@@ -94,6 +94,18 @@
 - **最终: 422 passed, 0 failed**（+32 新测试，零回归）
 - 注意：Python 文件中不能用中文省略号 `…` 和中文引号嵌套，必须用 ASCII 替代
 
+**Tools Phase: 工具层扩展（2026-04-05）✅**
+- 核心目标：让数字人从纯对话系统升级为可执行命令的工具系统
+- sandbox.py 完全重写：4级安全分级(SAFE/RESTRICTED/DANGEROUS/BLOCKED) + 50+工具注册表 + 14种注入检测模式
+  - ToolSafetyLevel.rank 属性用于正确数值比较（不用字符串 value 的 <=）
+- runner.py 完全重写：EnhancedCommandResult(全字段输出) + 超时控制 + 执行历史 + 工具元数据关联
+- file_tools.py 全新：安全读写/自动备份/目录列表/内容搜索/文件信息（全部路径约束在 base_path 内）
+- 前端 ToolPanel.tsx：4 Tab（命令执行/文件浏览器/执行历史/系统状态）+ 终端风格输出
+- API: 12 个新端点 (/tools/*, /tools/files/*)
+- loop.py: AutonomyLoop 默认改用 SAFE 级别沙箱
+- **最终: 484 passed, 0 failed**（+62 新测试，零回归）
+- 注意：BLOCKED 工具被 get_default_allowed_commands 直接排除不在白名单，validate 在白名单阶段就 PermissionError；macOS 符号链接导致 resolve 后路径不匹配 startswith
+
 ## 数字人控制台（apps/desktop）
 
 - 技术栈：React + TypeScript + 纯 CSS（无 Tailwind）

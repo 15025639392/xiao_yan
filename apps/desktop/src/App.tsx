@@ -8,6 +8,7 @@ import { HistoryPanel } from "./components/HistoryPanel";
 import type { SelfImprovementHistoryEntry } from "./lib/api";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPanel } from "./components/StatusPanel";
+import { ToolPanel } from "./components/ToolPanel";
 import { WorldPanel } from "./components/WorldPanel";
 import type { BeingState, ChatHistoryMessage, Goal, InnerWorldState } from "./lib/api";
 import {
@@ -22,7 +23,7 @@ import {
   wake,
 } from "./lib/api";
 
-type AppRoute = "overview" | "chat" | "settings" | "history";
+type AppRoute = "overview" | "chat" | "settings" | "history" | "tools";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -263,6 +264,17 @@ export default function App() {
             </svg>
             <span>历史</span>
           </button>
+          <button
+            className={`app-sidebar__nav-item ${route === "tools" ? "app-sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNavigate("tools")}
+            type="button"
+          >
+            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14.7 6.3a1 1 0 0 0 0-1.4l1.83-2a1 1 0 0 0-1.42-1.4L13.28 5.17a4 4 0 1 0-5.66 5.66l-8.49 8.49a1 1 0 0 0-1.41 0"/>
+              <path d="M16 21v-6a1 1 0 0 1 1-1h6"/>
+            </svg>
+            <span>工具箱</span>
+          </button>
         </nav>
 
         <div className="app-sidebar__section">
@@ -329,6 +341,8 @@ export default function App() {
           <SettingsPanel theme={theme} onThemeChange={setTheme} />
         ) : route === "history" ? (
           <HistoryPage onSelectRollback={handleRollback} />
+        ) : route === "tools" ? (
+          <ToolPanel />
         ) : (
           <OverviewPanel
             focusGoalTitle={focusGoalTitle}
@@ -433,6 +447,7 @@ function resolveRoute(hash: string): AppRoute {
   if (hash === "#/chat") return "chat";
   if (hash === "#/settings") return "settings";
   if (hash === "#/history") return "history";
+  if (hash === "#/tools") return "tools";
   return "overview";
 }
 
@@ -440,6 +455,7 @@ function routeToHash(route: AppRoute): string {
   if (route === "chat") return "#/chat";
   if (route === "settings") return "#/settings";
   if (route === "history") return "#/history";
+  if (route === "tools") return "#/tools";
   return "#/";
 }
 

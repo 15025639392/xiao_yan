@@ -15,7 +15,7 @@ from app.self_improvement.llm_planner import LLMPlanner
 from app.self_improvement.planner import SelfImprovementPlanner
 from app.self_improvement.service import SelfImprovementService
 from app.tools.runner import CommandRunner
-from app.tools.sandbox import CommandSandbox
+from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
 from app.world.service import WorldStateService
 
 
@@ -40,7 +40,7 @@ class AutonomyLoop:
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self.world_state_service = world_state_service or WorldStateService()
         self.command_runner = command_runner or CommandRunner(
-            CommandSandbox(allowed_commands={"pwd", "date"})
+            CommandSandbox.with_defaults(max_level=ToolSafetyLevel.SAFE)
         )
         self.morning_plan_planner = morning_plan_planner or MorningPlanPlanner()
         workspace_root = _workspace_root()

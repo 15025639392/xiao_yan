@@ -50,6 +50,35 @@ from app.planning.morning_plan import (
     MorningPlanPlanner,
 )
 from app.runtime import StateStore
+from app.tools.runner import CommandRunner
+from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
+from app.usecases.lifecycle import wake_up
+from app.world.models import WorldState
+from app.world.repository import FileWorldRepository, WorldRepository
+from app.world.service import WorldStateService
+from pydantic import BaseModel
+from typing import Any
+from app.memory.models import MemoryEvent, MemoryKind, MemoryEmotion, MemoryStrength
+from app.memory.repository import FileMemoryRepository, MemoryRepository
+from app.memory.service import MemoryService
+from app.persona.models import (
+    EmotionIntensity,
+    EmotionType,
+    FormalLevel,
+    ExpressionHabit,
+    PersonaProfile,
+    SentenceStyle,
+    SpeakingStyle,
+)
+from app.persona.prompt_builder import build_chat_instructions
+from app.persona.service import FilePersonaRepository, PersonaService
+from app.persona.expression_mapper import ExpressionStyleMapper
+from app.planning.morning_plan import (
+    LLMMorningPlanDraftGenerator,
+    MorningPlanDraftGenerator,
+    MorningPlanPlanner,
+)
+from app.runtime import StateStore
 from app.usecases.lifecycle import wake_up
 from app.world.models import WorldState
 from app.world.repository import FileWorldRepository, WorldRepository
@@ -1136,3 +1165,239 @@ def weaken_old_memories(
     """淡化旧记忆（概念性操作，返回受影响的数量）"""
     affected = memory_service.weaken_old_memories(days_threshold=days)
     return {"affected_count": affected, "days_threshold": days}
+
+
+# ═══════════════════════════════════════════════════
+# Tools Phase: 工具执行 API
+# ═══════════════════════════════════════════════════
+
+# ── 依赖注入 ────────────────────────────────────────
+
+_tool_runner_instance: CommandRunner | None = None
+_file_tools_instance: Any = None
+
+
+def _get_command_runner() -> CommandRunner:
+    global _tool_runner_instance
+    if _tool_runner_instance is None:
+        from pathlib import Path as _P
+        _workspace = _P(__file__).resolve().parents[4]
+        _sandbox = CommandSandbox.with_defaults(
+            max_level=ToolSafetyLevel.RESTRICTED,
+            allowed_base_path=_workspace,
+        )
+        _tool_runner_instance = CommandRunner(
+            _sandbox,
+            working_directory=_workspace,
+            timeout_seconds=60.0,
+        )
+    return _tool_runner_instance
+
+
+def _get_file_tools():
+    global _file_tools_instance
+    if _file_tools_instance is None:
+        from pathlib import Path as _P
+        from app.tools.file_tools import FileTools
+        _workspace = _P(__file__).resolve().parents[4]
+        _file_tools_instance = FileTools(allowed_base_path=_workspace)
+    return _file_tools_instance
+
+
+# ── 数据模型 ──────────────────────────────────────────
+
+
+class ToolExecuteRequest(BaseModel):
+    """命令执行请求体"""
+    command: str
+    timeout_override: float | None = None  # 可选覆盖超时
+
+
+class FileReadRequest(BaseModel):
+    """文件读取请求体"""
+    path: str
+    max_bytes: int = 512 * 1024  # 512KB default
+
+
+class FileWriteRequest(BaseModel):
+    """文件写入请求体"""
+    path: str
+    content: str
+    create_dirs: bool = True
+
+
+class FileSearchRequest(BaseModel):
+    """文件内容搜索请求体"""
+    query: str
+    search_path: str = "."
+    file_pattern: str = "*.py"
+    max_results: int = 20
+
+
+class DirectoryListRequest(BaseModel):
+    """目录列表请求体"""
+    path: str = "."
+    recursive: bool = False
+    pattern: str | None = None
+
+
+# ── API 端点 ──────────────────────────────────────────
+
+
+@app.get("/tools")
+def list_tools() -> dict:
+    """列出当前可用工具及其元数据。"""
+    runner = _get_command_runner()
+    tools = runner.sandbox.list_available_tools()
+
+    # 按类别分组
+    by_category: dict[str, list] = {}
+    for t in tools:
+        cat = t.category
+        if cat not in by_category:
+            by_category[cat] = []
+        by_category[cat].append({
+            "name": t.name,
+            "description": t.description,
+            "safety_level": t.safety_level.value,
+            "examples": t.examples[:3],
+        })
+
+    return {
+        "total_count": len(tools),
+        "by_category": by_category,
+        "safety_levels": [sl.value for sl in ToolSafetyLevel],
+    }
+
+
+@app.post("/tools/execute")
+def execute_tool(
+    request: ToolExecuteRequest,
+) -> dict:
+    """执行一个工具命令。
+
+    返回增强的执行结果（含 exit_code / stderr / duration）。
+    """
+    runner = _get_command_runner()
+    
+    # 支持临时超时覆盖
+    original_timeout = runner.timeout_seconds
+    if request.timeout_override and request.timeout_override > 0:
+        runner.timeout_seconds = min(request.timeout_override, 120.0)
+
+    result = runner.run_enhanced(request.command)
+
+    # 恢复原始超时
+    runner.timeout_seconds = original_timeout
+
+    return {
+        **result.to_dict(),
+        "action_result": result.to_action_result().model_dump(),
+    }
+
+
+@app.get("/tools/history")
+def get_tool_history(limit: int = 30) -> dict:
+    """获取最近执行的工具命令历史。"""
+    runner = _get_command_runner()
+    return {
+        "entries": runner.get_history(limit),
+        "total": len(runner._history),
+    }
+
+
+@app.delete("/tools/history")
+def clear_tool_history() -> dict:
+    """清空执行历史。"""
+    runner = _get_command_runner()
+    count = runner.clear_history()
+    return {"cleared": count, "message": f"已清除 {count} 条历史记录"}
+
+
+# ── 文件操作 API ────────────────────────────────────
+
+
+@app.get("/tools/files/read")
+def api_read_file(path: str, max_bytes: int = 512 * 1024) -> dict:
+    """读取文件内容。"""
+    ft = _get_file_tools()
+    result = ft.read_file(path, max_bytes=max_bytes)
+    return result.to_dict()
+
+
+@app.post("/tools/files/write")
+def api_write_file(request: FileWriteRequest) -> dict:
+    """写入文件内容。"""
+    ft = _get_file_tools()
+    result = ft.write_file(request.path, request.content, create_dirs=request.create_dirs)
+    return result.to_dict()
+
+
+@app.get("/tools/files/list")
+def api_list_directory(
+    path: str = ".",
+    recursive: bool = False,
+    pattern: str | None = None,
+) -> dict:
+    """列出目录内容。"""
+    ft = _get_file_tools()
+    result = ft.list_directory(path, recursive=recursive, pattern=pattern)
+    return result.to_dict()
+
+
+@app.get("/tools/files/search")
+def api_search_files(
+    query: str,
+    search_path: str = ".",
+    file_pattern: str = "*.py",
+    max_results: int = 20,
+) -> dict:
+    """在文件中搜索文本。"""
+    ft = _get_file_tools()
+    result = ft.search_content(query, search_path, file_pattern=file_pattern, max_results=max_results)
+    return result.to_dict()
+
+
+@app.get("/tools/files/info")
+def api_get_file_info(path: str) -> dict:
+    """获取文件的详细元信息。"""
+    ft = _get_file_tools()
+    return ft.get_file_info(path)
+
+
+# ── 工具状态概览 ──────────────────────────────────────
+
+
+@app.get("/tools/status")
+def get_tools_status() -> dict:
+    """获取工具系统的整体状态和统计信息。"""
+    runner = _get_command_runner()
+    history = runner.get_history(limit=1000)
+
+    total_executions = len(runner._history)
+    success_count = sum(1 for e in history if e["success"])
+    failed_count = sum(1 for e in history if not e["success"])
+    timeout_count = sum(1 for e in history if e.get("timed_out"))
+
+    # 最近使用的工具
+    tool_usage: dict[str, int] = {}
+    for entry in history:
+        name = entry.get("tool_name", "unknown") or "unknown"
+        tool_usage[name] = tool_usage.get(name, 0) + 1
+
+    return {
+        "sandbox_enabled": True,
+        "allowed_command_count": len(runner.sandbox.allowed_commands),
+        "safety_filter": "restricted",
+        "working_directory": str(runner.working_directory or ""),
+        "timeout_seconds": runner.timeout_seconds,
+        "statistics": {
+            "total_executions": total_executions,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "timeout_count": timeout_count,
+            "success_rate": round(success_count / max(total_executions, 1), 3),
+        },
+        "recently_used_tools": sorted(tool_usage.items(), key=lambda x: -x[1])[:10],
+        "history_size": len(runner._history),
+    }

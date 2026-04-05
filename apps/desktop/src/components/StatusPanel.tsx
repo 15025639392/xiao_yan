@@ -40,10 +40,10 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
 
       <div className="panel__content">
         {/* Phase 7: 人格卡片 */}
-        <PersonaCard style={{ marginBottom: "var(--space-4)" }} />
+        <PersonaCard className="panel__section" />
 
         {/* Phase 8: 记忆面板 */}
-        <MemoryPanel style={{ marginBottom: "var(--space-4)" }} />
+        <MemoryPanel className="panel__section" />
 
         <div className="metric-grid">
           <div className="metric-card">

@@ -170,7 +170,7 @@ export function PersonaCard({ className }: PersonaCardProps) {
         <div
           className="persona-card__emotion-badge"
           style={{ borderColor: primaryInfo.color }}
-          title={`${primaryInfo.label}${emotion?.primary_intensity !== "none" ? `（${INTENSITY_LABELS[emotion.primary_intensity ?? "none"] ?? ""}）` : ""}`}
+          title={`${primaryInfo.label}${emotion?.primary_intensity !== "none" ? `（${INTENSITY_LABELS[emotion?.primary_intensity ?? "none"] ?? ""}）` : ""}`}
         >
           <span>{primaryInfo.emoji}</span>
           <span>{primaryInfo.label}</span>

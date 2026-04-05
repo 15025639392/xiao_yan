@@ -37,7 +37,7 @@ export function PersonaSettings({ onUpdated }: PersonaSettingsProps) {
 
   const [formalLevel, setFormalLevel] = useState<FormalLevel>("neutral");
   const [expressionHabit, setExpressionHabit] = useState<ExpressionHabit>("direct");
-  const [responseLength, setResponseLength] = useState("medium");
+  const [responseLength, setResponseLength] = useState("mixed");
   const [verbalTics, setVerbalTics] = useState("");
 
   useEffect(() => { load(); }, []);
@@ -340,14 +340,14 @@ export function PersonaSettings({ onUpdated }: PersonaSettingsProps) {
               <label className="setting-item__label" htmlFor="persona-length">回复长度</label>
             </div>
             <div className="style-selector">
-              {(["brief", "medium", "detailed", "verbose"] as SentenceStyleType[]).map((val) => (
+              {(["short", "mixed", "long"] as const).map((val) => (
                 <button
                   key={val}
                   type="button"
                   className={`style-option ${responseLength === val ? "style-option--active" : ""}`}
                   onClick={() => setResponseLength(val)}
                 >
-                  {{ brief: "简洁", medium: "适中", detailed: "详细", verbose: "冗长" }[val]}
+                  {{ short: "简洁", mixed: "适中", long: "详细" }[val]}
                 </button>
               ))}
             </div>
