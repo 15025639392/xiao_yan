@@ -43,11 +43,16 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [showMemoryContext, setShowMemoryContext] = useState<Set<string>>(new Set());
   const [showConfigPanel, setShowConfigPanel] = useState(false);
   const [config, setConfig] = useState<AppConfig>({ chat_context_limit: 6 });
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
   const [configError, setConfigError] = useState("");
+
+  // 保存滚动位置和内容签名
+  const savedScrollRef = useRef<{ scrollTop: number; contentHash: string } | null>(null);
+  const wasVisibleRef = useRef(false);
 
   // 加载配置
   useEffect(() => {
@@ -71,16 +76,77 @@ export function ChatPanel({
     }
   }, [draft]);
 
-  // Auto-scroll to bottom
+  // 计算消息内容的哈希，用于检测内容变化
+  function getMessageContentHash(): string {
+    return messages
+      .map((msg) => `${msg.id}-${msg.role}-${msg.content}-${msg.state}`)
+      .join("|");
+  }
+
+  // 保存滚动位置（当组件不可见时）
   useEffect(() => {
-    if (messagesEndRef.current && typeof messagesEndRef.current.scrollIntoView === 'function') {
-      try {
-        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-      } catch {
-        // 在测试环境中可能会失败，忽略错误
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    function handleVisibilityChange() {
+      if (document.hidden) {
+        // 页面即将隐藏，保存滚动位置
+        savedScrollRef.current = {
+          scrollTop: container.scrollTop,
+          contentHash: getMessageContentHash(),
+        };
+        wasVisibleRef.current = false;
+      } else if (!wasVisibleRef.current) {
+        // 页面刚变为可见，恢复滚动位置
+        wasVisibleRef.current = true;
+        const saved = savedScrollRef.current;
+        const currentHash = getMessageContentHash();
+
+        if (saved && saved.contentHash === currentHash) {
+          // 内容未变化，恢复滚动位置
+          container.scrollTop = saved.scrollTop;
+        }
       }
     }
-  }, [messages.length, isSending]);
+
+    // 初始化可见性状态
+    wasVisibleRef.current = !document.hidden;
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [messages]);
+
+  // Auto-scroll to bottom (只在内容真正变化时滚动)
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const currentHash = getMessageContentHash();
+    const saved = savedScrollRef.current;
+
+    // 判断内容是否真的变化了
+    const contentChanged = !saved || saved.contentHash !== currentHash;
+
+    // 只有在以下情况才自动滚动到底部：
+    // 1. 内容发生了变化
+    // 2. 或者正在发送消息（新消息即将到来）
+    // 3. 且页面是可见的（不处于后台状态）
+    if ((contentChanged || isSending) && !document.hidden) {
+      // 延迟一帧执行，确保 DOM 已更新
+      requestAnimationFrame(() => {
+        if (messagesEndRef.current && typeof messagesEndRef.current.scrollIntoView === 'function') {
+          try {
+            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+          } catch {
+            // 在测试环境中可能会失败，忽略错误
+          }
+        }
+      });
+    }
+  }, [messages, isSending]);
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -152,7 +218,7 @@ export function ChatPanel({
       )}
 
       {/* Messages */}
-      <div className="chat-page__messages">
+      <div ref={messagesContainerRef} className="chat-page__messages">
         {messages.length === 0 ? (
           <div className="chat-page__empty">
             <div className="chat-page__empty-icon">💬</div>
