@@ -30,7 +30,7 @@ from app.llm.schemas import (
     ChatRequest,
     ChatResult,
 )
-from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind, MemoryEmotion, MemoryStrength
+from app.memory.models import MemoryEntry, MemoryKind, MemoryEmotion, MemoryStrength
 from app.memory.repository import FileMemoryRepository, MemoryRepository
 from app.memory.service import MemoryService
 from app.persona.models import (
@@ -595,21 +595,7 @@ def chat(
         ),
     )
 
-    # 保存原始对话记录
-    user_entry = MemoryEntry.create(
-        kind=MemoryKind.CHAT_RAW,
-        content=request.message,
-        role="user",
-    )
-    assistant_entry = MemoryEntry.create(
-        kind=MemoryKind.CHAT_RAW,
-        content=result.output_text,
-        role="assistant",
-    )
-    memory_repository.save_event(MemoryEvent.from_entry(user_entry))
-    memory_repository.save_event(MemoryEvent.from_entry(assistant_entry))
-
-    # 从对话中自动提取结构化记忆
+    # 从对话中提取记忆并统一保存，避免原始对话与提取结果重复落库
     extracted = memory_service.extract_from_conversation(
         user_message=request.message,
         assistant_response=result.output_text,

@@ -129,16 +129,25 @@ class FileMemoryRepository:
             lines = [line.strip() for line in handle.readlines() if line.strip()]
 
         events: list[MemoryEvent] = []
-        dropped_invalid_rows = False
+        seen_entry_ids: set[str] = set()
+        needs_rewrite = False
 
         for line in lines:
             try:
                 payload = json.loads(line)
-                events.append(MemoryEvent.model_validate(payload))
+                event = MemoryEvent.model_validate(payload)
             except (json.JSONDecodeError, ValidationError):
-                dropped_invalid_rows = True
+                needs_rewrite = True
+                continue
 
-        if dropped_invalid_rows:
+            if event.entry_id in seen_entry_ids:
+                needs_rewrite = True
+                continue
+
+            seen_entry_ids.add(event.entry_id)
+            events.append(event)
+
+        if needs_rewrite:
             self._write_all_events(events)
 
         return events

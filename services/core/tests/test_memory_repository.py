@@ -78,3 +78,21 @@ def test_file_repository_physically_purges_rows_without_entry_id(tmp_path: Path)
     rewritten_lines = [line for line in storage_path.read_text(encoding="utf-8").splitlines() if line]
     assert len(rewritten_lines) == 1
     assert json.loads(rewritten_lines[0])["content"] == "valid row"
+
+
+def test_file_repository_physically_purges_duplicate_entry_ids(tmp_path: Path):
+    storage_path = tmp_path / "memory.jsonl"
+    duplicate = MemoryEvent(kind="chat", role="user", content="same row")
+    storage_path.write_text(
+        "\n".join([duplicate.model_dump_json(), duplicate.model_dump_json()]) + "\n",
+        encoding="utf-8",
+    )
+
+    repo = FileMemoryRepository(storage_path)
+    recent = repo.list_recent(limit=10)
+
+    assert [event.entry_id for event in recent] == [duplicate.entry_id]
+
+    rewritten_lines = [line for line in storage_path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(rewritten_lines) == 1
+    assert json.loads(rewritten_lines[0])["entry_id"] == duplicate.entry_id

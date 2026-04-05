@@ -76,7 +76,34 @@ class MemoryService:
         source_context: str | None = None,
     ) -> MemoryEntry:
         """创建并保存一条新记忆"""
-        entry = MemoryEntry(
+        entry = self._build_entry(
+            kind=kind,
+            content=content,
+            role=role,
+            strength=strength,
+            importance=importance,
+            emotion_tag=emotion_tag,
+            keywords=keywords,
+            subject=subject,
+            source_context=source_context,
+        )
+        return self.save(entry)
+
+    def _build_entry(
+        self,
+        *,
+        kind: MemoryKind,
+        content: str,
+        role: str | None = None,
+        strength: MemoryStrength = MemoryStrength.NORMAL,
+        importance: int = 5,
+        emotion_tag: MemoryEmotion = MemoryEmotion.NEUTRAL,
+        keywords: list[str] | None = None,
+        subject: str | None = None,
+        source_context: str | None = None,
+    ) -> MemoryEntry:
+        """构建一条未落库的记忆条目。"""
+        return MemoryEntry(
             kind=kind,
             content=content,
             role=role,
@@ -87,7 +114,6 @@ class MemoryService:
             subject=subject,
             source_context=source_context,
         )
-        return self.save(entry)
 
     def delete(self, memory_id: str) -> bool:
         """删除指定 ID 的记忆
@@ -302,7 +328,7 @@ class MemoryService:
             if pattern in user_message:
                 # 提取包含模式的完整句子
                 sentence = self._extract_sentence(user_message, pattern)
-                entry = self.create(
+                entry = self._build_entry(
                     kind=MemoryKind.FACT,
                     content=sentence or f"{description}：{user_message[:60]}",
                     role="user",
@@ -325,7 +351,7 @@ class MemoryService:
         for emotion, keywords in emotional_keywords.items():
             for kw in keywords:
                 if kw in msg_lower:
-                    entry = self.create(
+                    entry = self._build_entry(
                         kind=MemoryKind.EMOTIONAL,
                         content=f"用户在对话中表现出{emotion}情绪：「{user_message[:50]}」",
                         role="user",
@@ -339,7 +365,7 @@ class MemoryService:
 
         # ── 默认：原始对话记录 ──
         # 用户消息
-        chat_user = self.create(
+        chat_user = self._build_entry(
             kind=MemoryKind.CHAT_RAW,
             content=user_message,
             role="user",
@@ -349,7 +375,7 @@ class MemoryService:
         extracted.append(chat_user)
 
         # AI 回复
-        chat_asst = self.create(
+        chat_asst = self._build_entry(
             kind=MemoryKind.CHAT_RAW,
             content=assistant_response,
             role="assistant",

@@ -5,9 +5,17 @@ from app.goals.models import Goal
 from app.goals.repository import InMemoryGoalRepository
 from app.llm.schemas import ChatMessage
 from app.llm.gateway import GatewayResponse
-from app.main import app, get_chat_gateway, get_goal_repository, get_memory_repository, get_state_store
+from app.main import (
+    app,
+    get_chat_gateway,
+    get_goal_repository,
+    get_memory_repository,
+    get_memory_service,
+    get_state_store,
+)
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
+from app.memory.service import MemoryService
 from app.runtime import StateStore
 
 
@@ -30,6 +38,7 @@ class StubGateway:
 
 def test_post_chat_returns_gateway_response():
     memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
     gateway = StubGateway()
 
     def override_gateway():
@@ -41,8 +50,12 @@ def test_post_chat_returns_gateway_response():
     def override_memory_repository():
         return memory_repository
 
+    def override_memory_service():
+        return memory_service
+
     app.dependency_overrides[get_chat_gateway] = override_gateway
     app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
 
     try:
         client = TestClient(app)
@@ -55,6 +68,40 @@ def test_post_chat_returns_gateway_response():
         recent = memory_repository.list_recent(limit=5)
         assert [event.role for event in reversed(recent)] == ["user", "assistant"]
         assert [event.content for event in reversed(recent)] == ["hello", "echo:hello"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_does_not_duplicate_memory_rows_when_service_uses_same_repository():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_memory_service():
+        return memory_service
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "hello"})
+        assert response.status_code == 200
+
+        recent = list(reversed(memory_repository.list_recent(limit=10)))
+        assert [event.role for event in recent] == ["user", "assistant"]
+        assert [event.content for event in recent] == ["hello", "echo:hello"]
+        assert len({event.entry_id for event in recent}) == 2
     finally:
         app.dependency_overrides.clear()
 
