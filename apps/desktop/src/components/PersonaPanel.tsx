@@ -11,6 +11,7 @@ import {
   updatePersonality,
   updateSpeakingStyle,
   resetPersona,
+  initializePersona,
 } from "../lib/api";
 import { subscribeAppRealtime } from "../lib/realtime";
 
@@ -290,6 +291,26 @@ function PersonaWorkbench({ onUpdated }: { onUpdated?: () => void }) {
     }
   }
 
+  async function handleInitialize() {
+    if (
+      !confirm(
+        "确定要初始化数字人吗？\n\n这将清空所有记忆、目标和状态，并将数字人恢复到初始状态。\n\n此操作不可撤销！",
+      )
+    )
+      return;
+    setSaving(true);
+    try {
+      const result = await initializePersona();
+      showToast(`${result.message}（已清空 ${result.cleared.memories} 条记忆和 ${result.cleared.goals} 个目标）`);
+      onUpdated?.();
+      await load();
+    } catch (e) {
+      showToast("初始化失败: " + (e instanceof Error ? e.message : "?"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
@@ -395,6 +416,14 @@ function PersonaWorkbench({ onUpdated }: { onUpdated?: () => void }) {
                 disabled={saving}
               >
                 重置默认
+              </button>
+              <button
+                type="button"
+                className="btn btn--danger"
+                onClick={handleInitialize}
+                disabled={saving}
+              >
+                🔄 初始化数字人
               </button>
             </div>
           </div>

@@ -423,6 +423,21 @@ export function resetPersona(): Promise<{ success: boolean; profile: PersonaProf
   return post<{ success: boolean; profile: PersonaProfile }>("/persona/reset");
 }
 
+/** 初始化数字人：清空所有数据并重置为初始状态 */
+export function initializePersona(): Promise<{
+  success: boolean;
+  message: string;
+  cleared: { memories: number; goals: number };
+  profile: PersonaProfile;
+}> {
+  return post<{
+    success: boolean;
+    message: string;
+    cleared: { memories: number; goals: number };
+    profile: PersonaProfile;
+  }>("/persona/initialize");
+}
+
 // ══════════════════════════════════════════════
 // 记忆 API
 // ══════════════════════════════════════════════
