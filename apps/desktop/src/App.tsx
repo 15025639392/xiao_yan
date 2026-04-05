@@ -6,6 +6,7 @@ import type { ChatEntry } from "./components/ChatPanel";
 import { GoalsPanel } from "./components/GoalsPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
 import type { SelfImprovementHistoryEntry } from "./lib/api";
+import { MemoryPanel } from "./components/MemoryPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPanel } from "./components/StatusPanel";
 import { ToolPanel } from "./components/ToolPanel";
@@ -23,7 +24,7 @@ import {
   wake,
 } from "./lib/api";
 
-type AppRoute = "overview" | "chat" | "settings" | "history" | "tools";
+type AppRoute = "overview" | "chat" | "persona" | "memory" | "history" | "tools";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -218,15 +219,10 @@ export default function App() {
       {/* Left Sidebar - WorkBuddy Style */}
       <aside className="app-sidebar">
         <div className="app-sidebar__header">
-          <button
-            className="app-sidebar__brand"
-            onClick={() => handleNavigate("settings")}
-            type="button"
-            title="设置"
-          >
+          <div className="app-sidebar__brand">
             <span className="app-sidebar__logo">🤖</span>
-            <span className="app-sidebar__title">数字人</span>
-          </button>
+            <span className="app-sidebar__title">小晏</span>
+          </div>
           <div className={`app-sidebar__status-dot app-sidebar__status-dot--${state.mode}`} />
         </div>
 
@@ -255,14 +251,27 @@ export default function App() {
             <span>对话</span>
           </button>
           <button
-            className={`app-sidebar__nav-item ${route === "history" ? "app-sidebar__nav-item--active" : ""}`}
-            onClick={() => handleNavigate("history")}
+            className={`app-sidebar__nav-item ${route === "persona" ? "app-sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNavigate("persona")}
             type="button"
           >
             <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
             </svg>
-            <span>历史</span>
+            <span>人格</span>
+          </button>
+          <button
+            className={`app-sidebar__nav-item ${route === "memory" ? "app-sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNavigate("memory")}
+            type="button"
+          >
+            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
+              <path d="M12 2a10 10 0 0 1 10 10"/>
+              <path d="M12 12L2.5 12"/>
+            </svg>
+            <span>记忆</span>
           </button>
           <button
             className={`app-sidebar__nav-item ${route === "tools" ? "app-sidebar__nav-item--active" : ""}`}
@@ -337,8 +346,10 @@ export default function App() {
             onSend={handleSend}
             onCompleteGoal={(goalId) => handleUpdateGoalStatus(goalId, "completed")}
           />
-        ) : route === "settings" ? (
+        ) : route === "persona" ? (
           <SettingsPanel theme={theme} onThemeChange={setTheme} />
+        ) : route === "memory" ? (
+          <MemoryPage />
         ) : route === "history" ? (
           <HistoryPage onSelectRollback={handleRollback} />
         ) : route === "tools" ? (
@@ -445,15 +456,19 @@ function OverviewPanel({
 
 function resolveRoute(hash: string): AppRoute {
   if (hash === "#/chat") return "chat";
-  if (hash === "#/settings") return "settings";
+  if (hash === "#/persona") return "persona";
+  if (hash === "#/memory") return "memory";
   if (hash === "#/history") return "history";
   if (hash === "#/tools") return "tools";
+  // Legacy redirect
+  if (hash === "#/settings") return "persona";
   return "overview";
 }
 
 function routeToHash(route: AppRoute): string {
   if (route === "chat") return "#/chat";
-  if (route === "settings") return "#/settings";
+  if (route === "persona") return "#/persona";
+  if (route === "memory") return "#/memory";
   if (route === "history") return "#/history";
   if (route === "tools") return "#/tools";
   return "#/";
@@ -503,6 +518,24 @@ function mergeMessages(
   });
 
   return Array.from(merged.values());
+}
+
+// ═════════════════════════════════════════
+// Memory Page — 记忆库页面
+// ═════════════════════════════════════════
+
+function MemoryPage() {
+  return (
+    <div className="memory-page">
+      <header className="memory-page__header">
+        <h2 className="memory-page__title">记忆库</h2>
+        <p className="memory-page__subtitle">浏览和管理数字人的记忆</p>
+      </header>
+      <div className="memory-page__content">
+        <MemoryPanel />
+      </div>
+    </div>
+  );
 }
 
 // ═════════════════════════════════════════

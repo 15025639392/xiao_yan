@@ -11,7 +11,6 @@ import {
   updateSpeakingStyle,
   resetPersona,
 } from "../lib/api";
-import { MemoryPanel } from "./MemoryPanel";
 import { PersonaCard } from "./PersonaCard";
 
 type SettingsPanelProps = {
@@ -25,17 +24,16 @@ type SettingsPanelProps = {
 // ═══════════════════════════════════════════════════
 
 export function SettingsPanel({ theme, onThemeChange, onPersonaUpdated }: SettingsPanelProps) {
-  const [activeTab, setActiveTab] = useState<"persona" | "memory" | "appearance" | "system">("persona");
+  const [activeTab, setActiveTab] = useState<"persona" | "settings">("persona");
 
   return (
     <section className="workbench-page">
       {/* 页面头部 */}
       <header className="workbench-page__header">
         <div className="workbench-page__title-group">
-          <h2 className="workbench-page__title">人格工作台</h2>
-          <p className="workbench-page__subtitle">管理数字人的人格、记忆与系统设置</p>
+          <h2 className="workbench-page__title">人格配置</h2>
+          <p className="workbench-page__subtitle">管理数字人的性格、风格与身份</p>
         </div>
-        <div className="workbench-page__version">v0.1.0</div>
       </header>
 
       {/* 工作台主体 - 左右分栏 */}
@@ -55,30 +53,12 @@ export function SettingsPanel({ theme, onThemeChange, onPersonaUpdated }: Settin
             </button>
             <button
               type="button"
-              className={`workbench-nav__item ${activeTab === "memory" ? "workbench-nav__item--active" : ""}`}
-              onClick={() => setActiveTab("memory")}
-            >
-              <span className="workbench-nav__icon">🧠</span>
-              <span className="workbench-nav__label">记忆库</span>
-              <span className="workbench-nav__desc">查看与管理记忆</span>
-            </button>
-            <button
-              type="button"
-              className={`workbench-nav__item ${activeTab === "appearance" ? "workbench-nav__item--active" : ""}`}
-              onClick={() => setActiveTab("appearance")}
-            >
-              <span className="workbench-nav__icon">🎨</span>
-              <span className="workbench-nav__label">外观</span>
-              <span className="workbench-nav__desc">主题与界面设置</span>
-            </button>
-            <button
-              type="button"
-              className={`workbench-nav__item ${activeTab === "system" ? "workbench-nav__item--active" : ""}`}
-              onClick={() => setActiveTab("system")}
+              className={`workbench-nav__item ${activeTab === "settings" ? "workbench-nav__item--active" : ""}`}
+              onClick={() => setActiveTab("settings")}
             >
               <span className="workbench-nav__icon">⚙️</span>
-              <span className="workbench-nav__label">系统</span>
-              <span className="workbench-nav__desc">关于与高级选项</span>
+              <span className="workbench-nav__label">外观与系统</span>
+              <span className="workbench-nav__desc">主题与关于信息</span>
             </button>
           </nav>
 
@@ -93,12 +73,8 @@ export function SettingsPanel({ theme, onThemeChange, onPersonaUpdated }: Settin
         <main className="workbench-content">
           {activeTab === "persona" ? (
             <PersonaWorkbench onUpdated={onPersonaUpdated} />
-          ) : activeTab === "memory" ? (
-            <MemoryWorkbench />
-          ) : activeTab === "appearance" ? (
-            <AppearanceWorkbench theme={theme} onThemeChange={onThemeChange} />
           ) : (
-            <SystemWorkbench />
+            <SettingsWorkbench theme={theme} onThemeChange={onThemeChange} />
           )}
         </main>
       </div>
@@ -561,40 +537,29 @@ function DimensionSlider({
 }
 
 // ═══════════════════════════════════════════════════
-// 记忆库工作台
+// 外观与系统设置工作台
 // ═══════════════════════════════════════════════════
 
-function MemoryWorkbench() {
-  return (
-    <div className="workbench-memory">
-      <MemoryPanel />
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════
-// 外观设置工作台
-// ═══════════════════════════════════════════════════
-
-function AppearanceWorkbench({ 
-  theme, 
-  onThemeChange 
-}: { 
-  theme: "dark" | "light"; 
+function SettingsWorkbench({
+  theme,
+  onThemeChange
+}: {
+  theme: "dark" | "light";
   onThemeChange: (theme: "dark" | "light") => void;
 }) {
   return (
     <div className="workbench-panel">
       <header className="workbench-panel__header">
-        <h3 className="workbench-panel__title">外观设置</h3>
+        <h3 className="workbench-panel__title">外观与系统</h3>
       </header>
       <div className="workbench-panel__body">
+        {/* 主题选择 */}
         <div className="appearance-section">
           <h4 className="appearance-section__title">
             <PaletteIcon /> 主题
           </h4>
           <p className="appearance-section__desc">选择界面的颜色主题</p>
-          
+
           <div className="theme-cards">
             <button
               type="button"
@@ -634,59 +599,25 @@ function AppearanceWorkbench({
           </div>
         </div>
 
-        <div className="appearance-section appearance-section--placeholder">
+        {/* 系统信息 */}
+        <div className="appearance-section">
           <h4 className="appearance-section__title">
-            <BellIcon /> 通知
+            <ShieldIcon /> 关于
           </h4>
-          <p className="appearance-section__desc">通知设置即将推出</p>
-        </div>
-
-        <div className="appearance-section appearance-section--placeholder">
-          <h4 className="appearance-section__title">
-            <KeyboardIcon /> 快捷键
-          </h4>
-          <p className="appearance-section__desc">快捷键设置即将推出</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════
-// 系统设置工作台
-// ═══════════════════════════════════════════════════
-
-function SystemWorkbench() {
-  return (
-    <div className="workbench-panel">
-      <header className="workbench-panel__header">
-        <h3 className="workbench-panel__title">系统信息</h3>
-      </header>
-      <div className="workbench-panel__body">
-        <div className="system-info">
-          <div className="system-info__item">
-            <span className="system-info__label">版本</span>
-            <span className="system-info__value">v0.1.0</span>
+          <div className="system-info system-info--compact">
+            <div className="system-info__item">
+              <span className="system-info__label">版本</span>
+              <span className="system-info__value">v0.1.0</span>
+            </div>
+            <div className="system-info__item">
+              <span className="system-info__label">人格系统</span>
+              <span className="system-info__value">Phase 9</span>
+            </div>
+            <div className="system-info__item">
+              <span className="system-info__label">记忆系统</span>
+              <span className="system-info__value">Phase 8</span>
+            </div>
           </div>
-          <div className="system-info__item">
-            <span className="system-info__label">数字人控制台</span>
-            <span className="system-info__value">AI Agent Desktop</span>
-          </div>
-          <div className="system-info__item">
-            <span className="system-info__label">人格系统</span>
-            <span className="system-info__value">Phase 9</span>
-          </div>
-          <div className="system-info__item">
-            <span className="system-info__label">记忆系统</span>
-            <span className="system-info__value">Phase 8</span>
-          </div>
-        </div>
-
-        <div className="appearance-section appearance-section--placeholder">
-          <h4 className="appearance-section__title">
-            <ShieldIcon /> 数据与隐私
-          </h4>
-          <p className="appearance-section__desc">数据与隐私设置即将推出</p>
         </div>
       </div>
     </div>
@@ -727,32 +658,6 @@ function SunIcon() {
       <line x1="21" y1="12" x2="23" y2="12" />
       <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
       <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-    </svg>
-  );
-}
-
-function BellIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
-  );
-}
-
-function KeyboardIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
-      <line x1="6" y1="8" x2="6" y2="8" />
-      <line x1="10" y1="8" x2="10" y2="8" />
-      <line x1="14" y1="8" x2="14" y2="8" />
-      <line x1="18" y1="8" x2="18" y2="8" />
-      <line x1="6" y1="12" x2="6" y2="12" />
-      <line x1="10" y1="12" x2="10" y2="12" />
-      <line x1="14" y1="12" x2="14" y2="12" />
-      <line x1="18" y1="12" x2="18" y2="12" />
-      <line x1="6" y1="16" x2="18" y2="16" />
     </svg>
   );
 }
