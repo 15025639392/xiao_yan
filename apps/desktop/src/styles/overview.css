@@ -362,6 +362,7 @@
   flex-shrink: 0;
 }
 
+/* Legacy 2-1 layout (kept for compatibility) */
 .inspector-grid__rail {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -379,6 +380,23 @@
 
 .inspector-grid__bottom {
   width: 100%;
+}
+
+/* New 1-1 balanced layout */
+.inspector-grid--balanced {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.inspector-grid--balanced .inspector-grid__col {
+  min-width: 0;
+}
+
+/* Autobio Section (full width below inspector grid) */
+.autobio-section {
+  flex-shrink: 0;
 }
 
 /* === Mission Board === */

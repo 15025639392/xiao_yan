@@ -25,51 +25,21 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
     <section className="panel">
       <div className="panel__header">
         <div className="panel__title-group">
-          <div className="panel__icon">📊</div>
+          <div className="panel__icon">📋</div>
           <div>
-            <h2 className="panel__title">当前状态</h2>
-            <p className="panel__subtitle">系统实时读数</p>
+            <h2 className="panel__title">今日计划</h2>
+            <p className="panel__subtitle">当前日程与自编程状态</p>
           </div>
         </div>
-        <span className={`status-badge status-badge--${state.mode}`}>
-          {renderModeLabel(state.mode)}
-        </span>
+        {state.today_plan ? (
+          <span className={`status-badge ${planCompleted ? 'status-badge--completed' : 'status-badge--active'}`}>
+            {planCompleted ? '已完成' : '进行中'}
+          </span>
+        ) : null}
       </div>
 
       <div className="panel__content">
-        <div className="metric-grid">
-          <div className="metric-card">
-            <p className="metric-card__label">运行状态</p>
-            <p className="metric-card__value">{renderModeLabel(state.mode)}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-card__label">当前阶段</p>
-            <p className="metric-card__value">{renderFocusMode(state.focus_mode)}</p>
-          </div>
-        </div>
-
-        {focusGoalTitle ? (
-          <div className="metric-card" style={{ marginTop: "var(--space-3)" }}>
-            <p className="metric-card__label">当前专注目标</p>
-            <p className="metric-card__value">{focusGoalTitle}</p>
-          </div>
-        ) : null}
-
-        {state.last_action ? (
-          <div className="metric-card" style={{ marginTop: "var(--space-3)" }}>
-            <p className="metric-card__label">最近动作</p>
-            <p className="metric-card__value">
-              {state.last_action.command} → {state.last_action.output}
-            </p>
-          </div>
-        ) : null}
-
-        <div className="metric-card" style={{ marginTop: "var(--space-3)" }}>
-          <p className="metric-card__label">当前想法</p>
-          <p className="metric-card__value">{state.current_thought ?? "还没有浮现新的念头。"}</p>
-        </div>
-
-        {/* ── 今日计划（保持原逻辑）── */}
+        {/* ── 今日计划 ── */}
         {state.today_plan ? (
           <section style={{ marginTop: "var(--space-5)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-3)" }}>

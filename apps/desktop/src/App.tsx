@@ -420,19 +420,19 @@ function OverviewPanel({
         </div>
       </section>
 
-      {/* Inspector Grid - 2-1 Layout */}
-      <section className="inspector-grid">
-        <div className="inspector-grid__rail">
-          <div className="inspector-grid__main">
-            <StatusPanel error={""} focusGoalTitle={focusGoalTitle} state={state} onRollback={onRollback} onApprovalDecision={onApprovalDecision} />
-          </div>
-          <div className="inspector-grid__side">
-            <WorldPanel world={world} />
-          </div>
+      {/* Inspector Grid - 1-1 Layout */}
+      <section className="inspector-grid inspector-grid--balanced">
+        <div className="inspector-grid__col">
+          <StatusPanel error={""} focusGoalTitle={focusGoalTitle} state={state} onRollback={onRollback} onApprovalDecision={onApprovalDecision} />
         </div>
-        <div className="inspector-grid__bottom">
-          <AutobioPanel entries={autobioEntries} />
+        <div className="inspector-grid__col">
+          <WorldPanel world={world} />
         </div>
+      </section>
+
+      {/* Autobio Section */}
+      <section className="autobio-section">
+        <AutobioPanel entries={autobioEntries} />
       </section>
 
       {/* Goals Board */}
