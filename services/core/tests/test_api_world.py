@@ -1,11 +1,15 @@
+import json
 from datetime import datetime
+from pathlib import Path
 
 from fastapi.testclient import TestClient
+from fastapi import FastAPI
 
-from app.domain.models import BeingState, WakeMode
+from app.domain.models import BeingState, FocusMode, WakeMode
 from app.goals.models import Goal
 from app.goals.repository import InMemoryGoalRepository
 from app.main import (
+    _ensure_runtime_initialized,
     app,
     get_goal_repository,
     get_memory_repository,
@@ -90,3 +94,40 @@ def test_get_world_returns_current_world_snapshot_and_persists_it():
         assert saved == WorldState.model_validate(body)
     finally:
         app.dependency_overrides.clear()
+
+
+def test_runtime_initialization_builds_world_snapshot_immediately(
+    tmp_path: Path, monkeypatch
+):
+    state_path = tmp_path / "state.json"
+    memory_path = tmp_path / "memory.jsonl"
+    goal_path = tmp_path / "goals.json"
+    world_path = tmp_path / "world.json"
+    state_path.write_text(
+        json.dumps(
+            BeingState(
+                mode=WakeMode.AWAKE,
+                focus_mode=FocusMode.AUTONOMY,
+                current_thought="我还惦记着今天的整理。",
+                active_goal_ids=[],
+            ).model_dump(mode="json"),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STATE_STORAGE_PATH", str(state_path))
+    monkeypatch.setenv("MEMORY_STORAGE_PATH", str(memory_path))
+    monkeypatch.setenv("GOAL_STORAGE_PATH", str(goal_path))
+    monkeypatch.setenv("WORLD_STORAGE_PATH", str(world_path))
+
+    target_app = FastAPI()
+    _ensure_runtime_initialized(target_app)
+
+    try:
+        saved = target_app.state.world_repository.get_world_state()
+        assert saved is not None
+        assert saved.energy in {"low", "medium", "high"}
+        assert saved.mood in {"calm", "engaged", "tired"}
+    finally:
+        target_app.state.stop_event.set()
+        target_app.state.autonomy_thread.join(timeout=1.0)

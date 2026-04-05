@@ -1,10 +1,11 @@
-from app.domain.models import WakeMode
+from app.domain.models import FocusMode, WakeMode
 from app.usecases.lifecycle import go_to_sleep, wake_up
 
 
 def test_wake_up_transitions_state_and_generates_brief():
     state = wake_up()
     assert state.mode == WakeMode.AWAKE
+    assert state.focus_mode == FocusMode.AUTONOMY
     assert state.current_thought is not None
     assert "整理一下现在的状态" in state.current_thought
 
@@ -12,3 +13,4 @@ def test_wake_up_transitions_state_and_generates_brief():
 def test_go_to_sleep_transitions_state():
     state = go_to_sleep()
     assert state.mode == WakeMode.SLEEPING
+    assert state.focus_mode == FocusMode.SLEEPING

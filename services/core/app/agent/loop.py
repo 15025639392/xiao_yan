@@ -1,13 +1,20 @@
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.agent.autonomy import GoalFocusSummary, choose_next_action
-from app.domain.models import WakeMode
+from app.domain.models import FocusMode, TodayPlanStepKind, TodayPlanStepStatus, WakeMode
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import GoalRepository, InMemoryGoalRepository
 from app.memory.models import MemoryEvent
 from app.memory.repository import MemoryRepository
+from app.planning.morning_plan import MorningPlanPlanner
 from app.runtime import StateStore
+from app.self_improvement.executor import SelfImprovementExecutor
+from app.self_improvement.planner import SelfImprovementPlanner
+from app.self_improvement.service import SelfImprovementService
+from app.tools.runner import CommandRunner
+from app.tools.sandbox import CommandSandbox
 from app.world.service import WorldStateService
 
 
@@ -21,12 +28,24 @@ class AutonomyLoop:
         goal_repository: GoalRepository | None = None,
         now_provider=None,
         world_state_service: WorldStateService | None = None,
+        command_runner: CommandRunner | None = None,
+        morning_plan_planner: MorningPlanPlanner | None = None,
+        self_improvement_service: SelfImprovementService | None = None,
     ) -> None:
         self.state_store = state_store
         self.memory_repository = memory_repository
         self.goal_repository = goal_repository or InMemoryGoalRepository()
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
         self.world_state_service = world_state_service or WorldStateService()
+        self.command_runner = command_runner or CommandRunner(
+            CommandSandbox(allowed_commands={"pwd", "date"})
+        )
+        self.morning_plan_planner = morning_plan_planner or MorningPlanPlanner()
+        workspace_root = _workspace_root()
+        self.self_improvement_service = self_improvement_service or SelfImprovementService(
+            planner=SelfImprovementPlanner(workspace_root=workspace_root),
+            executor=SelfImprovementExecutor(workspace_root),
+        )
 
     def tick_once(self):
         state = self.state_store.get()
@@ -38,7 +57,14 @@ class AutonomyLoop:
         state, transitioned = self._sync_goal_focus(state, now)
         if transitioned:
             return state
+        state = self._sync_focus_mode(state)
+        self_improvement_state = self._advance_self_improvement(state, recent_events, now)
+        if self_improvement_state is not None:
+            return self_improvement_state
         world_state = self._world_state_for(state, now)
+        seeded_plan_state = self._advance_morning_plan(state, now, world_state)
+        if seeded_plan_state is not None:
+            return seeded_plan_state
         self._maybe_record_inner_stage_memory(state, recent_events, world_state, now)
         self._maybe_record_autobio_memory(now)
         cooldown_ready = (
@@ -138,6 +164,20 @@ class AutonomyLoop:
 
         if action.kind == "act":
             goal_title = current_goal.title if current_goal is not None else state.active_goal_ids[0]
+            actionable_command = self.morning_plan_planner.action_command_for_goal(goal_title)
+            if actionable_command is not None:
+                result = self.command_runner.run(actionable_command)
+                action_summary = _build_action_result_thought(goal_title, now, world_state, result)
+                self.memory_repository.save_event(
+                    MemoryEvent(kind="action", content=action_summary, created_at=now)
+                )
+                next_state = state.model_copy(
+                    update={
+                        "current_thought": action_summary,
+                        "last_action": result,
+                    }
+                )
+                return self.state_store.set(next_state)
             chain_progress = (
                 None if current_goal is None else _build_chain_progress(self.goal_repository, current_goal)
             )
@@ -233,6 +273,8 @@ class AutonomyLoop:
                         "active_goal_ids": (
                             [next_goal.id] if next_goal is not None else active_goal_ids
                         ),
+                        "focus_mode": FocusMode.AUTONOMY,
+                        "today_plan": None,
                         "current_thought": _build_goal_completion(
                             goal.title,
                             now,
@@ -247,10 +289,131 @@ class AutonomyLoop:
                 return self.state_store.set(next_state), True
 
         if active_goal_ids != state.active_goal_ids:
-            next_state = state.model_copy(update={"active_goal_ids": active_goal_ids})
+            next_state = state.model_copy(
+                update={
+                    "active_goal_ids": active_goal_ids,
+                    "today_plan": _sync_today_plan(state.today_plan, active_goal_ids),
+                    "focus_mode": _next_focus_mode(
+                        state.mode,
+                        state.focus_mode,
+                        _sync_today_plan(state.today_plan, active_goal_ids),
+                    ),
+                }
+            )
             return self.state_store.set(next_state), False
 
         return state, False
+
+    def _sync_focus_mode(self, state):
+        next_today_plan = _sync_today_plan(state.today_plan, state.active_goal_ids)
+        next_focus_mode = _next_focus_mode(state.mode, state.focus_mode, next_today_plan)
+        if next_today_plan == state.today_plan and next_focus_mode == state.focus_mode:
+            return state
+        return self.state_store.set(
+            state.model_copy(
+                update={
+                    "today_plan": next_today_plan,
+                    "focus_mode": next_focus_mode,
+                }
+            )
+        )
+
+    def _advance_morning_plan(self, state, now: datetime, world_state):
+        if state.focus_mode != FocusMode.MORNING_PLAN:
+            return None
+        if state.today_plan is None or not state.today_plan.steps:
+            return None
+
+        next_pending_index = next(
+            (
+                index
+                for index, step in enumerate(state.today_plan.steps)
+                if step.status == TodayPlanStepStatus.PENDING
+            ),
+            None,
+        )
+        if next_pending_index is None:
+            next_state = state.model_copy(update={"focus_mode": FocusMode.AUTONOMY})
+            return self.state_store.set(next_state)
+
+        next_step = state.today_plan.steps[next_pending_index]
+        if state.today_plan.goal_id not in state.active_goal_ids:
+            return None
+
+        next_steps = [
+            step.model_copy(update={"status": TodayPlanStepStatus.COMPLETED})
+            if index == next_pending_index
+            else step
+            for index, step in enumerate(state.today_plan.steps)
+        ]
+        next_focus_mode = (
+            FocusMode.AUTONOMY
+            if all(step.status == TodayPlanStepStatus.COMPLETED for step in next_steps)
+            else FocusMode.MORNING_PLAN
+        )
+        updates = {
+            "focus_mode": next_focus_mode,
+            "today_plan": state.today_plan.model_copy(update={"steps": next_steps}),
+        }
+        if next_step.kind == TodayPlanStepKind.ACTION and next_step.command is not None:
+            result = self.command_runner.run(next_step.command)
+            action_summary = _build_action_result_thought(
+                state.today_plan.goal_title,
+                now,
+                world_state,
+                result,
+            )
+            self.memory_repository.save_event(
+                MemoryEvent(kind="action", content=action_summary, created_at=now)
+            )
+            updates["current_thought"] = action_summary
+            updates["last_action"] = result
+        else:
+            updates["current_thought"] = _build_today_plan_step_focus(
+                state.today_plan.goal_title,
+                next_step.content,
+                now,
+                world_state,
+            )
+        if next_focus_mode == FocusMode.AUTONOMY:
+            self.memory_repository.save_event(
+                MemoryEvent(
+                    kind="autobio",
+                    content=_build_today_plan_completion_memory(state.today_plan.goal_title),
+                    created_at=now,
+                )
+            )
+        next_state = state.model_copy(update=updates)
+        return self.state_store.set(next_state)
+
+    def _advance_self_improvement(self, state, recent_events, now: datetime):
+        if state.focus_mode == FocusMode.SELF_IMPROVEMENT:
+            next_state = self.self_improvement_service.tick_job(state)
+            if next_state is None:
+                return None
+            if (
+                state.self_improvement_job is not None
+                and next_state.self_improvement_job is not None
+                and state.self_improvement_job.status != next_state.self_improvement_job.status
+                and next_state.self_improvement_job.status.value in {"applied", "failed"}
+            ):
+                self.memory_repository.save_event(
+                    MemoryEvent(
+                        kind="inner",
+                        content=_build_self_improvement_memory(next_state.self_improvement_job),
+                        created_at=now,
+                    )
+                )
+            return self.state_store.set(next_state)
+
+        next_state = self.self_improvement_service.maybe_start_job(
+            state,
+            recent_events,
+            now,
+        )
+        if next_state is None:
+            return None
+        return self.state_store.set(next_state)
 
     def _world_state_for(self, state, now: datetime):
         focused_goals = [
@@ -386,6 +549,29 @@ def _build_goal_focus(
     return f"{_time_prefix(now)}{_world_tone(world_state)}我还惦记着“{goal}”，{progress}想继续把它推进。"
 
 
+def _build_today_plan_step_focus(
+    goal: str,
+    step_content: str,
+    now: datetime,
+    world_state,
+) -> str:
+    return (
+        f"{_time_prefix(now)}{_world_tone(world_state)}"
+        f"我先按今天的计划，从第一步开始：{step_content}。"
+    )
+
+
+def _build_today_plan_completion_memory(goal: str) -> str:
+    return f"我把今天的计划“{goal}”完整走完了，感觉这一轮心里更有数了。"
+
+
+def _build_action_result_thought(goal: str, now: datetime, world_state, result) -> str:
+    return (
+        f"{_time_prefix(now)}{_world_tone(world_state)}"
+        f"我刚为“{goal}”执行了 `{result.command}`，结果是：{result.output}。"
+    )
+
+
 def _build_goal_completion(
     goal: str,
     now: datetime,
@@ -469,6 +655,30 @@ def _world_tone(world_state) -> str:
     return ""
 
 
+def _sync_today_plan(today_plan, active_goal_ids: list[str]):
+    if today_plan is None:
+        return None
+    if today_plan.goal_id not in active_goal_ids:
+        return None
+    return today_plan
+
+
+def _next_focus_mode(mode, current_focus_mode, today_plan):
+    if mode != WakeMode.AWAKE:
+        return FocusMode.SLEEPING
+    if current_focus_mode == FocusMode.SELF_IMPROVEMENT:
+        return FocusMode.SELF_IMPROVEMENT
+    if today_plan is None:
+        return FocusMode.AUTONOMY
+    if any(step.status == TodayPlanStepStatus.PENDING for step in today_plan.steps):
+        return FocusMode.MORNING_PLAN
+    return (
+        current_focus_mode
+        if current_focus_mode == FocusMode.AUTONOMY
+        else FocusMode.AUTONOMY
+    )
+
+
 def _build_chain_progress(goal_repository: GoalRepository, goal: Goal) -> str | None:
     summary = _summarize_chain(goal_repository, goal)
     if summary is None:
@@ -481,6 +691,16 @@ def _build_chain_transition(goal_repository: GoalRepository, goal: Goal) -> str 
     if summary is None:
         return None
     return f"这条线已经接到第{summary.generation + 1}步了，"
+
+
+def _build_self_improvement_memory(job) -> str:
+    if job.status.value == "applied":
+        return f"我刚完成了一次自我编程，补强了 {job.target_area}，并通过了验证。"
+    return f"我刚尝试自我编程，但还没通过验证：{job.patch_summary or job.reason}"
+
+
+def _workspace_root() -> Path:
+    return Path(__file__).resolve().parents[4]
 
 
 def _build_goal_focus_summary(

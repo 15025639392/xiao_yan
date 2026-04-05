@@ -2,9 +2,11 @@ from fastapi.testclient import TestClient
 
 from app.goals.models import Goal
 from app.goals.repository import InMemoryGoalRepository
-from app.main import app, get_goal_repository, get_memory_repository
+from app.domain.models import BeingState, WakeMode
+from app.main import app, get_goal_repository, get_memory_repository, get_morning_plan_draft_generator, get_state_store
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
+from app.runtime import StateStore
 
 
 def test_post_wake_returns_awake_state():
@@ -106,10 +108,134 @@ def test_post_wake_builds_morning_plan_before_acting_on_focus_goal():
         client = TestClient(app)
         response = client.post("/lifecycle/wake")
         assert response.status_code == 200
-        thought = response.json()["current_thought"]
+        body = response.json()
+        thought = body["current_thought"]
+        assert body["focus_mode"] == "morning_plan"
         assert "先回看" in thought
         assert "再决定" in thought
         assert chain_goal.title in thought
+        assert body["today_plan"]["goal_id"] == chain_goal.id
+        assert body["today_plan"]["goal_title"] == chain_goal.title
+        assert [step["content"] for step in body["today_plan"]["steps"]] == [
+            f"回看“{chain_goal.title}”停在了哪里",
+            "决定是继续推进还是先收束",
+        ]
+        assert [step["status"] for step in body["today_plan"]["steps"]] == ["pending", "pending"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_wake_builds_action_step_for_actionable_goal():
+    goal_repository = InMemoryGoalRepository()
+    goal = goal_repository.save_goal(Goal(title="看看现在在哪个目录"))
+
+    def override_goal_repository():
+        return goal_repository
+
+    app.dependency_overrides[get_goal_repository] = override_goal_repository
+
+    try:
+        client = TestClient(app)
+        response = client.post("/lifecycle/wake")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["active_goal_ids"] == [goal.id]
+        assert body["today_plan"]["steps"][0]["kind"] == "action"
+        assert body["today_plan"]["steps"][0]["command"] == "pwd"
+        assert body["today_plan"]["steps"][1]["kind"] == "reflect"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_wake_uses_generated_plan_draft_when_it_is_valid():
+    goal_repository = InMemoryGoalRepository()
+    goal = goal_repository.save_goal(Goal(title="看看现在在哪个目录"))
+
+    class StubDraftGenerator:
+        def generate(self, goal, recent_autobio=None):
+            return [
+                {"content": "先确认当前目录", "kind": "action", "command": "pwd"},
+                {"content": "再决定下一步", "kind": "reflect"},
+            ]
+
+    def override_goal_repository():
+        return goal_repository
+
+    def override_morning_plan_draft_generator():
+        return StubDraftGenerator()
+
+    app.dependency_overrides[get_goal_repository] = override_goal_repository
+    app.dependency_overrides[get_morning_plan_draft_generator] = override_morning_plan_draft_generator
+
+    try:
+        client = TestClient(app)
+        response = client.post("/lifecycle/wake")
+        assert response.status_code == 200
+        body = response.json()
+        assert [step["content"] for step in body["today_plan"]["steps"]] == ["先确认当前目录", "再决定下一步"]
+        assert body["today_plan"]["steps"][0]["command"] == "pwd"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_wake_preserves_latest_self_improvement_job_and_cooldown():
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.SLEEPING,
+            self_improvement_job={
+                "reason": "测试失败：状态面板没有展示自我编程状态。",
+                "target_area": "ui",
+                "status": "applied",
+                "spec": "补上自我编程状态展示。",
+                "cooldown_until": "2026-04-05T12:00:00Z",
+            },
+        )
+    )
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.post("/lifecycle/wake")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["mode"] == "awake"
+        assert body["self_improvement_job"]["status"] == "applied"
+        assert body["self_improvement_job"]["cooldown_until"] == "2026-04-05T12:00:00Z"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_sleep_preserves_latest_self_improvement_job_and_cooldown():
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            self_improvement_job={
+                "reason": "测试失败：状态面板没有展示自我编程状态。",
+                "target_area": "ui",
+                "status": "failed",
+                "spec": "补上自我编程状态展示。",
+                "cooldown_until": "2026-04-05T12:00:00Z",
+            },
+        )
+    )
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.post("/lifecycle/sleep")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["mode"] == "sleeping"
+        assert body["self_improvement_job"]["status"] == "failed"
+        assert body["self_improvement_job"]["cooldown_until"] == "2026-04-05T12:00:00Z"
     finally:
         app.dependency_overrides.clear()
 

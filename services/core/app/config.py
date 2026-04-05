@@ -50,3 +50,17 @@ def get_world_storage_path() -> Path:
         return Path(configured).expanduser()
 
     return get_service_root() / ".data" / "world.json"
+
+
+def get_state_storage_path() -> Path:
+    load_local_env()
+    configured = os.getenv("STATE_STORAGE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+
+    return get_service_root() / ".data" / "state.json"
+
+
+def is_morning_plan_llm_enabled() -> bool:
+    load_local_env()
+    return os.getenv("MORNING_PLAN_LLM_ENABLED", "").lower() in {"1", "true", "yes", "on"}

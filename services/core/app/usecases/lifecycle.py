@@ -1,4 +1,4 @@
-from app.domain.models import BeingState, WakeMode
+from app.domain.models import BeingState, FocusMode, WakeMode
 
 
 def wake_up(recent_autobio: str | None = None) -> BeingState:
@@ -8,9 +8,10 @@ def wake_up(recent_autobio: str | None = None) -> BeingState:
 
     return BeingState(
         mode=WakeMode.AWAKE,
+        focus_mode=FocusMode.AUTONOMY,
         current_thought=thought,
     )
 
 
 def go_to_sleep() -> BeingState:
-    return BeingState(mode=WakeMode.SLEEPING)
+    return BeingState(mode=WakeMode.SLEEPING, focus_mode=FocusMode.SLEEPING)
