@@ -9,12 +9,12 @@ import pytest
 
 from app.domain.models import (
     EditKind,
-    SelfImprovementEdit,
-    SelfImprovementJob,
-    SelfImprovementStatus,
-    SelfImprovementVerification,
+    SelfProgrammingEdit,
+    SelfProgrammingJob,
+    SelfProgrammingStatus,
+    SelfProgrammingVerification,
 )
-from app.self_improvement.scorer import CandidateScorer, ScoredCandidate, RISK_PENALTIES
+from app.self_programming.scorer import CandidateScorer, ScoredCandidate, RISK_PENALTIES
 
 
 # ────────────────────────────────────────────
@@ -136,7 +136,7 @@ class TestExecutorTryBest:
         candidates = [
             # candidate-A: 应该失败（search_text 不匹配）
             self._scored_with_edits(sample_workspace, "A", [
-                SelfImprovementEdit(
+                SelfProgrammingEdit(
                     file_path="target.txt",
                     search_text="NOT_EXISTING_TEXT",
                     replace_text="new content",
@@ -144,7 +144,7 @@ class TestExecutorTryBest:
             ]),
             # candidate-B: 应该成功（search_text 匹配，验证命令也通过）
             self._scored_with_edits(sample_workspace, "B", [
-                SelfImprovementEdit(
+                SelfProgrammingEdit(
                     file_path="target.txt",
                     search_text="original",
                     replace_text="patched",
@@ -153,12 +153,12 @@ class TestExecutorTryBest:
         ]
         result = executor.try_best(candidates)
         assert result is not None
-        assert result.status == SelfImprovementStatus.APPLIED
+        assert result.status == SelfProgrammingStatus.APPLIED
         assert "selected=B" in (result.patch_summary or "")
 
     def test_returns_none_when_all_fail(self, tmp_path):
         executor = self._make_executor(tmp_path)
-        bad_edit = SelfImprovementEdit(
+        bad_edit = SelfProgrammingEdit(
             file_path="target.txt",
             search_text="NOT_EXISTING",
             replace_text="anything",
@@ -169,7 +169,7 @@ class TestExecutorTryBest:
 
     def test_respects_max_attempts(self, tmp_path):
         executor = self._make_executor(tmp_path)
-        bad_edit = SelfImprovementEdit(
+        bad_edit = SelfProgrammingEdit(
             file_path="target.txt",
             search_text="NOT_EXISTING",
             replace_text="anything",
@@ -181,24 +181,24 @@ class TestExecutorTryBest:
 
     @staticmethod
     def _make_executor(workspace: Path) -> object:
-        from app.self_improvement.executor import SelfImprovementExecutor
-        return SelfImprovementExecutor(workspace)
+        from app.self_programming.executor import SelfProgrammingExecutor
+        return SelfProgrammingExecutor(workspace)
 
     @staticmethod
     def _scored_with_edits(
         workspace: Path,
         cand_id: str,
-        edits: list[SelfImprovementEdit],
+        edits: list[SelfProgrammingEdit],
         verification_cmds: list[str] | None = None,
     ) -> ScoredCandidate:
-        from app.self_improvement.scorer import CandidateScorer
-        job = SelfImprovementJob(
+        from app.self_programming.scorer import CandidateScorer
+        job = SelfProgrammingJob(
             reason="test",
             target_area="agent",
-            status=SelfImprovementStatus.PATCHING,
+            status=SelfProgrammingStatus.PATCHING,
             spec="test spec",
             edits=edits,
-            verification=SelfImprovementVerification(commands=verification_cmds or ["true"]),
+            verification=SelfProgrammingVerification(commands=verification_cmds or ["true"]),
         )
         return CandidateScorer().score(job, {"id": cand_id, "confidence": 0.7})
 
@@ -238,7 +238,7 @@ class TestLLMPlannerMultiCandidateParsing:
         }
         ```
         """)
-        from app.self_improvement.llm_planner import LLMPlanner
+        from app.self_programming.llm_planner import LLMPlanner
         parsed = LLMPlanner._parse_multi_candidate_response(response)
         assert len(parsed) == 2
         assert parsed[0][0] == "conservative"
@@ -258,7 +258,7 @@ class TestLLMPlannerMultiCandidateParsing:
         }
         ```
         """)
-        from app.self_improvement.llm_planner import LLMPlanner
+        from app.self_programming.llm_planner import LLMPlanner
         parsed = LLMPlanner._parse_multi_candidate_response(response)
         assert parsed == []
 
@@ -275,7 +275,7 @@ class TestLLMPlannerMultiCandidateParsing:
           }]
         }
         """)
-        from app.self_improvement.llm_planner import LLMPlanner
+        from app.self_programming.llm_planner import LLMPlanner
         parsed = LLMPlanner._parse_multi_candidate_response(response)
         assert len(parsed) == 1
         edit = parsed[0][1][0]
@@ -296,7 +296,7 @@ class TestLLMPlannerMultiCandidateParsing:
           }]
         }
         """)
-        from app.self_improvement.llm_planner import LLMPlanner
+        from app.self_programming.llm_planner import LLMPlanner
         parsed = LLMPlanner._parse_multi_candidate_response(response)
         assert len(parsed) == 1
         edit = parsed[0][1][0]
@@ -305,12 +305,12 @@ class TestLLMPlannerMultiCandidateParsing:
 
     def test_empty_candidates_returns_empty_list(self):
         response = '{"diagnosis": "no fix", "candidates": [], "explanation": "cannot fix"}'
-        from app.self_improvement.llm_planner import LLMPlanner
+        from app.self_programming.llm_planner import LLMPlanner
         parsed = LLMPlanner._parse_multi_candidate_response(response)
         assert parsed == []
 
     def test_invalid_json_returns_empty_list(self):
-        from app.self_improvement.llm_planner import LLMPlanner
+        from app.self_programming.llm_planner import LLMPlanner
         parsed = LLMPlanner._parse_multi_candidate_response("this is not json at all")
         assert parsed == []
 
@@ -320,16 +320,16 @@ class TestLLMPlannerMultiCandidateParsing:
 # ────────────────────────────────────────────
 
 
-def _make_edit(file_path: str = "file.py", kind=EditKind.REPLACE) -> SelfImprovementEdit:
+def _make_edit(file_path: str = "file.py", kind=EditKind.REPLACE) -> SelfProgrammingEdit:
     if kind == EditKind.REPLACE:
-        return SelfImprovementEdit(
+        return SelfProgrammingEdit(
             file_path=file_path, search_text="old", replace_text="new", kind=kind,
         )
     if kind == EditKind.CREATE:
-        return SelfImprovementEdit(
+        return SelfProgrammingEdit(
             file_path=file_path, file_content="# new file\n", kind=kind,
         )
-    return SelfImprovementEdit(
+    return SelfProgrammingEdit(
         file_path=file_path, insert_after="# end", replace_text="\n# added\n", kind=kind,
     )
 
@@ -338,14 +338,14 @@ def _make_job(
     reason: str = "test reason",
     target_area: str = "agent",
     edits: list | None = None,
-) -> SelfImprovementJob:
-    return SelfImprovementJob(
+) -> SelfProgrammingJob:
+    return SelfProgrammingJob(
         reason=reason,
         target_area=target_area,
-        status=SelfImprovementStatus.PATCHING,
+        status=SelfProgrammingStatus.PATCHING,
         spec="test spec",
         edits=edits or [],
-        verification=SelfImprovementVerification(commands=[]),
+        verification=SelfProgrammingVerification(commands=[]),
     )
 
 

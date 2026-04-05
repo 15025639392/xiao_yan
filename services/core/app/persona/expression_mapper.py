@@ -1,6 +1,6 @@
 """ExpressionStyleMapper — 情绪→表达风格深层映射器
 
-Phase 9 核心组件：
+核心职责：
 - 将情绪状态（EmotionalState）转化为具体的"表达风格指令"
 - 不再只是告诉 LLM "你现在开心"，而是 "你现在开心，所以：话说得多、爱用 emoji、句式活泼"
 

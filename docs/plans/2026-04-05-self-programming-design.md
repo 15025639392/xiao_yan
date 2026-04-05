@@ -13,9 +13,9 @@
 
 ## 状态机
 
-- `focus_mode` 新增 `self_improvement`。
-- `BeingState` 新增 `self_improvement_job`。
-- `self_improvement_job.status` 使用 `pending -> diagnosing -> patching -> verifying -> applied | failed`。
+- `focus_mode` 新增 `self_programming`。
+- `BeingState` 新增 `self_programming_job`。
+- `self_programming_job.status` 使用 `pending -> diagnosing -> patching -> verifying -> applied | failed`。
 - 自我编程期间暂停常规自治；完成或失败后回到 `autonomy`。
 
 ## 触发规则
@@ -35,15 +35,15 @@
 
 ## 架构
 
-- `app/self_improvement/models.py`：定义 job、状态、验证结果。
-- `app/self_improvement/evaluator.py`：决定是否触发和触发原因。
-- `app/self_improvement/planner.py`：把触发原因转换成小范围编码任务。
-- `app/self_improvement/executor.py`：应用补丁、执行测试、收集结果。
-- `app/self_improvement/service.py`：给 `AutonomyLoop` 提供统一入口。
+- `app/self_programming/models.py`：定义 job、状态、验证结果。
+- `app/self_programming/evaluator.py`：决定是否触发和触发原因。
+- `app/self_programming/planner.py`：把触发原因转换成小范围编码任务。
+- `app/self_programming/executor.py`：应用补丁、执行测试、收集结果。
+- `app/self_programming/service.py`：给 `AutonomyLoop` 提供统一入口。
 
 ## 展示
 
-- `/state` 直接暴露 `self_improvement_job`。
+- `/state` 直接暴露 `self_programming_job`。
 - 前端状态面板新增“她刚刚为什么改自己 / 改了什么 / 验证结果”。
 
 ## 第一版实现策略

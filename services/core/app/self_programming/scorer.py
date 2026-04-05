@@ -1,5 +1,5 @@
 """
-候选方案评分器 — Phase 2 核心
+候选方案评分器
 
 对 LLM 生成的多个补丁候选进行多维度评分，选出最优方案。
 
@@ -19,8 +19,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from app.domain.models import (
-    SelfImprovementEdit,
-    SelfImprovementJob,
+    SelfProgrammingEdit,
+    SelfProgrammingJob,
 )
 
 
@@ -28,7 +28,7 @@ from app.domain.models import (
 class ScoredCandidate:
     """经过评分的候选方案。"""
 
-    job: SelfImprovementJob
+    job: SelfProgrammingJob
     candidate_id: str = ""
     confidence: float = 0.5
     risk_level: str = "medium"
@@ -89,7 +89,7 @@ class CandidateScorer:
 
     def score(
         self,
-        job: SelfImprovementJob,
+        job: SelfProgrammingJob,
         metadata: dict | None = None,
     ) -> ScoredCandidate:
         """对一个候选 Job 进行评分，返回 ScoredCandidate。"""
@@ -147,7 +147,7 @@ class CandidateScorer:
         return RISK_PENALTIES.get(risk_level, RISK_PENALTIES["medium"])
 
     @staticmethod
-    def _score_simplicity(edits: list[SelfImprovementEdit]) -> float:
+    def _score_simplicity(edits: list[SelfProgrammingEdit]) -> float:
         """改动简洁性评分。
 
         越小越好：
@@ -169,7 +169,7 @@ class CandidateScorer:
         return (file_score + edit_score) / 2
 
     @staticmethod
-    def _score_safety(edits: list[SelfImprovementEdit]) -> float:
+    def _score_safety(edits: list[SelfProgrammingEdit]) -> float:
         """安全性评分。
 
         只改测试文件 → 1.0

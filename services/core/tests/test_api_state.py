@@ -18,12 +18,12 @@ def test_get_state_returns_current_runtime_state():
     assert response.json()["focus_mode"] in {"autonomy", "morning_plan"}
 
 
-def test_get_state_includes_self_improvement_job():
+def test_get_state_includes_self_programming_job():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
             focus_mode=FocusMode.SELF_IMPROVEMENT,
-            self_improvement_job={
+            self_programming_job={
                 "reason": "测试失败：状态面板没有展示自我编程状态。",
                 "target_area": "ui",
                 "status": "verifying",
@@ -49,8 +49,8 @@ def test_get_state_includes_self_improvement_job():
         body = response.json()
 
         assert response.status_code == 200
-        assert body["focus_mode"] == "self_improvement"
-        assert body["self_improvement_job"]["target_area"] == "ui"
-        assert body["self_improvement_job"]["verification"]["passed"] is True
+        assert body["focus_mode"] == "self_programming"
+        assert body["self_programming_job"]["target_area"] == "ui"
+        assert body["self_programming_job"]["verification"]["passed"] is True
     finally:
         app.dependency_overrides.clear()

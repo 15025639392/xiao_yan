@@ -1,8 +1,8 @@
 """
-Git 工作流管理器 — 自编程能力的 Phase 3 核心
+Git 工作流管理器
 
-为自编程补丁提供安全的 Git 集成：
-1. 每次自编程创建独立分支（feature/self-fix/{job_id}）
+为自我编程补丁提供安全的 Git 集成：
+1. 每次自我编程创建独立分支（feature/self-programming/{job_id}）
 2. 补丁通过验证后自动 commit（含结构化 commit message）
 3. 支持回滚到补丁前状态（git checkout / git clean）
 4. 支持合并分支到主分支
@@ -12,7 +12,7 @@ Git 工作流管理器 — 自编程能力的 Phase 3 核心
 - 从不 push 到远程
 - 从不 force-push
 - 从修改 amend 别人的 commit
-- commit message 包含 [self-fix] 标记，便于筛选
+- commit message 包含 [self-programming] 标记，便于筛选
 """
 
 from __future__ import annotations
@@ -78,10 +78,10 @@ class GitWorkflowManager:
     """
 
     # 分支名前缀
-    BRANCH_PREFIX = "self-fix/"
+    BRANCH_PREFIX = "self-programming/"
 
     # Commit message 标签
-    COMMIT_TAG = "[self-fix]"
+    COMMIT_TAG = "[self-programming]"
 
     def __init__(
         self,
@@ -139,10 +139,10 @@ class GitWorkflowManager:
     # ── 分支管理 ─────────────────────────────────────
 
     def create_branch(self, job_id: str, target_area: str = "") -> tuple[bool, str]:
-        """为本次自编程创建独立分支。
+        """为本次自我编程创建独立分支。
 
         Args:
-            job_id: 自编程任务 ID（用于分支命名）
+            job_id: 自我编程任务 ID（用于分支命名）
             target_area: 目标区域（加入分支名提高可读性）
 
         Returns:
@@ -210,7 +210,7 @@ class GitWorkflowManager:
         """Stage 修改过的文件并创建 commit。
 
         Commit message 格式::
-            [self-fix] <target_area>: <summary>
+            [self-programming] <target_area>: <summary>
 
             Job: <job_id>
             Candidate: <candidate_label>
@@ -324,7 +324,7 @@ class GitWorkflowManager:
             return False
 
     def rollback_job(self, job_id: str) -> bool:
-        """回滚某次自编程的所有变更（查找对应分支并重置）。
+        """回滚某次自我编程的所有变更（查找对应分支并重置）。
 
         通过查找包含 job_id 的分支名来定位，然后 reset --hard 回去。
         """
@@ -367,7 +367,7 @@ class GitWorkflowManager:
     # ── 合并操作 ─────────────────────────────────────
 
     def merge_to_main(self, branch_name: str | None = None) -> bool:
-        """将当前（或指定的）自编程分支合并到原始分支。
+        """将当前（或指定的）自我编程分支合并到原始分支。
 
         .. warning::
            这是一个需要谨慎使用的操作。建议在合并前确认测试全部通过。

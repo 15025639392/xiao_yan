@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.agent.loop import AutonomyLoop
-from app.domain.models import BeingState, FocusMode, SelfImprovementStatus, WakeMode
+from app.domain.models import BeingState, FocusMode, SelfProgrammingStatus, WakeMode
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import InMemoryGoalRepository
 from app.memory.models import MemoryEvent
@@ -635,7 +635,7 @@ def test_tick_once_executes_action_step_declared_in_today_plan():
     assert state.today_plan.steps[0].status == "completed"
 
 
-def test_tick_once_enters_self_improvement_when_test_failure_is_detected():
+def test_tick_once_enters_self_programming_when_test_failure_is_detected():
     now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
     store = StateStore(BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY))
     repo = InMemoryMemoryRepository()
@@ -645,13 +645,13 @@ def test_tick_once_enters_self_improvement_when_test_failure_is_detected():
     state = loop.tick_once()
 
     assert state.focus_mode == FocusMode.SELF_IMPROVEMENT
-    assert state.self_improvement_job is not None
-    assert state.self_improvement_job.status == SelfImprovementStatus.DIAGNOSING
+    assert state.self_programming_job is not None
+    assert state.self_programming_job.status == SelfProgrammingStatus.DIAGNOSING
     assert "自我编程" in state.current_thought
-    assert "测试失败" in state.self_improvement_job.reason
+    assert "测试失败" in state.self_programming_job.reason
 
 
-def test_tick_once_can_proactively_enter_self_improvement_after_repeated_idle_progress():
+def test_tick_once_can_proactively_enter_self_programming_after_repeated_idle_progress():
     now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
     store = StateStore(
         BeingState(
@@ -669,18 +669,18 @@ def test_tick_once_can_proactively_enter_self_improvement_after_repeated_idle_pr
     state = loop.tick_once()
 
     assert state.focus_mode == FocusMode.SELF_IMPROVEMENT
-    assert state.self_improvement_job is not None
-    assert state.self_improvement_job.reason == "连续多次只产生 thought，没有形成有效行动结果。"
+    assert state.self_programming_job is not None
+    assert state.self_programming_job.reason == "连续多次只产生 thought，没有形成有效行动结果。"
 
 
-def test_tick_once_respects_self_improvement_cooldown_for_proactive_trigger():
+def test_tick_once_respects_self_programming_cooldown_for_proactive_trigger():
     now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
     store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
             focus_mode=FocusMode.AUTONOMY,
             active_goal_ids=["goal-1"],
-            self_improvement_job={
+            self_programming_job={
                 "reason": "之前已经做过一次自我编程",
                 "target_area": "agent",
                 "status": "applied",
@@ -698,5 +698,5 @@ def test_tick_once_respects_self_improvement_cooldown_for_proactive_trigger():
     state = loop.tick_once()
 
     assert state.focus_mode != FocusMode.SELF_IMPROVEMENT
-    assert state.self_improvement_job is not None
-    assert state.self_improvement_job.status == SelfImprovementStatus.APPLIED
+    assert state.self_programming_job is not None
+    assert state.self_programming_job.status == SelfProgrammingStatus.APPLIED

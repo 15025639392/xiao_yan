@@ -2,10 +2,10 @@ from datetime import datetime, timedelta
 
 from app.domain.models import BeingState, FocusMode, WakeMode
 from app.memory.models import MemoryEvent
-from app.self_improvement.models import SelfImprovementCandidate, SelfImprovementTrigger
+from app.self_programming.models import SelfProgrammingCandidate, SelfProgrammingTrigger
 
 
-class SelfImprovementEvaluator:
+class SelfProgrammingEvaluator:
     PROACTIVE_EVENT_THRESHOLD = 2
 
     def evaluate(
@@ -13,15 +13,15 @@ class SelfImprovementEvaluator:
         state: BeingState,
         recent_events: list[MemoryEvent],
         now: datetime,
-    ) -> SelfImprovementCandidate | None:
+    ) -> SelfProgrammingCandidate | None:
         if state.mode != WakeMode.AWAKE:
             return None
         if state.focus_mode == FocusMode.SELF_IMPROVEMENT:
             return None
         if (
-            state.self_improvement_job is not None
-            and state.self_improvement_job.cooldown_until is not None
-            and now < state.self_improvement_job.cooldown_until
+            state.self_programming_job is not None
+            and state.self_programming_job.cooldown_until is not None
+            and now < state.self_programming_job.cooldown_until
         ):
             return None
 
@@ -34,8 +34,8 @@ class SelfImprovementEvaluator:
             None,
         )
         if hard_signal is not None:
-            return SelfImprovementCandidate(
-                trigger=SelfImprovementTrigger.HARD_FAILURE,
+            return SelfProgrammingCandidate(
+                trigger=SelfProgrammingTrigger.HARD_FAILURE,
                 reason=hard_signal.content,
                 target_area=_infer_target_area(hard_signal.content),
                 spec=_build_hard_failure_spec(hard_signal.content),
@@ -64,8 +64,8 @@ class SelfImprovementEvaluator:
         if not state.active_goal_ids:
             return None
 
-        return SelfImprovementCandidate(
-            trigger=SelfImprovementTrigger.PROACTIVE,
+        return SelfProgrammingCandidate(
+            trigger=SelfProgrammingTrigger.PROACTIVE,
             reason="连续多次只产生 thought，没有形成有效行动结果。",
             target_area="agent",
             spec="减少自主循环空转，提升从 thought 到 action 的推进力度。",

@@ -1,18 +1,18 @@
 from datetime import datetime
 import logging
 
-from app.domain.models import BeingState, FocusMode, SelfImprovementStatus
+from app.domain.models import BeingState, FocusMode, SelfProgrammingStatus
 from app.memory.models import MemoryEvent
-from app.self_improvement.evaluator import SelfImprovementEvaluator
-from app.self_improvement.executor import SelfImprovementExecutor
-from app.self_improvement.history_store import SelfImprovementHistory
-from app.self_improvement.health_checker import (
+from app.self_programming.evaluator import SelfProgrammingEvaluator
+from app.self_programming.executor import SelfProgrammingExecutor
+from app.self_programming.history_store import SelfProgrammingHistory
+from app.self_programming.health_checker import (
     HealthChecker,
     HealthSignal,
     HealthReport,
     HealthGrade,
 )
-from app.self_improvement.rollback_recovery import RollbackReason
+from app.self_programming.rollback_recovery import RollbackReason
 from typing import TYPE_CHECKING, Protocol, Any
 
 if TYPE_CHECKING:
@@ -25,20 +25,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SelfImprovementService:
+class SelfProgrammingService:
     def __init__(
         self,
-        evaluator: SelfImprovementEvaluator | None = None,
+        evaluator: SelfProgrammingEvaluator | None = None,
         planner = None,
-        executor: SelfImprovementExecutor | None = None,
-        # Phase 5: 可选的健康检查器和历史记录
+        executor: SelfProgrammingExecutor | None = None,
+        # 可选的健康检查器和历史记录
         health_checker: HealthChecker | None = None,
-        history: SelfImprovementHistory | None = None,
+        history: SelfProgrammingHistory | None = None,
     ) -> None:
-        self.evaluator = evaluator or SelfImprovementEvaluator()
+        self.evaluator = evaluator or SelfProgrammingEvaluator()
         self.planner = planner  # type: ignore[assignment]
         self.executor = executor
-        # Phase 5: 健康检查器（可选注入）
+        # 健康检查器（可选注入）
         self.health_checker = health_checker or HealthChecker()
         self.history = history  # type: ignore[assignment]
 
@@ -59,7 +59,7 @@ class SelfImprovementService:
         return state.model_copy(
             update={
                 "focus_mode": FocusMode.SELF_IMPROVEMENT,
-                "self_improvement_job": job,
+                "self_programming_job": job,
                 "current_thought": (
                     f'我觉得自己在"{job.target_area}"这块还不够好，先停下来做一次自我编程：{job.reason}'
                 ),
@@ -67,61 +67,61 @@ class SelfImprovementService:
         )
 
     def tick_job(self, state: BeingState) -> BeingState | None:
-        job = state.self_improvement_job
+        job = state.self_programming_job
         if state.focus_mode != FocusMode.SELF_IMPROVEMENT or job is None:
             return None
 
-        if job.status == SelfImprovementStatus.DIAGNOSING:
+        if job.status == SelfProgrammingStatus.DIAGNOSING:
             return state.model_copy(
                 update={
-                    "self_improvement_job": job.model_copy(
-                        update={"status": SelfImprovementStatus.PATCHING}
+                    "self_programming_job": job.model_copy(
+                        update={"status": SelfProgrammingStatus.PATCHING}
                     ),
                     "current_thought": f"我先把这次自我编程收敛成一个小补丁：{job.spec}",
                 }
             )
 
-        if job.status == SelfImprovementStatus.PATCHING:
+        if job.status == SelfProgrammingStatus.PATCHING:
             if self.executor is None:
                 next_job = job.model_copy(
                     update={
-                        "status": SelfImprovementStatus.FAILED,
+                        "status": SelfProgrammingStatus.FAILED,
                         "patch_summary": "没有可用的自我编程执行器。",
                     }
                 )
                 return _finish_state(state, next_job)
 
-            # Phase 4: 应用前预检（冲突检测 + 沙箱预验证）
+            # 应用前预检（冲突检测 + 沙箱预验证）
             recent_history = getattr(self, 'history', None)
             history_list = recent_history.get_recent(10) if recent_history else None
             checked_job = self.executor.preflight_check(job, recent_history=history_list)
 
             # 如果预检被阻塞或失败，直接结束
-            if checked_job.status == SelfImprovementStatus.FAILED:
+            if checked_job.status == SelfProgrammingStatus.FAILED:
                 return _finish_state(state, checked_job)
 
             job = checked_job  # 用通过预检的 Job 继续
 
-            # Phase 2: 尝试多候选 A/B 测试（如果 planner 支持 plan_all）
+            # 尝试多候选 A/B 测试（如果 planner 支持 plan_all）
             result = self._try_multi_candidate(state, job)
             if result is not None:
                 return result
 
-            # Phase 6: 应用后进入审批等待状态（而非直接 VERIFYING）
+            # 应用后进入审批等待状态（而非直接 VERIFYING）
             next_job = self.executor.apply(job)
-            if next_job.status == SelfImprovementStatus.VERIFYING:
+            if next_job.status == SelfProgrammingStatus.VERIFYING:
                 # 将 VERIFYING 降级为 PENDING_APPROVAL，等待用户审批
                 approval_edits_summary = _build_edits_summary(next_job)
                 pending_job = next_job.model_copy(
                     update={
-                        "status": SelfImprovementStatus.PENDING_APPROVAL,
+                        "status": SelfProgrammingStatus.PENDING_APPROVAL,
                         "approval_requested_at": datetime.now(),
                         "approval_edits_summary": approval_edits_summary,
                     }
                 )
                 return state.model_copy(
                     update={
-                        "self_improvement_job": pending_job,
+                        "self_programming_job": pending_job,
                         "current_thought": (
                             f"我已经为 {job.target_area} 准备好了补丁，"
                             f"修改了 {len(next_job.touched_files)} 个文件。"
@@ -131,28 +131,28 @@ class SelfImprovementService:
                 )
             return _finish_state(state, next_job)
 
-        if job.status == SelfImprovementStatus.VERIFYING:
+        if job.status == SelfProgrammingStatus.VERIFYING:
             if self.executor is None:
                 next_job = job.model_copy(
                     update={
-                        "status": SelfImprovementStatus.FAILED,
+                        "status": SelfProgrammingStatus.FAILED,
                         "patch_summary": "没有可用的自我编程执行器。",
                     }
                 )
                 return _finish_state(state, next_job)
             next_job = self.executor.verify(job)
 
-            # Phase 3: APPLIED 后自动 Git commit
-            if next_job.status == SelfImprovementStatus.APPLIED and self.executor.git is not None:
+            # APPLIED 后自动 Git commit
+            if next_job.status == SelfProgrammingStatus.APPLIED and self.executor.git is not None:
                 next_job = self.executor.commit_job(next_job)
 
-            # Phase 4: 记录成功历史 + 更新冲突检测器
-            if next_job.status == SelfImprovementStatus.APPLIED:
+            # 记录成功历史 + 更新冲突检测器
+            if next_job.status == SelfProgrammingStatus.APPLIED:
                 self.executor.record_successful_apply(next_job)
                 if hasattr(self, 'history') and self.history is not None:
                     self.history.record_from_job(next_job)
 
-                # Phase 5: 健康度评估（非阻塞，只做记录和标记）
+                # 健康度评估（非阻塞，只做记录和标记）
                 try:
                     health_report = self._evaluate_health(next_job)
                     if health_report is not None:
@@ -170,22 +170,22 @@ class SelfImprovementService:
                                 "rollback_info": f"⚠️ 建议回滚: {health_report.rollback_reason}",
                             })
                 except Exception as exc:
-                    logger.debug(f"Phase 5 health check skipped: {exc}")
+                    logger.debug(f"Health check skipped: {exc}")
 
             return _finish_state(state, next_job)
 
-        if job.status in {SelfImprovementStatus.APPLIED, SelfImprovementStatus.FAILED, SelfImprovementStatus.REJECTED}:
+        if job.status in {SelfProgrammingStatus.APPLIED, SelfProgrammingStatus.FAILED, SelfProgrammingStatus.REJECTED}:
             return _finish_state(state, job)
 
-        # Phase 6: PENDING_APPROVAL 状态 — 等待用户操作，不自动推进
-        if job.status == SelfImprovementStatus.PENDING_APPROVAL:
+        # PENDING_APPROVAL 状态：等待用户操作，不自动推进
+        if job.status == SelfProgrammingStatus.PENDING_APPROVAL:
             # 不自动 tick，保持等待状态（由 API 端点触发状态变更）
             return None
 
         return None
 
     def _try_multi_candidate(self, state: BeingState, job) -> BeingState | None:
-        """Phase 2: 如果 planner 支持 plan_all，尝试多候选 A/B 测试。
+        """如果 planner 支持 plan_all，尝试多候选 A/B 测试。
 
         Returns:
             处理后的新状态，或 None（表示不应使用多候选路径）
@@ -212,11 +212,11 @@ class SelfImprovementService:
                 f"我评估了 {len(candidates)} 种修复方案，"
                 f"最终采用了评分最高的方案，正在验证中。"
             )
-            if best.status == SelfImprovementStatus.APPLIED:
+            if best.status == SelfProgrammingStatus.APPLIED:
                 return _finish_state(state, best)
             return state.model_copy(
                 update={
-                    "self_improvement_job": best,
+                    "self_programming_job": best,
                     "current_thought": thought,
                 }
             )
@@ -224,7 +224,7 @@ class SelfImprovementService:
         # 所有候选都失败
         failed_job = job.model_copy(
             update={
-                "status": SelfImprovementStatus.FAILED,
+                "status": SelfProgrammingStatus.FAILED,
                 "patch_summary": f"所有 {len(candidates)} 个候选方案均未通过验证。",
             }
         )
@@ -236,18 +236,18 @@ def _reconstruct_candidate(job) -> object:
 
     这是一个轻量级重构——只提取必要字段。
     """
-    from app.self_improvement.models import SelfImprovementCandidate, SelfImprovementTrigger
+    from app.self_programming.models import SelfProgrammingCandidate, SelfProgrammingTrigger
 
     # 根据 patch_summary 判断触发类型
-    trigger_type = SelfImprovementTrigger.PROACTIVE
+    trigger_type = SelfProgrammingTrigger.PROACTIVE
     if "[LLM]" in (job.patch_summary or ""):
-        trigger_type = SelfImprovementTrigger.HARD_FAILURE
+        trigger_type = SelfProgrammingTrigger.HARD_FAILURE
 
     test_commands = []
     if job.verification and job.verification.commands:
         test_commands = job.verification.commands
 
-    return SelfImprovementCandidate(
+    return SelfProgrammingCandidate(
         trigger=trigger_type,
         reason=job.reason,
         target_area=job.target_area,
@@ -257,27 +257,27 @@ def _reconstruct_candidate(job) -> object:
 
 
 def _finish_state(state: BeingState, job) -> BeingState:
-    if job.status == SelfImprovementStatus.APPLIED:
+    if job.status == SelfProgrammingStatus.APPLIED:
         thought = f"这次自我编程通过了验证，我刚补强了 {job.target_area}。"
     else:
         thought = f"这次自我编程没有通过验证，我先记住问题：{job.patch_summary or job.reason}"
     return state.model_copy(
         update={
             "focus_mode": FocusMode.AUTONOMY,
-            "self_improvement_job": job,
+            "self_programming_job": job,
             "current_thought": thought,
         }
     )
 
 
-# ── Phase 5: 健康度评估辅助方法 ──────────────────────
+# ── 健康度评估辅助方法 ──────────────────────
 
 
 def _evaluate_health(self, job: Any) -> HealthReport | None:
-    """SelfImprovementHealthCheck._evaluate_health 的辅助方法（在类内部调用）。
+    """SelfProgrammingHealthCheck._evaluate_health 的辅助方法（在类内部调用）。
 
     Args:
-        job: 刚通过验证的 SelfImprovementJob
+        job: 刚通过验证的 SelfProgrammingJob
 
     Returns:
         健康报告，或 None
@@ -335,7 +335,7 @@ def _evaluate_health(self, job: Any) -> HealthReport | None:
     )
 
     logger.info(
-        f"Phase 5 health check for {job.id[:12]}: "
+        f"Health check for {job.id[:12]}: "
         f"{report.summary}"
     )
 

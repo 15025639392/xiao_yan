@@ -4,13 +4,13 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
-class SelfImprovementTrigger(str, Enum):
+class SelfProgrammingTrigger(str, Enum):
     HARD_FAILURE = "hard_failure"
     PROACTIVE = "proactive"
 
 
-class SelfImprovementCandidate(BaseModel):
-    trigger: SelfImprovementTrigger
+class SelfProgrammingCandidate(BaseModel):
+    trigger: SelfProgrammingTrigger
     reason: str
     target_area: str
     spec: str

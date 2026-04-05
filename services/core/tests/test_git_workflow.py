@@ -22,13 +22,13 @@ import pytest
 
 from app.domain.models import (
     EditKind,
-    SelfImprovementEdit,
-    SelfImprovementJob,
-    SelfImprovementStatus,
-    SelfImprovementVerification,
+    SelfProgrammingEdit,
+    SelfProgrammingJob,
+    SelfProgrammingStatus,
+    SelfProgrammingVerification,
 )
-from app.self_improvement.executor import SelfImprovementExecutor
-from app.self_improvement.git_workflow import (
+from app.self_programming.executor import SelfProgrammingExecutor
+from app.self_programming.git_workflow import (
     CommitInfo,
     GitStatus,
     GitWorkflowManager,
@@ -96,9 +96,9 @@ def gwm(temp_git_repo: Path) -> GitWorkflowManager:
 
 
 @pytest.fixture
-def executor(temp_git_repo: Path) -> SelfImprovementExecutor:
+def executor(temp_git_repo: Path) -> SelfProgrammingExecutor:
     """创建集成了 Git 的 Executor。"""
-    return SelfImprovementExecutor(
+    return SelfProgrammingExecutor(
         workspace_root=temp_git_repo,
         git_manager=GitWorkflowManager(workspace_root=temp_git_repo),
     )
@@ -111,7 +111,7 @@ def _make_edit(
     file_path: str = "sample.py",
     kind: EditKind = EditKind.REPLACE,
     **kwargs,
-) -> SelfImprovementEdit:
+) -> SelfProgrammingEdit:
     base_kwargs: dict = {"file_path": file_path, "kind": kind}
     if kind == EditKind.REPLACE:
         base_kwargs.setdefault("search_text", "old code")
@@ -121,35 +121,35 @@ def _make_edit(
     elif kind == EditKind.INSERT:
         base_kwargs.setdefault("insert_after", "# anchor")
         base_kwargs.setdefault("replace_text", "\n# inserted\n")
-    return SelfImprovementEdit(**base_kwargs)
+    return SelfProgrammingEdit(**base_kwargs)
 
 
 def _make_job(
-    status: SelfImprovementStatus = SelfImprovementStatus.PATCHING,
-    edits: list[SelfImprovementEdit] | None = None,
+    status: SelfProgrammingStatus = SelfProgrammingStatus.PATCHING,
+    edits: list[SelfProgrammingEdit] | None = None,
     touched_files: list[str] | None = None,
-) -> SelfImprovementJob:
+) -> SelfProgrammingJob:
     edits = edits or [_make_edit()]
     touched_files = touched_files or [e.file_path for e in edits]
-    return SelfImprovementJob(
+    return SelfProgrammingJob(
         reason="test reason",
         target_area="testing",
         status=status,
         spec="fix the bug",
         edits=edits,
-        verification=SelfImprovementVerification(commands=["true"]),
+        verification=SelfProgrammingVerification(commands=["true"]),
         touched_files=touched_files,
     )
 
 
 def _make_applied_job(
-    edits: list[SelfImprovementEdit] | None = None,
+    edits: list[SelfProgrammingEdit] | None = None,
     touched_files: list[str] | None = None,
     candidate_label: str = "",
-) -> SelfImprovementJob:
+) -> SelfProgrammingJob:
     """创建已通过验证 (APPLIED) 的 Job。"""
     job = _make_job(
-        status=SelfImprovementStatus.APPLIED,
+        status=SelfProgrammingStatus.APPLIED,
         edits=edits,
         touched_files=touched_files,
     )
@@ -182,7 +182,7 @@ class TestGitWorkflowManagerBasic:
     def test_create_and_switch_branch(self, gwm):
         success, branch_name = gwm.create_branch(job_id="abc123", target_area="planning")
         assert success is True
-        assert "self-fix/planning-" in branch_name
+        assert "self-programming/planning-" in branch_name
         
         # 确认当前分支已切换
         status = gwm.get_status()
@@ -191,7 +191,7 @@ class TestGitWorkflowManagerBasic:
     def test_create_branch_without_area(self, gwm):
         success, branch_name = gwm.create_branch(job_id="xyz789")
         assert success is True
-        assert "self-fix/" in branch_name
+        assert "self-programming/" in branch_name
         assert "xyz789" in branch_name
 
     def test_switch_back(self, gwm: GitWorkflowManager):
@@ -230,7 +230,7 @@ class TestGitWorkflowDryRun:
 
         success, name = mgr.create_branch("job-001")
         assert success is True
-        assert "self-fix/" in name
+        assert "self-programming/" in name
 
         info = mgr.stage_and_commit(
             job_id="job-001",
@@ -272,7 +272,7 @@ class TestGitCommit:
         assert info is not None
         assert len(info.hash) > 8  # full hash
         assert info.short_hash == info.hash[:8]
-        assert "[self-fix]" in info.message
+        assert "[self-programming]" in info.message
         assert "agent:" in info.message
         assert "job-commit-001" in info.message
         assert "sample.py" in info.message
@@ -304,7 +304,7 @@ class TestGitCommit:
             candidate_label="candidate-A",
         )
         
-        assert "[self-fix] ui: 修复按钮颜色" in msg.split("\n")[0]
+        assert "[self-programming] ui: 修复按钮颜色" in msg.split("\n")[0]
         assert "Job: j001" in msg
         assert "Candidate: candidate-A" in msg
         assert "- apps/button.tsx" in msg
@@ -404,7 +404,7 @@ class TestGitRollback:
         assert new_hash != prev_hash
 
     def test_rollback_job_by_branch(self, temp_git_repo, gwm: GitWorkflowManager):
-        """通过分支名回滚某次自编程。"""
+        """通过分支名回滚某次自我编程。"""
         # 创建分支 + commit
         _, branch = gwm.create_branch(job_id="roll-job", target_area="cleanup")
         f = temp_git_repo / "job_file.py"
@@ -446,7 +446,7 @@ class TestExecutorGitIntegration:
                 return "new"
         """), encoding="utf-8")
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="target.py",
             kind=EditKind.REPLACE,
             search_text='return "old"',
@@ -457,7 +457,7 @@ class TestExecutorGitIntegration:
         result = executor.commit_job(job)
 
         assert result.branch_name is not None
-        assert "self-fix/" in result.branch_name
+        assert "self-programming/" in result.branch_name
         # 文件已被修改，所以 commit 应该成功
         if result.commit_hash is None:
             # 某些环境下可能因为 git 状态检测差异导致无变更可提交
@@ -465,11 +465,11 @@ class TestExecutorGitIntegration:
             pass
         else:
             assert len(result.commit_hash) > 8
-            assert "[self-fix]" in (result.commit_message or "")
+            assert "[self-programming]" in (result.commit_message or "")
 
     def test_commit_job_skips_non_applied(self, executor):
         """非 APPLIED 状态的 Job 不执行 commit。"""
-        job = _make_job(status=SelfImprovementStatus.FAILED)
+        job = _make_job(status=SelfProgrammingStatus.FAILED)
         result = executor.commit_job(job)
         assert result.branch_name is None
         assert result.commit_hash is None
@@ -484,7 +484,7 @@ class TestExecutorGitIntegration:
         # 实际修改文件
         src.write_text("x = 42\n", encoding="utf-8")
 
-        edit = SelfImprovementEdit(file_path="label_test.py", kind=EditKind.REPLACE,
+        edit = SelfProgrammingEdit(file_path="label_test.py", kind=EditKind.REPLACE,
                                    search_text="x = 1", replace_text="x = 42")
         job = _make_applied_job(edits=[edit], touched_files=["label_test.py"],
                                 candidate_label="candidate-A")
@@ -500,7 +500,7 @@ class TestExecutorGitIntegration:
 
     def test_try_best_sets_candidate_label(self, temp_git_repo, executor):
         """try_best 成功后附带 candidate_label。"""
-        from app.self_improvement.scorer import ScoredCandidate
+        from app.self_programming.scorer import ScoredCandidate
 
         src = temp_git_repo / "best_test.py"
         content = textwrap.dedent("""\
@@ -511,7 +511,7 @@ class TestExecutorGitIntegration:
         executor.git._run_git(["add", "best_test.py"])
         executor.git._run_git(["commit", "-m", "init"])
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="best_test.py",
             kind=EditKind.REPLACE,
             search_text="return 0",
@@ -528,7 +528,7 @@ class TestExecutorGitIntegration:
 
         # Mock apply + verify to return APPLIED
         with patch.object(executor, 'apply', return_value=_make_job(
-            status=SelfImprovementStatus.VERIFYING,
+            status=SelfProgrammingStatus.VERIFYING,
             edits=[edit],
             touched_files=["best_test.py"],
         )):
@@ -570,7 +570,7 @@ class TestCreateNewFile:
                     return f"Hello, {self.name}!"
         ''')
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="services/core/app/utils/helper.py",
             kind=EditKind.CREATE,
             file_content=new_content,
@@ -578,7 +578,7 @@ class TestCreateNewFile:
         job = _make_job(edits=[edit], touched_files=["services/core/app/utils/helper.py"])
 
         applied = executor.apply(job)
-        assert applied.status == SelfImprovementStatus.VERIFYING
+        assert applied.status == SelfProgrammingStatus.VERIFYING
 
         # 验证文件确实存在且内容正确
         created = temp_git_repo / "services" / "core" / "app" / "utils" / "helper.py"
@@ -595,7 +595,7 @@ class TestCreateNewFile:
         new_file.write_text(new_content, encoding="utf-8")
 
         rel = new_file.relative_to(temp_git_repo).as_posix()
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path=rel,
             kind=EditKind.CREATE,
             file_content=new_content,
@@ -605,7 +605,7 @@ class TestCreateNewFile:
         # apply → verify → commit 全流程
         applied = executor.apply(job)
         verified = executor.verify(applied)
-        if verified.status == SelfImprovementStatus.APPLIED:
+        if verified.status == SelfProgrammingStatus.APPLIED:
             committed = executor.commit_job(verified)
             assert committed.commit_hash is not None
             assert committed.commit_message is not None
@@ -621,7 +621,7 @@ class TestCreateNewFile:
         executor.git._run_git(["add", "anchor_file.py"])
         executor.git._run_git(["commit", "-m", "add anchor"])
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="anchor_file.py",
             kind=EditKind.INSERT,
             insert_after="# anchor line",
@@ -630,7 +630,7 @@ class TestCreateNewFile:
         job = _make_job(edits=[edit], touched_files=["anchor_file.py"])
 
         applied = executor.apply(job)
-        assert applied.status == SelfImprovementStatus.VERIFYING
+        assert applied.status == SelfProgrammingStatus.VERIFYING
 
         content = src.read_text(encoding="utf-8")
         assert "# inserted after anchor" in content
@@ -639,7 +639,7 @@ class TestCreateNewFile:
 
     def test_create_file_rollback_removes_new_file(self, temp_git_repo, executor):
         """回滚 CREATE 操作会删除新建的文件。"""
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="will_be_deleted.py",
             kind=EditKind.CREATE,
             file_content="# temporary\\n",
@@ -650,7 +650,7 @@ class TestCreateNewFile:
         assert (temp_git_repo / "will_be_deleted.py").exists()
 
         # verify 失败触发回滚
-        bad_verification = SelfImprovementVerification(commands=["false"], passed=False, summary="fail")
+        bad_verification = SelfProgrammingVerification(commands=["false"], passed=False, summary="fail")
         failed_job = applied.model_copy(update={"verification": bad_verification})
         
         # 手动调用 restore 来模拟 verify 失败时的回滚
@@ -674,19 +674,19 @@ class TestServiceGitIntegration:
         return BeingState(
             mode=__import__("app.domain.models", fromlist=["WakeMode"]).WakeMode.AWAKE,
             focus_mode=FocusMode.SELF_IMPROVEMENT,
-            self_improvement_job=job,
+            self_programming_job=job,
         )
 
     def test_verify_then_auto_commit(self, temp_git_repo):
         """VERIFYING → APPLIED 后自动触发 commit。"""
-        from app.self_improvement.service import SelfImprovementService
+        from app.self_programming.service import SelfProgrammingService
 
         gwm = GitWorkflowManager(workspace_root=temp_git_repo)
-        exe = SelfImprovementExecutor(
+        exe = SelfProgrammingExecutor(
             workspace_root=temp_git_repo,
             git_manager=gwm,
         )
-        svc = SelfImprovementService(executor=exe)
+        svc = SelfProgrammingService(executor=exe)
 
         # 准备源文件
         src = temp_git_repo / "auto_commit.py"
@@ -694,14 +694,14 @@ class TestServiceGitIntegration:
         gwm._run_git(["add", "auto_commit.py"])
         gwm._run_git(["commit", "-m", "init"])
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="auto_commit.py",
             kind=EditKind.REPLACE,
             search_text='"old"',
             replace_text='"new"',
         )
         job = _make_job(
-            status=SelfImprovementStatus.VERIFYING,
+            status=SelfProgrammingStatus.VERIFYING,
             edits=[edit],
             touched_files=["auto_commit.py"],
         )
@@ -712,8 +712,8 @@ class TestServiceGitIntegration:
         new_state = svc.tick_job(state)
         assert new_state is not None
 
-        final_job = new_state.self_improvement_job
-        if final_job and final_job.status == SelfImprovementStatus.APPLIED:
+        final_job = new_state.self_programming_job
+        if final_job and final_job.status == SelfProgrammingStatus.APPLIED:
             # 应该有 Git 信息
             assert final_job.commit_hash is not None or final_job.branch_name is not None
 
@@ -731,14 +731,14 @@ class TestSafetyAndEdgeCases:
         non_git = tmp_path / "plain-dir"
         non_git.mkdir()
         
-        exe = SelfImprovementExecutor(workspace_root=non_git)
+        exe = SelfProgrammingExecutor(workspace_root=non_git)
         # 应该不报错（git manager 会检测非 git）
         assert exe.git is not None
 
         job = _make_applied_job()
         # commit 在非 git 仓库应安全返回原 Job
         result = exe.commit_job(job)
-        assert result.status == SelfImprovementStatus.APPLIED
+        assert result.status == SelfProgrammingStatus.APPLIED
 
     def test_commit_info_data_model(self):
         """CommitInfo 数据模型字段完整性。"""
@@ -746,14 +746,14 @@ class TestSafetyAndEdgeCases:
         info = CommitInfo(
             hash="abc1234567890",
             branch="feature/test",
-            message="[self-fix] test: summary",
+            message="[self-programming] test: summary",
             short_hash="abc12345",
             files_changed=["a.py", "b.py"],
             committed_at=now,
         )
         assert info.short_hash == "abc12345"
         assert len(info.files_changed) == 2
-        assert "[self-fix]" in info.message
+        assert "[self-programming]" in info.message
 
     def test_empty_touched_files_commit(self, gwm):
         """touched_files 为空列表时不崩溃。"""

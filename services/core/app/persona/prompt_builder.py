@@ -4,18 +4,18 @@
 def build_chat_instructions(
     focus_goal_title: str | None = None,
     latest_plan_completion: str | None = None,
-    latest_self_improvement: str | None = None,
+    latest_self_programming: str | None = None,
     user_message: str | None = None,
     persona_system_prompt: str = "",
-    memory_context: str | None = None,  # Phase 8: 记忆上下文
-    expression_style_context: str | None = None,  # Phase 9: 表达风格覆盖
+    memory_context: str | None = None,  # 记忆上下文
+    expression_style_context: str | None = None,  # 表达风格覆盖
 ) -> str:
     """构建聊天指令 prompt
 
     Args:
         focus_goal_title: 当前焦点目标标题
         latest_plan_completion: 最近完成的计划
-        latest_self_improvement: 最近的自编程摘要
+        latest_self_programming: 最近的自我编程摘要
         user_message: 用户消息
         persona_system_prompt: 人格系统 prompt（来自 PersonaService）
         memory_context: 记忆上下文字符串（来自 MemoryService）
@@ -41,9 +41,9 @@ def build_chat_instructions(
             f"你今天刚完成了一件事：{latest_plan_completion} 回答里可以自然带出这份收束感。"
         )
 
-    if latest_self_improvement is not None:
+    if latest_self_programming is not None:
         guidance.append(
-            f"你最近刚做过一次自我编程：{latest_self_improvement} 如果用户在问近况，可以自然提到这次调整。"
+            f"你最近刚做过一次自我编程：{latest_self_programming} 如果用户在问近况，可以自然提到这次调整。"
         )
 
     if _is_status_question(user_message):
@@ -54,11 +54,11 @@ def build_chat_instructions(
 
     result = f"{prompt}\n" + "\n".join(guidance)
 
-    # Phase 8: 追加记忆上下文
+    # 追加记忆上下文
     if memory_context:
         result = f"{result}\n\n{memory_context}"
 
-    # Phase 9: 追加情绪驱动的表达风格指令
+    # 追加情绪驱动的表达风格指令
     if expression_style_context:
         result = f"{result}\n\n{expression_style_context}"
 

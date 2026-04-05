@@ -5,7 +5,7 @@ import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
 import { GoalsPanel } from "./components/GoalsPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
-import type { SelfImprovementHistoryEntry } from "./lib/api";
+import type { SelfProgrammingHistoryEntry } from "./lib/api";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { PersonaPanel } from "./components/PersonaPanel";
 import { StatusPanel } from "./components/StatusPanel";
@@ -33,7 +33,7 @@ const initialState: BeingState = {
   active_goal_ids: [],
   today_plan: null,
   last_action: null,
-  self_improvement_job: null,
+  self_programming_job: null,
 };
 
 export default function App() {
@@ -573,8 +573,8 @@ function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {
   if (focusMode === "autonomy") {
     return "常规自主";
   }
-  if (focusMode === "self_improvement") {
-    return "自我修复";
+  if (focusMode === "self_programming") {
+    return "自我编程";
   }
   return "休眠";
 }
@@ -620,11 +620,11 @@ function MemoryPage() {
 }
 
 // ═════════════════════════════════════════
-// History Page — 自编程历史记录页面
+// History Page — 自我编程历史记录页面
 // ═════════════════════════════════════════
 
 function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: string) => void }) {
-  const [selectedEntry, setSelectedEntry] = useState<SelfImprovementHistoryEntry | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<SelfProgrammingHistoryEntry | null>(null);
 
   return (
     <div className="history-page">

@@ -6,14 +6,14 @@ from typing import Any
 
 from app.domain.models import (
     EditKind,
-    SelfImprovementJob,
-    SelfImprovementStatus,
-    SelfImprovementVerification,
+    SelfProgrammingJob,
+    SelfProgrammingStatus,
+    SelfProgrammingVerification,
 )
-from app.self_improvement.git_workflow import GitWorkflowManager
-from app.self_improvement.sandbox import SandboxEnvironment, SandboxResult
-from app.self_improvement.conflict_detector import ConflictDetector, ConflictReport
-from app.self_improvement.rollback_recovery import (
+from app.self_programming.git_workflow import GitWorkflowManager
+from app.self_programming.sandbox import SandboxEnvironment, SandboxResult
+from app.self_programming.conflict_detector import ConflictDetector, ConflictReport
+from app.self_programming.rollback_recovery import (
     RollbackRecovery,
     RollbackReason,
     RollbackResult,
@@ -23,7 +23,7 @@ from app.self_improvement.rollback_recovery import (
 logger = logging.getLogger(__name__)
 
 
-class SelfImprovementExecutor:
+class SelfProgrammingExecutor:
     def __init__(
         self,
         workspace_root: Path,
@@ -32,22 +32,22 @@ class SelfImprovementExecutor:
         conflict_detector: ConflictDetector | None = None,
         enable_sandbox: bool = True,
         enable_conflict_check: bool = True,
-        # Phase 5: 可选的回滚恢复和健康检查
+        # 可选的回滚恢复和健康检查
         rollback_recovery: RollbackRecovery | None = None,
         auto_snapshot: bool = True,
     ) -> None:
         self.workspace_root = workspace_root
         self._backups: dict[str, dict[Path, str]] = {}
-        # Phase 3: 可选的 Git 工作流管理器（传入则自动 commit）
+        # 可选的 Git 工作流管理器（传入则自动 commit）
         self.git = git_manager or GitWorkflowManager(
             workspace_root=workspace_root,
             auto_commit=True,
         )
-        # Phase 4: 安全沙箱（可选，传入或自动创建）
+        # 安全沙箱（可选，传入或自动创建）
         self.sandbox = sandbox or (
             SandboxEnvironment(workspace_root=workspace_root) if enable_sandbox else None
         )
-        # Phase 4: 冲突检测器
+        # 冲突检测器
         self.conflict_detector = conflict_detector or (
             ConflictDetector(workspace_root=workspace_root) if enable_conflict_check else None
         )
@@ -55,17 +55,17 @@ class SelfImprovementExecutor:
         self.enable_sandbox = enable_sandbox and (self.sandbox is not None)
         self.enable_conflict_check = enable_conflict_check and (self.conflict_detector is not None)
 
-        # Phase 5: 回滚恢复管理器
+        # 回滚恢复管理器
         self.recovery = rollback_recovery or RollbackRecovery(
             workspace_root=workspace_root,
             auto_snapshot=auto_snapshot,
         )
 
-    def apply(self, job: SelfImprovementJob) -> SelfImprovementJob:
+    def apply(self, job: SelfProgrammingJob) -> SelfProgrammingJob:
         if not job.test_edits and not job.edits:
             return job.model_copy(
                 update={
-                    "status": SelfImprovementStatus.FAILED,
+                    "status": SelfProgrammingStatus.FAILED,
                     "patch_summary": "没有可执行的补丁计划。",
                 }
             )
@@ -73,7 +73,7 @@ class SelfImprovementExecutor:
         backups: dict[Path, str] = {}
         touched_files: list[str] = []
 
-        # Phase 5: 在修改文件之前先创建差异快照（保存原始状态用于可能的回滚）
+        # 在修改文件之前先创建差异快照（保存原始状态用于可能的回滚）
         if self.recovery and self.recovery.auto_snapshot:
             try:
                 self.recovery.snapshot_before_apply(job)
@@ -95,7 +95,7 @@ class SelfImprovementExecutor:
             self._restore_files(backups)
             return job.model_copy(
                 update={
-                    "status": SelfImprovementStatus.FAILED,
+                    "status": SelfProgrammingStatus.FAILED,
                     "patch_summary": f"补丁应用失败：{exc}",
                     "touched_files": [],
                 }
@@ -104,7 +104,7 @@ class SelfImprovementExecutor:
         self._backups[job.id] = backups
         result = job.model_copy(
             update={
-                "status": SelfImprovementStatus.VERIFYING,
+                "status": SelfProgrammingStatus.VERIFYING,
                 "patch_summary": f"已修改 {', '.join(touched_files)}",
                 "red_verification": red_verification,
                 "touched_files": touched_files,
@@ -115,7 +115,7 @@ class SelfImprovementExecutor:
 
         return result
 
-    def verify(self, job: SelfImprovementJob) -> SelfImprovementJob:
+    def verify(self, job: SelfProgrammingJob) -> SelfProgrammingJob:
         verification = self._run_verification(
             [] if job.verification is None else job.verification.commands
         )
@@ -127,15 +127,15 @@ class SelfImprovementExecutor:
         return job.model_copy(
             update={
                 "status": (
-                    SelfImprovementStatus.APPLIED if passed else SelfImprovementStatus.FAILED
+                    SelfProgrammingStatus.APPLIED if passed else SelfProgrammingStatus.FAILED
                 ),
                 "verification": verification,
             }
         )
 
-    # ── Phase 3: Git 工作流集成 ──────────────────────
+    # ── Git 工作流集成 ──────────────────────
 
-    def commit_job(self, job: SelfImprovementJob) -> SelfImprovementJob:
+    def commit_job(self, job: SelfProgrammingJob) -> SelfProgrammingJob:
         """对已 APPLIED 的 Job 执行 Git commit。
 
         1. 创建独立分支（如果还没有）
@@ -149,7 +149,7 @@ class SelfImprovementExecutor:
         Returns:
             附带了 Git 信息的 Job
         """
-        if job.status != SelfImprovementStatus.APPLIED:
+        if job.status != SelfProgrammingStatus.APPLIED:
             logger.debug(f"Skipping git commit for non-APPLIED job: {job.status}")
             return job
 
@@ -184,18 +184,18 @@ class SelfImprovementExecutor:
             logger.info(f"No changes to commit for job {job.id}")
             return job.model_copy(update={"branch_name": branch_name})
 
-    # ── Phase 4: 沙箱预验证 + 冲突检测 ────────────────
+    # ── 沙箱预验证 + 冲突检测 ────────────────
 
     def preflight_check(
         self,
-        job: SelfImprovementJob,
+        job: SelfProgrammingJob,
         recent_history: list | None = None,
-    ) -> SelfImprovementJob:
+    ) -> SelfProgrammingJob:
         """应用前的预检：冲突检测 + 沙箱预验证。
 
         Args:
             job: 待检查的 Job
-            recent_history: 最近的自编程历史列表（用于冲突检测）
+            recent_history: 最近的自我编程历史列表（用于冲突检测）
 
         Returns:
             附带了预检结果的 Job（sandbox_prechecked, conflict_severity 等字段已填充）
@@ -218,7 +218,7 @@ class SelfImprovementExecutor:
                 return job.model_copy(
                     update={
                         **updates,
-                        "status": SelfImprovementStatus.FAILED,
+                        "status": SelfProgrammingStatus.FAILED,
                         "patch_summary": f"🚫 冲突检测阻止: {conflict_report.summary()}",
                         "sandbox_prechecked": False,
                     }
@@ -234,7 +234,7 @@ class SelfImprovementExecutor:
                 return job.model_copy(
                     update={
                         **updates,
-                        "status": SelfImprovementStatus.FAILED,
+                        "status": SelfProgrammingStatus.FAILED,
                         "patch_summary": "🧪 缺少 verification commands，拒绝执行自我编程。",
                         "sandbox_prechecked": False,
                     }
@@ -253,7 +253,7 @@ class SelfImprovementExecutor:
                     return job.model_copy(
                         update={
                             **updates,
-                            "status": SelfImprovementStatus.FAILED,
+                            "status": SelfProgrammingStatus.FAILED,
                             "patch_summary": (
                                 f"🧪 沙箱预验证失败: {sandbox_result.summary}\n"
                                 f"{sandbox_result.stderr[:300] if sandbox_result.stderr else ''}"
@@ -263,7 +263,7 @@ class SelfImprovementExecutor:
 
         return job.model_copy(update=updates) if updates else job
 
-    def record_successful_apply(self, job: SelfImprovementJob) -> None:
+    def record_successful_apply(self, job: SelfProgrammingJob) -> None:
         """记录一次成功的 apply，用于后续的循环自改检测。"""
         if self.enable_conflict_check and self.conflict_detector is not None:
             self.conflict_detector.record_apply(job.touched_files)
@@ -320,7 +320,7 @@ class SelfImprovementExecutor:
             if edit.file_path not in touched_files:
                 touched_files.append(edit.file_path)
 
-    def _run_verification(self, commands: list[str]) -> SelfImprovementVerification:
+    def _run_verification(self, commands: list[str]) -> SelfProgrammingVerification:
         outputs: list[str] = []
         passed = True
 
@@ -342,7 +342,7 @@ class SelfImprovementExecutor:
                 break
 
         summary = "\n\n".join(outputs).strip() or "没有运行验证命令。"
-        return SelfImprovementVerification(
+        return SelfProgrammingVerification(
             commands=commands,
             passed=passed,
             summary=summary,
@@ -355,13 +355,13 @@ class SelfImprovementExecutor:
             elif path.exists():
                 path.unlink()
 
-    # ── Phase 2: 多候选 A/B 测试 ─────────────────────────
+    # ── 多候选 A/B 测试 ─────────────────────────
 
     def try_best(
         self,
         candidates: list,
         max_attempts: int = 3,
-    ) -> SelfImprovementJob | None:
+    ) -> SelfProgrammingJob | None:
         """按评分顺序逐个尝试候选方案，返回第一个通过验证的。
 
         Args:
@@ -369,7 +369,7 @@ class SelfImprovementExecutor:
             max_attempts: 最大尝试次数
 
         Returns:
-            第一个通过验证的 SelfImprovementJob，或 None（全部失败）
+            第一个通过验证的 SelfProgrammingJob，或 None（全部失败）
         """
         for idx, scored in enumerate(candidates[:max_attempts]):
             job = scored.job
@@ -378,12 +378,12 @@ class SelfImprovementExecutor:
 
             # apply → verify 完整流程
             applied = self.apply(job)
-            if applied.status == SelfImprovementStatus.FAILED:
+            if applied.status == SelfProgrammingStatus.FAILED:
                 logger.info(f"  Candidate '{label}': apply failed — {applied.patch_summary}")
                 continue
 
             verified = self.verify(applied)
-            if verified.status == SelfImprovementStatus.APPLIED:
+            if verified.status == SelfProgrammingStatus.APPLIED:
                 # 把评分信息 + candidate_label 附加到 patch_summary
                 summary = verified.patch_summary or ""
                 score_info = f"[selected={label}, score={getattr(scored, 'total_score', '?'):.2f}]"
@@ -400,11 +400,11 @@ class SelfImprovementExecutor:
         logger.warning(f"All {min(max_attempts, len(candidates))} candidates failed verification")
         return None
 
-    # ── Phase 5: 回滚恢复 + 健康检查集成 ─────────────
+    # ── 回滚恢复 + 健康检查集成 ─────────────
 
     def smart_rollback(
         self,
-        job: SelfImprovementJob,
+        job: SelfProgrammingJob,
         reason: RollbackReason = RollbackReason.VERIFICATION_FAILED,
         reason_detail: str = "",
     ) -> RollbackResult | None:
@@ -438,7 +438,7 @@ class SelfImprovementExecutor:
 
         return result
 
-    def take_snapshot(self, job: SelfImprovementJob) -> list[Any]:
+    def take_snapshot(self, job: SelfProgrammingJob) -> list[Any]:
         """为指定 Job 手动创建差异快照。
 
         通常不需要手动调用（apply 时会自动创建），

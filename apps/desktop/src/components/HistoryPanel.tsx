@@ -1,18 +1,18 @@
 import { useState, useEffect } from "react";
-import type { SelfImprovementHistoryEntry } from "../lib/api";
+import type { SelfProgrammingHistoryEntry } from "../lib/api";
 
-export type { SelfImprovementHistoryEntry };
-import { fetchSelfImprovementHistory } from "../lib/api";
+export type { SelfProgrammingHistoryEntry };
+import { fetchSelfProgrammingHistory } from "../lib/api";
 
 type HistoryPanelProps = {
   /** 是否可见 */
   visible?: boolean;
   /** 点击历史项时的回调（可选，用于查看详情） */
-  onSelectEntry?: (entry: SelfImprovementHistoryEntry) => void;
+  onSelectEntry?: (entry: SelfProgrammingHistoryEntry) => void;
 };
 
 export function HistoryPanel({ visible = true, onSelectEntry }: HistoryPanelProps) {
-  const [entries, setEntries] = useState<SelfImprovementHistoryEntry[]>([]);
+  const [entries, setEntries] = useState<SelfProgrammingHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +24,7 @@ export function HistoryPanel({ visible = true, onSelectEntry }: HistoryPanelProp
       setLoading(true);
       setError(null);
       try {
-        const res = await fetchSelfImprovementHistory();
+        const res = await fetchSelfProgrammingHistory();
         if (!cancelled) {
           setEntries(res.entries ?? []);
         }
@@ -48,8 +48,8 @@ export function HistoryPanel({ visible = true, onSelectEntry }: HistoryPanelProp
         <div className="panel__title-group">
           <div className="panel__icon">📜</div>
           <div>
-            <h2 className="panel__title">自编程历史</h2>
-            <p className="panel__subtitle">所有自编程操作记录</p>
+            <h2 className="panel__title">自我编程历史</h2>
+            <p className="panel__subtitle">所有自我编程操作记录</p>
           </div>
         </div>
         <span className="history-count">{entries.length} 条记录</span>
@@ -66,8 +66,8 @@ export function HistoryPanel({ visible = true, onSelectEntry }: HistoryPanelProp
         ) : entries.length === 0 ? (
           <div className="history-empty">
             <span className="history-empty__icon">🧬</span>
-            <p>还没有自编程历史记录</p>
-            <span className="history-empty__hint">当数字人进行自我修复时，记录会出现在这里</span>
+            <p>还没有自我编程历史记录</p>
+            <span className="history-empty__hint">当数字人进行自我编程时，记录会出现在这里</span>
           </div>
         ) : (
           <ul className="history-list">

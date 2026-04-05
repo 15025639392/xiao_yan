@@ -3,43 +3,43 @@ from datetime import timedelta
 import re
 
 from app.domain.models import (
-    SelfImprovementEdit,
-    SelfImprovementJob,
-    SelfImprovementStatus,
-    SelfImprovementVerification,
+    SelfProgrammingEdit,
+    SelfProgrammingJob,
+    SelfProgrammingStatus,
+    SelfProgrammingVerification,
 )
-from app.self_improvement.models import SelfImprovementCandidate, SelfImprovementTrigger
+from app.self_programming.models import SelfProgrammingCandidate, SelfProgrammingTrigger
 
 
-class SelfImprovementPlanner:
+class SelfProgrammingPlanner:
     def __init__(self, workspace_root: Path | None = None) -> None:
         self.workspace_root = workspace_root
 
-    def plan(self, candidate: SelfImprovementCandidate) -> SelfImprovementJob:
+    def plan(self, candidate: SelfProgrammingCandidate) -> SelfProgrammingJob:
         cooldown = (
             timedelta(hours=1)
-            if candidate.trigger == SelfImprovementTrigger.HARD_FAILURE
+            if candidate.trigger == SelfProgrammingTrigger.HARD_FAILURE
             else timedelta(hours=12)
         )
-        return SelfImprovementJob(
+        return SelfProgrammingJob(
             reason=candidate.reason,
             target_area=candidate.target_area,
-            status=SelfImprovementStatus.DIAGNOSING,
+            status=SelfProgrammingStatus.DIAGNOSING,
             spec=candidate.spec,
             test_edits=self._build_test_edits(candidate),
             edits=self._build_edits(candidate),
-            verification=SelfImprovementVerification(commands=candidate.test_commands),
+            verification=SelfProgrammingVerification(commands=candidate.test_commands),
             cooldown_until=(candidate.created_at + cooldown) if candidate.created_at else None,
         )
 
-    def _build_test_edits(self, candidate: SelfImprovementCandidate) -> list[SelfImprovementEdit]:
+    def _build_test_edits(self, candidate: SelfProgrammingCandidate) -> list[SelfProgrammingEdit]:
         if self.workspace_root is None:
             return []
         if candidate.target_area == "ui":
             return self._build_ui_test_edits(candidate)
         return []
 
-    def _build_edits(self, candidate: SelfImprovementCandidate) -> list[SelfImprovementEdit]:
+    def _build_edits(self, candidate: SelfProgrammingCandidate) -> list[SelfProgrammingEdit]:
         if self.workspace_root is None:
             return []
 
@@ -51,9 +51,9 @@ class SelfImprovementPlanner:
             return self._build_ui_edits(candidate)
         return []
 
-    def _build_agent_edits(self, candidate: SelfImprovementCandidate) -> list[SelfImprovementEdit]:
+    def _build_agent_edits(self, candidate: SelfProgrammingCandidate) -> list[SelfProgrammingEdit]:
         if "连续多次只产生 thought" in candidate.reason:
-            path = self.workspace_root / "services/core/app/self_improvement/evaluator.py"
+            path = self.workspace_root / "services/core/app/self_programming/evaluator.py"
             if not path.exists():
                 return []
 
@@ -63,8 +63,8 @@ class SelfImprovementPlanner:
                 return []
 
             return [
-                SelfImprovementEdit(
-                    file_path="services/core/app/self_improvement/evaluator.py",
+                SelfProgrammingEdit(
+                    file_path="services/core/app/self_programming/evaluator.py",
                     search_text=search_text,
                     replace_text="PROACTIVE_EVENT_THRESHOLD = 2",
                 )
@@ -72,7 +72,7 @@ class SelfImprovementPlanner:
 
         return self._infer_python_constant_edit(candidate)
 
-    def _build_ui_edits(self, candidate: SelfImprovementCandidate) -> list[SelfImprovementEdit]:
+    def _build_ui_edits(self, candidate: SelfProgrammingCandidate) -> list[SelfProgrammingEdit]:
         if "状态面板没有展示自我编程状态" not in candidate.reason:
             return []
 
@@ -81,7 +81,7 @@ class SelfImprovementPlanner:
             return []
 
         content = path.read_text(encoding="utf-8")
-        edits: list[SelfImprovementEdit] = []
+        edits: list[SelfProgrammingEdit] = []
 
         phase_search = (
             '  if (focusMode === "autonomy") {\n'
@@ -89,16 +89,16 @@ class SelfImprovementPlanner:
             "  }\n"
             '  return "休眠";'
         )
-        if 'if (focusMode === "self_improvement")' not in content and phase_search in content:
+        if 'if (focusMode === "self_programming")' not in content and phase_search in content:
             edits.append(
-                SelfImprovementEdit(
+                SelfProgrammingEdit(
                     file_path="apps/desktop/src/components/StatusPanel.tsx",
                     search_text=phase_search,
                     replace_text=(
                         '  if (focusMode === "autonomy") {\n'
                         '    return "常规自主";\n'
                         "  }\n"
-                        '  if (focusMode === "self_improvement") {\n'
+                        '  if (focusMode === "self_programming") {\n'
                         '    return "自我编程";\n'
                         "  }\n"
                         '  return "休眠";'
@@ -109,15 +109,15 @@ class SelfImprovementPlanner:
         panel_search = "      {state.error ? <p>{state.error}</p> : null}\n"
         if "她刚刚为什么改自己" not in content and panel_search in content:
             edits.append(
-                SelfImprovementEdit(
+                SelfProgrammingEdit(
                     file_path="apps/desktop/src/components/StatusPanel.tsx",
                     search_text=panel_search,
                     replace_text=(
-                        "      {state.self_improvement_job ? (\n"
+                        "      {state.self_programming_job ? (\n"
                         "        <section>\n"
                         "          <h2>她刚刚为什么改自己</h2>\n"
-                        "          <p>Area: {state.self_improvement_job.target_area}</p>\n"
-                        "          <p>Reason: {state.self_improvement_job.reason}</p>\n"
+                        "          <p>Area: {state.self_programming_job.target_area}</p>\n"
+                        "          <p>Reason: {state.self_programming_job.reason}</p>\n"
                         "        </section>\n"
                         "      ) : null}\n"
                         "      {state.error ? <p>{state.error}</p> : null}\n"
@@ -127,13 +127,13 @@ class SelfImprovementPlanner:
 
         return edits
 
-    def _build_planning_edits(self, candidate: SelfImprovementCandidate) -> list[SelfImprovementEdit]:
+    def _build_planning_edits(self, candidate: SelfProgrammingCandidate) -> list[SelfProgrammingEdit]:
         method_call_edit = self._infer_class_method_return_edit(candidate)
         if method_call_edit:
             return method_call_edit
         return self._infer_python_constant_edit(candidate)
 
-    def _build_ui_test_edits(self, candidate: SelfImprovementCandidate) -> list[SelfImprovementEdit]:
+    def _build_ui_test_edits(self, candidate: SelfProgrammingCandidate) -> list[SelfProgrammingEdit]:
         if "状态面板没有展示自我编程状态" not in candidate.reason:
             return []
 
@@ -143,24 +143,24 @@ class SelfImprovementPlanner:
 
         content = path.read_text(encoding="utf-8")
         search_text = '  expect(screen.getByText("她今天的计划")).toBeInTheDocument();\n'
-        if "Phase: 自我编程" in content or search_text not in content:
+        if "阶段: 自我编程" in content or search_text not in content:
             return []
 
         return [
-            SelfImprovementEdit(
+            SelfProgrammingEdit(
                 file_path="apps/desktop/src/components/StatusPanel.test.tsx",
                 search_text=search_text,
                 replace_text=(
                     '  expect(screen.getByText("她今天的计划")).toBeInTheDocument();\n'
-                    '  expect(screen.getByText("Phase: 自我编程")).toBeInTheDocument();\n'
+                    '  expect(screen.getByText("阶段: 自我编程")).toBeInTheDocument();\n'
                 ),
             )
         ]
 
     def _infer_python_constant_edit(
         self,
-        candidate: SelfImprovementCandidate,
-    ) -> list[SelfImprovementEdit]:
+        candidate: SelfProgrammingCandidate,
+    ) -> list[SelfProgrammingEdit]:
         test_path = self._find_pytest_target(candidate.test_commands)
         if test_path is None or not test_path.exists():
             return []
@@ -214,7 +214,7 @@ class SelfImprovementPlanner:
                 return []
 
             return [
-                SelfImprovementEdit(
+                SelfProgrammingEdit(
                     file_path=relative_path,
                     search_text=search_text,
                     replace_text=replace_text,
@@ -236,7 +236,7 @@ class SelfImprovementPlanner:
         module_path: Path,
         function_name: str,
         target_value: str,
-    ) -> list[SelfImprovementEdit]:
+    ) -> list[SelfProgrammingEdit]:
         module_content = module_path.read_text(encoding="utf-8")
         function_body_match = re.search(
             rf"def\s+{re.escape(function_name)}\(\):\n((?:\s+.+\n?)*)",
@@ -287,7 +287,7 @@ class SelfImprovementPlanner:
             return []
 
         return [
-            SelfImprovementEdit(
+            SelfProgrammingEdit(
                 file_path=relative_path,
                 search_text=search_text,
                 replace_text=replace_text,
@@ -296,8 +296,8 @@ class SelfImprovementPlanner:
 
     def _infer_class_method_return_edit(
         self,
-        candidate: SelfImprovementCandidate,
-    ) -> list[SelfImprovementEdit]:
+        candidate: SelfProgrammingCandidate,
+    ) -> list[SelfProgrammingEdit]:
         test_path = self._find_pytest_target(candidate.test_commands)
         if test_path is None or not test_path.exists():
             return []
@@ -363,7 +363,7 @@ class SelfImprovementPlanner:
 
         relative_path = module_path.relative_to(self.workspace_root).as_posix()
         return [
-            SelfImprovementEdit(
+            SelfProgrammingEdit(
                 file_path=relative_path,
                 search_text=search_text,
                 replace_text=replace_text,

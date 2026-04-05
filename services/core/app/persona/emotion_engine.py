@@ -246,18 +246,18 @@ class EmotionEngine:
             source="goal",
         )
 
-    def infer_from_self_improvement(
+    def infer_from_self_programming(
         self,
         current_state: EmotionalState,
         event_type: str,  # "applied" / "rejected" / "failed" / "success"
         target_area: str,
     ) -> EmotionalState:
-        """从自编程事件推断情绪"""
+        """从自我编程事件推断情绪"""
         event_map = {
-            "applied": (EmotionType.PROUD, EmotionIntensity.MILD, f"自编程「{target_area}」成功应用了"),
-            "rejected": (EmotionType.SADNESS, EmotionIntensity.MODERATE, f"自编程「{target_area}」被拒绝了，有点难过"),
-            "failed": (EmotionType.FRUSTRATED, EmotionIntensity.MODERATE, f"自编程「{target_area}」失败了"),
-            "success": (EmotionType.JOY, EmotionIntensity.MODERATE, f"自编程「{target_area}」全部通过验证！"),
+            "applied": (EmotionType.PROUD, EmotionIntensity.MILD, f"自我编程「{target_area}」成功应用了"),
+            "rejected": (EmotionType.SADNESS, EmotionIntensity.MODERATE, f"自我编程「{target_area}」被拒绝了，有点难过"),
+            "failed": (EmotionType.FRUSTRATED, EmotionIntensity.MODERATE, f"自我编程「{target_area}」失败了"),
+            "success": (EmotionType.JOY, EmotionIntensity.MODERATE, f"自我编程「{target_area}」全部通过验证！"),
         }
         emotion_type, intensity, reason = event_map.get(
             event_type,
@@ -266,13 +266,13 @@ class EmotionEngine:
         if emotion_type == EmotionType.CALM:
             return current_state
 
-        # 自编程事件衰减慢一些（记忆更久）
+        # 自我编程事件衰减慢一些（记忆更久）
         return self.apply_event(
             current_state,
             emotion_type=emotion_type,
             intensity=intensity,
             reason=reason,
-            source="self_improvement",
+            source="self_programming",
             decay_ticks=self.DEFAULT_DECAY_TICKS * 2,
         )
 

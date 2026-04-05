@@ -32,7 +32,7 @@ def test_chat_instructions_prioritize_internal_state_for_status_questions():
     instructions = build_chat_instructions(
         focus_goal_title="整理今天的对话记忆",
         latest_plan_completion="我把今天的计划“整理今天的对话记忆”完整走完了。",
-        latest_self_improvement="我补强了状态展示，并通过了验证。",
+        latest_self_programming="我补强了状态展示，并通过了验证。",
         user_message="你现在在想什么",
         persona_system_prompt=persona_prompt,
     )

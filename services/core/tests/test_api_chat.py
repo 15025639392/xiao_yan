@@ -411,14 +411,14 @@ def test_post_chat_instructions_include_today_plan_completion_closure():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_instructions_include_latest_self_improvement_result():
+def test_post_chat_instructions_include_latest_self_programming_result():
     memory_repository = InMemoryMemoryRepository()
     goal_repository = InMemoryGoalRepository()
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
             focus_mode=FocusMode.AUTONOMY,
-            self_improvement_job={
+            self_programming_job={
                 "reason": "测试失败：状态面板没有展示自我编程状态。",
                 "target_area": "ui",
                 "status": "applied",

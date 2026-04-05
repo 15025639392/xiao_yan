@@ -1,7 +1,7 @@
 """
-回滚恢复管理器 — 自编程能力的 Phase 5 核心之一
+回滚恢复管理器
 
-当自编程补丁导致问题时，提供精细化的回滚和恢复能力：
+当自我编程补丁导致问题时，提供精细化的回滚和恢复能力：
 
 1. 差异快照 — 每次 apply 前记录文件级 diff（修改前/后内容）
 2. 安全回滚 — 逐文件精确还原，比 git reset 更可控
@@ -243,7 +243,7 @@ class RollbackRecovery:
         """在应用补丁前创建差异快照。
 
         Args:
-            job: 待执行的 SelfImprovementJob（提取 touched_files 和 edits）
+            job: 待执行的 SelfProgrammingJob（提取 touched_files 和 edits）
             extra_files: 额外需要快照的文件路径
 
         Returns:
@@ -324,7 +324,7 @@ class RollbackRecovery:
         """为指定 Job 创建回滚计划。
 
         Args:
-            job_id: 要回滚的自编程任务 ID
+            job_id: 要回滚的自我编程任务 ID
             reason: 回滚原因
             reason_detail: 详细说明
             dependent_job_ids: 受级联影响的后续 Job 列表
@@ -440,7 +440,7 @@ class RollbackRecovery:
 
                 if snapshot.file_existed:
                     # 文件原本存在 → 还原原始内容
-                    # 校验当前文件是否被意外篡改（非本次自编程改动的部分）
+                    # 校验当前文件是否被意外篡改（非本次自我编程改动的部分）
                     if full_path.exists():
                         current_content = full_path.read_text(encoding="utf-8")
                         full_path.write_text(snapshot.original_content, encoding="utf-8")
@@ -453,7 +453,7 @@ class RollbackRecovery:
                         restored.append(snapshot.file_path)
                         logger.debug(f"Re-created: {snapshot.file_path}")
                 else:
-                    # 文件是本次自编程新建的 → 删除
+                    # 文件是本次自我编程新建的 → 删除
                     if full_path.exists():
                         full_path.unlink()
                         restored.append(snapshot.file_path)

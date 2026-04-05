@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from threading import Lock
 
-from app.domain.models import BeingState, SelfImprovementJob, TodayPlan
+from app.domain.models import BeingState, SelfProgrammingJob, TodayPlan
 from app.memory.repository import MemoryRepository
 from app.usecases.lifecycle import go_to_sleep, wake_up
 
@@ -29,16 +29,16 @@ class StateStore:
             if today_plan is not None and not isinstance(today_plan, TodayPlan):
                 today_plan = TodayPlan.model_validate(today_plan)
 
-            self_improvement_job = state.self_improvement_job
-            if self_improvement_job is not None and not isinstance(
-                self_improvement_job, SelfImprovementJob
+            self_programming_job = state.self_programming_job
+            if self_programming_job is not None and not isinstance(
+                self_programming_job, SelfProgrammingJob
             ):
-                self_improvement_job = SelfImprovementJob.model_validate(self_improvement_job)
+                self_programming_job = SelfProgrammingJob.model_validate(self_programming_job)
 
             self._state = state.model_copy(
                 update={
                     "today_plan": today_plan,
-                    "self_improvement_job": self_improvement_job,
+                    "self_programming_job": self_programming_job,
                 },
                 deep=True,
             )

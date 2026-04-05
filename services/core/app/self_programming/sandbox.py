@@ -1,5 +1,5 @@
 """
-安全沙箱执行环境 — 自编程能力的 Phase 4 核心之一
+安全沙箱执行环境
 
 在应用补丁到真实工作区之前，先在隔离环境中：
 1. 复制受影响文件到临时目录
@@ -114,7 +114,7 @@ class SandboxEnvironment:
         4. 返回结果（不触碰真实文件）
 
         Args:
-            edits: SelfImprovementEdit 列表
+            edits: SelfProgrammingEdit 列表
             verification_commands: 要运行的测试/验证命令列表
             job_id: 用于日志标识
 

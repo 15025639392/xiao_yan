@@ -1,13 +1,13 @@
 import { useState } from "react";
-import type { SelfImprovementJob, SelfImprovementEdit } from "../lib/api";
+import type { SelfProgrammingJob, SelfProgrammingEdit } from "../lib/api";
 import {
-  approveSelfImprovementJob,
-  rejectSelfImprovementJob,
+  approveSelfProgrammingJob,
+  rejectSelfProgrammingJob,
 } from "../lib/api";
 
 type ApprovalPanelProps = {
   /** 当前需要审批的 Job */
-  job: NonNullable<SelfImprovementJob>;
+  job: NonNullable<SelfProgrammingJob>;
   /** 审批完成后的回调（批准或拒绝都会触发） */
   onDecision: (jobId: string, approved: boolean) => void;
 };
@@ -27,7 +27,7 @@ export function ApprovalPanel({ job, onDecision }: ApprovalPanelProps) {
     setDecisioning(true);
     setError(null);
     try {
-      await approveSelfImprovementJob(job.id);
+      await approveSelfProgrammingJob(job.id);
       setResult("approved");
       onDecision(job.id, true);
     } catch (e) {
@@ -46,7 +46,7 @@ export function ApprovalPanel({ job, onDecision }: ApprovalPanelProps) {
     setDecisioning(true);
     setError(null);
     try {
-      await rejectSelfImprovementJob(job.id, rejectReason.trim());
+      await rejectSelfProgrammingJob(job.id, rejectReason.trim());
       setResult("rejected");
       onDecision(job.id, false);
     } catch (e) {
@@ -71,8 +71,8 @@ export function ApprovalPanel({ job, onDecision }: ApprovalPanelProps) {
         <div className="approval-panel__body">
           <p>
             {result === "approved"
-              ? `自编程方案「${job.target_area}」已被批准，正在继续执行验证流程...`
-              : `自编程方案「${job.target_area}」已被拒绝。${job.approval_reason ?? rejectReason}`
+              ? `自我编程方案「${job.target_area}」已被批准，正在继续执行验证流程...`
+              : `自我编程方案「${job.target_area}」已被拒绝。${job.approval_reason ?? rejectReason}`
             }
           </p>
         </div>
@@ -245,7 +245,7 @@ export function ApprovalPanel({ job, onDecision }: ApprovalPanelProps) {
 // 子组件：审批用 Diff 展示（精简版）
 // ══════════════════════════════════════════════
 
-function ApprovalDiffItem({ edit }: { edit: SelfImprovementEdit }) {
+function ApprovalDiffItem({ edit }: { edit: SelfProgrammingEdit }) {
   const [expanded, setExpanded] = useState(false);
 
   const kindLabel = edit.kind.toUpperCase();

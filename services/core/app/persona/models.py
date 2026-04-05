@@ -1,4 +1,4 @@
-"""Persona 核心数据模型 — Phase 7: 人格内核
+"""Persona 核心数据模型
 
 定义数字人的完整人格档案，包括：
 - 基础身份信息
@@ -234,7 +234,7 @@ class EmotionEntry(BaseModel):
     emotion_type: EmotionType
     intensity: EmotionIntensity = EmotionIntensity.MILD
     reason: str = ""
-    source: str = Field(default="system", description="触发来源：user/system/goal/self_improvement/world")
+    source: str = Field(default="system", description="触发来源：user/system/goal/self_programming/world")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     decay_ticks: int = Field(default=12, description="衰减所需 tick 数（约 1 分钟/tick）")
 
@@ -309,7 +309,7 @@ class EmotionalState(BaseModel):
         return "".join(parts)
 
     def to_expression_prompt(self, personality=None) -> str:
-        """将当前情绪转为表达风格指令（Phase 9 增强版）
+        """将当前情绪转为表达风格指令（表达风格增强版）
 
         不再只说"心情怎样"，而是告诉 LLM "因为心情所以怎么说话"。
         需要配合 ExpressionStyleMapper 使用。
@@ -333,7 +333,7 @@ class EmotionalState(BaseModel):
 class PersonaProfile(BaseModel):
     """完整人格档案 — 数字人的「灵魂定义」
 
-    这是 Phase 7 的核心数据结构。
+    这是人格系统的关键数据结构。
     所有的 prompt 构建、情绪计算、行为决策都从这里读取配置。
     """
     # ── 基础身份 ──
@@ -366,7 +366,7 @@ class PersonaProfile(BaseModel):
         这是最关键的函数 — 将结构化的人格数据转化为
         自然语言提示词，让 LLM 能够「扮演」这个角色。
 
-        Phase 9 增强：情绪不再只是状态描述，而是影响实际表达风格。
+        表达风格增强：情绪不再只是状态描述，而是影响实际表达风格。
         """
         sections = []
 
@@ -397,14 +397,14 @@ class PersonaProfile(BaseModel):
         if value_hints:
             sections.append(f"\n【价值观】\n{value_hints}")
 
-        # 5. 当前情绪 + ★表达风格覆盖（Phase 9 核心）
+        # 5. 当前情绪 + 表达风格覆盖
         from app.persona.expression_mapper import ExpressionStyleMapper
 
         emotion_hints = self.emotion.to_prompt_hints()
         if emotion_hints:
             sections.append(f"\n【此刻心情】\n{emotion_hints}")
 
-        # Phase 9: 情绪驱动的表达风格指令
+        # 情绪驱动的表达风格指令
         expression_mapper = ExpressionStyleMapper(personality=self.personality)
         style_override = expression_mapper.map_from_state(self.emotion)
         style_instruction = expression_mapper.build_style_prompt(style_override)

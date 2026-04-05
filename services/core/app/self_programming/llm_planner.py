@@ -1,10 +1,10 @@
 """
-LLM 补丁生成器 — 自编程能力的核心升级（Phase 2: 多候选方案）
+LLM 补丁生成器 — 自我编程多候选方案生成器
 
-将现有的规则引擎 SelfImprovementPlanner 作为后备规划器，
+将现有的规则引擎 SelfProgrammingPlanner 作为后备规划器，
 优先使用 LLM 生成多个代码补丁候选方案，通过评分选优。
 
-Phase 2 升级：
+当前增强内容：
 - 单次 LLM 调用返回 N 个候选方案
 - CandidateScorer 对每个候选做多维评分（置信度/风险/简洁性）
 - Executor 按评分顺序逐个尝试，通过验证的即采用
@@ -21,24 +21,24 @@ from datetime import timedelta
 
 from app.domain.models import (
     EditKind,
-    SelfImprovementEdit,
-    SelfImprovementJob,
-    SelfImprovementStatus,
-    SelfImprovementVerification,
+    SelfProgrammingEdit,
+    SelfProgrammingJob,
+    SelfProgrammingStatus,
+    SelfProgrammingVerification,
 )
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import ChatMessage, ChatResult
-from app.self_improvement.models import SelfImprovementCandidate
-from app.self_improvement.planner import SelfImprovementPlanner
-from app.self_improvement.scorer import CandidateScorer, ScoredCandidate
+from app.self_programming.models import SelfProgrammingCandidate
+from app.self_programming.planner import SelfProgrammingPlanner
+from app.self_programming.scorer import CandidateScorer, ScoredCandidate
 
 logger = logging.getLogger(__name__)
 
 # ── 安全护栏：禁止修改的路径前缀 ──────────────────────
 PROTECTED_PATHS = (
     "services/core/app/llm/gateway.py",
-    "services/core/app/self_improvement/executor.py",
-    "services/core/app/self_improvement/scorer.py",
+    "services/core/app/self_programming/executor.py",
+    "services/core/app/self_programming/scorer.py",
     ".env",
     ".env.local",
 )
@@ -47,8 +47,8 @@ PROTECTED_PATHS = (
 DEFAULT_NUM_CANDIDATES = 3  # 要求 LLM 生成的候选数量
 
 
-# ── 系统提示词 (Phase 2: 多候选版本) ──────────────────
-SYSTEM_PROMPT = """你是一个自我修复的 AI 助手的「补丁生成器」。
+# ── 系统提示词（多候选版本） ──────────────────
+SYSTEM_PROMPT = """你是一个自我编程 AI 助手的「补丁生成器」。
 你的任务是根据错误信息或改进需求，生成 {num_candidates} 个不同的代码修改方案。
 
 ## 输出格式要求
@@ -107,10 +107,10 @@ SYSTEM_PROMPT = """你是一个自我修复的 AI 助手的「补丁生成器」
 
 
 class LLMPlanner:
-    """LLM 驱动的自编程规划器（多候选版）。
+    """LLM 驱动的自我编程规划器（多候选版）。
 
     工作流程：
-    1. 接收 SelfImprovementCandidate → 构建上下文
+    1. 接收 SelfProgrammingCandidate → 构建上下文
     2. 调用 LLM 生成 N 个结构化补丁候选
     3. 解析 + 安全校验 + 评分排序
     4. 返回最佳候选（或按评分顺序的多候选列表）
@@ -121,19 +121,19 @@ class LLMPlanner:
         self,
         gateway: ChatGateway,
         workspace_root: Path | None = None,
-        fallback_planner: SelfImprovementPlanner | None = None,
+        fallback_planner: SelfProgrammingPlanner | None = None,
         min_confidence: float = 0.2,
         num_candidates: int = DEFAULT_NUM_CANDIDATES,
         scorer: CandidateScorer | None = None,
     ) -> None:
         self.gateway = gateway
         self.workspace_root = workspace_root
-        self.fallback = fallback_planner or (SelfImprovementPlanner(workspace_root=workspace_root) if workspace_root else None)
+        self.fallback = fallback_planner or (SelfProgrammingPlanner(workspace_root=workspace_root) if workspace_root else None)
         self.min_confidence = min_confidence
         self.num_candidates = num_candidates
         self.scorer = scorer or CandidateScorer()
 
-    def plan(self, candidate: SelfImprovementCandidate) -> SelfImprovementJob:
+    def plan(self, candidate: SelfProgrammingCandidate) -> SelfProgrammingJob:
         """主入口：LLM 多候选规划 → 选最优 → 规则引擎兜底。"""
         # 尝试 LLM 多候选规划
         try:
@@ -149,17 +149,17 @@ class LLMPlanner:
 
         # 兜底：返回空 Job
         cooldown = _cooldown_for(candidate)
-        return SelfImprovementJob(
+        return SelfProgrammingJob(
             reason=candidate.reason,
             target_area=candidate.target_area,
-            status=SelfImprovementStatus.FAILED,
+            status=SelfProgrammingStatus.FAILED,
             spec=candidate.spec,
             patch_summary="LLM 和规则引擎均无法生成补丁方案。",
-            verification=SelfImprovementVerification(commands=candidate.test_commands),
+            verification=SelfProgrammingVerification(commands=candidate.test_commands),
             cooldown_until=(candidate.created_at + cooldown) if candidate.created_at else None,
         )
 
-    def plan_all(self, candidate: SelfImprovementCandidate) -> list[ScoredCandidate]:
+    def plan_all(self, candidate: SelfProgrammingCandidate) -> list[ScoredCandidate]:
         """返回所有评分后的候选方案（供外部做 A/B 测试）。
 
         返回按 score 降序排列的候选列表。
@@ -173,7 +173,7 @@ class LLMPlanner:
             logger.warning(f"LLM multi-candidate generation failed: {exc}")
             return []
 
-    def _plan_with_llm(self, candidate: SelfImprovementCandidate) -> ScoredCandidate | None:
+    def _plan_with_llm(self, candidate: SelfProgrammingCandidate) -> ScoredCandidate | None:
         """调用 LLM 生成多候选 → 评分 → 返回最佳。"""
         raw_candidates = self._generate_candidates(candidate)
         if not raw_candidates:
@@ -194,8 +194,8 @@ class LLMPlanner:
         return best
 
     def _generate_candidates(
-        self, candidate: SelfImprovementCandidate
-    ) -> list[tuple[str, list[SelfImprovementEdit], dict]]:
+        self, candidate: SelfProgrammingCandidate
+    ) -> list[tuple[str, list[SelfProgrammingEdit], dict]]:
         """调用 LLM 并解析出多个候选方案。
 
         返回 [(candidate_id, edits, metadata), ...] 列表。
@@ -216,7 +216,7 @@ class LLMPlanner:
         if not candidates_data:
             return []
 
-        output: list[tuple[str, list[SelfImprovementEdit], dict]] = []
+        output: list[tuple[str, list[SelfProgrammingEdit], dict]] = []
         for cand_id, edits, metadata in candidates_data:
             # 安全检查所有 edit
             safe = True
@@ -232,21 +232,21 @@ class LLMPlanner:
 
     def _score_and_rank(
         self,
-        raw_candidates: list[tuple[str, list[SelfImprovementEdit], dict]],
-        candidate: SelfImprovementCandidate,
+        raw_candidates: list[tuple[str, list[SelfProgrammingEdit], dict]],
+        candidate: SelfProgrammingCandidate,
     ) -> list[ScoredCandidate]:
         """对原始候选进行评分和排序。"""
         scored_list: list[ScoredCandidate] = []
         for cand_id, edits, metadata in raw_candidates:
             cooldown = _cooldown_for(candidate)
-            job = SelfImprovementJob(
+            job = SelfProgrammingJob(
                 reason=candidate.reason,
                 target_area=candidate.target_area,
-                status=SelfImprovementStatus.DIAGNOSING,
+                status=SelfProgrammingStatus.DIAGNOSING,
                 spec=candidate.spec,
                 test_edits=[],
                 edits=edits,
-                verification=SelfImprovementVerification(commands=candidate.test_commands),
+                verification=SelfProgrammingVerification(commands=candidate.test_commands),
                 patch_summary=f"[LLM-{cand_id}] {metadata.get('description', metadata.get('diagnosis', ''))}",
                 cooldown_until=(candidate.created_at + cooldown) if candidate.created_at else None,
             )
@@ -257,7 +257,7 @@ class LLMPlanner:
         scored_list.sort(key=lambda sc: sc.total_score, reverse=True)
         return scored_list
 
-    def _build_user_prompt(self, candidate: SelfImprovementCandidate) -> str:
+    def _build_user_prompt(self, candidate: SelfProgrammingCandidate) -> str:
         """构建发送给 LLM 的用户上下文。"""
         parts = [
             f"## 任务\n{candidate.spec}\n",
@@ -281,7 +281,7 @@ class LLMPlanner:
 
         return "\n".join(parts)
 
-    def _gather_source_context(self, candidate: SelfImprovementCandidate, max_lines: int = 120) -> str:
+    def _gather_source_context(self, candidate: SelfProgrammingCandidate, max_lines: int = 120) -> str:
         """收集与 candidate 相关的源码上下文，帮助 LLM 做出精准修改。"""
         lines: list[str] = []
 
@@ -330,7 +330,7 @@ class LLMPlanner:
         return "\n\n".join(lines)
 
     @staticmethod
-    def _parse_multi_candidate_response(text: str) -> list[tuple[str, list[SelfImprovementEdit], dict]]:
+    def _parse_multi_candidate_response(text: str) -> list[tuple[str, list[SelfProgrammingEdit], dict]]:
         """从 LLM 输出解析多候选方案数据。
 
         返回 [(candidate_id, edits_list, metadata_dict), ...]，解析失败返回空列表。
@@ -357,7 +357,7 @@ class LLMPlanner:
         diagnosis = data.get("diagnosis", "")
         candidates_raw = data.get("candidates", [])
 
-        output: list[tuple[str, list[SelfImprovementEdit], dict]] = []
+        output: list[tuple[str, list[SelfProgrammingEdit], dict]] = []
         for idx, cand_data in enumerate(candidates_raw):
             cand_id = cand_data.get("id", f"candidate-{chr(65 + idx)}")
             edits = LLMPlanner._parse_edits(cand_data)
@@ -374,9 +374,9 @@ class LLMPlanner:
         return output
 
     @staticmethod
-    def _parse_edits(data: dict) -> list[SelfImprovementEdit]:
+    def _parse_edits(data: dict) -> list[SelfProgrammingEdit]:
         """从单个候选数据中解析 edits 列表。"""
-        edits: list[SelfImprovementEdit] = []
+        edits: list[SelfProgrammingEdit] = []
         for edit_data in data.get("edits", []):
             kind_str = edit_data.get("kind", "replace")
             try:
@@ -398,12 +398,12 @@ class LLMPlanner:
                 edit_kwargs["search_text"] = edit_data.get("search_text", "")
                 edit_kwargs["replace_text"] = edit_data.get("replace_text", "")
 
-            edits.append(SelfImprovementEdit(**edit_kwargs))
+            edits.append(SelfProgrammingEdit(**edit_kwargs))
 
         return edits
 
     @staticmethod
-    def _is_safe_edit(edit: SelfImprovementEdit) -> bool:
+    def _is_safe_edit(edit: SelfProgrammingEdit) -> bool:
         """安全校验：拒绝修改受保护路径的文件。"""
         fp = edit.file_path
         for protected in PROTECTED_PATHS:
@@ -414,7 +414,7 @@ class LLMPlanner:
         return True
 
 
-def _cooldown_for(candidate: SelfImprovementCandidate) -> timedelta:
+def _cooldown_for(candidate: SelfProgrammingCandidate) -> timedelta:
     """根据触发类型返回冷却时间。"""
     return (
         timedelta(hours=1)

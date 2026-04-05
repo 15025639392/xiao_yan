@@ -1,7 +1,7 @@
 """
-补丁冲突检测器 — 自编程能力的 Phase 4 核心之二
+补丁冲突检测器
 
-当多个自编程任务并发或连续运行时，检测补丁之间的潜在冲突：
+当多个自我编程任务并发或连续运行时，检测补丁之间的潜在冲突：
 
 1. 文件级冲突 — 两个补丁修改同一文件的相同位置
 2. 依赖冲突 — 补丁 A 修改了补丁 B 的依赖接口
@@ -140,8 +140,8 @@ class ConflictDetector:
         """检查一组编辑操作是否存在冲突。
 
         Args:
-            edits: 待应用的 SelfImprovementEdit 列表
-            applied_history: 最近成功应用的自编程 Job 列表（可选）
+            edits: 待应用的 SelfProgrammingEdit 列表
+            applied_history: 最近成功应用的自我编程 Job 列表（可选）
 
         Returns:
             ConflictReport 冲突报告
@@ -204,7 +204,7 @@ class ConflictDetector:
                     file_path=fp,
                     severity=ConflictSeverity.WARNING,
                     conflict_type="frequent_edit",
-                    description=f"该文件在最近 {apply_count} 次自编程中被修改，可能存在修复不稳定的问题",
+                    description=f"该文件在最近 {apply_count} 次自我编程中被修改，可能存在修复不稳定的问题",
                 ))
 
         # 确定总体严重程度
@@ -246,7 +246,7 @@ class ConflictDetector:
                     file_path=file_path,
                     severity=ConflictSeverity.BLOCKING,
                     conflict_type="protected",
-                    description=f"文件 '{file_path}' 匹配受保护路径模式 '{pattern}'，不允许自编程修改",
+                    description=f"文件 '{file_path}' 匹配受保护路径模式 '{pattern}'，不允许自我编程修改",
                 )
         return None
 

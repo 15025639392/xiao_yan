@@ -203,7 +203,7 @@ Expected: FAIL，因为当前三个组件仍存在英文标题、英文字段标
 </section>
 ```
 
-把字段标签全部转换为中文语义，例如 `Phase` -> `当前阶段`、`Focus Goal` -> `当前专注目标`、`Latest Event` -> `最近事件`，并在 `apps/desktop/src/index.css` 中补上侧栏卡片、指标列表、计划块和自我修复块样式。
+把字段标签全部转换为中文语义，例如把英文阶段标签改成 `当前阶段`、把 `Focus Goal` 改成 `当前专注目标`、把 `Latest Event` 改成 `最近事件`，并在 `apps/desktop/src/index.css` 中补上侧栏卡片、指标列表、计划块和自我编程块样式。
 
 **Step 4: 运行测试并确认通过**
 

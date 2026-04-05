@@ -15,9 +15,9 @@ from fastapi.testclient import TestClient
 
 from app.domain.models import (
     BeingState,
-    SelfImprovementEdit,
-    SelfImprovementJob,
-    SelfImprovementStatus,
+    SelfProgrammingEdit,
+    SelfProgrammingJob,
+    SelfProgrammingStatus,
     WakeMode,
 )
 from app.main import app
@@ -31,21 +31,21 @@ from app.runtime import StateStore
 
 def test_pending_approval_status_exists():
     """PENDING_APPROVAL 和 REJECTED 枚举值存在。"""
-    assert hasattr(SelfImprovementStatus, "PENDING_APPROVAL")
-    assert hasattr(SelfImprovementStatus, "REJECTED")
-    assert SelfImprovementStatus.PENDING_APPROVAL.value == "pending_approval"
-    assert SelfImprovementStatus.REJECTED.value == "rejected"
+    assert hasattr(SelfProgrammingStatus, "PENDING_APPROVAL")
+    assert hasattr(SelfProgrammingStatus, "REJECTED")
+    assert SelfProgrammingStatus.PENDING_APPROVAL.value == "pending_approval"
+    assert SelfProgrammingStatus.REJECTED.value == "rejected"
 
 
 def test_job_model_has_approval_fields():
-    """SelfImprovementJob 包含审批相关字段。"""
+    """SelfProgrammingJob 包含审批相关字段。"""
 
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="test-approval-1",
         target_area="agent",
         reason="测试",
         spec="测试补丁",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
         created_at=datetime.now(tz=timezone.utc),
         approval_requested_at=datetime(2026, 4, 5, 12, 0, tzinfo=timezone.utc),
         approval_edits_summary="修改了 agent/loop.py",
@@ -58,25 +58,25 @@ def test_job_model_has_approval_fields():
 
 def test_pending_approval_is_terminal_in_tick():
     """PENDING_APPROVAL 状态在 tick_job 中不自动推进。"""
-    from app.self_improvement.service import SelfImprovementService
+    from app.self_programming.service import SelfProgrammingService
 
-    service = SelfImprovementService()
+    service = SelfProgrammingService()
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
 
     # 构造一个 PENDING_APPROVAL 状态的 job
-    job = store.get().self_improvement_job
+    job = store.get().self_programming_job
     if job is None:
-        job = SelfImprovementJob(
+        job = SelfProgrammingJob(
             id="job-pending-tick",
             target_area="agent",
             reason="测试原因",
             spec="测试方案",
-            status=SelfImprovementStatus.PENDING_APPROVAL,
+            status=SelfProgrammingStatus.PENDING_APPROVAL,
             created_at=datetime.now(tz=timezone.utc),
             approval_requested_at=datetime.now(tz=timezone.utc),
             approval_edits_summary="测试摘要",
         )
-        state = store.get().model_copy(update={"self_improvement_job": job})
+        state = store.get().model_copy(update={"self_programming_job": job})
         store.set(state)
 
     result = service.tick_job(store.get())
@@ -92,21 +92,21 @@ def test_approve_job_success():
     """POST /{job_id}/approve — 批准成功，状态变为 VERIFYING。"""
 
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="job-approve-1",
         target_area="planner",
         reason="增加错误重试",
         spec="添加 retry 逻辑",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
         created_at=datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc),
         approval_requested_at=datetime(2026, 4, 5, 11, 0, tzinfo=timezone.utc),
         approval_edits_summary="修改 planner.py",
     )
-    store.set(store.get().model_copy(update={"self_improvement_job": job}))
+    store.set(store.get().model_copy(update={"self_programming_job": job}))
     app.state.state_store = store
 
     client = TestClient(app)
-    resp = client.post("/self-improvement/job-approve-1/approve", json={})
+    resp = client.post("/self-programming/job-approve-1/approve", json={})
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is True
@@ -114,27 +114,27 @@ def test_approve_job_success():
 
     # 验证状态已更新为 VERIFYING
     updated_state = store.get()
-    assert updated_state.self_improvement_job is not None
-    assert updated_state.self_improvement_job.status == SelfImprovementStatus.VERIFYING
+    assert updated_state.self_programming_job is not None
+    assert updated_state.self_programming_job.status == SelfProgrammingStatus.VERIFYING
 
 
 def test_approve_job_not_found():
     """POST /{job_id}/approve — job 不存在时返回 404。"""
 
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="job-other",
         target_area="agent",
         reason="测试",
         spec="测试",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
         created_at=datetime.now(tz=timezone.utc),
     )
-    store.set(store.get().model_copy(update={"self_improvement_job": job}))
+    store.set(store.get().model_copy(update={"self_programming_job": job}))
     app.state.state_store = store
 
     client = TestClient(app)
-    resp = client.post("/self-improvement/nonexistent/approve", json={})
+    resp = client.post("/self-programming/nonexistent/approve", json={})
     assert resp.status_code == 404
 
 
@@ -142,19 +142,19 @@ def test_approve_job_wrong_status():
     """POST /{job_id}/approve — job 不是 pending_approval 状态时返回 409。"""
 
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="job-diagnosing",
         target_area="agent",
         reason="测试",
         spec="测试",
-        status=SelfImprovementStatus.DIAGNOSING,
+        status=SelfProgrammingStatus.DIAGNOSING,
         created_at=datetime.now(tz=timezone.utc),
     )
-    store.set(store.get().model_copy(update={"self_improvement_job": job}))
+    store.set(store.get().model_copy(update={"self_programming_job": job}))
     app.state.state_store = store
 
     client = TestClient(app)
-    resp = client.post("/self-improvement/job-diagnosing/approve", json={})
+    resp = client.post("/self-programming/job-diagnosing/approve", json={})
     assert resp.status_code == 409
     assert "not pending_approval" in resp.json()["detail"]
 
@@ -163,21 +163,21 @@ def test_reject_job_with_reason():
     """POST /{job_id}/reject — 拒绝成功，状态变为 REJECTED 并记录原因。"""
 
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="job-reject-1",
         target_area="executor",
         reason="性能优化",
         spec="缓存结果",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
         created_at=datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc),
         approval_requested_at=datetime(2026, 4, 5, 11, 0, tzinfo=timezone.utc),
     )
-    store.set(store.get().model_copy(update={"self_improvement_job": job}))
+    store.set(store.get().model_copy(update={"self_programming_job": job}))
     app.state.state_store = store
 
     client = TestClient(app)
     resp = client.post(
-        "/self-improvement/job-reject-1/reject",
+        "/self-programming/job-reject-1/reject",
         json={"reason": "改动范围太大，需要拆分"},
     )
     assert resp.status_code == 200
@@ -186,35 +186,35 @@ def test_reject_job_with_reason():
 
     # 验证状态已变为 REJECTED
     updated_state = store.get()
-    assert updated_state.self_improvement_job is not None
-    assert updated_state.self_improvement_job.status == SelfImprovementStatus.REJECTED
-    assert updated_state.self_improvement_job.approval_reason == "改动范围太大，需要拆分"
+    assert updated_state.self_programming_job is not None
+    assert updated_state.self_programming_job.status == SelfProgrammingStatus.REJECTED
+    assert updated_state.self_programming_job.approval_reason == "改动范围太大，需要拆分"
     # 拒绝后应回到 autonomy
-    assert updated_state.focus_mode != "self_improvement"
+    assert updated_state.focus_mode != "self_programming"
 
 
 def test_reject_job_default_reason():
     """POST /{job_id}/reject — 不提供原因时使用默认值。"""
 
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="job-reject-no-reason",
         target_area="agent",
         reason="测试",
         spec="测试",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
         created_at=datetime.now(tz=timezone.utc),
     )
-    store.set(store.get().model_copy(update={"self_improvement_job": job}))
+    store.set(store.get().model_copy(update={"self_programming_job": job}))
     app.state.state_store = store
 
     client = TestClient(app)
-    resp = client.post("/self-improvement/job-reject-no-reason/reject", json={})
+    resp = client.post("/self-programming/job-reject-no-reason/reject", json={})
     assert resp.status_code == 200
 
     updated_state = store.get()
-    assert updated_state.self_improvement_job.status == SelfImprovementStatus.REJECTED
-    assert updated_state.self_improvement_job.approval_reason == "用户拒绝"
+    assert updated_state.self_programming_job.status == SelfProgrammingStatus.REJECTED
+    assert updated_state.self_programming_job.approval_reason == "用户拒绝"
 
 
 # ═══════════════════════════════════════════════════
@@ -231,29 +231,29 @@ def test_full_approval_flow_via_api():
     """
 
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="full-flow-job",
         target_area="service",
         reason="修复状态机 bug",
         spec="增加 REJECTED 状态处理",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
         created_at=datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc),
         approval_requested_at=datetime(2026, 4, 5, 9, 30, tzinfo=timezone.utc),
         approval_edits_summary="service.py: 新增 REJECTED 分支; models.py: 新增枚举值",
-        touched_files=["app/self_improvement/service.py", "app/domain/models.py"],
+        touched_files=["app/self_programming/service.py", "app/domain/models.py"],
     )
-    store.set(store.get().model_copy(update={"self_improvement_job": job}))
+    store.set(store.get().model_copy(update={"self_programming_job": job}))
     app.state.state_store = store
 
     client = TestClient(app)
 
     # Step 1: 批准
-    resp = client.post("/self-improvement/full-flow-job/approve", json={"reason": "LGTM"})
+    resp = client.post("/self-programming/full-flow-job/approve", json={"reason": "LGTM"})
     assert resp.status_code == 200
 
     # Step 2: 验证状态变更
     updated = store.get()
-    assert updated.self_improvement_job.status == SelfImprovementStatus.VERIFYING
+    assert updated.self_programming_job.status == SelfProgrammingStatus.VERIFYING
     assert "批准" in updated.current_thought
 
 
@@ -264,28 +264,28 @@ def test_full_approval_flow_via_api():
 
 def test_build_edits_summary():
     """_build_edits_summary 正确生成编辑摘要。"""
-    from app.self_improvement.service import _build_edits_summary
+    from app.self_programming.service import _build_edits_summary
 
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="summary-test",
         target_area="agent",
         reason="测试摘要生成",
         spec="测试",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
         created_at=datetime.now(tz=timezone.utc),
         edits=[
-            SelfImprovementEdit(
+            SelfProgrammingEdit(
                 kind="replace",
                 file_path="app/agent/loop.py",
                 search_text="old code",
                 replacement_text="new code",
             ),
-            SelfImprovementEdit(
+            SelfProgrammingEdit(
                 kind="create",
                 file_path="app/new_module.py",
                 replacement_text="# new file content",
             ),
-            SelfImprovementEdit(
+            SelfProgrammingEdit(
                 kind="insert",
                 file_path="app/service.py",
                 search_text="# marker",
@@ -305,14 +305,14 @@ def test_build_edits_summary():
 
 def test_build_edits_summary_empty_edits():
     """_build_edits_summary 在没有 edits 时返回合理默认值。"""
-    from app.self_improvement.service import _build_edits_summary
+    from app.self_programming.service import _build_edits_summary
 
-    job = SelfImprovementJob(
+    job = SelfProgrammingJob(
         id="empty-summary-test",
         target_area="agent",
         reason="测试",
         spec="测试",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
         created_at=datetime.now(tz=timezone.utc),
         touched_files=["app/some_file.py"],
     )

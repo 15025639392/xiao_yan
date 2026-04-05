@@ -15,7 +15,7 @@ class FocusMode(str, Enum):
     SLEEPING = "sleeping"
     MORNING_PLAN = "morning_plan"
     AUTONOMY = "autonomy"
-    SELF_IMPROVEMENT = "self_improvement"
+    SELF_IMPROVEMENT = "self_programming"
 
 
 class TodayPlanStepStatus(str, Enum):
@@ -41,7 +41,7 @@ class TodayPlan(BaseModel):
     steps: list[TodayPlanStep] = Field(default_factory=list)
 
 
-class SelfImprovementStatus(str, Enum):
+class SelfProgrammingStatus(str, Enum):
     PENDING = "pending"
     DIAGNOSING = "diagnosing"
     PATCHING = "patching"
@@ -52,7 +52,7 @@ class SelfImprovementStatus(str, Enum):
     REJECTED = "rejected"
 
 
-class SelfImprovementVerification(BaseModel):
+class SelfProgrammingVerification(BaseModel):
     commands: list[str] = Field(default_factory=list)
     passed: bool = False
     summary: str | None = None
@@ -64,7 +64,7 @@ class EditKind(str, Enum):
     INSERT = "insert"
 
 
-class SelfImprovementEdit(BaseModel):
+class SelfProgrammingEdit(BaseModel):
     file_path: str
     search_text: str = ""
     replace_text: str = ""
@@ -73,17 +73,17 @@ class SelfImprovementEdit(BaseModel):
     file_content: str | None = None
 
 
-class SelfImprovementJob(BaseModel):
+class SelfProgrammingJob(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     reason: str
     target_area: str
-    status: SelfImprovementStatus
+    status: SelfProgrammingStatus
     spec: str
     patch_summary: str | None = None
-    red_verification: SelfImprovementVerification | None = None
-    verification: SelfImprovementVerification | None = None
-    test_edits: list[SelfImprovementEdit] = Field(default_factory=list)
-    edits: list[SelfImprovementEdit] = Field(default_factory=list)
+    red_verification: SelfProgrammingVerification | None = None
+    verification: SelfProgrammingVerification | None = None
+    test_edits: list[SelfProgrammingEdit] = Field(default_factory=list)
+    edits: list[SelfProgrammingEdit] = Field(default_factory=list)
     touched_files: list[str] = Field(default_factory=list)
     cooldown_until: datetime | None = None
 
@@ -118,7 +118,7 @@ class BeingState(BaseModel):
     active_goal_ids: list[str] = Field(default_factory=list)
     today_plan: TodayPlan | None = None
     last_action: ToolExecutionResult | None = None
-    self_improvement_job: SelfImprovementJob | None = None
+    self_programming_job: SelfProgrammingJob | None = None
     last_proactive_source: str | None = None
     last_proactive_at: datetime | None = None
 

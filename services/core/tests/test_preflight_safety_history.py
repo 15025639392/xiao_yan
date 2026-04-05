@@ -3,7 +3,7 @@
 覆盖范围：
 - SandboxEnvironment: 隔离执行、超时控制、语法检查、清理
 - ConflictDetector: 文件重叠、受保护路径、循环自改
-- SelfImprovementHistory: 记录/查询/统计/文件持久化
+- SelfProgrammingHistory: 记录/查询/统计/文件持久化
 - Executor.preflight_check: 集成预检流程
 - Service 层: PATCHING 中的预检集成
 """
@@ -19,30 +19,30 @@ import pytest
 
 from app.domain.models import (
     EditKind,
-    SelfImprovementEdit,
-    SelfImprovementJob,
-    SelfImprovementStatus,
-    SelfImprovementVerification,
+    SelfProgrammingEdit,
+    SelfProgrammingJob,
+    SelfProgrammingStatus,
+    SelfProgrammingVerification,
 )
-from app.self_improvement.executor import SelfImprovementExecutor
-from app.self_improvement.sandbox import (
+from app.self_programming.executor import SelfProgrammingExecutor
+from app.self_programming.sandbox import (
     SandboxConfig,
     SandboxEnvironment,
     SandboxResult,
 )
-from app.self_improvement.conflict_detector import (
+from app.self_programming.conflict_detector import (
     ConflictDetector,
     ConflictReport,
     ConflictSeverity,
     FileConflict,
     FREQUENT_EDIT_THRESHOLD,
 )
-from app.self_improvement.history_store import (
+from app.self_programming.history_store import (
     HistoryEntry,
     HistoryEntryStatus,
     MemoryBackend,
     FileBackend,
-    SelfImprovementHistory,
+    SelfProgrammingHistory,
 )
 
 
@@ -54,7 +54,7 @@ def _make_edit(
     file_path: str = "sample.py",
     kind: EditKind = EditKind.REPLACE,
     **kwargs,
-) -> SelfImprovementEdit:
+) -> SelfProgrammingEdit:
     base_kwargs: dict = {"file_path": file_path, "kind": kind}
     if kind == EditKind.REPLACE:
         base_kwargs.setdefault("search_text", "old code")
@@ -64,24 +64,24 @@ def _make_edit(
     elif kind == EditKind.INSERT:
         base_kwargs.setdefault("insert_after", "# anchor")
         base_kwargs.setdefault("replace_text", "\n# inserted\n")
-    return SelfImprovementEdit(**base_kwargs)
+    return SelfProgrammingEdit(**base_kwargs)
 
 
 def _make_job(
-    status: SelfImprovementStatus = SelfImprovementStatus.PATCHING,
-    edits: list[SelfImprovementEdit] | None = None,
+    status: SelfProgrammingStatus = SelfProgrammingStatus.PATCHING,
+    edits: list[SelfProgrammingEdit] | None = None,
     touched_files: list[str] | None = None,
     verification_cmds: list[str] | None = None,
-) -> SelfImprovementJob:
+) -> SelfProgrammingJob:
     edits = edits or [_make_edit()]
     touched_files = touched_files or [e.file_path for e in edits]
-    return SelfImprovementJob(
+    return SelfProgrammingJob(
         reason="test reason",
         target_area="testing",
         status=status,
         spec="fix the bug",
         edits=edits,
-        verification=SelfImprovementVerification(commands=verification_cmds or ["true"]),
+        verification=SelfProgrammingVerification(commands=verification_cmds or ["true"]),
         touched_files=touched_files,
     )
 
@@ -212,7 +212,7 @@ class TestSandboxIsolation:
 
         original = (workspace / "services" / "core" / "app" / "main.py").read_text(encoding="utf-8")
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="services/core/app/main.py",
             kind=EditKind.REPLACE,
             search_text='"old_value"',
@@ -337,7 +337,7 @@ class TestConflictOverlapDetection:
         history_job = MagicMock()
         history_job.touched_files = ["utils/helper.py"]
         history_job.edits = [
-            SelfImprovementEdit(
+            SelfProgrammingEdit(
                 file_path="utils/helper.py",
                 kind=EditKind.REPLACE,
                 search_text="def help(): pass",
@@ -346,7 +346,7 @@ class TestConflictOverlapDetection:
         ]
 
         # 新补丁也修改同一文件但不同位置
-        new_edit = SelfImprovementEdit(
+        new_edit = SelfProgrammingEdit(
             file_path="utils/helper.py",
             kind=EditKind.REPLACE,
             search_text="# helper",
@@ -366,10 +366,10 @@ class TestConflictOverlapDetection:
         history_job = MagicMock()
         history_job.touched_files = ["main.py"]
         history_job.edits = [
-            SelfImprovementEdit(file_path="main.py", search_text=search_target, replace_text="x"),
+            SelfProgrammingEdit(file_path="main.py", search_text=search_target, replace_text="x"),
         ]
 
-        new_edit = SelfImprovementEdit(file_path="main.py", search_text=search_target, replace_text="y")
+        new_edit = SelfProgrammingEdit(file_path="main.py", search_text=search_target, replace_text="y")
 
         report = detector.check([new_edit], applied_history=[history_job])
         assert report.severity == ConflictSeverity.WARNING
@@ -430,23 +430,23 @@ class TestCommonPrefixHelper:
     """公共前缀检测辅助函数。"""
 
     def test_long_common_prefix(self):
-        from app.self_improvement.conflict_detector import _share_common_prefix
+        from app.self_programming.conflict_detector import _share_common_prefix
         assert _share_common_prefix(
             "def calculate_total(items):",
             "def calculate_average(items):",
         ) is True
 
     def test_short_common_prefix(self):
-        from app.self_improvement.conflict_detector import _share_common_prefix
+        from app.self_programming.conflict_detector import _share_common_prefix
         assert _share_common_prefix("abc", "xyz") is False
 
     def test_identical_strings(self):
-        from app.self_improvement.conflict_detector import _share_common_prefix
+        from app.self_programming.conflict_detector import _share_common_prefix
         assert _share_common_prefix("same content", "same content") is True
 
 
 # ────────────────────────────────────────────
-# SelfImprovementHistory 测试
+# SelfProgrammingHistory 测试
 # ────────────────────────────────────────────
 
 
@@ -509,12 +509,12 @@ class TestFileBackend:
         assert isinstance(loaded, list)
 
 
-class TestSelfImprovementHistory:
+class TestSelfProgrammingHistory:
     """历史管理器完整功能。"""
 
     def test_record_from_job(self):
-        job = _make_job(status=SelfImprovementStatus.APPLIED)
-        history = SelfImprovementHistory(in_memory=True)
+        job = _make_job(status=SelfProgrammingStatus.APPLIED)
+        history = SelfProgrammingHistory(in_memory=True)
         entry = history.record_from_job(job)
 
         assert entry.job_id == job.id
@@ -523,16 +523,16 @@ class TestSelfImprovementHistory:
         assert history.count == 1
 
     def test_get_recent(self):
-        history = SelfImprovementHistory(in_memory=True)
+        history = SelfProgrammingHistory(in_memory=True)
         for i in range(5):
-            job = _make_job(status=SelfImprovementStatus.APPLIED)
+            job = _make_job(status=SelfProgrammingStatus.APPLIED)
             history.record_from_job(job)
 
         recent = history.get_recent(2)
         assert len(recent) == 2
 
     def test_get_for_file(self):
-        history = SelfImprovementHistory(in_memory=True)
+        history = SelfProgrammingHistory(in_memory=True)
 
         job_a = _make_job(
             edits=[_make_edit(file_path="alpha.py")],
@@ -551,12 +551,12 @@ class TestSelfImprovementHistory:
         assert history.get_for_file("nonexistent.py") == []
 
     def test_statistics(self):
-        history = SelfImprovementHistory(in_memory=True)
+        history = SelfProgrammingHistory(in_memory=True)
 
         # APPLIED jobs
         for area in ["agent", "planning", "agent"]:
             job = _make_job(
-                status=SelfImprovementStatus.APPLIED,
+                status=SelfProgrammingStatus.APPLIED,
                 edits=[_make_edit(file_path=f"{area}_file.py")],
                 touched_files=[f"{area}_file.py"],
             )
@@ -565,7 +565,7 @@ class TestSelfImprovementHistory:
             history.record_from_job(job)
 
         # FAILED job
-        fail_job = _make_job(status=SelfImprovementStatus.FAILED)
+        fail_job = _make_job(status=SelfProgrammingStatus.FAILED)
         history.record_from_job(fail_job)
 
         stats = history.get_statistics()
@@ -577,7 +577,7 @@ class TestSelfImprovementHistory:
         assert stats["success_rate"] == 75.0
 
     def test_clear_all(self):
-        history = SelfImprovementHistory(in_memory=True)
+        history = SelfProgrammingHistory(in_memory=True)
         history.record_from_job(_make_job())
         assert history.count > 0
         history.clear()
@@ -594,7 +594,7 @@ class TestPreflightCheck:
 
     def test_preflight_passes_when_clean(self, workspace):
         """无冲突 + 沙箱通过 → 正常继续。"""
-        executor = SelfImprovementExecutor(
+        executor = SelfProgrammingExecutor(
             workspace_root=workspace,
             enable_sandbox=True,
             enable_conflict_check=True,
@@ -608,12 +608,12 @@ class TestPreflightCheck:
         )
 
         checked = executor.preflight_check(job)
-        assert checked.status != SelfImprovementStatus.FAILED
+        assert checked.status != SelfProgrammingStatus.FAILED
         assert checked.sandbox_prechecked is True
 
     def test_preflight_blocks_protected_path(self, workspace):
         """受保护路径的补丁被阻止。"""
-        executor = SelfImprovementExecutor(
+        executor = SelfProgrammingExecutor(
             workspace_root=workspace,
             enable_sandbox=True,
             enable_conflict_check=True,
@@ -624,13 +624,13 @@ class TestPreflightCheck:
         )
 
         checked = executor.preflight_check(job)
-        assert checked.status == SelfImprovementStatus.FAILED
+        assert checked.status == SelfProgrammingStatus.FAILED
         assert "冲突检测阻止" in (checked.patch_summary or "")
         assert checked.sandbox_prechecked is False  # 被阻塞后不跑沙箱
 
     def test_preflight_skips_when_disabled(self, workspace):
         """禁用时不做任何检查，原样返回。"""
-        executor = SelfImprovementExecutor(
+        executor = SelfProgrammingExecutor(
             workspace_root=workspace,
             enable_sandbox=False,
             enable_conflict_check=False,
@@ -638,19 +638,19 @@ class TestPreflightCheck:
         job = _make_job()
 
         checked = executor.preflight_check(job)
-        assert checked.status == SelfImprovementStatus.PATCHING  # 原状态不变
+        assert checked.status == SelfProgrammingStatus.PATCHING  # 原状态不变
         assert checked.sandbox_prechecked is False
         assert checked.conflict_severity == "safe"
 
     def test_record_successful_apply(self, workspace):
         """成功 apply 后更新冲突检测器状态。"""
-        executor = SelfImprovementExecutor(
+        executor = SelfProgrammingExecutor(
             workspace_root=workspace,
             enable_sandbox=False,
         )
         target_file = "hot_target.py"
         job = _make_job(
-            status=SelfImprovementStatus.APPLIED,
+            status=SelfProgrammingStatus.APPLIED,
             edits=[_make_edit(file_path=target_file)],
             touched_files=[target_file],
         )
@@ -669,7 +669,7 @@ class TestPreflightCheck:
 def _make_applied_job():
     """创建已 APPLIED 的 Job。"""
     return _make_job(
-        status=SelfImprovementStatus.APPLIED,
+        status=SelfProgrammingStatus.APPLIED,
         edits=[_make_edit()],
         touched_files=["target.py"],
     )
@@ -698,12 +698,12 @@ class TestHistoryEntryModel:
         assert d["status"] == "applied"  # 枚举序列化为字符串
 
     def test_from_job_extraction(self):
-        job = SelfImprovementJob(
+        job = SelfProgrammingJob(
             reason="auto fix",
             target_area="ui",
             spec="change color",
-            status=SelfImprovementStatus.APPLIED,
-            branch_name="self-fix/ui-xxx",
+            status=SelfProgrammingStatus.APPLIED,
+            branch_name="self-programming/ui-xxx",
             commit_hash="abc123",
             candidate_label="candidate-A",
             edits=[_make_edit(file_path="style.tsx")],
@@ -712,6 +712,6 @@ class TestHistoryEntryModel:
         entry = HistoryEntry.from_job(job)
         assert entry.job_id == job.id
         assert entry.target_area == "ui"
-        assert entry.branch_name == "self-fix/ui-xxx"
+        assert entry.branch_name == "self-programming/ui-xxx"
         assert entry.commit_hash == "abc123"
         assert entry.candidate_label == "candidate-A"

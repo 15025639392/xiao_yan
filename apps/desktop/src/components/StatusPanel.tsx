@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import type {
   BeingState,
-  SelfImprovementEdit,
-  SelfImprovementJob,
+  SelfProgrammingEdit,
+  SelfProgrammingJob,
 } from "../lib/api";
-import { rollbackSelfImprovementJob } from "../lib/api";
+import { rollbackSelfProgrammingJob } from "../lib/api";
 import { ApprovalPanel } from "./ApprovalPanel";
 
 type StatusPanelProps = {
@@ -19,7 +19,7 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
   const planCompleted =
     state.today_plan?.steps.length &&
     state.today_plan.steps.every((step) => step.status === "completed");
-  const selfImprovementJob = state.self_improvement_job;
+  const selfProgrammingJob = state.self_programming_job;
 
   return (
     <section className="panel">
@@ -28,7 +28,7 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
           <div className="panel__icon">📋</div>
           <div>
             <h2 className="panel__title">今日计划</h2>
-            <p className="panel__subtitle">当前日程与自编程状态</p>
+            <p className="panel__subtitle">当前日程与自我编程状态</p>
           </div>
         </div>
         {state.today_plan ? (
@@ -89,17 +89,17 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
           </section>
         ) : null}
 
-        {/* 自编程面板 */}
-        {selfImprovementJob ? (
-          selfImprovementJob.status === "pending_approval" ? (
+        {/* 自我编程面板 */}
+        {selfProgrammingJob ? (
+          selfProgrammingJob.status === "pending_approval" ? (
             <ApprovalPanel
-              job={selfImprovementJob}
+              job={selfProgrammingJob}
               onDecision={(jobId, approved) => {
                 onApprovalDecision?.(jobId, approved);
               }}
             />
           ) : (
-            <SelfImprovementPanel job={selfImprovementJob} onRollback={onRollback} />
+            <SelfProgrammingPanel job={selfProgrammingJob} onRollback={onRollback} />
           )
         ) : null}
 
@@ -114,14 +114,14 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
 }
 
 // ══════════════════════════════════════════════
-// 🧬 自编程面板组件
+// 🧬 自我编程面板组件
 // ══════════════════════════════════════════════
 
-function SelfImprovementPanel({
+function SelfProgrammingPanel({
   job,
   onRollback,
 }: {
-  job: NonNullable<BeingState["self_improvement_job"]>;
+  job: NonNullable<BeingState["self_programming_job"]>;
   onRollback?: (jobId: string) => void;
 }) {
   const [showDiff, setShowDiff] = useState(false);
@@ -152,7 +152,7 @@ function SelfImprovementPanel({
     setRollbackErr(null);
 
     try {
-      const result = await rollbackSelfImprovementJob(job.id, "用户手动触发回滚");
+      const result = await rollbackSelfProgrammingJob(job.id, "用户手动触发回滚");
       setRollbackOk(result.message ?? "回滚成功");
       onRollback?.(job.id);
     } catch (e) {
@@ -168,7 +168,7 @@ function SelfImprovementPanel({
       <div className="si-panel__header" onClick={() => setShowDetails(!showDetails)} style={{ cursor: "pointer" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <span className="si-panel__icon">🧬</span>
-          <h3 style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600 }}>自编程系统</h3>
+          <h3 style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600 }}>自我编程</h3>
           {job.candidate_label ? (
             <span className="si-badge si-badge--candidate">{job.candidate_label}</span>
           ) : null}
@@ -179,7 +179,7 @@ function SelfImprovementPanel({
             <HealthRing score={job.health_score!} grade={job.health_grade!} />
           ) : null}
           <span className={`status-badge status-badge--${siStatusClass(job.status)}`}>
-            {renderSelfImprovementStatus(job.status)}
+            {renderSelfProgrammingStatus(job.status)}
           </span>
           <svg
             className="si-chevron"
@@ -209,7 +209,7 @@ function SelfImprovementPanel({
             </div>
             <div className="si-field">
               <span className="si-field__label">阶段</span>
-              <span className="si-field__value si-field__value--phase">{renderSelfImprovementStatus(job.status)}</span>
+              <span className="si-field__value si-field__value--phase">{renderSelfProgrammingStatus(job.status)}</span>
             </div>
           </div>
 
@@ -389,7 +389,7 @@ function SelfImprovementPanel({
             </div>
             <div className="modal__body">
               <p style={{ margin: "0 0 var(--space-3)" }}>
-                此操作将撤销自编程对以下文件的修改，恢复到修改前的状态：
+                此操作将撤销自我编程对以下文件的修改，恢复到修改前的状态：
               </p>
               <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-secondary)" }}>
                 {(job.touched_files ?? []).map((f) => (
@@ -429,7 +429,7 @@ function SelfImprovementPanel({
 // 子组件：Diff 查看器
 // ══════════════════════════════════════════════
 
-function DiffViewer({ edit, index }: { edit: SelfImprovementEdit; index: number }) {
+function DiffViewer({ edit, index }: { edit: SelfProgrammingEdit; index: number }) {
   const [expanded, setExpanded] = useState(false);
 
   if (edit.kind === "create") {
@@ -566,7 +566,7 @@ function CooldownTimer({ until }: { until: string }) {
 function renderFocusMode(focusMode: BeingState["focus_mode"]): string {
   if (focusMode === "morning_plan") return "晨间计划";
   if (focusMode === "autonomy") return "常规自主";
-  if (focusMode === "self_improvement") return "自我修复";
+  if (focusMode === "self_programming") return "自我编程";
   return "休眠";
 }
 
@@ -574,8 +574,8 @@ function renderModeLabel(mode: BeingState["mode"]): string {
   return mode === "awake" ? "运行中" : "休眠中";
 }
 
-function renderSelfImprovementStatus(
-  status: NonNullable<BeingState["self_improvement_job"]>["status"],
+function renderSelfProgrammingStatus(
+  status: NonNullable<BeingState["self_programming_job"]>["status"],
 ): string {
   const map: Record<string, string> = {
     pending: "待开始",
@@ -590,7 +590,7 @@ function renderSelfImprovementStatus(
   return map[status] ?? status;
 }
 
-/** 自编程状态 → badge CSS class */
+/** 自我编程状态 → badge CSS class */
 function siStatusClass(status: string): string {
   if (status === "applied") return "completed";
   if (status === "failed") return "abandoned";

@@ -108,7 +108,7 @@ def test_state_store_uses_persisted_state_as_initial_value(tmp_path: Path):
     assert reloaded.get().current_thought == "我还惦记着今天的整理。"
 
 
-def test_state_store_persists_self_improvement_job_to_disk(tmp_path: Path):
+def test_state_store_persists_self_programming_job_to_disk(tmp_path: Path):
     storage_path = tmp_path / "state.json"
     store = StateStore(storage_path=storage_path)
 
@@ -117,7 +117,7 @@ def test_state_store_persists_self_improvement_job_to_disk(tmp_path: Path):
             update={
                 "mode": WakeMode.AWAKE,
                 "focus_mode": FocusMode.SELF_IMPROVEMENT,
-                "self_improvement_job": {
+                "self_programming_job": {
                     "reason": "连续多次没有有效推进",
                     "target_area": "agent",
                     "status": "verifying",
@@ -136,6 +136,6 @@ def test_state_store_persists_self_improvement_job_to_disk(tmp_path: Path):
     reloaded = StateStore(storage_path=storage_path)
 
     assert updated.focus_mode == FocusMode.SELF_IMPROVEMENT
-    assert updated.self_improvement_job is not None
-    assert updated.self_improvement_job.status == "verifying"
+    assert updated.self_programming_job is not None
+    assert updated.self_programming_job.status == "verifying"
     assert reloaded.get() == updated

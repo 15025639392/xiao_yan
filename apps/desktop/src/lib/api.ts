@@ -13,7 +13,7 @@ export type TodayPlan = {
 
 export type EditKind = "replace" | "create" | "insert";
 
-export type SelfImprovementEdit = {
+export type SelfProgrammingEdit = {
   file_path: string;
   search_text?: string;
   replace_text?: string;
@@ -22,13 +22,13 @@ export type SelfImprovementEdit = {
   file_content?: string | null;
 };
 
-export type SelfImprovementVerification = {
+export type SelfProgrammingVerification = {
   commands: string[];
   passed: boolean;
   summary?: string | null;
 };
 
-export type SelfImprovementJob = {
+export type SelfProgrammingJob = {
   id: string;
   reason: string;
   target_area: string;
@@ -43,10 +43,10 @@ export type SelfImprovementJob = {
     | "rejected";
   spec: string;
   patch_summary?: string | null;
-  red_verification?: SelfImprovementVerification | null;
-  verification?: SelfImprovementVerification | null;
-  edits?: SelfImprovementEdit[];
-  test_edits?: SelfImprovementEdit[];
+  red_verification?: SelfProgrammingVerification | null;
+  verification?: SelfProgrammingVerification | null;
+  edits?: SelfProgrammingEdit[];
+  test_edits?: SelfProgrammingEdit[];
   touched_files?: string[];
   cooldown_until?: string | null;
 
@@ -74,8 +74,8 @@ export type SelfImprovementJob = {
   approval_reason?: string | null;
 };
 
-// 自编程历史记录
-export type SelfImprovementHistoryEntry = {
+// 自我编程历史记录
+export type SelfProgrammingHistoryEntry = {
   job_id: string;
   target_area: string;
   reason: string;
@@ -90,12 +90,12 @@ export type SelfImprovementHistoryEntry = {
 
 export type BeingState = {
   mode: "awake" | "sleeping";
-  focus_mode: "sleeping" | "morning_plan" | "autonomy" | "self_improvement";
+  focus_mode: "sleeping" | "morning_plan" | "autonomy" | "self_programming";
   current_thought: string | null;
   active_goal_ids: string[];
   today_plan?: TodayPlan | null;
   last_action?: ToolExecutionResult | null;
-  self_improvement_job?: SelfImprovementJob | null;
+  self_programming_job?: SelfProgrammingJob | null;
 };
 
 export type ChatResult = {
@@ -206,36 +206,36 @@ export function updateGoalStatus(
   return post<Goal>(`/goals/${goalId}/status`, { status });
 }
 
-// 自编程 API
+// 自我编程 API
 
-/** 获取自编程历史记录 */
-export function fetchSelfImprovementHistory(): Promise<{ entries: SelfImprovementHistoryEntry[] }> {
-  return get<{ entries: SelfImprovementHistoryEntry[] }>("/self-improvement/history");
+/** 获取自我编程历史记录 */
+export function fetchSelfProgrammingHistory(): Promise<{ entries: SelfProgrammingHistoryEntry[] }> {
+  return get<{ entries: SelfProgrammingHistoryEntry[] }>("/self-programming/history");
 }
 
 /** 触发回滚操作 */
-export function rollbackSelfImprovementJob(jobId: string, reason?: string): Promise<{ success: boolean; message: string }> {
-  return post<{ success: boolean; message: string }>(`/self-improvement/${jobId}/rollback`, { reason });
+export function rollbackSelfProgrammingJob(jobId: string, reason?: string): Promise<{ success: boolean; message: string }> {
+  return post<{ success: boolean; message: string }>(`/self-programming/${jobId}/rollback`, { reason });
 }
 
-/** 批准自编程 Job */
-export function approveSelfImprovementJob(
+/** 批准自我编程 Job */
+export function approveSelfProgrammingJob(
   jobId: string,
   reason?: string,
 ): Promise<{ success: boolean; message: string; job_id: string }> {
   return post<{ success: boolean; message: string; job_id: string }>(
-    `/self-improvement/${jobId}/approve`,
+    `/self-programming/${jobId}/approve`,
     reason ? { reason } : undefined,
   );
 }
 
-/** 拒绝自编程 Job */
-export function rejectSelfImprovementJob(
+/** 拒绝自我编程 Job */
+export function rejectSelfProgrammingJob(
   jobId: string,
   reason: string,
 ): Promise<{ success: boolean; message: string; job_id: string }> {
   return post<{ success: boolean; message: string; job_id: string }>(
-    `/self-improvement/${jobId}/reject`,
+    `/self-programming/${jobId}/reject`,
     { reason },
   );
 }

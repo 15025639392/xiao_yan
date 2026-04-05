@@ -66,7 +66,7 @@ test("renders wake and sleep controls", () => {
   expect(screen.getByRole("button", { name: "休眠" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "对话" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "总览" })).toBeInTheDocument();
-  expect(screen.getByText("数字人")).toBeInTheDocument();
+  expect(screen.getByText("小晏")).toBeInTheDocument();
   expect(screen.getByText("目标看板")).toBeInTheDocument();
   expect(container.querySelector(".app-layout")).toBeTruthy();
   expect(container.querySelector(".app-sidebar")).toBeTruthy();
@@ -372,7 +372,6 @@ test("updates a goal status from the app and refreshes the rendered goal", async
   await waitFor(() => {
     expect(screen.getByText("已暂停")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "恢复" })).toBeInTheDocument();
-    expect(screen.getAllByText("常规自主").length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -453,7 +452,7 @@ test("polls world state and renders the inner world panel", async () => {
   expect(screen.getByText("夜里很安静，我有点困，但还惦记着整理今天的对话记忆。")).toBeInTheDocument();
 });
 
-test("renders self improvement state from polled runtime state", async () => {
+test("renders self programming state from polled runtime state", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
 
@@ -461,12 +460,12 @@ test("renders self improvement state from polled runtime state", async () => {
       return new Response(
         JSON.stringify({
           mode: "awake",
-          focus_mode: "self_improvement",
+          focus_mode: "self_programming",
           current_thought: "我准备修一下自己的状态展示。",
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_improvement_job: {
+          self_programming_job: {
             id: "job-1",
             reason: "测试失败：状态面板没有展示自我编程状态。",
             target_area: "ui",

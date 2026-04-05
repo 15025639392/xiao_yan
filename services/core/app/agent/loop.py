@@ -10,10 +10,10 @@ from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
 from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanPlanner
 from app.runtime import StateStore
-from app.self_improvement.executor import SelfImprovementExecutor
-from app.self_improvement.llm_planner import LLMPlanner
-from app.self_improvement.planner import SelfImprovementPlanner
-from app.self_improvement.service import SelfImprovementService
+from app.self_programming.executor import SelfProgrammingExecutor
+from app.self_programming.llm_planner import LLMPlanner
+from app.self_programming.planner import SelfProgrammingPlanner
+from app.self_programming.service import SelfProgrammingService
 from app.tools.runner import CommandRunner
 from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
 from app.world.service import WorldStateService
@@ -31,7 +31,7 @@ class AutonomyLoop:
         world_state_service: WorldStateService | None = None,
         command_runner: CommandRunner | None = None,
         morning_plan_planner: MorningPlanPlanner | None = None,
-        self_improvement_service: SelfImprovementService | None = None,
+        self_programming_service: SelfProgrammingService | None = None,
         gateway=None,
     ) -> None:
         self.state_store = state_store
@@ -45,12 +45,12 @@ class AutonomyLoop:
         self.morning_plan_planner = morning_plan_planner or MorningPlanPlanner()
         workspace_root = _workspace_root()
 
-        # 构建自编程服务：优先使用 LLMPlanner（如果提供了 gateway）
-        if self_improvement_service is not None:
-            self.self_improvement_service = self_improvement_service
+        # 构建自我编程服务：优先使用 LLMPlanner（如果提供了 gateway）
+        if self_programming_service is not None:
+            self.self_programming_service = self_programming_service
         else:
-            rule_planner = SelfImprovementPlanner(workspace_root=workspace_root)
-            executor = SelfImprovementExecutor(workspace_root)
+            rule_planner = SelfProgrammingPlanner(workspace_root=workspace_root)
+            executor = SelfProgrammingExecutor(workspace_root)
             if gateway is not None:
                 llm_planner = LLMPlanner(
                     gateway=gateway,
@@ -60,7 +60,7 @@ class AutonomyLoop:
                 planner = llm_planner  # type: ignore[assignment]
             else:
                 planner = rule_planner  # type: ignore[assignment]
-            self.self_improvement_service = SelfImprovementService(
+            self.self_programming_service = SelfProgrammingService(
                 planner=planner,  # type: ignore[arg-type]
                 executor=executor,
             )
@@ -76,9 +76,9 @@ class AutonomyLoop:
         if transitioned:
             return state
         state = self._sync_focus_mode(state)
-        self_improvement_state = self._advance_self_improvement(state, recent_events, now)
-        if self_improvement_state is not None:
-            return self_improvement_state
+        self_programming_state = self._advance_self_programming(state, recent_events, now)
+        if self_programming_state is not None:
+            return self_programming_state
         world_state = self._world_state_for(state, now)
         seeded_plan_state = self._advance_morning_plan(state, now, world_state)
         if seeded_plan_state is not None:
@@ -407,25 +407,25 @@ class AutonomyLoop:
         next_state = state.model_copy(update=updates)
         return self.state_store.set(next_state)
 
-    def _advance_self_improvement(self, state, recent_events, now: datetime):
+    def _advance_self_programming(self, state, recent_events, now: datetime):
         if state.focus_mode == FocusMode.SELF_IMPROVEMENT:
-            next_state = self.self_improvement_service.tick_job(state)
+            next_state = self.self_programming_service.tick_job(state)
             if next_state is None:
                 return None
             if (
-                state.self_improvement_job is not None
-                and next_state.self_improvement_job is not None
-                and state.self_improvement_job.status != next_state.self_improvement_job.status
-                and next_state.self_improvement_job.status.value in {"applied", "failed"}
+                state.self_programming_job is not None
+                and next_state.self_programming_job is not None
+                and state.self_programming_job.status != next_state.self_programming_job.status
+                and next_state.self_programming_job.status.value in {"applied", "failed"}
             ):
                 entry = MemoryEntry.create(
                     kind=MemoryKind.EPISODIC,
-                    content=_build_self_improvement_memory(next_state.self_improvement_job),
+                    content=_build_self_programming_memory(next_state.self_programming_job),
                 )
                 self.memory_repository.save_event(MemoryEvent.from_entry(entry))
             return self.state_store.set(next_state)
 
-        next_state = self.self_improvement_service.maybe_start_job(
+        next_state = self.self_programming_service.maybe_start_job(
             state,
             recent_events,
             now,
@@ -709,7 +709,7 @@ def _build_chain_transition(goal_repository: GoalRepository, goal: Goal) -> str 
     return f"这条线已经接到第{summary.generation + 1}步了，"
 
 
-def _build_self_improvement_memory(job) -> str:
+def _build_self_programming_memory(job) -> str:
     if job.status.value == "applied":
         return f"我刚完成了一次自我编程，补强了 {job.target_area}，并通过了验证。"
     return f"我刚尝试自我编程，但还没通过验证：{job.patch_summary or job.reason}"

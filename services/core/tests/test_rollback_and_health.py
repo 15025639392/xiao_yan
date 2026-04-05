@@ -21,13 +21,13 @@ import pytest
 
 from app.domain.models import (
     EditKind,
-    SelfImprovementEdit,
-    SelfImprovementJob,
-    SelfImprovementStatus,
-    SelfImprovementVerification,
+    SelfProgrammingEdit,
+    SelfProgrammingJob,
+    SelfProgrammingStatus,
+    SelfProgrammingVerification,
 )
-from app.self_improvement.executor import SelfImprovementExecutor
-from app.self_improvement.health_checker import (
+from app.self_programming.executor import SelfProgrammingExecutor
+from app.self_programming.health_checker import (
     HealthChecker,
     HealthDimensionScore,
     HealthGrade,
@@ -36,7 +36,7 @@ from app.self_improvement.health_checker import (
     HealthTrend,
     HEALTH_DIMENSIONS,
 )
-from app.self_improvement.rollback_recovery import (
+from app.self_programming.rollback_recovery import (
     DiffSnapshot,
     RollbackPlan,
     RollbackReason,
@@ -55,7 +55,7 @@ def _make_edit(
     file_path: str = "sample.py",
     kind: EditKind = EditKind.REPLACE,
     **kwargs,
-) -> SelfImprovementEdit:
+) -> SelfProgrammingEdit:
     base_kwargs: dict = {"file_path": file_path, "kind": kind}
     if kind == EditKind.REPLACE:
         base_kwargs.setdefault("search_text", "old code")
@@ -65,24 +65,24 @@ def _make_edit(
     elif kind == EditKind.INSERT:
         base_kwargs.setdefault("insert_after", "# anchor")
         base_kwargs.setdefault("replace_text", "\n# inserted\n")
-    return SelfImprovementEdit(**base_kwargs)
+    return SelfProgrammingEdit(**base_kwargs)
 
 
 def _make_job(
-    status: SelfImprovementStatus = SelfImprovementStatus.PATCHING,
-    edits: list[SelfImprovementEdit] | None = None,
+    status: SelfProgrammingStatus = SelfProgrammingStatus.PATCHING,
+    edits: list[SelfProgrammingEdit] | None = None,
     touched_files: list[str] | None = None,
     verification_cmds: list[str] | None = None,
-) -> SelfImprovementJob:
+) -> SelfProgrammingJob:
     edits = edits or [_make_edit()]
     touched_files = touched_files or [e.file_path for e in edits]
-    return SelfImprovementJob(
+    return SelfProgrammingJob(
         reason="test reason",
         target_area="testing",
         status=status,
         spec="fix the bug",
         edits=edits,
-        verification=SelfImprovementVerification(commands=verification_cmds or ["true"]),
+        verification=SelfProgrammingVerification(commands=verification_cmds or ["true"]),
         touched_files=touched_files,
     )
 
@@ -123,10 +123,10 @@ def recovery(workspace: Path) -> RollbackRecovery:
 
 
 @pytest.fixture
-def executor(workspace: Path) -> SelfImprovementExecutor:
+def executor(workspace: Path) -> SelfProgrammingExecutor:
     """创建集成回滚与健康检查的 Executor。"""
-    from app.self_improvement.rollback_recovery import RollbackRecovery
-    return SelfImprovementExecutor(
+    from app.self_programming.rollback_recovery import RollbackRecovery
+    return SelfProgrammingExecutor(
         workspace_root=workspace,
         rollback_recovery=RollbackRecovery(workspace_root=workspace),
     )
@@ -254,7 +254,7 @@ class TestRollbackRecoveryBasic:
         assert plan.reason == RollbackReason.VERIFICATION_FAILED
         assert len(plan.snapshots) > 0
         assert len(plan.affected_files) > 0
-        assert "[self-fix]" not in plan.summary  # 这是 rollback 的 summary
+        assert "[self-programming]" not in plan.summary  # 这是 rollback 的 summary
 
     def test_create_rollback_plan_no_snapshots(self, recovery):
         """无快照时创建空计划（降级处理）。"""
@@ -515,7 +515,7 @@ class TestHealthDataModels:
             recommendations=["建议 A", "建议 B"],
         )
         full = report.full_report
-        assert "=== 自编程健康度报告 ===" in full
+        assert "=== 自我编程健康度报告 ===" in full
         assert "79.0" in full
         assert "hot_module" in full
         assert "建议 A" in full
@@ -536,7 +536,7 @@ class TestHealthDataModels:
         names = [d[0] for d in HEALTH_DIMENSIONS]
         total_weight = sum(d[1] for d in HEALTH_DIMENSIONS)
         assert "test_pass_rate" in names
-        assert "improvement_frequency" in names
+        assert "programming_frequency" in names
         assert "rollback_rate" in names
         assert "conflict_rate" in names
         assert "file_stability" in names
@@ -556,7 +556,7 @@ class TestHealthCheckerScoring:
         checker = HealthChecker()
         signals = [
             HealthSignal("tests", "test_pass_rate", 100.0, "%"),
-            HealthSignal("internal", "improvement_count", 0.5, "count"),
+            HealthSignal("internal", "programming_count", 0.5, "count"),
         ]
         report = checker.check(signals=signals, recent_rollbacks=0, recent_conflicts=0)
 
@@ -590,7 +590,7 @@ class TestHealthCheckerScoring:
 
     def test_frequent_edits_detected(self):
         """频繁修改同一文件在 file_stability 维度扣分。"""
-        from app.self_improvement.history_store import HistoryEntry
+        from app.self_programming.history_store import HistoryEntry
 
         checker = HealthChecker(degrading_threshold=2)
         entries = []
@@ -624,7 +624,7 @@ class TestHealthCheckerScoring:
         dim_names = [d.name for d in report.dimensions]
         assert len(dim_names) == 5
         # 维度名称是中文（如 "测试通过率"），不是英文 key
-        expected_names = ["测试通过率", "自编程频率", "回滚率", "冲突率", "文件稳定性"]
+        expected_names = ["测试通过率", "自我编程频率", "回滚率", "冲突率", "文件稳定性"]
         for name in expected_names:
             assert name in dim_names, f"Missing dimension: {name}"
 
@@ -722,7 +722,7 @@ class TestHealthTrendAndDecisions:
 
     def test_get_degrading_files(self):
         """提取退化文件列表。"""
-        from app.self_improvement.history_store import HistoryEntry
+        from app.self_programming.history_store import HistoryEntry
 
         checker = HealthChecker(degrading_threshold=2)
         history = []
@@ -780,7 +780,7 @@ class TestExecutorHealthIntegration:
         """apply 后自动创建差异快照。"""
         target = workspace / "services" / "core" / "app" / "main.py"
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="services/core/app/main.py",
             kind=EditKind.REPLACE,
             search_text='return "old_value"',
@@ -790,7 +790,7 @@ class TestExecutorHealthIntegration:
 
         applied = executor.apply(job)
 
-        assert applied.status == SelfImprovementStatus.VERIFYING
+        assert applied.status == SelfProgrammingStatus.VERIFYING
         assert applied.snapshot_taken is True
         assert executor.recovery.has_snapshot(applied.id)
 
@@ -804,7 +804,7 @@ class TestExecutorHealthIntegration:
         )
         original_content = target.read_text(encoding="utf-8")
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="test_target.py",
             kind=EditKind.REPLACE,
             search_text='return "old_value"',
@@ -814,7 +814,7 @@ class TestExecutorHealthIntegration:
 
         # apply → 修改了文件
         applied = executor.apply(job)
-        assert applied.status == SelfImprovementStatus.VERIFYING
+        assert applied.status == SelfProgrammingStatus.VERIFYING
         assert "ROLLBACK_ME" in target.read_text(encoding="utf-8")
 
         # smart rollback
@@ -840,7 +840,7 @@ class TestExecutorHealthIntegration:
 
     def test_executor_without_recovery_safe(self, workspace):
         """没有注入 recovery 时 Executor 仍能正常工作。"""
-        exe = SelfImprovementExecutor(
+        exe = SelfProgrammingExecutor(
             workspace_root=workspace,
             rollback_recovery=None,
             enable_sandbox=False,
@@ -855,7 +855,7 @@ class TestExecutorHealthIntegration:
         job = _make_job(edits=[edit], touched_files=["services/core/app/main.py"])
         applied = exe.apply(job)
         # apply 可能成功(VERIFYING) 或失败(search_text not found)
-        assert applied.status in (SelfImprovementStatus.VERIFYING, SelfImprovementStatus.FAILED)
+        assert applied.status in (SelfProgrammingStatus.VERIFYING, SelfProgrammingStatus.FAILED)
 
 
 # ════════════════════════════════════════════
@@ -871,48 +871,48 @@ class TestServiceHealthIntegration:
         return BeingState(
             mode=__import__("app.domain.models", fromlist=["WakeMode"]).WakeMode.AWAKE,
             focus_mode=FocusMode.SELF_IMPROVEMENT,
-            self_improvement_job=job,
+            self_programming_job=job,
         )
 
     def test_service_has_health_checker(self):
         """Service 默认包含健康检查器。"""
-        from app.self_improvement.service import SelfImprovementService
-        svc = SelfImprovementService()
+        from app.self_programming.service import SelfProgrammingService
+        svc = SelfProgrammingService()
         assert svc.health_checker is not None
         assert isinstance(svc.health_checker, HealthChecker)
 
     def test_service_accepts_custom_checker(self):
         """支持注入自定义 HealthChecker。"""
-        from app.self_improvement.service import SelfImprovementService
+        from app.self_programming.service import SelfProgrammingService
         custom = HealthChecker(rollback_threshold=20.0)
-        svc = SelfImprovementService(health_checker=custom)
+        svc = SelfProgrammingService(health_checker=custom)
         assert svc.health_checker is custom
         assert svc.health_checker.rollback_threshold == 20.0
 
     def test_applied_job_gets_health_annotation(self, workspace):
         """APPLIED 的 Job 在 service 层获得健康分标记。"""
-        from app.self_improvement.service import SelfImprovementService
+        from app.self_programming.service import SelfProgrammingService
         from app.domain.models import BeingState, FocusMode, WakeMode
 
         # 准备源文件
         src = workspace / "health_test.py"
         src.write_text('val = "old"\n', encoding="utf-8")
 
-        exe = SelfImprovementExecutor(
+        exe = SelfProgrammingExecutor(
             workspace_root=workspace,
             enable_sandbox=False,
             enable_conflict_check=False,
         )
-        svc = SelfImprovementService(executor=exe)
+        svc = SelfProgrammingService(executor=exe)
 
-        edit = SelfImprovementEdit(
+        edit = SelfProgrammingEdit(
             file_path="health_test.py",
             kind=EditKind.REPLACE,
             search_text='"old"',
             replace_text='"new"',
         )
         job = _make_job(
-            status=SelfImprovementStatus.VERIFYING,
+            status=SelfProgrammingStatus.VERIFYING,
             edits=[edit],
             touched_files=["health_test.py"],
         )
@@ -920,20 +920,20 @@ class TestServiceHealthIntegration:
         state = self._make_state(job)
         new_state = svc.tick_job(state)
 
-        if new_state and new_state.self_improvement_job:
-            final_job = new_state.self_improvement_job
-            if final_job.status == SelfImprovementStatus.APPLIED:
+        if new_state and new_state.self_programming_job:
+            final_job = new_state.self_programming_job
+            if final_job.status == SelfProgrammingStatus.APPLIED:
                 # 健康检查字段可能已被填充
                 assert hasattr(final_job, 'health_score')
                 assert hasattr(final_job, 'health_grade')
 
     def test_health_check_non_blocking_on_failure(self):
         """健康检查不会阻塞 FAILED 状态的正常流转。"""
-        from app.self_improvement.service import SelfImprovementService
+        from app.self_programming.service import SelfProgrammingService
         from app.domain.models import BeingState, FocusMode, WakeMode
 
-        svc = SelfImprovementService()
-        failed_job = _make_job(status=SelfImprovementStatus.FAILED)
+        svc = SelfProgrammingService()
+        failed_job = _make_job(status=SelfProgrammingStatus.FAILED)
         state = self._make_state(failed_job)
 
         result = svc.tick_job(state)

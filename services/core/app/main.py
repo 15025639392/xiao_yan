@@ -19,7 +19,7 @@ from app.config import (
     is_morning_plan_llm_enabled,
 )
 from app.agent.loop import AutonomyLoop
-from app.domain.models import BeingState, FocusMode, SelfImprovementStatus, WakeMode
+from app.domain.models import BeingState, FocusMode, SelfProgrammingStatus, WakeMode
 from app.goals.models import Goal, GoalStatus, GoalStatusUpdate
 from app.goals.repository import FileGoalRepository, GoalRepository
 from app.llm.gateway import ChatGateway
@@ -102,7 +102,7 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
     )
     stop_event = Event()
 
-    # 尝试创建 Gateway（用于 LLM 自编程），失败则不注入
+    # 尝试创建 Gateway（用于 LLM 自我编程），失败则不注入
     try:
         loop_gateway = ChatGateway.from_env()
     except RuntimeError:
@@ -365,8 +365,8 @@ def _find_latest_today_plan_completion(memory_repository: MemoryRepository) -> s
     )
 
 
-def _summarize_latest_self_improvement(state) -> str | None:
-    job = state.self_improvement_job
+def _summarize_latest_self_programming(state) -> str | None:
+    job = state.self_programming_job
     if job is None:
         return None
     if job.status.value == "applied":
@@ -505,7 +505,7 @@ def wake(
     recent_autobio = _find_recent_autobio(memory_repository)
     selected_goal = _select_wake_goal(goal_repository, recent_autobio)
     waking_state = wake_up(recent_autobio=recent_autobio).model_copy(
-        update={"self_improvement_job": current_state.self_improvement_job}
+        update={"self_programming_job": current_state.self_programming_job}
     )
 
     if selected_goal is not None:
@@ -564,19 +564,19 @@ def chat(
         else goal_repository.get_goal(state.active_goal_ids[0])
     )
     latest_plan_completion = _find_latest_today_plan_completion(memory_repository)
-    latest_self_improvement = _summarize_latest_self_improvement(state)
+    latest_self_programming = _summarize_latest_self_programming(state)
 
-    # Phase 7: 注入人格 system prompt + 情绪推断
+    # 注入人格 system prompt + 情绪推断
     persona_system_prompt = persona_service.build_system_prompt()
     persona_service.infer_chat_emotion(request.message)
 
-    # Phase 8: 注入记忆上下文到 prompt
+    # 注入记忆上下文到 prompt
     memory_context = memory_service.build_memory_prompt_context(
         user_message=request.message,
         max_chars=600,
     )
 
-    # Phase 9: 计算情绪驱动的表达风格覆盖
+    # 计算情绪驱动的表达风格覆盖
     current_emotion = persona_service.profile.emotion
     style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
     style_override = style_mapper.map_from_state(current_emotion)
@@ -587,7 +587,7 @@ def chat(
         instructions=build_chat_instructions(
             focus_goal_title=None if focus_goal is None else focus_goal.title,
             latest_plan_completion=latest_plan_completion,
-            latest_self_improvement=latest_self_improvement,
+            latest_self_programming=latest_self_programming,
             user_message=request.message,
             persona_system_prompt=persona_system_prompt,
             memory_context=memory_context or None,
@@ -609,7 +609,7 @@ def chat(
     memory_repository.save_event(MemoryEvent.from_entry(user_entry))
     memory_repository.save_event(MemoryEvent.from_entry(assistant_entry))
 
-    # Phase 8: 从对话中自动提取结构化记忆
+    # 从对话中自动提取结构化记忆
     extracted = memory_service.extract_from_conversation(
         user_message=request.message,
         assistant_response=result.output_text,
@@ -621,7 +621,7 @@ def chat(
 
 
 # ═══════════════════════════════════════════════════
-# Phase 6: 审批交互 API
+# 审批交互 API
 # ═══════════════════════════════════════════════════
 
 class ApprovalRequest(BaseModel):
@@ -629,59 +629,59 @@ class ApprovalRequest(BaseModel):
     reason: str | None = None  # 可选：拒绝原因或审批备注
 
 
-@app.post("/self-improvement/{job_id}/approve")
+@app.post("/self-programming/{job_id}/approve")
 def approve_job(
     job_id: str,
     request: ApprovalRequest | None = None,
     state_store: StateStore = Depends(get_state_store),
 ) -> dict:
-    """批准自编程 Job — 将状态从 pending_approval 推进到 verifying"""
-    from app.self_improvement.service import SelfImprovementService
+    """批准自我编程 Job — 将状态从 pending_approval 推进到 verifying"""
+    from app.self_programming.service import SelfProgrammingService
 
     state = state_store.get()
-    job = state.self_improvement_job
+    job = state.self_programming_job
     if job is None or job.id != job_id:
         raise HTTPException(status_code=404, detail="Job not found or not current")
-    if job.status != SelfImprovementStatus.PENDING_APPROVAL:
+    if job.status != SelfProgrammingStatus.PENDING_APPROVAL:
         raise HTTPException(status_code=409, detail=f"Job status is {job.status.value}, not pending_approval")
 
     # 推进到 VERIFYING 阶段（后续 tick_job 会接手验证流程）
     approved_job = job.model_copy(
         update={
-            "status": SelfImprovementStatus.VERIFYING,
+            "status": SelfProgrammingStatus.VERIFYING,
             "current_thought_override": "用户已批准，开始执行验证...",
         }
     )
     # 更新状态
     new_state = state.model_copy(
         update={
-            "self_improvement_job": approved_job,
-            "current_thought": f"太好了，我的自编程方案得到了批准，正在对 {job.target_area} 执行验证。",
+            "self_programming_job": approved_job,
+            "current_thought": f"太好了，我的自我编程方案得到了批准，正在对 {job.target_area} 执行验证。",
         }
     )
     state_store.set(new_state)
     return {"success": True, "message": "已批准", "job_id": job_id}
 
 
-@app.post("/self-improvement/{job_id}/reject")
+@app.post("/self-programming/{job_id}/reject")
 def reject_job(
     job_id: str,
     request: ApprovalRequest,
     state_store: StateStore = Depends(get_state_store),
 ) -> dict:
-    """拒绝自编程 Job — 标记为 rejected 并回滚（如果已 apply）"""
-    from app.self_improvement.executor import SelfImprovementExecutor
+    """拒绝自我编程 Job — 标记为 rejected 并回滚（如果已 apply）"""
+    from app.self_programming.executor import SelfProgrammingExecutor
 
     state = state_store.get()
-    job = state.self_improvement_job
+    job = state.self_programming_job
     if job is None or job.id != job_id:
         raise HTTPException(status_code=404, detail="Job not found or not current")
-    if job.status != SelfImprovementStatus.PENDING_APPROVAL:
+    if job.status != SelfProgrammingStatus.PENDING_APPROVAL:
         raise HTTPException(status_code=409, detail=f"Job status is {job.status.value}, not pending_approval")
 
     rejected_job = job.model_copy(
         update={
-            "status": SelfImprovementStatus.REJECTED,
+            "status": SelfProgrammingStatus.REJECTED,
             "approval_reason": request.reason or "用户拒绝",
             "rollback_info": f"被用户拒绝: {request.reason or '无原因'}",
         }
@@ -696,9 +696,9 @@ def _finish_state_with_rejection(state: BeingState, job) -> BeingState:
     return state.model_copy(
         update={
             "focus_mode": FocusMode.AUTONOMY,
-            "self_improvement_job": job,
+            "self_programming_job": job,
             "current_thought": (
-                f"这次关于 {job.target_area} 的自编程被拒绝了。"
+                f"这次关于 {job.target_area} 的自我编程被拒绝了。"
                 f"原因：{job.approval_reason or '未知'}。"
                 "我会记住这次的教训，下次做得更好。"
             ),
@@ -707,23 +707,23 @@ def _finish_state_with_rejection(state: BeingState, job) -> BeingState:
 
 
 # ═══════════════════════════════════════════════════
-# 自编程历史 / 回滚 / 健康度 API（前端已对接）
+# 自我编程历史 / 回滚 / 健康度 API（前端已对接）
 # ═══════════════════════════════════════════════════
 
 def _get_history() -> Any:
-    """懒加载获取 SelfImprovementHistory 实例。"""
-    from app.self_improvement.history_store import SelfImprovementHistory
+    """懒加载获取 SelfProgrammingHistory 实例。"""
+    from app.self_programming.history_store import SelfProgrammingHistory
 
     if not hasattr(_get_history, "_instance"):
-        _get_history._instance = SelfImprovementHistory(in_memory=True)
+        _get_history._instance = SelfProgrammingHistory(in_memory=True)
     return _get_history._instance
 
 
-@app.get("/self-improvement/history")
-def get_self_improvement_history(
+@app.get("/self-programming/history")
+def get_self_programming_history(
     limit: int = 50,
 ) -> dict:
-    """获取自编程历史记录列表。"""
+    """获取自我编程历史记录列表。"""
     history = _get_history()
     entries = history.get_recent(limit)
     return {
@@ -745,17 +745,17 @@ def get_self_improvement_history(
     }
 
 
-@app.post("/self-improvement/{job_id}/rollback")
+@app.post("/self-programming/{job_id}/rollback")
 def rollback_job_endpoint(
     job_id: str,
     request: ApprovalRequest | None = None,
     state_store: StateStore = Depends(get_state_store),
 ) -> dict:
-    """回滚指定自编程 Job。"""
-    from app.self_improvement.executor import SelfImprovementExecutor
+    """回滚指定自我编程 Job。"""
+    from app.self_programming.executor import SelfProgrammingExecutor
 
     state = state_store.get()
-    job = state.self_improvement_job
+    job = state.self_programming_job
 
     # 允许对当前活跃 job 或指定 job 执行回滚
     if job is not None and job.id == job_id:
@@ -764,14 +764,14 @@ def rollback_job_endpoint(
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found in current state")
 
     try:
-        executor = SelfImprovementExecutor()
+        executor = SelfProgrammingExecutor()
         result = executor.rollback(target_job, reason=request.reason if request else None)
 
         rollback_info = getattr(result, 'rollback_info', '') or ''
         new_state = state.model_copy(
             update={
-                "self_improvement_job": result,
-                "current_thought": f"自编程 {job_id} 已回滚: {rollback_info[:100]}",
+                "self_programming_job": result,
+                "current_thought": f"自我编程 {job_id} 已回滚: {rollback_info[:100]}",
             }
         )
         state_store.set(new_state)
@@ -782,7 +782,7 @@ def rollback_job_endpoint(
 
 
 # ═══════════════════════════════════════════════════
-# Phase 7: 人格内核 API
+# 人格 API
 # ═══════════════════════════════════════════════════
 
 
@@ -883,7 +883,7 @@ def get_emotion_state(
 
 
 # ═══════════════════════════════════════════════════
-# Phase 8: 记忆与人格联动 API
+# 记忆与人格联动 API
 # ═══════════════════════════════════════════════════
 
 
@@ -1039,7 +1039,7 @@ def star_memory(
 
 
 # ═══════════════════════════════════════════════════
-# Tools Phase: 工具执行 API
+# 工具执行 API
 # ═══════════════════════════════════════════════════
 
 # ── 依赖注入 ────────────────────────────────────────

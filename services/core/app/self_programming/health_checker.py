@@ -1,7 +1,7 @@
 """
-自编程健康度评估器 — 自编程能力的 Phase 5 核心之二
+自我编程健康度评估器
 
-在自编程补丁应用后，评估系统健康状态：
+在自我编程补丁应用后，评估系统健康状态：
 
 1. 多维健康评分 — 从 5 个维度打分（总分 100）
 2. 信号收集 — 收集测试失败率/频率/模式等健康信号
@@ -123,7 +123,7 @@ class HealthReport:
     @property
     def full_report(self) -> str:
         """多行详细报告。"""
-        lines = [f"=== 自编程健康度报告 ===", f""]
+        lines = [f"=== 自我编程健康度报告 ===", f""]
         lines.append(f"总分: {self.overall_score:.1f}/100  |  等级: {self.grade.value}  |  趋势: {self.trend.value}")
         lines.append(f"时间: {self.generated_at}  |  窗口: {self.window_seconds / 3600:.1f}h")
         lines.append(f"")
@@ -160,7 +160,7 @@ class HealthReport:
 # (名称, 权重, 描述)
 HEALTH_DIMENSIONS = [
     ("test_pass_rate", 35, "测试通过率"),
-    ("improvement_frequency", 20, "自编程频率"),
+    ("programming_frequency", 20, "自我编程频率"),
     ("rollback_rate", 20, "近期回滚率"),
     ("conflict_rate", 15, "冲突告警比例"),
     ("file_stability", 10, "文件修改稳定性"),
@@ -171,7 +171,7 @@ HEALTH_DIMENSIONS = [
 
 
 class HealthChecker:
-    """自编程健康度评估器。
+    """自我编程健康度评估器。
 
     用法::
 
@@ -180,7 +180,7 @@ class HealthChecker:
         # 收集信号
         signals = [
             HealthSignal("test_runner", "test_pass_rate", 95.0, "%"),
-            HealthSignal("internal", "improvement_count", 3.0, "count"),
+            HealthSignal("internal", "programming_count", 3.0, "count"),
         ]
 
         # 评估健康度
@@ -226,7 +226,7 @@ class HealthChecker:
 
         Args:
             signals: 原始健康信号列表
-            history: 最近的自编程历史条目（HistoryEntry 或类似对象）
+            history: 最近的自我编程历史条目（HistoryEntry 或类似对象）
             recent_rollbacks: 近期回滚次数
             recent_conflicts: 近期冲突告警数
 
@@ -363,8 +363,8 @@ class HealthChecker:
             # 延迟构建 scorer lambda，确保闭包能捕获所需变量
             if dim_name == "test_pass_rate":
                 scorer = lambda: self._score_test_pass_rate(signal_map)
-            elif dim_name == "improvement_frequency":
-                scorer = lambda: self._score_improvement_frequency(signal_map, history)
+            elif dim_name == "programming_frequency":
+                scorer = lambda: self._score_programming_frequency(signal_map, history)
             elif dim_name == "rollback_rate":
                 scorer = lambda: self._score_rollback_rate(recent_rollbacks, history)
             elif dim_name == "conflict_rate":
@@ -404,25 +404,25 @@ class HealthChecker:
             details="无最新测试数据，假设正常",
         )
 
-    def _score_improvement_frequency(
+    def _score_programming_frequency(
         self,
         signal_map: dict[str, HealthSignal],
         history: list[Any] | None,
     ) -> HealthDimensionScore:
-        """维度 2: 自编程频率（权重 20%）。"""
-        sig = signal_map.get("improvement_count") or signal_map.get("edit_frequency")
+        """维度 2: 自我编程频率（权重 20%）。"""
+        sig = signal_map.get("programming_count") or signal_map.get("edit_frequency")
         if sig is not None:
             count = sig.value
             if count <= 1:
-                score, detail = 95.0, f"自编程频率正常 ({count:.1f} 次)"
+                score, detail = 95.0, f"自我编程频率正常 ({count:.1f} 次)"
             elif count <= 3:
-                score, detail = 75.0, f"自编程稍频繁 ({count:.1f} 次)"
+                score, detail = 75.0, f"自我编程稍频繁 ({count:.1f} 次)"
             elif count <= 6:
-                score, detail = 50.0, f"⚠️ 自编程频繁 ({count:.1f} 次)，可能不稳定"
+                score, detail = 50.0, f"⚠️ 自我编程频繁 ({count:.1f} 次)，可能不稳定"
             else:
-                score, detail = 25.0, f"🔴 自编程过于频繁 ({count:.1f} 次)，系统可能进入修复循环"
+                score, detail = 25.0, f"🔴 自我编程过于频繁 ({count:.1f} 次)，系统可能进入修复循环"
             return HealthDimensionScore(
-                name="自编程频率", score=score, weight=20,
+                name="自我编程频率", score=score, weight=20,
                 weighted_score=round(score * 20 / 100, 2),
                 details=detail,
             )
@@ -436,13 +436,13 @@ class HealthChecker:
             else:
                 score = 45.0
             return HealthDimensionScore(
-                name="自编程频率", score=score, weight=20,
+                name="自我编程频率", score=score, weight=20,
                 weighted_score=round(score * 20 / 100, 2),
-                details=f"最近 {count_in_window} 次自编程操作",
+                details=f"最近 {count_in_window} 次自我编程操作",
             )
 
         return HealthDimensionScore(
-            name="自编程频率", score=85.0, weight=20,
+            name="自我编程频率", score=85.0, weight=20,
             weighted_score=round(85.0 * 20 / 100, 2),
             details="无频率数据",
         )
@@ -599,14 +599,14 @@ class HealthChecker:
         elif overall >= 40:
             recs.append("⚠️ 健康状况较差，强烈建议审查最近的改动。")
         else:
-            recs.append("🔴 系统健康危急，建议立即回滚最近的自编程操作。")
+            recs.append("🔴 系统健康危急，建议立即回滚最近的自我编程操作。")
 
         low_dims = [d for d in dimensions if d.score < 60]
         for d in low_dims[:3]:
             if d.name == "测试通过率":
                 recs.append(f"• 测试通过率偏低({d.score:.0f})：检查是否有回归问题")
-            elif d.name == "自编程频率":
-                recs.append(f"• 自编程过于频繁({d.score:.0f})：考虑增加冷却时间")
+            elif d.name == "自我编程频率":
+                recs.append(f"• 自我编程过于频繁({d.score:.0f})：考虑增加冷却时间")
             elif d.name == "回滚率":
                 recs.append(f"• 回滚率较高({d.score:.0f})：说明补丁质量需要提升")
             elif d.name == "冲突率":

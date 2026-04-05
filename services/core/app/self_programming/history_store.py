@@ -1,9 +1,9 @@
 """
-自编程历史记录 — 自编程能力的 Phase 4 核心之三
+自我编程历史记录
 
-持久化存储所有自编程操作的历史，用于：
+持久化存储所有自我编程操作的历史，用于：
 1. 冲突检测（查看最近修改了哪些文件）
-2. 趋势分析（哪些模块最常被自编程修改）
+2. 趋势分析（哪些模块最常被自我编程修改）
 3. 审计追踪（谁/何时/为什么做了什么改动）
 4. 回滚定位（通过历史快速找到要回滚的 Job）
 
@@ -39,7 +39,7 @@ class HistoryEntryStatus(str, Enum):
 
 @dataclass
 class HistoryEntry:
-    """一条完整的自编程历史记录。"""
+    """一条完整的自我编程历史记录。"""
 
     job_id: str
     target_area: str
@@ -82,7 +82,7 @@ class HistoryEntry:
 
     @classmethod
     def from_job(cls, job: Any, **overrides) -> "HistoryEntry":
-        """从 SelfImprovementJob 创建历史条目。"""
+        """从 SelfProgrammingJob 创建历史条目。"""
         status_map = {
             "applied": HistoryEntryStatus.APPLIED,
             "failed": HistoryEntryStatus.FAILED,
@@ -215,19 +215,19 @@ class FileBackend:
 # ── 主类 ────────────────────────────────────────────────
 
 
-class SelfImprovementHistory:
-    """自编程历史记录管理器。
+class SelfProgrammingHistory:
+    """自我编程历史记录管理器。
 
     用法::
 
-        history = SelfImprovementHistory(workspace_root / ".self-improvement-history.json")
+        history = SelfProgrammingHistory(workspace_root / ".self-programming-history.json")
         history.record_from_job(applied_job)
 
         recent = history.get_recent(10)
         stats = history.get_statistics()
     """
 
-    DEFAULT_FILENAME = ".self-improvement-history.json"
+    DEFAULT_FILENAME = ".self-programming-history.json"
 
     def __init__(
         self,
@@ -317,7 +317,7 @@ class SelfImprovementHistory:
     def clear(self) -> None:
         """清除全部历史。"""
         self.backend.clear()
-        logger.info("Cleared all improvement history")
+        logger.info("Cleared all self-programming history")
 
     @property
     def count(self) -> int:
