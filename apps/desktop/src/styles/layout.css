@@ -41,6 +41,52 @@
   background: var(--bg-surface-elevated);
 }
 
+.app-sidebar__brand-dropdown {
+  position: relative;
+}
+
+.app-sidebar__brand-chevron {
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  opacity: 0.5;
+}
+
+.app-sidebar__brand-chevron--open {
+  transform: rotate(180deg);
+}
+
+.app-sidebar__brand-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.app-sidebar__brand-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.app-sidebar__brand-menu-item:hover {
+  background: var(--bg-surface-elevated);
+}
+
 .app-sidebar__logo {
   font-size: 1.25rem;
 }

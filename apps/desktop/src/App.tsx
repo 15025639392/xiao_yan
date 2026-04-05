@@ -47,7 +47,8 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">(() => loadThemePreference());
-  const [showHistory, setShowHistory] = useState(false);
+  const [showBrandMenu, setShowBrandMenu] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
 
   useEffect(() => {
@@ -219,9 +220,52 @@ export default function App() {
       {/* Left Sidebar - WorkBuddy Style */}
       <aside className="app-sidebar">
         <div className="app-sidebar__header">
-          <div className="app-sidebar__brand">
-            <span className="app-sidebar__logo">🤖</span>
-            <span className="app-sidebar__title">小晏</span>
+          <div className="app-sidebar__brand-dropdown">
+            <button
+              type="button"
+              className="app-sidebar__brand"
+              onClick={() => setShowBrandMenu(!showBrandMenu)}
+            >
+              <span className="app-sidebar__logo">🤖</span>
+              <span className="app-sidebar__title">小晏</span>
+              <svg
+                className={`app-sidebar__brand-chevron ${showBrandMenu ? 'app-sidebar__brand-chevron--open' : ''}`}
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            {showBrandMenu && (
+              <div className="app-sidebar__brand-menu">
+                <button
+                  type="button"
+                  className="app-sidebar__brand-menu-item"
+                  onClick={() => {
+                    setTheme(theme === "dark" ? "light" : "dark");
+                    setShowBrandMenu(false);
+                  }}
+                >
+                  <span>{theme === "dark" ? "☀️" : "🌙"}</span>
+                  <span>切换{theme === "dark" ? "浅色" : "深色"}主题</span>
+                </button>
+                <button
+                  type="button"
+                  className="app-sidebar__brand-menu-item"
+                  onClick={() => {
+                    setShowAbout(true);
+                    setShowBrandMenu(false);
+                  }}
+                >
+                  <span>ℹ️</span>
+                  <span>关于</span>
+                </button>
+              </div>
+            )}
           </div>
           <div className={`app-sidebar__status-dot app-sidebar__status-dot--${state.mode}`} />
         </div>
@@ -347,7 +391,7 @@ export default function App() {
             onCompleteGoal={(goalId) => handleUpdateGoalStatus(goalId, "completed")}
           />
         ) : route === "persona" ? (
-          <SettingsPanel theme={theme} onThemeChange={setTheme} />
+          <SettingsPanel />
         ) : route === "memory" ? (
           <MemoryPage />
         ) : route === "history" ? (
@@ -367,6 +411,45 @@ export default function App() {
             onRollback={handleRollback}
             onApprovalDecision={handleApprovalDecision}
           />
+        )}
+
+        {/* 关于弹窗 */}
+        {showAbout && (
+          <div className="modal-overlay" onClick={() => setShowAbout(false)}>
+            <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
+              <div className="modal__header">
+                <h3 className="modal__title">关于 小晏</h3>
+                <button
+                  type="button"
+                  className="modal__close"
+                  onClick={() => setShowAbout(false)}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal__body">
+                <div className="about-content">
+                  <div className="about-logo">🤖</div>
+                  <h4 className="about-name">小晏</h4>
+                  <p className="about-desc">AI Agent Desktop</p>
+                  <div className="about-meta">
+                    <div className="about-meta__item">
+                      <span className="about-meta__label">版本</span>
+                      <span className="about-meta__value">v0.1.0</span>
+                    </div>
+                    <div className="about-meta__item">
+                      <span className="about-meta__label">人格系统</span>
+                      <span className="about-meta__value">Phase 9</span>
+                    </div>
+                    <div className="about-meta__item">
+                      <span className="about-meta__label">记忆系统</span>
+                      <span className="about-meta__value">Phase 8</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>

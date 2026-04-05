@@ -14,8 +14,6 @@ import {
 import { PersonaCard } from "./PersonaCard";
 
 type SettingsPanelProps = {
-  theme: "dark" | "light";
-  onThemeChange: (theme: "dark" | "light") => void;
   onPersonaUpdated?: () => void;
 };
 
@@ -23,9 +21,7 @@ type SettingsPanelProps = {
 // 人格工作台 - 完整的人格管理中心
 // ═══════════════════════════════════════════════════
 
-export function SettingsPanel({ theme, onThemeChange, onPersonaUpdated }: SettingsPanelProps) {
-  const [activeTab, setActiveTab] = useState<"persona" | "settings">("persona");
-
+export function SettingsPanel({ onPersonaUpdated }: SettingsPanelProps) {
   return (
     <section className="workbench-page">
       {/* 页面头部 */}
@@ -38,44 +34,17 @@ export function SettingsPanel({ theme, onThemeChange, onPersonaUpdated }: Settin
 
       {/* 工作台主体 - 左右分栏 */}
       <div className="workbench-layout">
-        {/* 左侧：导航 + 实时状态 */}
+        {/* 左侧：实时人格状态 */}
         <aside className="workbench-sidebar">
-          {/* 导航菜单 */}
-          <nav className="workbench-nav">
-            <button
-              type="button"
-              className={`workbench-nav__item ${activeTab === "persona" ? "workbench-nav__item--active" : ""}`}
-              onClick={() => setActiveTab("persona")}
-            >
-              <span className="workbench-nav__icon">🎭</span>
-              <span className="workbench-nav__label">人格配置</span>
-              <span className="workbench-nav__desc">性格、风格、身份设置</span>
-            </button>
-            <button
-              type="button"
-              className={`workbench-nav__item ${activeTab === "settings" ? "workbench-nav__item--active" : ""}`}
-              onClick={() => setActiveTab("settings")}
-            >
-              <span className="workbench-nav__icon">⚙️</span>
-              <span className="workbench-nav__label">外观与系统</span>
-              <span className="workbench-nav__desc">主题与关于信息</span>
-            </button>
-          </nav>
-
-          {/* 实时人格状态卡片 */}
           <div className="workbench-sidebar__section">
             <h4 className="workbench-sidebar__section-title">当前状态</h4>
             <PersonaCard />
           </div>
         </aside>
 
-        {/* 右侧：内容区域 */}
+        {/* 右侧：人格配置内容 */}
         <main className="workbench-content">
-          {activeTab === "persona" ? (
-            <PersonaWorkbench onUpdated={onPersonaUpdated} />
-          ) : (
-            <SettingsWorkbench theme={theme} onThemeChange={onThemeChange} />
-          )}
+          <PersonaWorkbench onUpdated={onPersonaUpdated} />
         </main>
       </div>
     </section>
@@ -536,136 +505,4 @@ function DimensionSlider({
   );
 }
 
-// ═══════════════════════════════════════════════════
-// 外观与系统设置工作台
-// ═══════════════════════════════════════════════════
 
-function SettingsWorkbench({
-  theme,
-  onThemeChange
-}: {
-  theme: "dark" | "light";
-  onThemeChange: (theme: "dark" | "light") => void;
-}) {
-  return (
-    <div className="workbench-panel">
-      <header className="workbench-panel__header">
-        <h3 className="workbench-panel__title">外观与系统</h3>
-      </header>
-      <div className="workbench-panel__body">
-        {/* 主题选择 */}
-        <div className="appearance-section">
-          <h4 className="appearance-section__title">
-            <PaletteIcon /> 主题
-          </h4>
-          <p className="appearance-section__desc">选择界面的颜色主题</p>
-
-          <div className="theme-cards">
-            <button
-              type="button"
-              className={`theme-card ${theme === "dark" ? "theme-card--active" : ""}`}
-              onClick={() => onThemeChange("dark")}
-            >
-              <div className="theme-card__preview theme-card__preview--dark">
-                <div className="theme-card__preview-bar" />
-                <div className="theme-card__preview-content">
-                  <div className="theme-card__preview-line" />
-                  <div className="theme-card__preview-line theme-card__preview-line--short" />
-                </div>
-              </div>
-              <div className="theme-card__info">
-                <MoonIcon />
-                <span>深色</span>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              className={`theme-card ${theme === "light" ? "theme-card--active" : ""}`}
-              onClick={() => onThemeChange("light")}
-            >
-              <div className="theme-card__preview theme-card__preview--light">
-                <div className="theme-card__preview-bar" />
-                <div className="theme-card__preview-content">
-                  <div className="theme-card__preview-line" />
-                  <div className="theme-card__preview-line theme-card__preview-line--short" />
-                </div>
-              </div>
-              <div className="theme-card__info">
-                <SunIcon />
-                <span>浅色</span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* 系统信息 */}
-        <div className="appearance-section">
-          <h4 className="appearance-section__title">
-            <ShieldIcon /> 关于
-          </h4>
-          <div className="system-info system-info--compact">
-            <div className="system-info__item">
-              <span className="system-info__label">版本</span>
-              <span className="system-info__value">v0.1.0</span>
-            </div>
-            <div className="system-info__item">
-              <span className="system-info__label">人格系统</span>
-              <span className="system-info__value">Phase 9</span>
-            </div>
-            <div className="system-info__item">
-              <span className="system-info__label">记忆系统</span>
-              <span className="system-info__value">Phase 8</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════
-// 图标组件
-// ═══════════════════════════════════════════════════
-
-function PaletteIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v8" />
-      <path d="M8 12h8" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-    </svg>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="5" />
-      <line x1="12" y1="1" x2="12" y2="3" />
-      <line x1="12" y1="21" x2="12" y2="23" />
-      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-      <line x1="1" y1="12" x2="3" y2="12" />
-      <line x1="21" y1="12" x2="23" y2="12" />
-      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-    </svg>
-  );
-}
-
-function ShieldIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  );
-}

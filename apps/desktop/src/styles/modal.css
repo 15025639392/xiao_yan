@@ -61,3 +61,84 @@
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border-subtle);
 }
+
+/* Small modal for about dialog */
+.modal--sm {
+  width: min(320px, calc(100% - var(--space-8)));
+}
+
+.modal__close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: all 0.15s ease;
+}
+
+.modal__close:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+
+/* About dialog content */
+.about-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-4) 0;
+}
+
+.about-logo {
+  font-size: 3rem;
+  margin-bottom: var(--space-3);
+}
+
+.about-name {
+  margin: 0 0 var(--space-1);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.about-desc {
+  margin: 0 0 var(--space-5);
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+}
+
+.about-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.about-meta__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.about-meta__label {
+  color: var(--text-secondary);
+}
+
+.about-meta__value {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
