@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type {
   BeingState,
   SelfImprovementEdit,
@@ -6,6 +6,8 @@ import type {
 } from "../lib/api";
 import { rollbackSelfImprovementJob } from "../lib/api";
 import { ApprovalPanel } from "./ApprovalPanel";
+import { PersonaCard } from "./PersonaCard";
+import { MemoryPanel } from "./MemoryPanel";
 
 type StatusPanelProps = {
   state: BeingState;
@@ -37,6 +39,12 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
       </div>
 
       <div className="panel__content">
+        {/* Phase 7: 人格卡片 */}
+        <PersonaCard style={{ marginBottom: "var(--space-4)" }} />
+
+        {/* Phase 8: 记忆面板 */}
+        <MemoryPanel style={{ marginBottom: "var(--space-4)" }} />
+
         <div className="metric-grid">
           <div className="metric-card">
             <p className="metric-card__label">运行状态</p>

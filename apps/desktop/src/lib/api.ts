@@ -280,3 +280,279 @@ export function rejectSelfImprovementJob(
     { reason },
   );
 }
+
+// ══════════════════════════════════════════════
+// Phase 7: 人格内核 API
+// ══════════════════════════════════════════════
+
+export type EmotionType =
+  | "joy" | "sadness" | "anger" | "fear" | "surprise"
+  | "disgust" | "calm" | "engaged" | "proud" | "lonely"
+  | "grateful" | "frustrated";
+
+export type EmotionIntensity = "none" | "mild" | "moderate" | "strong" | "intense";
+
+export type FormalLevel = "very_formal" | "formal" | "neutral" | "casual" | "slangy";
+
+export type ExpressionHabit = "metaphor" | "direct" | "questioning" | "humorous" | "gentle";
+
+export type SentenceStyleType = "short" | "mixed" | "long";
+
+export type PersonaProfile = {
+  name: string;
+  identity: string;
+  origin_story: string;
+  personality: {
+    openness: number;
+    conscientiousness: number;
+    extraversion: number;
+    agreeableness: number;
+    neuroticism: number;
+  };
+  speaking_style: {
+    formal_level: FormalLevel;
+    sentence_style: SentenceStyleType;
+    expression_habit: ExpressionHabit;
+    emoji_usage: string;
+    verbal_tics: string[];
+    response_length: string;
+  };
+  values: {
+    core_values: { name: string; description: string; priority: number }[];
+    boundaries: string[];
+  };
+  emotion: {
+    primary_emotion: EmotionType;
+    primary_intensity: EmotionIntensity;
+    secondary_emotion: EmotionType | null;
+    secondary_intensity: EmotionIntensity;
+    mood_valence: number;
+    arousal: number;
+    is_calm: boolean;
+    active_entry_count: number;
+    active_entries: Array<{
+      emotion_type: EmotionType;
+      intensity: EmotionIntensity;
+      reason: string;
+      source: string;
+    }>;
+    last_updated: string | null;
+  };
+  version: number;
+};
+
+export type PersonaSummary = {
+  name: string;
+  identity: string;
+  personality_traits: string[];
+  primary_emotion: string;
+  mood_valence: number;
+  arousal: number;
+  version: number;
+  emotion: ReturnType<typeof fetchEmotionState> extends Promise<infer T> ? T : never;
+};
+
+export type EmotionState = {
+  primary_emotion: EmotionType;
+  primary_intensity: EmotionIntensity;
+  secondary_emotion: EmotionType | null;
+  secondary_intensity: EmotionIntensity;
+  mood_valence: number;
+  arousal: number;
+  is_calm: boolean;
+  active_entry_count: number;
+  active_entries: Array<{
+    emotion_type: EmotionType;
+    intensity: EmotionIntensity;
+    reason: string;
+    source: string;
+  }>;
+  last_updated: string | null;
+};
+
+/** 获取完整人格档案 */
+export function fetchPersona(): Promise<PersonaProfile> {
+  return get<PersonaProfile>("/persona");
+}
+
+/** 获取人格摘要（展示用） */
+export function fetchPersonaSummary(): Promise<{
+  name: string;
+  identity: string;
+  personality_traits: string[];
+  primary_emotion: string;
+  mood_valence: number;
+  arousal: number;
+  version: number;
+  emotion: EmotionState;
+}> {
+  return get<typeof arguments extends never ? never : {
+    name: string; identity: string; personality_traits: string[];
+    primary_emotion: string; mood_valence: number; arousal: number;
+    version: number; emotion: EmotionState;
+  }>("/persona/summary");
+}
+
+/** 获取情绪状态 */
+export function fetchEmotionState(): Promise<EmotionState> {
+  return get<EmotionState>("/persona/emotion");
+}
+
+/** 更新人格基础信息 */
+export function updatePersona(data: {
+  name?: string;
+  identity?: string;
+  origin_story?: string;
+}): Promise<{ success: boolean; profile: PersonaProfile }> {
+  return post<{ success: boolean; profile: PersonaProfile }>("/persona", data);
+}
+
+/** 更新性格维度 */
+export function updatePersonality(data: {
+  openness?: number;
+  conscientiousness?: number;
+  extraversion?: number;
+  agreeableness?: number;
+  neuroticism?: number;
+}): Promise<{ success: boolean; profile: PersonaProfile }> {
+  return post<{ success: boolean; profile: PersonaProfile }>("/persona/personality", data);
+}
+
+/** 更新说话风格 */
+export function updateSpeakingStyle(data: {
+  formal_level?: FormalLevel;
+  sentence_style?: SentenceStyleType;
+  expression_habit?: ExpressionHabit;
+  emoji_usage?: string;
+  verbal_tics?: string[];
+  response_length?: string;
+}): Promise<{ success: boolean; profile: PersonaProfile }> {
+  return post<{ success: boolean; profile: PersonaProfile }>("/persona/speaking-style", data);
+}
+
+/** 重置为默认人格 */
+export function resetPersona(): Promise<{ success: boolean; profile: PersonaProfile }> {
+  return post<{ success: boolean; profile: PersonaProfile }>("/persona/reset");
+}
+
+// ══════════════════════════════════════════════
+// Phase 8: 记忆与人格联动 API
+// ══════════════════════════════════════════════
+
+export type MemoryKind = "fact" | "episodic" | "semantic" | "emotional" | "chat_raw";
+
+export type MemoryStrength = "faint" | "weak" | "normal" | "vivid" | "core";
+
+export type MemoryEmotion = "positive" | "negative" | "neutral" | "mixed";
+
+export type MemoryEntryDisplay = {
+  id: string;
+  kind: MemoryKind;
+  content: string;
+  role: string | null;
+  strength: MemoryStrength;
+  importance: number;
+  emotion_tag: MemoryEmotion;
+  subject: string | null;
+  keywords: string[];
+  retention_score: number;
+  access_count: number;
+  created_at: string | null;
+  last_accessed_at: string | null;
+};
+
+export type MemorySummary = {
+  total_estimated: number;
+  by_kind: Record<string, number>;
+  recent_count: number;
+  strong_memories: number;
+  available: boolean;
+};
+
+export type MemorySearchResult = {
+  entries: MemoryEntryDisplay[];
+  total_count: number;
+  query_summary: string | null;
+};
+
+export type MemoryTimelineResponse = {
+  entries: MemoryEntryDisplay[];
+};
+
+/** 获取记忆系统统计摘要 */
+export function fetchMemorySummary(): Promise<MemorySummary> {
+  return get<MemorySummary>("/memory/summary");
+}
+
+/** 获取记忆时间线 */
+export function fetchMemoryTimeline(limit?: number): Promise<MemoryTimelineResponse> {
+  return get<MemoryTimelineResponse>(`/memory/timeline?limit=${limit ?? 30}`);
+}
+
+/** 搜索记忆 */
+export function searchMemories(query: string, limit?: number): Promise<MemorySearchResult> {
+  return get<MemorySearchResult>(`/memory/search?q=${encodeURIComponent(query)}&limit=${limit ?? 10}`);
+}
+
+/** 手动创建记忆 */
+export function createMemory(data: {
+  kind: MemoryKind;
+  content: string;
+  role?: string | null;
+  strength?: MemoryStrength;
+  importance?: number;
+  emotion_tag?: MemoryEmotion;
+  keywords?: string[] | null;
+  subject?: string | null;
+}): Promise<{ success: boolean; entry: MemoryEntryDisplay }> {
+  return post<{ success: boolean; entry: MemoryEntryDisplay }>("/memory", data);
+}
+
+/** 获取最近记忆 */
+export function fetchRecentMemories(limit?: number, kind?: MemoryKind): Promise<{ entries: MemoryEntryDisplay[]; total_count: number }> {
+  const params = `?limit=${limit ?? 20}${kind ? `&kind=${kind}` : ""}`;
+  return get<{ entries: MemoryEntryDisplay[]; total_count: number }>(`/memory/recent${params}`);
+}
+
+/** 获取记忆 prompt 上下文（调试用） */
+export function fetchMemoryContext(query?: string | null): Promise<{ context: string; char_count: number; has_content: boolean }> {
+  const q = query ? `?query=${encodeURIComponent(query)}` : "";
+  return get<{ context: string; char_count: number; has_content: boolean }>(`/memory/context${q}`);
+}
+
+// ══════════════════════════════════════════════
+// Phase 9: 情绪→表达风格映射 API
+// ══════════════════════════════════════════════
+
+export type ExpressionVolume = "very_brief" | "brief" | "normal" | "verbose" | "very_verbose";
+export type EmojiLevelType = "never" | "rarely" | "sometimes" | "often" | "frequently";
+export type SentencePatternType = "fragmented" | "short_direct" | "balanced" | "exclamatory" | "elaborate";
+export type PunctuationStyleType = "minimal" | "loose" | "standard" | "energetic" | "dramatic";
+export type ToneModifierType = "flat" | "gentle" | "playful" | "intense" | "hesitant" | "sarcastic";
+
+export type StyleOverrideConfig = {
+  volume: ExpressionVolume;
+  emoji_level: EmojiLevelType;
+  sentence_pattern: SentencePatternType;
+  punctuation_style: PunctuationStyleType;
+  tone_modifier: ToneModifierType;
+};
+
+export type ExpressionStyleResponse = {
+  emotion: {
+    primary: EmotionType;
+    primary_intensity: string;
+    secondary: EmotionType | null;
+    mood_valence: number;
+    arousal: number;
+    is_calm: boolean;
+  };
+  style_override: StyleOverrideConfig;
+  style_instruction: string;
+  has_active_style: boolean;
+};
+
+/** 获取当前情绪驱动的表达风格 */
+export function fetchExpressionStyle(): Promise<ExpressionStyleResponse> {
+  return get<ExpressionStyleResponse>("/persona/expression-style");
+}

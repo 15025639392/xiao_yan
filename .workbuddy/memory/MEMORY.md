@@ -61,6 +61,39 @@
 - 新增 test_phase6_approval.py 14 个测试（审批 API、状态门控、辅助函数）
 - **最终: 288 passed, 0 failed**
 
+**Phase 7: 人格内核系统（2026-04-05）✅**
+- 核心目标：让数字人有"性格"，不再回复模板拼接内容
+- PersonaProfile 数据模型：大五人格(OCEAN) + 说话风格 + 价值观 + 动态情绪状态(12种情绪×5级强度)
+- EmotionEngine：事件驱动情绪累积 + 时间衰减 + 性格影响幅度 + 多源推断(chat/goal/self_improvement)
+- PersonaService：CRUD + JSON 持久化 + 人格感知 prompt 生成 + 向后兼容
+- 前端：PersonaCard（状态面板情绪卡片+心情条+事件流）+ PersonaSettings（设置页3 Tab配置面板）
+- API: 11 个新端点 (GET/PUT /persona*, GET/POST /persona/emotion*)
+- **最终: 347 passed, 0 failed**（+59 新测试，零回归）
+- Pydantic v2 注意：model_copy() 必须用 `update=` 参数而非直接传关键字参数
+
+**Phase 8: 记忆与人格联动系统（2026-04-05）✅**
+- 核心目标：让数字人从"失忆的聊天机器人"变成"有记忆的个体"
+- MemoryEntry 数据模型：5 种记忆类型(fact/episodic/semantic/emotional/chat_raw) + 5 级强度(faint→core) + retention_score 保留分值
+- MemoryService：CRUD + 对话自动提取(偏好/约定/情绪检测) + 人格感知检索排序 + prompt 注入
+- chat 端点改造：回复后自动 extract_from_conversation() + 记忆上下文注入 prompt
+- 前端：MemoryPanel（时间线+搜索+类型过滤+骨架屏）+ memory.css 样式
+- API: 8 个新端点 (GET/POST /memory*)
+- **最终: 390 passed, 0 failed**（+43 新测试，零回归）
+- 注意：MemoryEvent.to_entry() 需包含所有新 kind 映射，fact 类型默认 importance=6
+
+**Phase 9: 情绪→表达风格深层映射（2026-04-05）✅**
+- 核心问题：Phase 7 情绪引擎只输出"你现在开心"的状态描述，不告诉 LLM 怎么因此改变说话方式
+- ExpressionStyleMapper：12 种情绪 → 6 维表达风格覆盖(volume/emoji/sentence/punctuation/tone)
+- 每种情绪定义基础指令 + 强烈模式(intense_instructions)两档
+- 性格调节：高神经质放大表达、高宜人性缓和负面、高外向增强正面
+- 双情绪融合：主+次要情绪按权重叠加
+- EmotionalState.to_expression_prompt() + PersonaProfile.build_system_prompt() 自动集成
+- chat 端点：每次对话自动计算 expression_style_context 并注入 prompt
+- 前端 PersonaCard 新增表达风格指示器面板（4 维度网格+指令预览）
+- API: GET /persona/expression-style
+- **最终: 422 passed, 0 failed**（+32 新测试，零回归）
+- 注意：Python 文件中不能用中文省略号 `…` 和中文引号嵌套，必须用 ASCII 替代
+
 ## 数字人控制台（apps/desktop）
 
 - 技术栈：React + TypeScript + 纯 CSS（无 Tailwind）

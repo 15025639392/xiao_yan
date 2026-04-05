@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import (
     get_goal_storage_path,
     get_memory_storage_path,
+    get_persona_storage_path,
     get_state_storage_path,
     get_world_storage_path,
     is_morning_plan_llm_enabled,
@@ -28,9 +29,21 @@ from app.llm.schemas import (
     ChatRequest,
     ChatResult,
 )
-from app.memory.models import MemoryEvent
+from app.memory.models import MemoryEvent, MemoryKind, MemoryEmotion, MemoryStrength
 from app.memory.repository import FileMemoryRepository, MemoryRepository
+from app.memory.service import MemoryService
+from app.persona.models import (
+    EmotionIntensity,
+    EmotionType,
+    FormalLevel,
+    ExpressionHabit,
+    PersonaProfile,
+    SentenceStyle,
+    SpeakingStyle,
+)
 from app.persona.prompt_builder import build_chat_instructions
+from app.persona.service import FilePersonaRepository, PersonaService
+from app.persona.expression_mapper import ExpressionStyleMapper
 from app.planning.morning_plan import (
     LLMMorningPlanDraftGenerator,
     MorningPlanDraftGenerator,
@@ -83,6 +96,12 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
     )
     goal_repository = FileGoalRepository(get_goal_storage_path())
     world_repository = FileWorldRepository(get_world_storage_path())
+    persona_repository = FilePersonaRepository(get_persona_storage_path())
+    persona_service = PersonaService(repository=persona_repository)
+    memory_service = MemoryService(
+        repository=memory_repository,
+        personality=persona_service.profile.personality,
+    )
     stop_event = Event()
 
     # 尝试创建 Gateway（用于 LLM 自编程），失败则不注入
@@ -118,8 +137,20 @@ def _ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.memory_repository = memory_repository
     target_app.state.goal_repository = goal_repository
     target_app.state.world_repository = world_repository
+    target_app.state.persona_service = persona_service
+    target_app.state.memory_service = memory_service
     target_app.state.stop_event = stop_event
     target_app.state.autonomy_thread = worker
+
+
+def get_persona_service() -> PersonaService:
+    _ensure_runtime_initialized(app)
+    return app.state.persona_service  # type: ignore[attr-defined]
+
+
+def get_memory_service() -> MemoryService:
+    _ensure_runtime_initialized(app)
+    return app.state.memory_service  # type: ignore[attr-defined]
 
 
 def get_chat_gateway() -> Generator[ChatGateway, None, None]:
@@ -525,6 +556,8 @@ def chat(
     memory_repository: MemoryRepository = Depends(get_memory_repository),
     state_store: StateStore = Depends(get_state_store),
     goal_repository: GoalRepository = Depends(get_goal_repository),
+    persona_service: PersonaService = Depends(get_persona_service),
+    memory_service: MemoryService = Depends(get_memory_service),
 ) -> ChatResult:
     state = state_store.get()
     focus_goal = (
@@ -534,6 +567,23 @@ def chat(
     )
     latest_plan_completion = _find_latest_today_plan_completion(memory_repository)
     latest_self_improvement = _summarize_latest_self_improvement(state)
+
+    # Phase 7: 注入人格 system prompt + 情绪推断
+    persona_system_prompt = persona_service.build_system_prompt()
+    persona_service.infer_chat_emotion(request.message)
+
+    # Phase 8: 注入记忆上下文到 prompt
+    memory_context = memory_service.build_memory_prompt_context(
+        user_message=request.message,
+        max_chars=600,
+    )
+
+    # Phase 9: 计算情绪驱动的表达风格覆盖
+    current_emotion = persona_service.profile.emotion
+    style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
+    style_override = style_mapper.map_from_state(current_emotion)
+    expression_style_context = style_mapper.build_style_prompt(style_override)
+
     result = gateway.create_response(
         build_chat_messages(memory_repository, state_store, goal_repository, request.message),
         instructions=build_chat_instructions(
@@ -541,8 +591,13 @@ def chat(
             latest_plan_completion=latest_plan_completion,
             latest_self_improvement=latest_self_improvement,
             user_message=request.message,
+            persona_system_prompt=persona_system_prompt,
+            memory_context=memory_context or None,
+            expression_style_context=expression_style_context or None,
         ),
     )
+
+    # 保存原始对话记录（向后兼容）
     memory_repository.save_event(
         MemoryEvent(
             kind="chat",
@@ -557,6 +612,15 @@ def chat(
             content=result.output_text,
         )
     )
+
+    # Phase 8: 从对话中自动提取结构化记忆
+    extracted = memory_service.extract_from_conversation(
+        user_message=request.message,
+        assistant_response=result.output_text,
+    )
+    for entry in extracted:
+        memory_service.save(entry)
+
     return result
 
 
@@ -760,3 +824,315 @@ def get_health_report(
             "rollback_suggested": False,
             "assessed_at": datetime.now().isoformat(),
         }
+
+
+# ═══════════════════════════════════════════════════
+# Phase 7: 人格内核 API
+# ═══════════════════════════════════════════════════
+
+
+class PersonaUpdateRequest(BaseModel):
+    """人格更新请求体"""
+    name: str | None = None
+    identity: str | None = None
+    origin_story: str | None = None
+
+
+class PersonalityUpdateRequest(BaseModel):
+    """性格维度更新请求体"""
+    openness: int | None = None
+    conscientiousness: int | None = None
+    extraversion: int | None = None
+    agreeableness: int | None = None
+    neuroticism: int | None = None
+
+
+class SpeakingStyleUpdateRequest(BaseModel):
+    """说话风格更新请求体"""
+    formal_level: FormalLevel | None = None
+    sentence_style: SentenceStyle | None = None
+    expression_habit: ExpressionHabit | None = None
+    emoji_usage: str | None = None
+    verbal_tics: list[str] | None = None
+    response_length: str | None = None
+
+
+class EmotionApplyRequest(BaseModel):
+    """手动触发情绪事件请求体"""
+    emotion_type: EmotionType
+    intensity: EmotionIntensity = EmotionIntensity.MILD
+    reason: str = ""
+    source: str = "manual"
+
+
+@app.get("/persona")
+def get_persona(
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """获取完整人格档案"""
+    profile = persona_service.get_profile()
+    return profile.model_dump()
+
+
+@app.get("/persona/summary")
+def get_persona_summary(
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """获取人格摘要（前端展示用）"""
+    return {
+        **persona_service.get_display_summary(),
+        "emotion": persona_service.get_emotion_summary(),
+    }
+
+
+@app.put("/persona")
+def update_persona(
+    request: PersonaUpdateRequest,
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """更新人格基础信息"""
+    updated = persona_service.update_profile(
+        name=request.name,
+        identity=request.identity,
+        origin_story=request.origin_story,
+    )
+    return {"success": True, "profile": updated.model_dump()}
+
+
+@app.put("/persona/personality")
+def update_personality(
+    request: PersonalityUpdateRequest,
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """更新性格维度"""
+    updates = {k: v for k, v in request.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="至少需要提供一个性格维度")
+    updated = persona_service.update_personality(**updates)
+    return {"success": True, "profile": updated.model_dump()}
+
+
+@app.put("/persona/speaking-style")
+def update_speaking_style(
+    request: SpeakingStyleUpdateRequest,
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """更新说话风格"""
+    updates = {k: v for k, v in request.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="至少需要提供一个风格字段")
+    updated = persona_service.update_speaking_style(**updates)
+    return {"success": True, "profile": updated.model_dump()}
+
+
+@app.post("/persona/reset")
+def reset_persona(
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """重置为默认人格"""
+    profile = persona_service.reset_to_default()
+    return {"success": True, "profile": profile.model_dump()}
+
+
+# ── 情绪 API ──────────────────────────────────────────
+
+
+@app.get("/persona/emotion")
+def get_emotion_state(
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """获取当前情绪状态详情"""
+    return persona_service.get_emotion_summary()
+
+
+@app.post("/persona/emotion/apply")
+def apply_emotion(
+    request: EmotionApplyRequest,
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """手动触发一个情绪事件（调试/测试用）"""
+    new_state = persona_service.apply_emotion(
+        emotion_type=request.emotion_type,
+        intensity=request.intensity,
+        reason=request.reason,
+        source=request.source,
+    )
+    return {"success": True, "emotion": persona_service.get_emotion_summary()}
+
+
+@app.post("/persona/emotion/tick")
+def tick_emotion(
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """手动推进情绪衰减一个 tick（调试用）"""
+    new_state = persona_service.tick_emotion()
+    return {"success": True, "emotion": persona_service.get_emotion_summary()}
+
+
+@app.get("/persona/prompt")
+def get_persona_prompt(
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """获取当前人格的完整 system prompt（调试用）"""
+    return {
+        "prompt": persona_service.build_system_prompt(),
+    }
+
+
+# ═══════════════════════════════════════════════════
+# Phase 9: 情绪→表达风格映射 API
+# ═══════════════════════════════════════════════════
+
+
+@app.get("/persona/expression-style")
+def get_expression_style(
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """获取当前情绪驱动的表达风格（前端展示 + 调试用）
+
+    返回：
+    - 当前情绪状态摘要
+    - 覆盖后的表达风格配置
+    - 风格指令文本（实际注入 prompt 的内容）
+    """
+    current_emotion = persona_service.profile.emotion
+    style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
+    override = style_mapper.map_from_state(current_emotion)
+    style_prompt = style_mapper.build_style_prompt(override)
+
+    return {
+        "emotion": {
+            "primary": current_emotion.primary_emotion.value,
+            "primary_intensity": current_emotion.primary_intensity.value,
+            "secondary": current_emotion.secondary_emotion.value if current_emotion.secondary_emotion else None,
+            "mood_valence": round(current_emotion.mood_valence, 3),
+            "arousal": round(current_emotion.arousal, 3),
+            "is_calm": current_emotion.is_calm,
+        },
+        "style_override": {
+            "volume": override.volume.value,
+            "emoji_level": override.emoji_level.value,
+            "sentence_pattern": override.sentence_pattern.value,
+            "punctuation_style": override.punctuation_style.value,
+            "tone_modifier": override.tone_modifier.value,
+        },
+        "style_instruction": style_prompt,
+        "has_active_style": bool(style_prompt),
+    }
+
+
+# ═══════════════════════════════════════════════════
+# Phase 8: 记忆与人格联动 API
+# ═══════════════════════════════════════════════════
+
+
+class MemoryCreateRequest(BaseModel):
+    """创建记忆请求体"""
+    kind: MemoryKind
+    content: str
+    role: str | None = None
+    strength: MemoryStrength = MemoryStrength.NORMAL
+    importance: int = 5
+    emotion_tag: MemoryEmotion = MemoryEmotion.NEUTRAL
+    keywords: list[str] | None = None
+    subject: str | None = None
+
+
+@app.get("/memory/summary")
+def get_memory_summary(
+    memory_service: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """获取记忆系统统计摘要"""
+    return memory_service.get_memory_summary()
+
+
+@app.get("/memory/timeline")
+def get_memory_timeline(
+    limit: int = 30,
+    memory_service: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """获取记忆时间线（前端展示用）"""
+    return {"entries": memory_service.get_memory_timeline(limit=limit)}
+
+
+@app.get("/memory/search")
+def search_memories(
+    q: str,
+    limit: int = 10,
+    memory_service: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """搜索相关记忆"""
+    result = memory_service.search(q, limit=limit)
+    return {
+        "entries": [e.to_display_dict() for e in result.entries],
+        "total_count": result.total_count,
+        "query_summary": result.query_summary,
+    }
+
+
+@app.post("/memory")
+def create_memory(
+    request: MemoryCreateRequest,
+    memory_service: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """手动创建一条记忆"""
+    entry = memory_service.create(
+        kind=request.kind,
+        content=request.content,
+        role=request.role,
+        strength=request.strength,
+        importance=request.importance,
+        emotion_tag=request.emotion_tag,
+        keywords=request.keywords,
+        subject=request.subject,
+        source_context="手动创建",
+    )
+    return {"success": True, "entry": entry.to_display_dict()}
+
+
+@app.get("/memory/recent")
+def get_recent_memories(
+    limit: int = 20,
+    kind: str | None = None,
+    memory_service: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """获取最近记忆（可按类型过滤）"""
+    kinds = None
+    if kind:
+        try:
+            kinds = [MemoryKind(kind)]
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid kind: {kind}")
+
+    collection = memory_service.list_recent(limit=limit, kinds=kinds)
+    return {
+        "entries": [e.to_display_dict() for e in collection.entries],
+        "total_count": collection.total_count,
+    }
+
+
+@app.get("/memory/context")
+def get_memory_context(
+    query: str | None = None,
+    memory_service: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """获取用于 prompt 注入的记忆上下文（调试用）"""
+    context = memory_service.build_memory_prompt_context(
+        user_message=query,
+        max_chars=800,
+    )
+    return {
+        "context": context,
+        "char_count": len(context),
+        "has_content": bool(context),
+    }
+
+
+@app.post("/memory/weaken-old")
+def weaken_old_memories(
+    days: int = 30,
+    memory_service: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """淡化旧记忆（概念性操作，返回受影响的数量）"""
+    affected = memory_service.weaken_old_memories(days_threshold=days)
+    return {"affected_count": affected, "days_threshold": days}

@@ -1,9 +1,12 @@
+import { PersonaSettings } from "./PersonaSettings";
+
 type SettingsPanelProps = {
   theme: "dark" | "light";
   onThemeChange: (theme: "dark" | "light") => void;
+  onPersonaUpdated?: () => void;
 };
 
-export function SettingsPanel({ theme, onThemeChange }: SettingsPanelProps) {
+export function SettingsPanel({ theme, onThemeChange, onPersonaUpdated }: SettingsPanelProps) {
   return (
     <section className="settings-page">
       <header className="settings-page__header">
@@ -12,6 +15,9 @@ export function SettingsPanel({ theme, onThemeChange }: SettingsPanelProps) {
       </header>
 
       <div className="settings-page__content">
+        {/* Phase 7: 人格内核设置 */}
+        <PersonaSettings onUpdated={onPersonaUpdated} />
+
         {/* 外观设置 */}
         <section className="settings-section">
           <h3 className="settings-section__title">
