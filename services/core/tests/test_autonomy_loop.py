@@ -379,6 +379,25 @@ def test_tick_once_records_world_event_into_memory():
     assert "整理今天的对话记忆" in world_events[0].content
 
 
+def test_tick_once_drops_missing_active_goal_ids_without_leaking_raw_id():
+    now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
+    missing_goal_id = "5ee3f6bedd0543ee9b6e368e24214d09"
+    store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[missing_goal_id]))
+    repo = InMemoryMemoryRepository()
+    goals = InMemoryGoalRepository()
+    loop = AutonomyLoop(store, repo, goals, now_provider=lambda: now)
+
+    state = loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+    world_events = [event for event in recent if event.kind == "world"]
+
+    assert state.active_goal_ids == []
+    assert state.current_thought is not None
+    assert missing_goal_id not in state.current_thought
+    assert len(world_events) == 1
+    assert missing_goal_id not in world_events[0].content
+
+
 def test_tick_once_records_inner_stage_memory_when_chain_progress_changes():
     first_now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
     second_now = first_now + timedelta(seconds=61)

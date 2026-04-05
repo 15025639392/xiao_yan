@@ -209,7 +209,7 @@ class TestEventEntryConversion:
     def test_event_to_entry_world(self):
         event = MemoryEvent(kind="world", content="今天天气晴朗")
         entry = event.to_entry()
-        assert entry.kind == MemoryKind.FACT
+        assert entry.kind == MemoryKind.EPISODIC
 
     def test_event_to_entry_inner(self):
         event = MemoryEvent(kind="inner", content="我在思考")

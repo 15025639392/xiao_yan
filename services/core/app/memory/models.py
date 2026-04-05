@@ -278,7 +278,7 @@ class MemoryEvent(BaseModel):
         """从存储事件转换为 MemoryEntry。"""
         kind_map = {
             "chat": MemoryKind.CHAT_RAW,
-            "world": MemoryKind.FACT,
+            "world": MemoryKind.EPISODIC,
             "inner": MemoryKind.EPISODIC,
             "autobio": MemoryKind.EPISODIC,
             "action": MemoryKind.EPISODIC,

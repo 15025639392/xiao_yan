@@ -140,3 +140,17 @@ def test_world_service_builds_consolidation_event_with_chain_context():
 
     assert "第3步" in event
     assert "收束" in event
+
+
+def test_world_service_builds_event_without_raw_goal_id_fallback():
+    service = WorldStateService()
+    world_state = service.bootstrap(
+        being_state=BeingState(mode=WakeMode.AWAKE, active_goal_ids=["5ee3f6bedd0543ee9b6e368e24214d09"]),
+        focused_goals=[],
+        now=datetime(2026, 4, 4, 14, 0),
+    )
+
+    event = service.build_event(world_state, goal_title=None)
+
+    assert "5ee3f6bedd0543ee9b6e368e24214d09" not in event
+    assert "惦记着" not in event

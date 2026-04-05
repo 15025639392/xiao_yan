@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+import string
 from uuid import uuid4
 
 from app.agent.autonomy import GoalFocusSummary, choose_next_action
@@ -180,7 +181,12 @@ class AutonomyLoop:
             return state
 
         if action.kind == "act":
-            goal_title = current_goal.title if current_goal is not None else state.active_goal_ids[0]
+            goal_title = _display_goal_title(
+                None if not state.active_goal_ids else state.active_goal_ids[0],
+                current_goal,
+            )
+            if goal_title is None:
+                return state
             actionable_command = self.morning_plan_planner.action_command_for_goal(goal_title)
             if actionable_command is not None:
                 result = self.command_runner.run(actionable_command)
@@ -209,7 +215,12 @@ class AutonomyLoop:
             return self.state_store.set(next_state)
 
         if action.kind == "consolidate":
-            goal_title = current_goal.title if current_goal is not None else state.active_goal_ids[0]
+            goal_title = _display_goal_title(
+                None if not state.active_goal_ids else state.active_goal_ids[0],
+                current_goal,
+            )
+            if goal_title is None:
+                return state
             chain_progress = (
                 None if current_goal is None else _build_chain_progress(self.goal_repository, current_goal)
             )
@@ -260,7 +271,8 @@ class AutonomyLoop:
         for goal_id in state.active_goal_ids:
             goal = self.goal_repository.get_goal(goal_id)
             if goal is None:
-                active_goal_ids.append(goal_id)
+                if not _is_generated_goal_id(goal_id):
+                    active_goal_ids.append(goal_id)
                 continue
 
             if goal.status == GoalStatus.ACTIVE:
@@ -460,12 +472,10 @@ class AutonomyLoop:
         goal_title = None
         if state.active_goal_ids:
             current_goal = self.goal_repository.get_goal(state.active_goal_ids[0])
-            goal_title = (
-                current_goal.title if current_goal is not None else state.active_goal_ids[0]
-            )
+            goal_title = _display_goal_title(state.active_goal_ids[0], current_goal)
 
         entry = MemoryEntry.create(
-            kind=MemoryKind.FACT,
+            kind=MemoryKind.EPISODIC,
             content=self.world_state_service.build_event(world_state, goal_title),
             source_context="world",
         )
@@ -631,6 +641,20 @@ def _build_next_goal_title(goal_title: str) -> str:
 
 def _build_world_goal_start(content: str, now: datetime, world_state) -> str:
     return f"{_time_prefix(now)}{_world_tone(world_state)}我还在回味刚才那件事：“{content}”。"
+
+
+def _is_generated_goal_id(value: str | None) -> bool:
+    if value is None or len(value) != 32:
+        return False
+    return all(char in string.hexdigits for char in value)
+
+
+def _display_goal_title(goal_id: str | None, goal: Goal | None) -> str | None:
+    if goal is not None:
+        return goal.title
+    if goal_id is None or _is_generated_goal_id(goal_id):
+        return None
+    return goal_id
 
 
 def _build_inner_stage_memory(world_state, goal_title: str | None = None) -> str:
