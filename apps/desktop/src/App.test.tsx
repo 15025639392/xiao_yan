@@ -402,13 +402,13 @@ test("updates a goal status from the app and refreshes the rendered goal", async
 
   render(<App />);
 
-  expect(await screen.findByText("active")).toBeInTheDocument();
+  expect(await screen.findByText("推进中")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByText("Pause"));
+  fireEvent.click(screen.getByRole("button", { name: "暂停" }));
 
   await waitFor(() => {
-    expect(screen.getByText("paused")).toBeInTheDocument();
-    expect(screen.getByText("Resume")).toBeInTheDocument();
+    expect(screen.getByText("已暂停")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "恢复" })).toBeInTheDocument();
     expect(screen.getAllByText("常规自主")).toHaveLength(2);
   });
 });

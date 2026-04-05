@@ -23,15 +23,17 @@ test("renders goals and forwards status updates", () => {
     />
   );
 
+  expect(screen.getByText("目标看板")).toBeInTheDocument();
+  expect(screen.getByText("目标链")).toBeInTheDocument();
   expect(screen.getByText("持续理解用户最近在意的话题：星星")).toBeInTheDocument();
-  expect(screen.getByText("active")).toBeInTheDocument();
-  expect(screen.getByText("Chain: chain-1")).toBeInTheDocument();
-  expect(screen.getByText("Generation: 1")).toBeInTheDocument();
-  expect(screen.getByText("Parent: goal-root")).toBeInTheDocument();
+  expect(screen.getByText("推进中")).toBeInTheDocument();
+  expect(screen.getByText("链路：chain-1")).toBeInTheDocument();
+  expect(screen.getByText("第 1 代")).toBeInTheDocument();
+  expect(screen.getByText("上级目标：goal-root")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByText("Pause"));
-  fireEvent.click(screen.getByText("Complete"));
-  fireEvent.click(screen.getByText("Abandon"));
+  fireEvent.click(screen.getByRole("button", { name: "暂停" }));
+  fireEvent.click(screen.getByRole("button", { name: "完成" }));
+  fireEvent.click(screen.getByRole("button", { name: "放弃" }));
 
   expect(onUpdateGoalStatus).toHaveBeenNthCalledWith(1, "goal-1", "paused");
   expect(onUpdateGoalStatus).toHaveBeenNthCalledWith(2, "goal-1", "completed");
@@ -64,9 +66,11 @@ test("renders chained goals as a timeline ordered by generation", () => {
     />
   );
 
-  expect(screen.getByText("Timeline: chain-1")).toBeInTheDocument();
-  const generationLabels = screen.getAllByText(/Generation:/).map((item) => item.textContent);
-  expect(generationLabels).toEqual(["Generation: 0", "Generation: 1"]);
+  expect(screen.getByText("链路 chain-1")).toBeInTheDocument();
+  const generationLabels = screen
+    .getAllByText(/^第 \d+ 代$/)
+    .map((item) => item.textContent);
+  expect(generationLabels).toEqual(["第 0 代", "第 1 代"]);
 });
 
 
@@ -105,7 +109,7 @@ test("renders a chain summary with current step and progress", () => {
 
   expect(
     screen.getByText(
-      "Summary: 3 steps, current generation 2, paused now on 准备把新观察写进世界模型",
+      "共 3 步，当前推进到第 2 代，状态为已暂停，当前目标是“准备把新观察写进世界模型”",
     ),
   ).toBeInTheDocument();
 });
@@ -137,6 +141,28 @@ test("prefers an in-progress goal in the summary when generations tie", () => {
   );
 
   expect(
-    screen.getByText("Summary: 2 steps, current generation 1, active now on 继续沿着这条结论追问"),
+    screen.getByText("共 2 步，当前推进到第 1 代，状态为推进中，当前目标是“继续沿着这条结论追问”"),
   ).toBeInTheDocument();
+});
+
+test("renders standalone goals in a separate group with Chinese controls", () => {
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "整理今天的世界观察",
+          status: "paused",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("独立目标")).toBeInTheDocument();
+  expect(screen.getByText("已暂停")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "恢复" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "放弃" })).toBeInTheDocument();
 });

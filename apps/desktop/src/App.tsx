@@ -203,10 +203,6 @@ export default function App() {
       </section>
 
       <section className="mission-board">
-        <div className="section-heading section-heading--compact">
-          <p className="section-kicker">任务推进</p>
-          <h2 className="section-title">目标看板</h2>
-        </div>
         <GoalsPanel goals={goals} onUpdateGoalStatus={handleUpdateGoalStatus} />
       </section>
     </main>
