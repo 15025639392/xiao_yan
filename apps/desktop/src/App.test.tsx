@@ -299,15 +299,32 @@ test("polls state and messages so proactive replies appear in the chat panel", a
 });
 
 test("updates a goal status from the app and refreshes the rendered goal", async () => {
+  let stateCallCount = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
     if (url.endsWith("/state")) {
+      stateCallCount += 1;
       return new Response(
         JSON.stringify({
           mode: "awake",
-          current_thought: "正在想用户刚刚说的话。",
-          active_goal_ids: ["goal-1"],
+          focus_mode: stateCallCount === 1 ? "morning_plan" : "autonomy",
+          current_thought:
+            stateCallCount === 1 ? "正在想用户刚刚说的话。" : "我先把这个目标放下了。",
+          active_goal_ids: stateCallCount === 1 ? ["goal-1"] : [],
+          today_plan:
+            stateCallCount === 1
+              ? {
+                  goal_id: "goal-1",
+                  goal_title: "持续理解用户最近在意的话题：星星",
+                  steps: [
+                    {
+                      content: "把“持续理解用户最近在意的话题：星星”的轮廓理一下",
+                      status: "pending",
+                    },
+                  ],
+                }
+              : null,
         }),
         {
           status: 200,
@@ -389,6 +406,7 @@ test("updates a goal status from the app and refreshes the rendered goal", async
   await waitFor(() => {
     expect(screen.getByText("paused")).toBeInTheDocument();
     expect(screen.getByText("Resume")).toBeInTheDocument();
+    expect(screen.getByText("Phase: 常规自主")).toBeInTheDocument();
   });
 });
 
@@ -468,4 +486,98 @@ test("polls world state and renders the inner world panel", async () => {
   expect(
     screen.getByText("Latest Event: 夜里很安静，我有点困，但还惦记着整理今天的对话记忆。")
   ).toBeInTheDocument();
+});
+
+test("renders self improvement state from polled runtime state", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          focus_mode: "self_improvement",
+          current_thought: "我准备修一下自己的状态展示。",
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+          self_improvement_job: {
+            id: "job-1",
+            reason: "测试失败：状态面板没有展示自我编程状态。",
+            target_area: "ui",
+            status: "applied",
+            spec: "补上自我编程状态展示。",
+            patch_summary: "已修改状态面板并通过测试。",
+            red_verification: {
+              commands: ["npm test -- --run src/components/StatusPanel.test.tsx"],
+              passed: false,
+              summary: "1 failed",
+            },
+            verification: {
+              commands: ["npm test -- --run src/components/StatusPanel.test.tsx"],
+              passed: true,
+              summary: "3 passed",
+            },
+            touched_files: [
+              "apps/desktop/src/components/StatusPanel.tsx",
+              "apps/desktop/src/components/StatusPanel.test.tsx",
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "afternoon",
+          energy: "medium",
+          mood: "engaged",
+          focus_tension: "medium",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<App />);
+
+  expect(await screen.findByText("Phase: 自我编程")).toBeInTheDocument();
+  expect(screen.getByText("她刚刚为什么改自己")).toBeInTheDocument();
+  expect(screen.getByText("Patch: 已修改状态面板并通过测试。")).toBeInTheDocument();
+  expect(screen.getByText("Red Summary: 1 failed")).toBeInTheDocument();
+  expect(screen.getByText("Verification: passed")).toBeInTheDocument();
+  expect(screen.getByText("Touched Files: apps/desktop/src/components/StatusPanel.tsx, apps/desktop/src/components/StatusPanel.test.tsx")).toBeInTheDocument();
 });

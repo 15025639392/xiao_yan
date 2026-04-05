@@ -21,8 +21,12 @@ import {
 
 const initialState: BeingState = {
   mode: "sleeping",
+  focus_mode: "sleeping",
   current_thought: null,
   active_goal_ids: [],
+  today_plan: null,
+  last_action: null,
+  self_improvement_job: null,
 };
 
 export default function App() {
@@ -34,6 +38,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
+  const focusGoalTitle = resolveFocusGoalTitle(state, goals);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,14 +136,12 @@ export default function App() {
     try {
       setError("");
       const updatedGoal = await updateGoalStatus(goalId, status);
+      const refreshedState = await fetchState();
 
       setGoals((current) =>
         current.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal))
       );
-      setState((current) => ({
-        ...current,
-        active_goal_ids: syncActiveGoalIds(current.active_goal_ids, updatedGoal),
-      }));
+      setState(refreshedState);
     } catch (err) {
       setError(err instanceof Error ? err.message : "goal update failed");
     }
@@ -147,7 +150,7 @@ export default function App() {
   return (
     <main>
       <h1>Digital Being</h1>
-      <StatusPanel error={error} state={state} />
+      <StatusPanel error={error} focusGoalTitle={focusGoalTitle} state={state} />
       <WorldPanel world={world} />
       <AutobioPanel entries={autobioEntries} />
       <GoalsPanel goals={goals} onUpdateGoalStatus={handleUpdateGoalStatus} />
@@ -166,6 +169,17 @@ export default function App() {
       </button>
     </main>
   );
+}
+
+function resolveFocusGoalTitle(state: BeingState, goals: Goal[]): string | null {
+  if (state.active_goal_ids.length > 0) {
+    const currentGoal = goals.find((goal) => goal.id === state.active_goal_ids[0]);
+    if (currentGoal) {
+      return currentGoal.title;
+    }
+  }
+
+  return state.today_plan?.goal_title ?? null;
 }
 
 function mergeMessages(
@@ -188,12 +202,4 @@ function mergeMessages(
   });
 
   return Array.from(merged.values());
-}
-
-function syncActiveGoalIds(activeGoalIds: string[], goal: Goal): string[] {
-  if (goal.status === "active") {
-    return activeGoalIds.includes(goal.id) ? activeGoalIds : [...activeGoalIds, goal.id];
-  }
-
-  return activeGoalIds.filter((goalId) => goalId !== goal.id);
 }

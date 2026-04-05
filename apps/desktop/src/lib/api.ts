@@ -1,7 +1,54 @@
+export type TodayPlanStep = {
+  content: string;
+  status: "pending" | "completed";
+  kind?: "reflect" | "action";
+  command?: string | null;
+};
+
+export type TodayPlan = {
+  goal_id: string;
+  goal_title: string;
+  steps: TodayPlanStep[];
+};
+
+export type ActionResult = {
+  command: string;
+  output: string;
+};
+
+export type SelfImprovementVerification = {
+  commands: string[];
+  passed: boolean;
+  summary?: string | null;
+};
+
+export type SelfImprovementJob = {
+  id: string;
+  reason: string;
+  target_area: string;
+  status:
+    | "pending"
+    | "diagnosing"
+    | "patching"
+    | "verifying"
+    | "applied"
+    | "failed";
+  spec: string;
+  patch_summary?: string | null;
+  red_verification?: SelfImprovementVerification | null;
+  verification?: SelfImprovementVerification | null;
+  touched_files?: string[];
+  cooldown_until?: string | null;
+};
+
 export type BeingState = {
   mode: "awake" | "sleeping";
+  focus_mode: "sleeping" | "morning_plan" | "autonomy" | "self_improvement";
   current_thought: string | null;
   active_goal_ids: string[];
+  today_plan?: TodayPlan | null;
+  last_action?: ActionResult | null;
+  self_improvement_job?: SelfImprovementJob | null;
 };
 
 export type ChatResult = {
