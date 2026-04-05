@@ -421,18 +421,6 @@ class PersonaProfile(BaseModel):
 
         return "\n".join(sections)
 
-    def get_display_summary(self) -> dict:
-        """返回给前端展示的摘要信息"""
-        return {
-            "name": self.name,
-            "identity": self.identity,
-            "personality_traits": self.personality.get_dominant_traits(),
-            "primary_emotion": self.emotion.primary_emotion.value,
-            "mood_valence": round(self.emotion.mood_valence, 2),
-            "arousal": round(self.emotion.arousal, 2),
-            "version": self.version,
-        }
-
 
 # ── 预设人格模板 ──────────────────────────────────────────
 

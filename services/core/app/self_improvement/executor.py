@@ -230,10 +230,15 @@ class SelfImprovementExecutor:
                 job.verification.commands
                 if job.verification else []
             )
-            # 如果没有验证命令，跳过沙箱（向后兼容旧测试）
             if not verification_cmds:
-                logger.debug(f"Skipping sandbox for {job.id}: no verification commands")
-                updates["sandbox_prechecked"] = False
+                return job.model_copy(
+                    update={
+                        **updates,
+                        "status": SelfImprovementStatus.FAILED,
+                        "patch_summary": "🧪 缺少 verification commands，拒绝执行自我编程。",
+                        "sandbox_prechecked": False,
+                    }
+                )
             else:
                 sandbox_result = self.sandbox.prevalidate(
                     edits=job.edits or [],
@@ -244,37 +249,16 @@ class SelfImprovementExecutor:
                 updates["sandbox_prechecked"] = True
                 updates["sandbox_result"] = sandbox_result.summary
 
-                # 如果沙箱因为"没有找到文件"或环境问题而失败，降级为警告而非阻塞
-                # 这允许旧测试在没有完整项目结构的情况下继续工作
                 if not sandbox_result.success and not sandbox_result.timed_out:
-                    error_msg = sandbox_result.error_message or ""
-                    is_skipable_error = (
-                        "没有找到需要复制的文件" in error_msg
-                        or "file or directory not found" in (sandbox_result.stderr or "").lower()
-                        or "No such file" in (sandbox_result.stderr or "")
-                    )
-                    if is_skipable_error:
-                        logger.warning(
-                            f"Sandbox pre-validation skipped for {job.id}: "
-                            f"{error_msg[:100] if error_msg else sandbox_result.stderr[:100]}"
-                        )
-                        # 不标记 FAILED，允许继续到 apply 阶段
-                        updates["sandbox_result"] = "⚠️ 跳过（沙箱环境不完整）"
-                    else:
-                        # 真正的测试失败 → 阻止应用
-                        return job.model_copy(
-                            update={
-                                **updates,
-                                "status": SelfImprovementStatus.FAILED,
-                                "patch_summary": (
-                                    f"🧪 沙箱预验证失败: {sandbox_result.summary}\n"
-                                    f"{sandbox_result.stderr[:300] if sandbox_result.stderr else ''}"
-                                ),
-                            }
-                        )
-                    
-                    logger.info(
-                        f"Sandbox prevalidation passed for {job.id}: {sandbox_result.summary}"
+                    return job.model_copy(
+                        update={
+                            **updates,
+                            "status": SelfImprovementStatus.FAILED,
+                            "patch_summary": (
+                                f"🧪 沙箱预验证失败: {sandbox_result.summary}\n"
+                                f"{sandbox_result.stderr[:300] if sandbox_result.stderr else ''}"
+                            ),
+                        }
                     )
 
         return job.model_copy(update=updates) if updates else job
@@ -324,7 +308,7 @@ class SelfImprovementExecutor:
                     touched_files.append(edit.file_path)
                 continue
 
-            # REPLACE kind (original behavior, backward compatible with old data)
+            # REPLACE kind: 用 search_text 做单点替换
             original = path.read_text(encoding="utf-8")
             search_key = edit.search_text or ""
             replace_val = edit.replace_text or ""

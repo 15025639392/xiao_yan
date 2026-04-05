@@ -8,6 +8,7 @@ from threading import Event, Thread
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 from app.config import (
     get_goal_storage_path,
@@ -29,21 +30,17 @@ from app.llm.schemas import (
     ChatRequest,
     ChatResult,
 )
-from app.memory.models import MemoryEvent, MemoryKind, MemoryEmotion, MemoryStrength
+from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind, MemoryEmotion, MemoryStrength
 from app.memory.repository import FileMemoryRepository, MemoryRepository
 from app.memory.service import MemoryService
 from app.persona.models import (
-    EmotionIntensity,
-    EmotionType,
     FormalLevel,
     ExpressionHabit,
-    PersonaProfile,
     SentenceStyle,
-    SpeakingStyle,
 )
+from app.persona.expression_mapper import ExpressionStyleMapper
 from app.persona.prompt_builder import build_chat_instructions
 from app.persona.service import FilePersonaRepository, PersonaService
-from app.persona.expression_mapper import ExpressionStyleMapper
 from app.planning.morning_plan import (
     LLMMorningPlanDraftGenerator,
     MorningPlanDraftGenerator,
@@ -56,34 +53,6 @@ from app.usecases.lifecycle import wake_up
 from app.world.models import WorldState
 from app.world.repository import FileWorldRepository, WorldRepository
 from app.world.service import WorldStateService
-from pydantic import BaseModel
-from typing import Any
-from app.memory.models import MemoryEvent, MemoryKind, MemoryEmotion, MemoryStrength
-from app.memory.repository import FileMemoryRepository, MemoryRepository
-from app.memory.service import MemoryService
-from app.persona.models import (
-    EmotionIntensity,
-    EmotionType,
-    FormalLevel,
-    ExpressionHabit,
-    PersonaProfile,
-    SentenceStyle,
-    SpeakingStyle,
-)
-from app.persona.prompt_builder import build_chat_instructions
-from app.persona.service import FilePersonaRepository, PersonaService
-from app.persona.expression_mapper import ExpressionStyleMapper
-from app.planning.morning_plan import (
-    LLMMorningPlanDraftGenerator,
-    MorningPlanDraftGenerator,
-    MorningPlanPlanner,
-)
-from app.runtime import StateStore
-from app.usecases.lifecycle import wake_up
-from app.world.models import WorldState
-from app.world.repository import FileWorldRepository, WorldRepository
-from app.world.service import WorldStateService
-from pydantic import BaseModel
 from typing import Any
 
 
@@ -626,21 +595,19 @@ def chat(
         ),
     )
 
-    # 保存原始对话记录（向后兼容）
-    memory_repository.save_event(
-        MemoryEvent(
-            kind="chat",
-            role="user",
-            content=request.message,
-        )
+    # 保存原始对话记录
+    user_entry = MemoryEntry.create(
+        kind=MemoryKind.CHAT_RAW,
+        content=request.message,
+        role="user",
     )
-    memory_repository.save_event(
-        MemoryEvent(
-            kind="chat",
-            role="assistant",
-            content=result.output_text,
-        )
+    assistant_entry = MemoryEntry.create(
+        kind=MemoryKind.CHAT_RAW,
+        content=result.output_text,
+        role="assistant",
     )
+    memory_repository.save_event(MemoryEvent.from_entry(user_entry))
+    memory_repository.save_event(MemoryEvent.from_entry(assistant_entry))
 
     # Phase 8: 从对话中自动提取结构化记忆
     extracted = memory_service.extract_from_conversation(
@@ -660,21 +627,6 @@ def chat(
 class ApprovalRequest(BaseModel):
     """审批请求体（approve/reject 共用）"""
     reason: str | None = None  # 可选：拒绝原因或审批备注
-
-
-@app.get("/self-improvement/pending")
-def get_pending_approval(
-    state_store: StateStore = Depends(get_state_store),
-) -> dict:
-    """获取当前等待审批的自编程 Job（如果有）"""
-    state = state_store.get()
-    job = state.self_improvement_job
-    if job is None or job.status != SelfImprovementStatus.PENDING_APPROVAL:
-        return {"pending": None, "has_pending": False}
-    return {
-        "pending": job.model_dump(),
-        "has_pending": True,
-    }
 
 
 @app.post("/self-improvement/{job_id}/approve")
@@ -829,32 +781,6 @@ def rollback_job_endpoint(
         raise HTTPException(status_code=500, detail=f"回滚失败: {exc}")
 
 
-@app.get("/self-improvement/health")
-def get_health_report(
-    state_store: StateStore = Depends(get_state_store),
-) -> dict:
-    """获取自编程系统健康度报告。"""
-    from app.self_improvement.health_checker import HealthChecker
-
-    state = state_store.get()
-    checker = HealthChecker()
-
-    try:
-        report = checker.check(state)
-        return report.to_dict() if hasattr(report, 'to_dict') else report
-    except Exception as exc:
-        # 返回一个基础报告而不是报错
-        return {
-            "overall_score": 75.0,
-            "grade": "good",
-            "trend": "stable",
-            "dimensions": [],
-            "summary": f"健康检查暂时不可用: {exc}",
-            "rollback_suggested": False,
-            "assessed_at": datetime.now().isoformat(),
-        }
-
-
 # ═══════════════════════════════════════════════════
 # Phase 7: 人格内核 API
 # ═══════════════════════════════════════════════════
@@ -886,14 +812,6 @@ class SpeakingStyleUpdateRequest(BaseModel):
     response_length: str | None = None
 
 
-class EmotionApplyRequest(BaseModel):
-    """手动触发情绪事件请求体"""
-    emotion_type: EmotionType
-    intensity: EmotionIntensity = EmotionIntensity.MILD
-    reason: str = ""
-    source: str = "manual"
-
-
 @app.get("/persona")
 def get_persona(
     persona_service: PersonaService = Depends(get_persona_service),
@@ -901,17 +819,6 @@ def get_persona(
     """获取完整人格档案"""
     profile = persona_service.get_profile()
     return profile.model_dump()
-
-
-@app.get("/persona/summary")
-def get_persona_summary(
-    persona_service: PersonaService = Depends(get_persona_service),
-) -> dict:
-    """获取人格摘要（前端展示用）"""
-    return {
-        **persona_service.get_display_summary(),
-        "emotion": persona_service.get_emotion_summary(),
-    }
 
 
 @app.put("/persona")
@@ -973,81 +880,6 @@ def get_emotion_state(
     """获取当前情绪状态详情"""
     return persona_service.get_emotion_summary()
 
-
-@app.post("/persona/emotion/apply")
-def apply_emotion(
-    request: EmotionApplyRequest,
-    persona_service: PersonaService = Depends(get_persona_service),
-) -> dict:
-    """手动触发一个情绪事件（调试/测试用）"""
-    new_state = persona_service.apply_emotion(
-        emotion_type=request.emotion_type,
-        intensity=request.intensity,
-        reason=request.reason,
-        source=request.source,
-    )
-    return {"success": True, "emotion": persona_service.get_emotion_summary()}
-
-
-@app.post("/persona/emotion/tick")
-def tick_emotion(
-    persona_service: PersonaService = Depends(get_persona_service),
-) -> dict:
-    """手动推进情绪衰减一个 tick（调试用）"""
-    new_state = persona_service.tick_emotion()
-    return {"success": True, "emotion": persona_service.get_emotion_summary()}
-
-
-@app.get("/persona/prompt")
-def get_persona_prompt(
-    persona_service: PersonaService = Depends(get_persona_service),
-) -> dict:
-    """获取当前人格的完整 system prompt（调试用）"""
-    return {
-        "prompt": persona_service.build_system_prompt(),
-    }
-
-
-# ═══════════════════════════════════════════════════
-# Phase 9: 情绪→表达风格映射 API
-# ═══════════════════════════════════════════════════
-
-
-@app.get("/persona/expression-style")
-def get_expression_style(
-    persona_service: PersonaService = Depends(get_persona_service),
-) -> dict:
-    """获取当前情绪驱动的表达风格（前端展示 + 调试用）
-
-    返回：
-    - 当前情绪状态摘要
-    - 覆盖后的表达风格配置
-    - 风格指令文本（实际注入 prompt 的内容）
-    """
-    current_emotion = persona_service.profile.emotion
-    style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
-    override = style_mapper.map_from_state(current_emotion)
-    style_prompt = style_mapper.build_style_prompt(override)
-
-    return {
-        "emotion": {
-            "primary": current_emotion.primary_emotion.value,
-            "primary_intensity": current_emotion.primary_intensity.value,
-            "secondary": current_emotion.secondary_emotion.value if current_emotion.secondary_emotion else None,
-            "mood_valence": round(current_emotion.mood_valence, 3),
-            "arousal": round(current_emotion.arousal, 3),
-            "is_calm": current_emotion.is_calm,
-        },
-        "style_override": {
-            "volume": override.volume.value,
-            "emoji_level": override.emoji_level.value,
-            "sentence_pattern": override.sentence_pattern.value,
-            "punctuation_style": override.punctuation_style.value,
-            "tone_modifier": override.tone_modifier.value,
-        },
-        "style_instruction": style_prompt,
-        "has_active_style": bool(style_prompt),
-    }
 
 
 # ═══════════════════════════════════════════════════
@@ -1119,52 +951,91 @@ def create_memory(
     return {"success": True, "entry": entry.to_display_dict()}
 
 
-@app.get("/memory/recent")
-def get_recent_memories(
-    limit: int = 20,
-    kind: str | None = None,
+# ── 记忆操作 API（删除 / 更新 / 标星）──
+
+class MemoryUpdateRequest(BaseModel):
+    content: str | None = None
+    kind: MemoryKind | None = None
+    importance: int | None = Field(default=None, ge=0, le=10)
+    strength: MemoryStrength | None = None
+    emotion_tag: MemoryEmotion | None = None
+    keywords: list[str] | None = None
+    subject: str | None = None
+
+
+@app.delete("/memory/{memory_id}")
+def delete_memory(
+    memory_id: str,
     memory_service: MemoryService = Depends(get_memory_service),
 ) -> dict:
-    """获取最近记忆（可按类型过滤）"""
-    kinds = None
-    if kind:
-        try:
-            kinds = [MemoryKind(kind)]
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid kind: {kind}")
+    """删除指定 ID 的记忆"""
+    success = memory_service.delete(memory_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Memory not found: {memory_id}")
+    return {"success": True, "deleted_id": memory_id}
 
-    collection = memory_service.list_recent(limit=limit, kinds=kinds)
+
+class MemoryBatchDeleteRequest(BaseModel):
+    memory_ids: list[str]
+
+
+@app.post("/memory/batch-delete")
+def batch_delete_memories(
+    request: MemoryBatchDeleteRequest,
+    memory_service: MemoryService = Depends(get_memory_service),
+) -> dict:
+    """批量删除多条记忆"""
+    if not request.memory_ids:
+        return {"success": True, "deleted": 0, "failed": 0}
+
+    result = memory_service.delete_many(request.memory_ids)
     return {
-        "entries": [e.to_display_dict() for e in collection.entries],
-        "total_count": collection.total_count,
+        "success": result["failed"] == 0,
+        "deleted": result["deleted"],
+        "failed": result["failed"],
+        "total": len(request.memory_ids),
     }
 
 
-@app.get("/memory/context")
-def get_memory_context(
-    query: str | None = None,
+@app.put("/memory/{memory_id}")
+def update_memory(
+    memory_id: str,
+    request: MemoryUpdateRequest,
     memory_service: MemoryService = Depends(get_memory_service),
 ) -> dict:
-    """获取用于 prompt 注入的记忆上下文（调试用）"""
-    context = memory_service.build_memory_prompt_context(
-        user_message=query,
-        max_chars=800,
+    """更新记忆内容或属性"""
+    success = memory_service.update(
+        memory_id,
+        content=request.content,
+        kind=request.kind,
+        importance=request.importance,
+        strength=request.strength,
+        emotion_tag=request.emotion_tag,
+        keywords=request.keywords,
+        subject=request.subject,
     )
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Memory not found: {memory_id}")
+
+    # 返回更新后的条目
+    entry = memory_service.get_by_id(memory_id)
     return {
-        "context": context,
-        "char_count": len(context),
-        "has_content": bool(context),
+        "success": True,
+        "entry": entry.to_display_dict() if entry else None,
     }
 
 
-@app.post("/memory/weaken-old")
-def weaken_old_memories(
-    days: int = 30,
+@app.post("/memory/{memory_id}/star")
+def star_memory(
+    memory_id: str,
+    important: bool = True,
     memory_service: MemoryService = Depends(get_memory_service),
 ) -> dict:
-    """淡化旧记忆（概念性操作，返回受影响的数量）"""
-    affected = memory_service.weaken_old_memories(days_threshold=days)
-    return {"affected_count": affected, "days_threshold": days}
+    """标记/取消标记记忆为重要"""
+    success = memory_service.star(memory_id, important=important)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Memory not found: {memory_id}")
+    return {"success": True, "starred": important, "memory_id": memory_id}
 
 
 # ═══════════════════════════════════════════════════
@@ -1217,13 +1088,6 @@ class FileReadRequest(BaseModel):
     """文件读取请求体"""
     path: str
     max_bytes: int = 512 * 1024  # 512KB default
-
-
-class FileWriteRequest(BaseModel):
-    """文件写入请求体"""
-    path: str
-    content: str
-    create_dirs: bool = True
 
 
 class FileSearchRequest(BaseModel):
@@ -1285,14 +1149,13 @@ def execute_tool(
     if request.timeout_override and request.timeout_override > 0:
         runner.timeout_seconds = min(request.timeout_override, 120.0)
 
-    result = runner.run_enhanced(request.command)
+    result = runner.run(request.command)
 
     # 恢复原始超时
     runner.timeout_seconds = original_timeout
 
     return {
         **result.to_dict(),
-        "action_result": result.to_action_result().model_dump(),
     }
 
 
@@ -1325,14 +1188,6 @@ def api_read_file(path: str, max_bytes: int = 512 * 1024) -> dict:
     return result.to_dict()
 
 
-@app.post("/tools/files/write")
-def api_write_file(request: FileWriteRequest) -> dict:
-    """写入文件内容。"""
-    ft = _get_file_tools()
-    result = ft.write_file(request.path, request.content, create_dirs=request.create_dirs)
-    return result.to_dict()
-
-
 @app.get("/tools/files/list")
 def api_list_directory(
     path: str = ".",
@@ -1356,13 +1211,6 @@ def api_search_files(
     ft = _get_file_tools()
     result = ft.search_content(query, search_path, file_pattern=file_pattern, max_results=max_results)
     return result.to_dict()
-
-
-@app.get("/tools/files/info")
-def api_get_file_info(path: str) -> dict:
-    """获取文件的详细元信息。"""
-    ft = _get_file_tools()
-    return ft.get_file_info(path)
 
 
 # ── 工具状态概览 ──────────────────────────────────────

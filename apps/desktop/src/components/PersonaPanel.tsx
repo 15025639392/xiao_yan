@@ -13,7 +13,7 @@ import {
   resetPersona,
 } from "../lib/api";
 
-type SettingsPanelProps = {
+type PersonaPanelProps = {
   onPersonaUpdated?: () => void;
 };
 
@@ -21,7 +21,7 @@ type SettingsPanelProps = {
 // 人格工作台 - 完整的人格管理中心
 // ═══════════════════════════════════════════════════
 
-export function SettingsPanel({ onPersonaUpdated }: SettingsPanelProps) {
+export function PersonaPanel({ onPersonaUpdated }: PersonaPanelProps) {
   return (
     <section className="persona-page">
       {/* 页面头部 */}
@@ -716,5 +716,4 @@ function DimensionSlider({
     </div>
   );
 }
-
 

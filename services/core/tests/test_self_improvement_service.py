@@ -142,7 +142,7 @@ def test_self_improvement_service_can_complete_patch_and_verification_cycle(tmp_
     service = SelfImprovementService(
         evaluator=StubEvaluator(),
         planner=StubPlanner(workspace_root=workspace),
-        executor=SelfImprovementExecutor(workspace),
+        executor=SelfImprovementExecutor(workspace, enable_sandbox=False),
     )
     loop = AutonomyLoop(
         store,
@@ -160,7 +160,7 @@ def test_self_improvement_service_can_complete_patch_and_verification_cycle(tmp_
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.status == "diagnosing"
     assert second.self_improvement_job.status == "patching"
-    # Phase 6: PATCHING 后进入 PENDING_APPROVAL 等待用户审批
+    # PATCHING 后进入 PENDING_APPROVAL 等待用户审批
     assert third.self_improvement_job.status == "pending_approval"
     assert third.self_improvement_job.approval_requested_at is not None
 
@@ -191,7 +191,7 @@ def test_self_improvement_service_can_use_failure_driven_planner_for_existing_te
     service = SelfImprovementService(
         evaluator=FailureDrivenEvaluator(),
         planner=SelfImprovementPlanner(workspace_root=workspace),
-        executor=SelfImprovementExecutor(workspace),
+        executor=SelfImprovementExecutor(workspace, enable_sandbox=False),
     )
     loop = AutonomyLoop(
         store,
@@ -208,7 +208,7 @@ def test_self_improvement_service_can_use_failure_driven_planner_for_existing_te
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "calculator.py"
     assert second.self_improvement_job.status == "patching"
-    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    # PATCHING 后进入 PENDING_APPROVAL
     assert third.self_improvement_job.status == "pending_approval"
     assert third.self_improvement_job.approval_requested_at is not None
 
@@ -239,7 +239,7 @@ def test_self_improvement_service_can_fix_zero_arg_function_from_existing_test(t
     service = SelfImprovementService(
         evaluator=FunctionFailureDrivenEvaluator(),
         planner=SelfImprovementPlanner(workspace_root=workspace),
-        executor=SelfImprovementExecutor(workspace),
+        executor=SelfImprovementExecutor(workspace, enable_sandbox=False),
     )
     loop = AutonomyLoop(
         store,
@@ -256,7 +256,7 @@ def test_self_improvement_service_can_fix_zero_arg_function_from_existing_test(t
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert second.self_improvement_job.status == "patching"
-    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    # PATCHING 后进入 PENDING_APPROVAL
     assert third.self_improvement_job.status == "pending_approval"
     assert third.self_improvement_job.approval_requested_at is not None
 
@@ -287,7 +287,7 @@ def test_self_improvement_service_can_fix_zero_arg_function_from_existing_test(t
     service = SelfImprovementService(
         evaluator=CallChainFailureDrivenEvaluator(),
         planner=SelfImprovementPlanner(workspace_root=workspace),
-        executor=SelfImprovementExecutor(workspace),
+        executor=SelfImprovementExecutor(workspace, enable_sandbox=False),
     )
     loop = AutonomyLoop(
         store,
@@ -304,7 +304,7 @@ def test_self_improvement_service_can_fix_zero_arg_function_from_existing_test(t
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert second.self_improvement_job.status == "patching"
-    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    # PATCHING 后进入 PENDING_APPROVAL
     assert third.self_improvement_job.status == "pending_approval"
     assert third.self_improvement_job.approval_requested_at is not None
 
@@ -338,7 +338,7 @@ def test_self_improvement_service_can_follow_assignment_then_return_chain_from_e
     service = SelfImprovementService(
         evaluator=AssignmentCallChainFailureDrivenEvaluator(),
         planner=SelfImprovementPlanner(workspace_root=workspace),
-        executor=SelfImprovementExecutor(workspace),
+        executor=SelfImprovementExecutor(workspace, enable_sandbox=False),
     )
     loop = AutonomyLoop(
         store,
@@ -356,7 +356,7 @@ def test_self_improvement_service_can_follow_assignment_then_return_chain_from_e
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert second.self_improvement_job.status == "patching"
-    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    # PATCHING 后进入 PENDING_APPROVAL
     assert third.self_improvement_job.status == "pending_approval"
     assert third.self_improvement_job.approval_requested_at is not None
 
@@ -397,7 +397,7 @@ def test_self_improvement_service_can_follow_multi_step_assignment_chain_from_ex
     service = SelfImprovementService(
         evaluator=MultiStepAssignmentFailureDrivenEvaluator(),
         planner=SelfImprovementPlanner(workspace_root=workspace),
-        executor=SelfImprovementExecutor(workspace),
+        executor=SelfImprovementExecutor(workspace, enable_sandbox=False),
     )
     loop = AutonomyLoop(
         store,
@@ -414,7 +414,7 @@ def test_self_improvement_service_can_follow_multi_step_assignment_chain_from_ex
     assert first.self_improvement_job is not None
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert second.self_improvement_job.status == "patching"
-    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    # PATCHING 后进入 PENDING_APPROVAL
     assert third.self_improvement_job.status == "pending_approval"
     assert third.self_improvement_job.approval_requested_at is not None
 
@@ -454,7 +454,7 @@ def test_self_improvement_service_chooses_returned_call_from_multi_import_candid
     service = SelfImprovementService(
         evaluator=MultiImportCandidateFailureDrivenEvaluator(),
         planner=SelfImprovementPlanner(workspace_root=workspace),
-        executor=SelfImprovementExecutor(workspace),
+        executor=SelfImprovementExecutor(workspace, enable_sandbox=False),
     )
     loop = AutonomyLoop(
         store,
@@ -472,7 +472,7 @@ def test_self_improvement_service_chooses_returned_call_from_multi_import_candid
     assert first.self_improvement_job.edits[0].file_path == "greeter.py"
     assert first.self_improvement_job.edits[0].search_text == 'return "bye"'
     assert second.self_improvement_job.status == "patching"
-    # Phase 6: PATCHING 后进入 PENDING_APPROVAL
+    # PATCHING 后进入 PENDING_APPROVAL
     assert third.self_improvement_job.status == "pending_approval"
     assert third.self_improvement_job.approval_requested_at is not None
 

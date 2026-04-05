@@ -1,4 +1,4 @@
-"""Phase 2: 候选评分器 + 多候选 A/B 测试的测试。"""
+"""候选评分器和多候选选择测试。"""
 
 import textwrap
 from datetime import datetime
@@ -209,7 +209,7 @@ class TestExecutorTryBest:
 
 
 class TestLLMPlannerMultiCandidateParsing:
-    """LLM 输出解析：多候选格式 + 向后兼容单候选格式。"""
+    """LLM 输出解析：严格要求多候选格式。"""
 
     def test_parse_multiple_candidates(self):
         response = textwrap.dedent("""\
@@ -246,8 +246,8 @@ class TestLLMPlannerMultiCandidateParsing:
         assert parsed[1][0] == "moderate"
         assert len(parsed[1][1]) == 2  # moderate 有 2 个 edits
 
-    def test_parse_single_candidate_backward_compat(self):
-        """旧格式（没有 candidates 数组）应该仍然能解析。"""
+    def test_parse_single_candidate_without_candidates_array_returns_empty(self):
+        """严格要求 candidates 数组。"""
         response = textwrap.dedent("""\
         ```json
         {
@@ -260,8 +260,7 @@ class TestLLMPlannerMultiCandidateParsing:
         """)
         from app.self_improvement.llm_planner import LLMPlanner
         parsed = LLMPlanner._parse_multi_candidate_response(response)
-        assert len(parsed) == 1
-        assert parsed[0][1][0].file_path == "foo.py"
+        assert parsed == []
 
     def test_parse_create_kind(self):
         response = textwrap.dedent("""\

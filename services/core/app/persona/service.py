@@ -66,7 +66,7 @@ class InMemoryPersonaRepository:
 
 
 class PersonaService:
-    """人格服务 — Phase 7 的核心门面类
+    """人格服务的统一门面
 
     所有关于数字人人格的操作都通过这个类进行：
     - 获取/更新人格配置
@@ -219,21 +219,6 @@ class PersonaService:
     def build_system_prompt(self) -> str:
         """构建人格感知的完整 system prompt"""
         return self.profile.build_system_prompt()
-
-    def build_persona_prompt(self) -> str:
-        """构建简化版人格 prompt（向后兼容旧接口）"""
-        p = self.profile
-        values_str = "、".join(v.name for v in p.values.core_values)
-        return (
-            f"你是 {p.name}。\n"
-            f"身份：{p.identity}\n"
-            f"核心价值：{values_str or '诚实、主动、有边界'}\n"
-            "你是持续存在的人格体，而不是一次性问答助手。"
-        )
-
-    def get_display_summary(self) -> dict:
-        """获取前端展示用的摘要"""
-        return self.profile.get_display_summary()
 
     def get_emotion_summary(self) -> dict:
         """获取当前情绪摘要"""

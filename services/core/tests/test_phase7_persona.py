@@ -1,4 +1,4 @@
-"""Phase 7: 人格内核测试
+"""人格内核测试
 
 覆盖：
 - PersonaProfile 数据模型
@@ -26,7 +26,7 @@ from app.persona.models import (
     default_persona,
 )
 from app.persona.emotion_engine import EmotionEngine
-from app.persona.prompt_builder import build_chat_instructions, build_persona_prompt
+from app.persona.prompt_builder import build_chat_instructions
 from app.persona.service import InMemoryPersonaRepository, PersonaService
 
 
@@ -65,15 +65,6 @@ class TestPersonaProfile:
         v1 = p.version
         updated = p.model_copy(update={"name": "新名字", "version": v1 + 1})
         assert updated.version > v1
-
-    def test_display_summary_contains_expected_keys(self):
-        p = default_persona()
-        summary = p.get_display_summary()
-        assert "name" in summary
-        assert "primary_emotion" in summary
-        assert "mood_valence" in summary
-        assert "version" in summary
-
 
 class TestPersonalityDimensions:
     """性格维度测试"""
@@ -407,11 +398,6 @@ class TestPersonaService:
         prompt = service.build_system_prompt()
         assert "持续存在的人格体" in prompt
 
-    def test_build_persona_prompt_backward_compat(self, service):
-        prompt = service.build_persona_prompt()
-        assert "小晏" in prompt
-        assert "持续存在的数字人" in prompt
-
     def test_apply_emotion_updates_state(self, service):
         new_state = service.apply_emotion(
             EmotionType.JOY, EmotionIntensity.MODERATE, "测试触发"
@@ -430,11 +416,6 @@ class TestPersonaService:
         assert "mood_valence" in summary
         assert "is_calm" in summary
         assert "active_entries" in summary
-
-    def test_get_display_summary_structure(self, service):
-        summary = service.get_display_summary()
-        assert "name" in summary
-        assert "primary_emotion" in summary
 
     def test_persists_across_calls(self, service):
         service.update_profile(name="持久化测试")
@@ -455,20 +436,20 @@ class TestPersonaService:
 
 
 # ═══════════════════════════════════════════════════
-# PromptBuilder 向后兼容测试
+# PromptBuilder 测试
 # ═══════════════════════════════════════════════════
 
 
 class TestPromptBuilderWithPersona:
     """PromptBuilder 与人格系统集成测试"""
 
-    def test_build_instructions_without_persona_uses_fallback(self):
-        """没有注入人格 prompt 时，回退到旧的硬编码方式"""
-        instructions = build_chat_instructions(
-            focus_goal_title="测试目标",
-            user_message="你好",
-        )
-        assert "Xiao Yan" in instructions or "持续存在的人格体" in instructions
+    def test_build_instructions_without_persona_raises(self):
+        """没有注入人格 prompt 时直接失败。"""
+        with pytest.raises(ValueError, match="persona_system_prompt is required"):
+            build_chat_instructions(
+                focus_goal_title="测试目标",
+                user_message="你好",
+            )
 
     def test_build_instructions_with_persona_injects_it(self):
         """注入人格 prompt 时使用它"""
@@ -486,7 +467,7 @@ class TestPromptBuilderWithPersona:
         assert "实验型数字人" in instructions
         assert "好奇心" in instructions
         assert "有点兴奋" in instructions
-        # 不应该包含旧的 Xiao Yan 硬编码
+        # 不应该混入未显式传入的人格文案
         assert "Xiao Yan" not in instructions
 
     def test_build_instructions_maintains_guidance_with_persona(self):

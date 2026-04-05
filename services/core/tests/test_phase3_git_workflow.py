@@ -1,4 +1,4 @@
-"""Phase 3: Git 工作流 + 创建新文件能力 测试。
+"""Git 工作流与新文件创建测试。
 
 覆盖范围：
 - GitWorkflowManager: 分支创建/切换/回滚/合并
@@ -714,7 +714,7 @@ class TestServiceGitIntegration:
 
         final_job = new_state.self_improvement_job
         if final_job and final_job.status == SelfImprovementStatus.APPLIED:
-            # Phase 3: 应该有 Git 信息
+            # 应该有 Git 信息
             assert final_job.commit_hash is not None or final_job.branch_name is not None
 
 

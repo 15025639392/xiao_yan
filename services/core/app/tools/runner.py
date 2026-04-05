@@ -1,21 +1,8 @@
-"""
-Enhanced Command Runner — Tools Phase: 安全命令执行器
-
-特性:
-- 超时控制（默认 30s/可配置）
-- 输出大小限制（默认 2MB）
-- 工作目录安全（可选限制在指定目录内）
-- 富化执行结果（含 exit_code / duration / stderr / 截断标记）
-- 执行历史记录
-- 错误分类（超时 / 被信号终止 / 非零退出码）
-
-向后兼容: ActionResult 数据模型保持不变，新增字段通过 ToolExecutionResult 扩展。
-"""
+"""Command Runner — 安全命令执行器。"""
 
 from __future__ import annotations
 
 import logging
-import signal
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -23,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.domain.models import ActionResult
+from app.tools.models import ToolExecutionResult
 from app.tools.sandbox import (
     CommandSandbox,
     SandboxViolation,
@@ -32,42 +19,6 @@ from app.tools.sandbox import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ToolExecutionResult:
-    """增强版执行结果。"""
-    command: str
-    output: str                          # stdout（截断后）
-    stderr: str = ""                     # stderr 内容
-    exit_code: int = -1                  # 退出码 (-1=未运行)
-    success: bool = False                # 是否成功 (exit_code == 0)
-    timed_out: bool = False              # 是否超时
-    truncated: bool = False              # 输出是否被截断
-    duration_seconds: float = 0.0        # 实际执行时间
-    executed_at: str = ""                # ISO 时间戳
-    tool_metadata: ToolMetadata | None = None  # 工具元数据
-    working_directory: str = ""          # 执行时的工作目录
-    error_message: str | None = None     # 失败时的错误描述
-
-    # 向后兼容：转换为旧 ActionResult
-    def to_action_result(self) -> ActionResult:
-        output_text = self.output
-        if self.stderr and self.exit_code != 0:
-            output_text += f"\n[stderr] {self.stderr[:500]}"
-        if self.timed_out:
-            output_text += "\n[TIMEOUT]"
-        return ActionResult(
-            command=self.command,
-            output=output_text.strip(),
-        )
-
-    @property
-    def summary(self) -> str:
-        """人类可读的结果摘要。"""
-        status = "OK" if self.success else ("TIMEOUT" if self.timed_out else f"ERR({self.exit_code})")
-        trunc_marker = " [truncated]" if self.truncated else ""
-        return f"[{status}] {self.duration_seconds:.2f}s → {len(self.output)}B{trunc_marker}"
 
 
 @dataclass
@@ -86,12 +37,12 @@ class ExecutionHistoryEntry:
             "success": self.result.success,
             "timed_out": self.result.timed_out,
             "duration_seconds": round(self.result.duration_seconds, 3),
-            "tool_name": self.result.tool_metadata.name if self.result.tool_metadata else None,
-            "safety_level": self.result.tool_metadata.safety_level.value if self.result.tool_metadata else None,
+            "tool_name": self.result.tool_name,
+            "safety_level": self.result.safety_level,
             "created_at": self.created_at,
         }
-        if self.result.error_message:
-            d["error"] = self.result.error_message
+        if self.result.error:
+            d["error"] = self.result.error
         return d
 
 
@@ -99,20 +50,7 @@ class ExecutionHistoryEntry:
 
 
 class CommandRunner:
-    """增强版命令执行器。
-
-    用法::
-
-        # 向后兼容用法
-        runner = CommandRunner(sandbox)
-        action_result = runner.run("pwd")
-
-        # 新功能：获取增强结果
-        runner = EnhancedCommandRunner(sandbox)
-        tool_result = runner.run_enhanced("ls -la")
-        print(tool_result.summary)
-        print(tool_result.exit_code)
-    """
+    """命令执行器。"""
 
     DEFAULT_TIMEOUT_SECONDS = 30.0
     DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024  # 2 MB
@@ -145,16 +83,8 @@ class CommandRunner:
         self.max_history = max_history
         self._history: list[ExecutionHistoryEntry] = []
 
-    def run(self, command: str) -> ActionResult:
-        """向后兼容接口：执行命令并返回 ActionResult。
-
-        内部调用 run_enhanced() 并转换为 ActionResult。
-        """
-        enhanced = self.run_enhanced(command)
-        return enhanced.to_action_result()
-
-    def run_enhanced(self, command: str) -> ToolExecutionResult:
-        """执行命令并返回增强的 ToolExecutionResult。
+    def run(self, command: str) -> ToolExecutionResult:
+        """执行命令并返回结构化 ToolExecutionResult。
 
         流程:
         1. 沙箱校验（白名单 + 注入检测 + 参数检查）
@@ -177,7 +107,7 @@ class CommandRunner:
                 duration_seconds=time.monotonic() - start_time,
                 executed_at=now_iso,
                 working_directory=str(self.working_directory or Path.cwd()),
-                error_message=str(exc),
+                error=str(exc),
             )
 
         # 提取工具元数据
@@ -243,9 +173,10 @@ class CommandRunner:
             truncated=(stdout_truncated or stderr_truncated),
             duration_seconds=round(elapsed, 3),
             executed_at=now_iso,
-            tool_metadata=tool_meta,
+            tool_name=tool_meta.name if tool_meta else None,
+            safety_level=tool_meta.safety_level.value if tool_meta else None,
             working_directory=cwd_str or str(Path.cwd()),
-            error_message=error_msg,
+            error=error_msg,
         )
 
         # 4. 记录历史
@@ -286,9 +217,3 @@ class CommandRunner:
         # 保持历史大小不超过上限
         while len(self._history) > self.max_history:
             self._history.pop(0)
-
-
-# ── 向后兼容别名 ──────────────────────────────────────
-
-# 让旧的 `from app.tools.runner import CommandRunner` 仍然工作
-# CommandRunner 已在上面定义为增强版本

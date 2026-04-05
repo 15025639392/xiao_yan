@@ -7,6 +7,7 @@ from app.goals.repository import InMemoryGoalRepository
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore
+from app.tools.models import ToolExecutionResult
 
 
 class StubCommandRunner:
@@ -16,14 +17,12 @@ class StubCommandRunner:
 
     def run(self, command: str):
         self.commands.append(command)
-        return type(
-            "CommandResult",
-            (),
-            {
-                "command": command,
-                "output": self.outputs[command],
-            },
-        )()
+        return ToolExecutionResult(
+            command=command,
+            output=self.outputs[command],
+            success=True,
+            exit_code=0,
+        )
 
 
 def test_tick_once_keeps_sleeping_state_unchanged():

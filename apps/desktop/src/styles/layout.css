@@ -283,7 +283,6 @@
   flex-direction: column;
 }
 
-/* Legacy console shell - keep for compatibility */
 .console-shell {
   width: min(1400px, calc(100% - var(--space-8)));
   margin: 0 auto;

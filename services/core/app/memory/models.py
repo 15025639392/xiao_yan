@@ -1,4 +1,4 @@
-"""记忆数据模型 — Phase 8: 记忆与人格联动
+"""记忆数据模型
 
 设计理念：
 - 记忆不是扁平的事件流，而是有类型、重要性、情绪色彩的结构化数据
@@ -10,7 +10,7 @@
 2. episodic   — 情景记忆（某次对话的氛围、共同经历的片段）
 3. semantic   — 知识记忆（学到的概念、技能、理解）
 4. emotional  — 情绪印记（强烈情绪事件的记录）
-5. chat_raw   — 原始对话（保留完整聊天记录，用于上下文）
+5. chat_raw   — 原始对话（完整聊天记录，用于上下文）
 
 记忆强度（从弱到强）：
   faint → weak → normal → vivid → core
@@ -56,17 +56,7 @@ class MemoryEmotion(str, Enum):
 
 
 class MemoryEntry(BaseModel):
-    """单条记忆条目 — Phase 8 的核心数据结构
-
-    相比旧 MemoryEvent 的升级：
-    - 细粒度的 kind（5 种 vs 之前的笼统字符串）
-    - strength 生命周期（会随时间淡化）
-    - emotion_tag 情绪色彩（影响人格检索偏好）
-    - keywords 手动/自动关键词（增强检索）
-    - subject 实体关联（谁的记忆 / 关于什么）
-    - importance 0-10 重要性评分
-    - access_count 访问次数（常用记忆更不容易淡化）
-    """
+    """单条记忆条目。"""
     id: str = Field(default_factory=lambda: _generate_id(), description="唯一 ID")
     kind: MemoryKind = MemoryKind.CHAT_RAW
     content: str = Field(min_length=1, description="记忆内容")
@@ -93,6 +83,33 @@ class MemoryEntry(BaseModel):
         default_factory=list,
         description="关联的其他记忆 ID",
     )
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        kind: MemoryKind,
+        content: str,
+        role: str | None = None,
+        strength: MemoryStrength = MemoryStrength.NORMAL,
+        importance: int = 5,
+        emotion_tag: MemoryEmotion = MemoryEmotion.NEUTRAL,
+        keywords: list[str] | None = None,
+        subject: str | None = None,
+        source_context: str | None = None,
+    ) -> "MemoryEntry":
+        """统一的显式构造入口，避免调用方散落直接拼字段。"""
+        return cls(
+            kind=kind,
+            content=content,
+            role=role,
+            strength=strength,
+            importance=importance,
+            emotion_tag=emotion_tag,
+            keywords=keywords or [],
+            subject=subject,
+            source_context=source_context,
+        )
 
     @property
     def is_expired(self) -> bool:
@@ -145,9 +162,9 @@ class MemoryEntry(BaseModel):
         return f"{prefix} {self.content}"
 
     def to_display_dict(self) -> dict:
-        """前端展示用的字典"""
+        """转为界面使用的字典。"""
         return {
-            "id": self.id[:8],  # 只显示前 8 位
+            "id": self.id,  # 返回完整 ID 确保唯一性
             "kind": self.kind.value,
             "content": self.content,
             "role": self.role,
@@ -171,7 +188,7 @@ class MemoryCollection(BaseModel):
 
     entries: list[MemoryEntry] = Field(default_factory=list)
     total_count: int = 0
-    query_summary: str | None = None  # 这次检索的描述
+    query_summary: str | None = None
 
     @property
     def has_facts(self) -> bool:
@@ -208,7 +225,6 @@ class MemoryCollection(BaseModel):
         2. 按 kind 分组，每组取最重要的几条
         3. 总字符数不超过 max_chars
         """
-        # 按保留分排序
         sorted_entries = sorted(
             self.entries,
             key=lambda e: (e.retention_score, e.importance),
@@ -231,39 +247,43 @@ class MemoryCollection(BaseModel):
         return "\n".join(fragments)
 
 
-# ── 向后兼容：旧的 MemoryEvent ────────────────────────────
+# ── 存储事件模型 ────────────────────────────────────────
 
 
 class MemoryEvent(BaseModel):
-    """向后兼容的旧记忆事件格式
-
-    Phase 8 的新代码应使用 MemoryEntry，
-    这个类仅为兼容已有代码而保留。
-    """
+    """记忆存储层使用的事件模型。"""
     kind: str
     content: str
     role: str | None = None
+    source_context: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    entry_id: str = Field(
+        default_factory=lambda: _generate_id(),
+        description="关联的 MemoryEntry ID（用于删除/更新匹配）",
+    )
 
     @classmethod
     def from_entry(cls, entry: MemoryEntry) -> "MemoryEvent":
-        """从新格式转换到旧格式"""
+        """从 MemoryEntry 转换到存储事件。"""
         return cls(
-            kind=entry.kind.value,
+            kind=_storage_kind_for_entry(entry),
             content=entry.content,
             role=entry.role,
+            source_context=entry.source_context,
             created_at=entry.created_at,
+            entry_id=entry.id,  # 保存 ID 用于后续匹配
         )
 
     def to_entry(self) -> MemoryEntry:
-        """从旧格式升级为新格式"""
-        # 尝试映射 kind
+        """从存储事件转换为 MemoryEntry。"""
         kind_map = {
             "chat": MemoryKind.CHAT_RAW,
             "world": MemoryKind.FACT,
             "inner": MemoryKind.EPISODIC,
             "autobio": MemoryKind.EPISODIC,
-            # Phase 8: 新类型直接映射
+            "action": MemoryKind.EPISODIC,
+            "self_check": MemoryKind.EPISODIC,
+            "assistant_note": MemoryKind.CHAT_RAW,
             "fact": MemoryKind.FACT,
             "episodic": MemoryKind.EPISODIC,
             "semantic": MemoryKind.SEMANTIC,
@@ -272,7 +292,6 @@ class MemoryEvent(BaseModel):
         }
         kind = kind_map.get(self.kind, MemoryKind.CHAT_RAW)
 
-        # 根据类型设置默认重要性（旧格式无此字段）
         default_importance = {
             MemoryKind.FACT: 6,          # 事实默认较重要
             MemoryKind.EMOTIONAL: 5,
@@ -282,9 +301,11 @@ class MemoryEvent(BaseModel):
         }.get(kind, 5)
 
         return MemoryEntry(
+            id=self.entry_id,
             kind=kind,
             content=self.content,
             role=self.role,
+            source_context=self.source_context,
             created_at=self.created_at,
             importance=default_importance,
         )
@@ -302,3 +323,14 @@ def _generate_id(length: int = 12) -> str:
     _counter += 1
     ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     return f"mem_{ts}_{_counter:x}"
+
+
+def _storage_kind_for_entry(entry: MemoryEntry) -> str:
+    """将 MemoryEntry 映射到存储层事件类型，保留运行时依赖的子类型。"""
+    if entry.source_context in {"world", "inner", "autobio", "action", "self_check", "assistant_note"}:
+        return entry.source_context
+
+    if entry.kind == MemoryKind.CHAT_RAW and entry.role in {"user", "assistant"}:
+        return "chat"
+
+    return entry.kind.value

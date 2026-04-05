@@ -7,7 +7,7 @@ import { GoalsPanel } from "./components/GoalsPanel";
 import { HistoryPanel } from "./components/HistoryPanel";
 import type { SelfImprovementHistoryEntry } from "./lib/api";
 import { MemoryPanel } from "./components/MemoryPanel";
-import { SettingsPanel } from "./components/SettingsPanel";
+import { PersonaPanel } from "./components/PersonaPanel";
 import { StatusPanel } from "./components/StatusPanel";
 import { ToolPanel } from "./components/ToolPanel";
 import { WorldPanel } from "./components/WorldPanel";
@@ -391,7 +391,7 @@ export default function App() {
             onCompleteGoal={(goalId) => handleUpdateGoalStatus(goalId, "completed")}
           />
         ) : route === "persona" ? (
-          <SettingsPanel />
+          <PersonaPanel />
         ) : route === "memory" ? (
           <MemoryPage />
         ) : route === "history" ? (
@@ -439,11 +439,11 @@ export default function App() {
                     </div>
                     <div className="about-meta__item">
                       <span className="about-meta__label">人格系统</span>
-                      <span className="about-meta__value">Phase 9</span>
+                      <span className="about-meta__value">情绪驱动</span>
                     </div>
                     <div className="about-meta__item">
                       <span className="about-meta__label">记忆系统</span>
-                      <span className="about-meta__value">Phase 8</span>
+                      <span className="about-meta__value">结构化记忆</span>
                     </div>
                   </div>
                 </div>
@@ -543,8 +543,6 @@ function resolveRoute(hash: string): AppRoute {
   if (hash === "#/memory") return "memory";
   if (hash === "#/history") return "history";
   if (hash === "#/tools") return "tools";
-  // Legacy redirect
-  if (hash === "#/settings") return "persona";
   return "overview";
 }
 

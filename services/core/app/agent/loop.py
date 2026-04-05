@@ -6,7 +6,7 @@ from app.agent.autonomy import GoalFocusSummary, choose_next_action
 from app.domain.models import FocusMode, TodayPlanStepKind, TodayPlanStepStatus, WakeMode
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import GoalRepository, InMemoryGoalRepository
-from app.memory.models import MemoryEvent
+from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
 from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanPlanner
 from app.runtime import StateStore
@@ -112,13 +112,12 @@ class AutonomyLoop:
                     now,
                     goal_world_state,
                 )
-                self.memory_repository.save_event(
-                    MemoryEvent(
-                        kind="chat",
-                        role="assistant",
-                        content=proactive_message,
-                    )
+                entry = MemoryEntry.create(
+                    kind=MemoryKind.CHAT_RAW,
+                    content=proactive_message,
+                    role="assistant",
                 )
+                self.memory_repository.save_event(MemoryEvent.from_entry(entry))
                 next_state = state.model_copy(
                     update={
                         "active_goal_ids": [goal.id],
@@ -186,9 +185,12 @@ class AutonomyLoop:
             if actionable_command is not None:
                 result = self.command_runner.run(actionable_command)
                 action_summary = _build_action_result_thought(goal_title, now, world_state, result)
-                self.memory_repository.save_event(
-                    MemoryEvent(kind="action", content=action_summary, created_at=now)
+                entry = MemoryEntry.create(
+                    kind=MemoryKind.EPISODIC,
+                    content=action_summary,
+                    source_context="action",
                 )
+                self.memory_repository.save_event(MemoryEvent.from_entry(entry))
                 next_state = state.model_copy(
                     update={
                         "current_thought": action_summary,
@@ -237,13 +239,12 @@ class AutonomyLoop:
                     now,
                     world_state,
                 )
-                self.memory_repository.save_event(
-                    MemoryEvent(
-                        kind="chat",
-                        role="assistant",
-                        content=proactive_message,
-                    )
+                entry = MemoryEntry.create(
+                    kind=MemoryKind.CHAT_RAW,
+                    content=proactive_message,
+                    role="assistant",
                 )
+                self.memory_repository.save_event(MemoryEvent.from_entry(entry))
                 updates["current_thought"] = proactive_message
                 updates["last_proactive_source"] = latest_user_event.content
                 updates["last_proactive_at"] = now
@@ -381,9 +382,12 @@ class AutonomyLoop:
                 world_state,
                 result,
             )
-            self.memory_repository.save_event(
-                MemoryEvent(kind="action", content=action_summary, created_at=now)
+            entry = MemoryEntry.create(
+                kind=MemoryKind.EPISODIC,
+                content=action_summary,
+                source_context="action",
             )
+            self.memory_repository.save_event(MemoryEvent.from_entry(entry))
             updates["current_thought"] = action_summary
             updates["last_action"] = result
         else:
@@ -394,13 +398,12 @@ class AutonomyLoop:
                 world_state,
             )
         if next_focus_mode == FocusMode.AUTONOMY:
-            self.memory_repository.save_event(
-                MemoryEvent(
-                    kind="autobio",
-                    content=_build_today_plan_completion_memory(state.today_plan.goal_title),
-                    created_at=now,
-                )
+            entry = MemoryEntry.create(
+                kind=MemoryKind.EPISODIC,
+                content=_build_today_plan_completion_memory(state.today_plan.goal_title),
+                source_context="autobio",
             )
+            self.memory_repository.save_event(MemoryEvent.from_entry(entry))
         next_state = state.model_copy(update=updates)
         return self.state_store.set(next_state)
 
@@ -415,13 +418,11 @@ class AutonomyLoop:
                 and state.self_improvement_job.status != next_state.self_improvement_job.status
                 and next_state.self_improvement_job.status.value in {"applied", "failed"}
             ):
-                self.memory_repository.save_event(
-                    MemoryEvent(
-                        kind="inner",
-                        content=_build_self_improvement_memory(next_state.self_improvement_job),
-                        created_at=now,
-                    )
+                entry = MemoryEntry.create(
+                    kind=MemoryKind.EPISODIC,
+                    content=_build_self_improvement_memory(next_state.self_improvement_job),
                 )
+                self.memory_repository.save_event(MemoryEvent.from_entry(entry))
             return self.state_store.set(next_state)
 
         next_state = self.self_improvement_service.maybe_start_job(
@@ -463,13 +464,12 @@ class AutonomyLoop:
                 current_goal.title if current_goal is not None else state.active_goal_ids[0]
             )
 
-        self.memory_repository.save_event(
-            MemoryEvent(
-                kind="world",
-                content=self.world_state_service.build_event(world_state, goal_title),
-                created_at=now,
-            )
+        entry = MemoryEntry.create(
+            kind=MemoryKind.FACT,
+            content=self.world_state_service.build_event(world_state, goal_title),
+            source_context="world",
         )
+        self.memory_repository.save_event(MemoryEvent.from_entry(entry))
 
     def _maybe_record_inner_stage_memory(self, state, recent_events, world_state, now: datetime) -> None:
         if world_state.focus_stage == "none" or world_state.focus_step is None:
@@ -489,13 +489,12 @@ class AutonomyLoop:
         if latest_inner_event is not None and latest_inner_event.content == inner_memory:
             return
 
-        self.memory_repository.save_event(
-            MemoryEvent(
-                kind="inner",
-                content=inner_memory,
-                created_at=now,
-            )
+        entry = MemoryEntry.create(
+            kind=MemoryKind.EPISODIC,
+            content=inner_memory,
+            source_context="inner",
         )
+        self.memory_repository.save_event(MemoryEvent.from_entry(entry))
 
     def _maybe_record_autobio_memory(self, now: datetime) -> None:
         recent_events = list(reversed(self.memory_repository.list_recent(limit=20)))
@@ -508,13 +507,12 @@ class AutonomyLoop:
         if latest_autobio_event is not None and latest_autobio_event.content == autobio_memory:
             return
 
-        self.memory_repository.save_event(
-            MemoryEvent(
-                kind="autobio",
-                content=autobio_memory,
-                created_at=now,
-            )
+        entry = MemoryEntry.create(
+            kind=MemoryKind.EPISODIC,
+            content=autobio_memory,
+            source_context="autobio",
         )
+        self.memory_repository.save_event(MemoryEvent.from_entry(entry))
 
 
 def _build_proactive_thought(recent_events, now: datetime, world_state) -> str:

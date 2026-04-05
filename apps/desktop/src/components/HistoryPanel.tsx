@@ -163,8 +163,8 @@ function historyStatusLabel(status: string): string {
     patching: "修补中",
     diagnosing: "诊断中",
     pending: "待开始",
-    pending_approval: "待审批",   // Phase 6
-    rejected: "已拒绝",            // Phase 6
+    pending_approval: "待审批",
+    rejected: "已拒绝",
   };
   return map[status] ?? status;
 }
@@ -172,8 +172,8 @@ function historyStatusLabel(status: string): string {
 function historyStatusClass(status: string): string {
   if (status === "applied") return "completed";
   if (status === "failed") return "abandoned";
-  if (status === "rejected") return "abandoned";     // Phase 6
-  if (status === "pending_approval") return "active"; // Phase 6
+  if (status === "rejected") return "abandoned";
+  if (status === "pending_approval") return "active";
   if (status === "verifying" || status === "patching") return "active";
   return "paused";
 }

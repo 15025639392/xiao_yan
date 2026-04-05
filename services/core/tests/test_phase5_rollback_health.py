@@ -1,4 +1,4 @@
-"""Phase 5: 回滚恢复 + 健康度自愈 测试。
+"""回滚恢复与健康度自愈测试。
 
 覆盖范围：
 - DiffSnapshot 数据模型：快照创建/序列化/哈希校验
@@ -124,7 +124,7 @@ def recovery(workspace: Path) -> RollbackRecovery:
 
 @pytest.fixture
 def executor(workspace: Path) -> SelfImprovementExecutor:
-    """创建了集成了 Phase 5 的 Executor。"""
+    """创建集成回滚与健康检查的 Executor。"""
     from app.self_improvement.rollback_recovery import RollbackRecovery
     return SelfImprovementExecutor(
         workspace_root=workspace,
@@ -768,8 +768,8 @@ class TestHealthTrendAndDecisions:
 # ════════════════════════════════════════════
 
 
-class TestExecutorPhase5Integration:
-    """Executor 与 Phase 5 模块的集成。"""
+class TestExecutorHealthIntegration:
+    """Executor 与回滚、健康检查模块的集成。"""
 
     def test_executor_has_recovery(self, executor):
         """Executor 包含回滚恢复器。"""
@@ -839,7 +839,7 @@ class TestExecutorPhase5Integration:
         assert executor.recovery.has_snapshot(job.id)
 
     def test_executor_without_recovery_safe(self, workspace):
-        """没有注入 recovery 时 Executor 仍能正常工作（向后兼容）。"""
+        """没有注入 recovery 时 Executor 仍能正常工作。"""
         exe = SelfImprovementExecutor(
             workspace_root=workspace,
             rollback_recovery=None,
@@ -863,8 +863,8 @@ class TestExecutorPhase5Integration:
 # ════════════════════════════════════════════
 
 
-class TestServicePhase5Integration:
-    """Service 层集成 Phase 5 的健康检查。"""
+class TestServiceHealthIntegration:
+    """Service 层的健康检查集成。"""
 
     def _make_state(self, job=None):
         from app.domain.models import BeingState, FocusMode
@@ -923,7 +923,7 @@ class TestServicePhase5Integration:
         if new_state and new_state.self_improvement_job:
             final_job = new_state.self_improvement_job
             if final_job.status == SelfImprovementStatus.APPLIED:
-                # Phase 5 字段可能已被填充
+                # 健康检查字段可能已被填充
                 assert hasattr(final_job, 'health_score')
                 assert hasattr(final_job, 'health_grade')
 

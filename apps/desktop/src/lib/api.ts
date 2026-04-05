@@ -11,11 +11,6 @@ export type TodayPlan = {
   steps: TodayPlanStep[];
 };
 
-export type ActionResult = {
-  command: string;
-  output: string;
-};
-
 export type EditKind = "replace" | "create" | "insert";
 
 export type SelfImprovementEdit = {
@@ -41,64 +36,45 @@ export type SelfImprovementJob = {
     | "pending"
     | "diagnosing"
     | "patching"
-    | "pending_approval"   // Phase 6
+    | "pending_approval"
     | "verifying"
     | "applied"
     | "failed"
-    | "rejected";          // Phase 6
+    | "rejected";
   spec: string;
   patch_summary?: string | null;
   red_verification?: SelfImprovementVerification | null;
   verification?: SelfImprovementVerification | null;
-  edits?: SelfImprovementEdit[];          // Phase 1+: 最终应用的编辑列表
-  test_edits?: SelfImprovementEdit[];     // Phase 2: 多候选方案的测试编辑
+  edits?: SelfImprovementEdit[];
+  test_edits?: SelfImprovementEdit[];
   touched_files?: string[];
   cooldown_until?: string | null;
 
-  // ── Phase 3: Git 工作流 ──
-  branch_name?: string | null;           // 本次自编程使用的分支名
-  commit_hash?: string | null;           // commit 完整 hash
-  commit_message?: string | null;        // commit message 文本
-  candidate_label?: string | null;       // 多候选模式下选中的方案标签
+  // Git 执行信息
+  branch_name?: string | null;
+  commit_hash?: string | null;
+  commit_message?: string | null;
+  candidate_label?: string | null;
 
-  // ── Phase 4: 沙箱 + 冲突检测 ──
-  sandbox_prechecked?: boolean;          // 是否经过沙箱预验证
-  sandbox_result?: string | null;        // 预验结果摘要
-  conflict_severity?: string;            // safe / warning / blocking
-  conflict_details?: string | null;      // 冲突详情
+  // 预检与冲突信息
+  sandbox_prechecked?: boolean;
+  sandbox_result?: string | null;
+  conflict_severity?: string;
+  conflict_details?: string | null;
 
-  // ── Phase 5: 回滚恢复 + 健康度 ──
-  health_score?: number | null;          // 健康检查总分 (0~100)
-  health_grade?: string | null;          // excellent/good/fair/poor/critical
-  rollback_info?: string | null;         // 回滚信息
-  snapshot_taken?: boolean;              // 是否在 apply 前创建了差异快照
+  // 验证与回滚信息
+  health_score?: number | null;
+  health_grade?: string | null;
+  rollback_info?: string | null;
+  snapshot_taken?: boolean;
 
-  // ── Phase 6: 审批字段 ──
-  approval_requested_at?: string | null; // 发起审批时间 (ISO)
-  approval_edits_summary?: string | null;// 编辑摘要（供审批查看）
-  approval_reason?: string | null;       // 拒绝原因
+  // 审批信息
+  approval_requested_at?: string | null;
+  approval_edits_summary?: string | null;
+  approval_reason?: string | null;
 };
 
-// ── 健康度报告（Phase 5）──
-export type HealthDimensionScore = {
-  name: string;
-  score: number;
-  weight: number;
-  weighted_score: number;
-  details: string;
-};
-
-export type HealthReport = {
-  overall_score: number;
-  grade: string;
-  trend: "improving" | "stable" | "declining" | "unknown";
-  dimensions: HealthDimensionScore[];
-  summary: string;
-  rollback_suggested: boolean;
-  assessed_at: string;
-};
-
-// ── 自编程历史记录（Phase 4+）──
+// 自编程历史记录
 export type SelfImprovementHistoryEntry = {
   job_id: string;
   target_area: string;
@@ -118,7 +94,7 @@ export type BeingState = {
   current_thought: string | null;
   active_goal_ids: string[];
   today_plan?: TodayPlan | null;
-  last_action?: ActionResult | null;
+  last_action?: ToolExecutionResult | null;
   self_improvement_job?: SelfImprovementJob | null;
 };
 
@@ -230,7 +206,7 @@ export function updateGoalStatus(
   return post<Goal>(`/goals/${goalId}/status`, { status });
 }
 
-// ── 自编程系统 API（Phase 1-5）──
+// 自编程 API
 
 /** 获取自编程历史记录 */
 export function fetchSelfImprovementHistory(): Promise<{ entries: SelfImprovementHistoryEntry[] }> {
@@ -240,23 +216,6 @@ export function fetchSelfImprovementHistory(): Promise<{ entries: SelfImprovemen
 /** 触发回滚操作 */
 export function rollbackSelfImprovementJob(jobId: string, reason?: string): Promise<{ success: boolean; message: string }> {
   return post<{ success: boolean; message: string }>(`/self-improvement/${jobId}/rollback`, { reason });
-}
-
-/** 获取健康度报告 */
-export function fetchHealthReport(): Promise<HealthReport> {
-  return get<HealthReport>("/self-improvement/health");
-}
-
-// ── 审批交互 API（Phase 6）──
-
-export type PendingApprovalResponse = {
-  pending: SelfImprovementJob | null;
-  has_pending: boolean;
-};
-
-/** 获取当前等待审批的 Job */
-export function fetchPendingApproval(): Promise<PendingApprovalResponse> {
-  return get<PendingApprovalResponse>("/self-improvement/pending");
 }
 
 /** 批准自编程 Job */
@@ -282,7 +241,7 @@ export function rejectSelfImprovementJob(
 }
 
 // ══════════════════════════════════════════════
-// Phase 7: 人格内核 API
+// 人格 API
 // ══════════════════════════════════════════════
 
 export type EmotionType =
@@ -341,17 +300,6 @@ export type PersonaProfile = {
   version: number;
 };
 
-export type PersonaSummary = {
-  name: string;
-  identity: string;
-  personality_traits: string[];
-  primary_emotion: string;
-  mood_valence: number;
-  arousal: number;
-  version: number;
-  emotion: ReturnType<typeof fetchEmotionState> extends Promise<infer T> ? T : never;
-};
-
 export type EmotionState = {
   primary_emotion: EmotionType;
   primary_intensity: EmotionIntensity;
@@ -373,24 +321,6 @@ export type EmotionState = {
 /** 获取完整人格档案 */
 export function fetchPersona(): Promise<PersonaProfile> {
   return get<PersonaProfile>("/persona");
-}
-
-/** 获取人格摘要（展示用） */
-export function fetchPersonaSummary(): Promise<{
-  name: string;
-  identity: string;
-  personality_traits: string[];
-  primary_emotion: string;
-  mood_valence: number;
-  arousal: number;
-  version: number;
-  emotion: EmotionState;
-}> {
-  return get<typeof arguments extends never ? never : {
-    name: string; identity: string; personality_traits: string[];
-    primary_emotion: string; mood_valence: number; arousal: number;
-    version: number; emotion: EmotionState;
-  }>("/persona/summary");
 }
 
 /** 获取情绪状态 */
@@ -436,7 +366,7 @@ export function resetPersona(): Promise<{ success: boolean; profile: PersonaProf
 }
 
 // ══════════════════════════════════════════════
-// Phase 8: 记忆与人格联动 API
+// 记忆 API
 // ══════════════════════════════════════════════
 
 export type MemoryKind = "fact" | "episodic" | "semantic" | "emotional" | "chat_raw";
@@ -508,57 +438,62 @@ export function createMemory(data: {
   return post<{ success: boolean; entry: MemoryEntryDisplay }>("/memory", data);
 }
 
-/** 获取最近记忆 */
-export function fetchRecentMemories(limit?: number, kind?: MemoryKind): Promise<{ entries: MemoryEntryDisplay[]; total_count: number }> {
-  const params = `?limit=${limit ?? 20}${kind ? `&kind=${kind}` : ""}`;
-  return get<{ entries: MemoryEntryDisplay[]; total_count: number }>(`/memory/recent${params}`);
+// ══════════════════════════════════════════════
+// 记忆操作 API（删除 / 更新 / 标星）
+// ══════════════════════════════════════════════
+
+/** 删除指定记忆 */
+export function deleteMemory(memoryId: string): Promise<{ success: boolean; deleted_id: string }> {
+  return fetch(`${BASE_URL}/memory/${encodeURIComponent(memoryId)}`, { method: "DELETE" }).then((r) => {
+    if (!r.ok) throw new Error(`delete memory failed: ${r.status}`);
+    return r.json();
+  });
 }
 
-/** 获取记忆 prompt 上下文（调试用） */
-export function fetchMemoryContext(query?: string | null): Promise<{ context: string; char_count: number; has_content: boolean }> {
-  const q = query ? `?query=${encodeURIComponent(query)}` : "";
-  return get<{ context: string; char_count: number; has_content: boolean }>(`/memory/context${q}`);
+/** 批量删除记忆 */
+export function batchDeleteMemories(memoryIds: string[]): Promise<{ success: boolean; deleted: number; failed: number; total: number }> {
+  return post<{ success: boolean; deleted: number; failed: number; total: number }>("/memory/batch-delete", { memory_ids: memoryIds });
+}
+
+/** 更新记忆内容或属性 */
+export function updateMemory(
+  memoryId: string,
+  data: {
+    content?: string;
+    kind?: MemoryKind;
+    importance?: number;
+    strength?: MemoryStrength;
+    emotion_tag?: MemoryEmotion;
+    keywords?: string[] | null;
+    subject?: string | null;
+  },
+): Promise<{ success: boolean; entry: MemoryEntryDisplay | null }> {
+  return post<{ success: boolean; entry: MemoryEntryDisplay | null }>(
+    `/memory/${encodeURIComponent(memoryId)}`,
+    data,
+  );
+}
+
+/** 标记/取消标记记忆为重要 */
+export function starMemory(
+  memoryId: string,
+  important: boolean = true,
+): Promise<{ success: boolean; starred: boolean; memory_id: string }> {
+  return post<{ success: boolean; starred: boolean; memory_id: string }>(
+    `/memory/${encodeURIComponent(memoryId)}/star`,
+    { important },
+  );
+}
+
+/** HTTP DELETE/PUT 辅助函数 */
+async function del<T>(path: string): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`request failed: ${response.status}`);
+  return response.json();
 }
 
 // ══════════════════════════════════════════════
-// Phase 9: 情绪→表达风格映射 API
-// ══════════════════════════════════════════════
-
-export type ExpressionVolume = "very_brief" | "brief" | "normal" | "verbose" | "very_verbose";
-export type EmojiLevelType = "never" | "rarely" | "sometimes" | "often" | "frequently";
-export type SentencePatternType = "fragmented" | "short_direct" | "balanced" | "exclamatory" | "elaborate";
-export type PunctuationStyleType = "minimal" | "loose" | "standard" | "energetic" | "dramatic";
-export type ToneModifierType = "flat" | "gentle" | "playful" | "intense" | "hesitant" | "sarcastic";
-
-export type StyleOverrideConfig = {
-  volume: ExpressionVolume;
-  emoji_level: EmojiLevelType;
-  sentence_pattern: SentencePatternType;
-  punctuation_style: PunctuationStyleType;
-  tone_modifier: ToneModifierType;
-};
-
-export type ExpressionStyleResponse = {
-  emotion: {
-    primary: EmotionType;
-    primary_intensity: string;
-    secondary: EmotionType | null;
-    mood_valence: number;
-    arousal: number;
-    is_calm: boolean;
-  };
-  style_override: StyleOverrideConfig;
-  style_instruction: string;
-  has_active_style: boolean;
-};
-
-/** 获取当前情绪驱动的表达风格 */
-export function fetchExpressionStyle(): Promise<ExpressionStyleResponse> {
-  return get<ExpressionStyleResponse>("/persona/expression-style");
-}
-
-// ══════════════════════════════════════════════
-// Tools Phase: 工具执行 API
+// 工具 API
 // ══════════════════════════════════════════════
 
 export type ToolSafetyLevel = "safe" | "restricted" | "dangerous" | "blocked";
@@ -579,18 +514,17 @@ export type ToolsListResponse = {
 export type ToolExecutionResult = {
   command: string;
   output: string;
-  stderr: string;
-  exit_code: number;
-  success: boolean;
-  timed_out: boolean;
-  truncated: boolean;
-  duration_seconds: number;
-  executed_at: string;
-  tool_name: string | null;
-  safety_level: ToolSafetyLevel | null;
-  working_directory: string;
+  stderr?: string;
+  exit_code?: number;
+  success?: boolean;
+  timed_out?: boolean;
+  truncated?: boolean;
+  duration_seconds?: number;
+  executed_at?: string;
+  tool_name?: string | null;
+  safety_level?: ToolSafetyLevel | null;
+  working_directory?: string;
   error?: string;
-  action_result?: { command: string; output: string };
 };
 
 export type ToolHistoryEntry = {
@@ -642,14 +576,6 @@ export type FileReadResult = {
   error?: string;
 };
 
-export type FileWriteResult = {
-  path: string;
-  success: boolean;
-  bytes_written: number;
-  backup_path?: string;
-  error?: string;
-};
-
 export type DirectoryEntry = {
   name: string;
   path: string;
@@ -679,22 +605,6 @@ export type SearchResult = {
   error?: string;
 };
 
-export type FileInfoResult = {
-  path: string;
-  name: string;
-  size_bytes: number;
-  is_file: boolean;
-  is_dir: boolean;
-  is_symlink: boolean;
-  modified_at: string;
-  created_at: string;
-  permissions: string;
-  extension: string;
-  readable: boolean;
-  writable: boolean;
-  error?: string;
-};
-
 // ── API 函数 ──────────────────────────────────────────
 
 /** 列出可用工具 */
@@ -717,7 +627,6 @@ export function fetchToolHistory(limit?: number): Promise<ToolsHistoryResponse> 
 
 /** 清空执行历史 */
 export function clearToolHistory(): Promise<{ cleared: number; message: string }> {
-  // Use a custom fetch with DELETE method
   return fetch("/tools/history", { method: "DELETE" }).then((r) => r.json());
 }
 
@@ -732,11 +641,6 @@ export function fetchToolsStatus(): Promise<ToolsStatusResponse> {
 export function readFile(path: string, maxBytes?: number): Promise<FileReadResult> {
   const params = `?path=${encodeURIComponent(path)}&max_bytes=${maxBytes ?? 512 * 1024}`;
   return get<FileReadResult>(`/tools/files/read${params}`);
-}
-
-/** 写入文件 */
-export function writeFile(path: string, content: string): Promise<FileWriteResult> {
-  return post<FileWriteResult>("/tools/files/write", { path, content });
 }
 
 /** 列出目录 */
@@ -762,9 +666,4 @@ export function searchFiles(
     max_results: String(maxResults || 20),
   });
   return get<SearchResult>(`/tools/files/search?${params.toString()}`);
-}
-
-/** 获取文件信息 */
-export function getFileInfo(path: string): Promise<FileInfoResult> {
-  return get<FileInfoResult>(`/tools/files/info?path=${encodeURIComponent(path)}`);
 }

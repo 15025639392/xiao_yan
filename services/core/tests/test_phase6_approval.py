@@ -1,10 +1,10 @@
 """
-Phase 6: 审批交互系统测试
+审批交互系统测试
 
 覆盖：
 1. PATCHING → PENDING_APPROVAL 状态门控（apply 后不再直接进入 VERIFYING）
 2. PENDING_APPROVAL 状态不自动推进（tick 返回 None / 不变）
-3. 审批 API：GET pending、POST approve、POST reject
+3. 审批 API：POST approve、POST reject
 4. 拒绝后的终态处理（REJECTED + 回归 autonomy）
 5. _build_edits_summary 辅助函数
 """
@@ -87,69 +87,6 @@ def test_pending_approval_is_terminal_in_tick():
 # ═══════════════════════════════════════════════════
 # 2. 审批 API 测试
 # ═══════════════════════════════════════════════════
-
-
-def test_get_pending_approval_no_job():
-    """GET /self-improvement/pending — 没有 job 时返回空。"""
-    client = TestClient(app)
-    resp = client.get("/self-improvement/pending")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["has_pending"] is False
-    assert data["pending"] is None
-
-
-def test_get_pending_approval_non_pending_status():
-    """GET /self-improvement/pending — job 存在但不是 pending_approval 状态。"""
-
-    store = StateStore(BeingState(mode=WakeMode.AWAKE))
-    job = SelfImprovementJob(
-        id="job-active-1",
-        target_area="agent",
-        reason="测试",
-        spec="测试方案",
-        status=SelfImprovementStatus.DIAGNOSING,
-        created_at=datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc),
-    )
-    store.set(store.get().model_copy(update={"self_improvement_job": job}))
-
-    # 注入 store 到 app.state
-    app.state.state_store = store
-
-    client = TestClient(app)
-    resp = client.get("/self-improvement/pending")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["has_pending"] is False
-
-
-def test_get_pending_approval_has_pending():
-    """GET /self-improvement/pending — 有 pending_approval 的 job 时返回它。"""
-
-    store = StateStore(BeingState(mode=WakeMode.AWAKE))
-    job = SelfImprovementJob(
-        id="job-pending-1",
-        target_area="executor",
-        reason="修复超时问题",
-        spec="增加 timeout 参数",
-        status=SelfImprovementStatus.PENDING_APPROVAL,
-        created_at=datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc),
-        approval_requested_at=datetime(2026, 4, 5, 11, 0, tzinfo=timezone.utc),
-        approval_edits_summary="修改 executor.py: 增加 timeout=30",
-    )
-    store.set(store.get().model_copy(update={"self_improvement_job": job}))
-    app.state.state_store = store
-
-    client = TestClient(app)
-    resp = client.get("/self-improvement/pending")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["has_pending"] is True
-    assert data["pending"]["id"] == "job-pending-1"
-    assert data["pending"]["status"] == "pending_approval"
-    assert data["pending"]["approval_requested_at"] is not None
-    assert data["pending"]["approval_edits_summary"] == "修改 executor.py: 增加 timeout=30"
-
 
 def test_approve_job_success():
     """POST /{job_id}/approve — 批准成功，状态变为 VERIFYING。"""
@@ -289,9 +226,8 @@ def test_full_approval_flow_via_api():
     """
     完整审批流程：
     1. 构造一个 PENDING_APPROVAL 的 job
-    2. GET /pending 返回该 job
-    3. POST /approve 批准
-    4. 状态变为 VERIFYING
+    2. POST /approve 批准
+    3. 状态变为 VERIFYING
     """
 
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
@@ -311,19 +247,11 @@ def test_full_approval_flow_via_api():
 
     client = TestClient(app)
 
-    # Step 1: 查询待审批
-    resp = client.get("/self-improvement/pending")
-    assert resp.status_code == 200
-    pending_data = resp.json()
-    assert pending_data["has_pending"] is True
-    assert pending_data["pending"]["target_area"] == "service"
-    assert len(pending_data["pending"]["touched_files"]) == 2
-
-    # Step 2: 批准
+    # Step 1: 批准
     resp = client.post("/self-improvement/full-flow-job/approve", json={"reason": "LGTM"})
     assert resp.status_code == 200
 
-    # Step 3: 验证状态变更
+    # Step 2: 验证状态变更
     updated = store.get()
     assert updated.self_improvement_job.status == SelfImprovementStatus.VERIFYING
     assert "批准" in updated.current_thought

@@ -203,10 +203,10 @@ function ExecuteTab({ tools, onExecuted }: { tools: ToolsListResponse | null; on
         <div className={`execute-result execute-result--${result.success ? "success" : "error"}`}>
           <div className="execute-result__header">
             <span className="execute-result__badge">
-              {result.timed_out ? "TIMEOUT" : result.success ? `EXIT ${result.exit_code}` : `ERR ${result.exit_code}`}
+              {result.timed_out ? "TIMEOUT" : result.success ? `EXIT ${result.exit_code ?? 0}` : `ERR ${result.exit_code ?? -1}`}
             </span>
             <span className="execute-result__duration">
-              {result.duration_seconds.toFixed(2)}s
+              {(result.duration_seconds ?? 0).toFixed(2)}s
             </span>
             {result.tool_name ? (
               <span className="execute-result__tool">{result.tool_name}</span>

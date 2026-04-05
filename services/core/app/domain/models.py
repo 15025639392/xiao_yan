@@ -3,6 +3,7 @@ from enum import Enum
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+from app.tools.models import ToolExecutionResult
 
 
 class WakeMode(str, Enum):
@@ -40,20 +41,15 @@ class TodayPlan(BaseModel):
     steps: list[TodayPlanStep] = Field(default_factory=list)
 
 
-class ActionResult(BaseModel):
-    command: str
-    output: str
-
-
 class SelfImprovementStatus(str, Enum):
     PENDING = "pending"
     DIAGNOSING = "diagnosing"
     PATCHING = "patching"
-    PENDING_APPROVAL = "pending_approval"  # Phase 6: 等待用户审批
+    PENDING_APPROVAL = "pending_approval"
     VERIFYING = "verifying"
     APPLIED = "applied"
     FAILED = "failed"
-    REJECTED = "rejected"  # Phase 6: 用户拒绝
+    REJECTED = "rejected"
 
 
 class SelfImprovementVerification(BaseModel):
@@ -73,8 +69,8 @@ class SelfImprovementEdit(BaseModel):
     search_text: str = ""
     replace_text: str = ""
     kind: EditKind = EditKind.REPLACE
-    insert_after: str | None = None  # for INSERT kind: insert after this anchor text
-    file_content: str | None = None  # for CREATE kind: full file content to write
+    insert_after: str | None = None
+    file_content: str | None = None
 
 
 class SelfImprovementJob(BaseModel):
@@ -91,28 +87,28 @@ class SelfImprovementJob(BaseModel):
     touched_files: list[str] = Field(default_factory=list)
     cooldown_until: datetime | None = None
 
-    # ── Phase 3: Git 工作流字段 ──────────────────────
-    branch_name: str | None = None  # 本次自编程使用的分支名
-    commit_hash: str | None = None  # commit 的完整 hash（短 hash 可截取）
-    commit_message: str | None = None  # commit message 完整文本
-    candidate_label: str | None = None  # 多候选模式下选中的方案标签
+    # Git 执行信息
+    branch_name: str | None = None
+    commit_hash: str | None = None
+    commit_message: str | None = None
+    candidate_label: str | None = None
 
-    # ── Phase 4: 沙箱 + 冲突检测字段 ───────────────────
-    sandbox_prechecked: bool = False  # 是否经过了沙箱预验证
-    sandbox_result: str | None = None  # 预验结果摘要
-    conflict_severity: str = "safe"  # 冲突检测结果：safe / warning / blocking
-    conflict_details: str | None = None  # 冲突详情
+    # 预检与冲突信息
+    sandbox_prechecked: bool = False
+    sandbox_result: str | None = None
+    conflict_severity: str = "safe"
+    conflict_details: str | None = None
 
-    # ── Phase 5: 回滚恢复 + 健康度字段 ──────────────────
-    health_score: float | None = None  # 健康检查总分 (0~100)
-    health_grade: str | None = None   # 健康等级：excellent/good/fair/poor/critical
-    rollback_info: str | None = None  # 回滚信息（如果发生过回滚）
-    snapshot_taken: bool = False     # 是否在 apply 前创建了差异快照
+    # 验证与回滚信息
+    health_score: float | None = None
+    health_grade: str | None = None
+    rollback_info: str | None = None
+    snapshot_taken: bool = False
 
-    # ── Phase 6: 审批字段 ──────────────────────────────
-    approval_requested_at: datetime | None = None  # 发起审批请求的时间
-    approval_edits_summary: str | None = None      # 供用户审批查看的编辑摘要
-    approval_reason: str | None = None             # 拒绝原因（用户填写）
+    # 审批信息
+    approval_requested_at: datetime | None = None
+    approval_edits_summary: str | None = None
+    approval_reason: str | None = None
 
 
 class BeingState(BaseModel):
@@ -121,7 +117,7 @@ class BeingState(BaseModel):
     current_thought: str | None = None
     active_goal_ids: list[str] = Field(default_factory=list)
     today_plan: TodayPlan | None = None
-    last_action: ActionResult | None = None
+    last_action: ToolExecutionResult | None = None
     self_improvement_job: SelfImprovementJob | None = None
     last_proactive_source: str | None = None
     last_proactive_at: datetime | None = None

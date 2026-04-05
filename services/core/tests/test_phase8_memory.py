@@ -1,4 +1,4 @@
-"""Phase 8: 记忆与人格联动测试
+"""记忆与人格联动测试
 
 覆盖：
 - MemoryEntry 数据模型（5 种类型、强度、情绪标签）
@@ -7,7 +7,7 @@
 - MemoryService 对话记忆提取（偏好/约定/情绪检测）
 - MemoryService 人格感知检索排序
 - MemoryService prompt 上下文生成
-- 向后兼容：MemoryEvent ↔ MemoryEntry 转换
+- MemoryEvent ↔ MemoryEntry 转换
 - retention_score 计算
 """
 
@@ -135,8 +135,9 @@ class TestMemoryEntry:
         assert "content" in d
         assert "retention_score" in d
         assert "keywords" in d
-        # ID 只显示前 8 位
-        assert len(d["id"]) <= 12  # mem_xxx + 前几位
+        # ID 是完整唯一标识符（用于 React key）
+        assert d["id"].startswith("mem_")  # 格式校验
+        assert len(d["id"]) >= 10  # 至少包含前缀+部分时间戳
 
 
 class TestMemoryCollection:
@@ -190,12 +191,12 @@ class TestMemoryCollection:
 
 
 # ═══════════════════════════════════════════════════
-# 向后兼容测试：MemoryEvent ↔ MemoryEntry
+# MemoryEvent ↔ MemoryEntry 转换测试
 # ═══════════════════════════════════════════════════
 
 
-class TestBackwardCompatibility:
-    """旧 MemoryEvent 和新 MemoryEntry 的互转"""
+class TestEventEntryConversion:
+    """MemoryEvent 和 MemoryEntry 的互转"""
 
     def test_event_to_entry_chat(self):
         event = MemoryEvent(kind="chat", role="user", content="你好")
@@ -203,6 +204,7 @@ class TestBackwardCompatibility:
         assert entry.kind == MemoryKind.CHAT_RAW
         assert entry.content == "你好"
         assert entry.role == "user"
+        assert entry.id == event.entry_id
 
     def test_event_to_entry_world(self):
         event = MemoryEvent(kind="world", content="今天天气晴朗")
@@ -217,9 +219,10 @@ class TestBackwardCompatibility:
     def test_entry_to_event_roundtrip(self):
         entry = MemoryEntry(kind=MemoryKind.CHAT_RAW, content="测试消息", role="assistant")
         event = MemoryEvent.from_entry(entry)
-        assert event.kind == "chat_raw"
+        assert event.kind == "chat"
         assert event.content == "测试消息"
         assert event.role == "assistant"
+        assert event.entry_id == entry.id
 
 
 # ═══════════════════════════════════════════════════

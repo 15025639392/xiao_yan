@@ -89,9 +89,7 @@ export function StatusPanel({ state, error, focusGoalTitle, onRollback, onApprov
           </section>
         ) : null}
 
-        {/* ═══════════════════════════════════════
-            🧬 自编程面板 — Phase 1~6 全量展示
-           ═══════════════════════════════════════ */}
+        {/* 自编程面板 */}
         {selfImprovementJob ? (
           selfImprovementJob.status === "pending_approval" ? (
             <ApprovalPanel
@@ -176,7 +174,7 @@ function SelfImprovementPanel({
           ) : null}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          {/* 健康度圆环（Phase 5） */}
+          {/* 健康度圆环 */}
           {hasHealthData ? (
             <HealthRing score={job.health_score!} grade={job.health_grade!} />
           ) : null}
@@ -237,7 +235,7 @@ function SelfImprovementPanel({
             </div>
           ) : null}
 
-          {/* 触碰文件列表（Phase 1+） */}
+          {/* 触碰文件列表 */}
           {job.touched_files && job.touched_files.length > 0 ? (
             <div className="si-section">
               <h4 className="si-section__title">触碰文件</h4>
@@ -252,7 +250,7 @@ function SelfImprovementPanel({
             </div>
           ) : null}
 
-          {/* Git 信息（Phase 3） */}
+          {/* Git 信息 */}
           {(job.branch_name || job.commit_hash || job.commit_message) ? (
             <div className="si-section si-section--git">
               <h4 className="si-section__title si-section__title--icon">
@@ -282,7 +280,7 @@ function SelfImprovementPanel({
             </div>
           ) : null}
 
-          {/* 沙箱 / 冲突检测（Phase 4） */}
+          {/* 沙箱 / 冲突检测 */}
           {job.sandbox_prechecked || job.conflict_severity !== "safe" ? (
             <div className="si-section">
               <h4 className="si-section__title si-section__title--icon">
@@ -337,7 +335,7 @@ function SelfImprovementPanel({
             </div>
           ) : null}
 
-          {/* 回滚操作区（Phase 5） */}
+          {/* 回滚操作区 */}
           {canRollback || job.rollback_info ? (
             <div className="si-section si-section--rollback">
               {job.rollback_info ? (
@@ -499,7 +497,7 @@ function DiffViewer({ edit, index }: { edit: SelfImprovementEdit; index: number 
 }
 
 // ══════════════════════════════════════════════
-// 子组件：健康度圆环（Phase 5）
+// 子组件：健康度圆环
 // ══════════════════════════════════════════════
 
 function HealthRing({ score, grade }: { score: number; grade: string }) {
@@ -583,11 +581,11 @@ function renderSelfImprovementStatus(
     pending: "待开始",
     diagnosing: "诊断中",
     patching: "修补中",
-    pending_approval: "待审批",     // Phase 6
+    pending_approval: "待审批",
     verifying: "验证中",
     applied: "已生效",
     failed: "失败",
-    rejected: "已拒绝",            // Phase 6
+    rejected: "已拒绝",
   };
   return map[status] ?? status;
 }
@@ -596,8 +594,8 @@ function renderSelfImprovementStatus(
 function siStatusClass(status: string): string {
   if (status === "applied") return "completed";
   if (status === "failed") return "abandoned";
-  if (status === "rejected") return "abandoned";   // Phase 6
-  if (status === "pending_approval") return "active"; // Phase 6
+  if (status === "rejected") return "abandoned";
+  if (status === "pending_approval") return "active";
   if (status === "verifying") return "active";
   if (status === "patching") return "active";
   return "paused";

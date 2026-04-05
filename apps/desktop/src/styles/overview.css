@@ -60,7 +60,6 @@
   line-height: 1.6;
 }
 
-/* Legacy chat styles - keep for compatibility */
 .chat-stage {
   margin-top: var(--space-5);
 }
@@ -362,7 +361,6 @@
   flex-shrink: 0;
 }
 
-/* Legacy 2-1 layout (kept for compatibility) */
 .inspector-grid__rail {
   display: grid;
   grid-template-columns: 2fr 1fr;

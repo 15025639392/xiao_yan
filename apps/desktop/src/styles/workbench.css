@@ -593,7 +593,7 @@
   line-height: 1.5;
 }
 
-/* ── 旧版样式兼容（保留） ── */
+/* ── Personality Slider Layout ───────────────── */
 .personality-sliders {
   display: flex;
   flex-direction: column;
@@ -719,7 +719,8 @@
   border: none;
   background: var(--bg-surface);
   border-radius: var(--radius-lg);
-  min-height: 600px;
+  min-height: 400px;
+  max-height: none;
 }
 
 /* ── 响应式适配 ── */

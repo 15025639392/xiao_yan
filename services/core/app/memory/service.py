@@ -8,7 +8,6 @@ Phase 8 核心：将记忆从"扁平事件流"升级为"有生命的记忆系统
 3. 人格感知的记忆检索（性格影响检索偏好）
 4. 记忆生命周期管理（淡化/强化/过期清理）
 5. 生成 prompt 注入用的记忆上下文
-6. 向后兼容旧的 MemoryEvent/MemoryRepository 接口
 
 设计原则：
 - 性格影响记忆：高开放性的人记住更多新奇事物，高神经质的人更容易记住负面情绪
@@ -58,7 +57,7 @@ class MemoryService:
     def save(self, entry: MemoryEntry) -> MemoryEntry:
         """保存一条新记忆"""
         if self.repository is not None:
-            # 转换为旧格式写入底层仓库
+            # 转换为存储层事件写入底层仓库
             event = MemoryEvent.from_entry(entry)
             self.repository.save_event(event)
         return entry
@@ -89,6 +88,121 @@ class MemoryService:
             source_context=source_context,
         )
         return self.save(entry)
+
+    def delete(self, memory_id: str) -> bool:
+        """删除指定 ID 的记忆
+
+        Args:
+            memory_id: MemoryEntry.id（如 mem_20260405...）
+
+        Returns:
+            是否删除成功
+        """
+        if self.repository is None:
+            logger.warning("Cannot delete memory %s: no repository", memory_id)
+            return False
+
+        result = self.repository.delete_event(memory_id)
+        if result:
+            logger.info("Deleted memory %s", memory_id)
+        else:
+            logger.warning("Failed to delete memory %s: not found", memory_id)
+        return result
+
+    def delete_many(self, memory_ids: list[str]) -> dict[str, int]:
+        """批量删除多条记忆
+
+        Args:
+            memory_ids: 要删除的记忆 ID 列表
+
+        Returns:
+            {"deleted": 成功删除数量, "failed": 失败数量}
+        """
+        if self.repository is None:
+            logger.warning("Cannot delete memories: no repository")
+            return {"deleted": 0, "failed": len(memory_ids)}
+
+        deleted_count = 0
+        failed_count = 0
+
+        for memory_id in memory_ids:
+            if self.repository.delete_event(memory_id):
+                deleted_count += 1
+            else:
+                failed_count += 1
+
+        logger.info("Batch delete: %d succeeded, %d failed", deleted_count, failed_count)
+        return {"deleted": deleted_count, "failed": failed_count}
+
+    def update(
+        self,
+        memory_id: str,
+        *,
+        content: str | None = None,
+        kind: MemoryKind | None = None,
+        importance: int | None = None,
+        strength: MemoryStrength | None = None,
+        emotion_tag: MemoryEmotion | None = None,
+        keywords: list[str] | None = None,
+        subject: str | None = None,
+    ) -> bool:
+        """更新指定 ID 的记忆字段
+
+        Returns:
+            是否更新成功
+        """
+        if self.repository is None:
+            logger.warning("Cannot update memory %s: no repository", memory_id)
+            return False
+
+        # 构建需要更新的字段（过滤掉 None）
+        update_kwargs: dict[str, object] = {}
+        if content is not None:
+            update_kwargs["content"] = content
+            # 如果内容变了，重新提取关键词
+            if keywords is None:
+                update_kwargs.setdefault("keywords", self._extract_keywords(content))
+        if kind is not None:
+            update_kwargs["kind"] = kind.value
+        if importance is not None:
+            update_kwargs["importance"] = importance
+        if strength is not None:
+            update_kwargs["strength"] = strength.value
+        if emotion_tag is not None:
+            update_kwargs["emotion_tag"] = emotion_tag.value
+        if keywords is not None:
+            update_kwargs["keywords"] = keywords
+        if subject is not None:
+            update_kwargs["subject"] = subject
+
+        if not update_kwargs:
+            return True  # 没有要更新的内容，算成功
+
+        result = self.repository.update_event(memory_id, **update_kwargs)
+        if result:
+            logger.info("Updated memory %s with fields: %s", memory_id, list(update_kwargs.keys()))
+        else:
+            logger.warning("Failed to update memory %s: not found", memory_id)
+        return result
+
+    def star(self, memory_id: str, important: bool = True) -> bool:
+        """标记/取消标记一条记忆为重要
+
+        标记重要时将 importance 设为 9（core 级），
+        取消标记时恢复为默认值 5。
+        """
+        new_importance = 9 if important else 5
+        return self.update(memory_id, importance=new_importance)
+
+    def get_by_id(self, memory_id: str) -> MemoryEntry | None:
+        """根据 ID 获取单条记忆"""
+        if self.repository is None:
+            return None
+        recent = self.list_recent(limit=500)
+        for entry in recent.entries:
+            if entry.id == memory_id:
+                return entry
+        return None
 
     def list_recent(
         self,

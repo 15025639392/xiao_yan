@@ -1,7 +1,7 @@
 """
 LLM 补丁生成器 — 自编程能力的核心升级（Phase 2: 多候选方案）
 
-将现有的规则引擎 SelfImprovementPlanner 包装为 fallback，
+将现有的规则引擎 SelfImprovementPlanner 作为后备规划器，
 优先使用 LLM 生成多个代码补丁候选方案，通过评分选优。
 
 Phase 2 升级：
@@ -356,10 +356,6 @@ class LLMPlanner:
 
         diagnosis = data.get("diagnosis", "")
         candidates_raw = data.get("candidates", [])
-
-        # 兼容旧的单候选格式（没有 candidates 数组的情况）
-        if not candidates_raw and "edits" in data:
-            candidates_raw = [data]
 
         output: list[tuple[str, list[SelfImprovementEdit], dict]] = []
         for idx, cand_data in enumerate(candidates_raw):

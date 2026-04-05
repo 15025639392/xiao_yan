@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from app.memory.models import MemoryEvent
@@ -10,6 +11,7 @@ def test_repository_saves_event_and_returns_recent_items():
     repo.save_event(event)
     recent = repo.list_recent(limit=5)
     assert recent[0].content == "她在醒来后主动问候用户"
+    assert recent[0].entry_id == event.entry_id
 
 
 def test_file_repository_persists_events_across_instances(tmp_path: Path):
@@ -44,3 +46,35 @@ def test_in_memory_repository_returns_relevant_events_before_irrelevant_recent_o
         "我们讨论过星星和夜空",
         "后来又聊了早餐",
     ]
+
+
+def test_file_repository_physically_purges_rows_without_entry_id(tmp_path: Path):
+    storage_path = tmp_path / "memory.jsonl"
+    storage_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "kind": "world",
+                        "content": "invalid row",
+                        "role": None,
+                        "created_at": "2026-04-05T11:03:23.458102Z",
+                        "entry_id": None,
+                    },
+                    ensure_ascii=False,
+                ),
+                MemoryEvent(kind="chat", role="user", content="valid row").model_dump_json(),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    repo = FileMemoryRepository(storage_path)
+    recent = repo.list_recent(limit=10)
+
+    assert [event.content for event in recent] == ["valid row"]
+
+    rewritten_lines = [line for line in storage_path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(rewritten_lines) == 1
+    assert json.loads(rewritten_lines[0])["content"] == "valid row"

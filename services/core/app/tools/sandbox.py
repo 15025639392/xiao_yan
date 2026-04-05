@@ -1,14 +1,4 @@
-"""
-Enhanced Command Sandbox — Tools Phase: 安全命令执行层
-
-安全层级设计:
-1. 命令白名单（只允许已知安全的可执行程序）
-2. Shell 注入防护（检测管道、分号、反引号等危险模式）
-3. 路径限制（防止越权访问敏感目录）
-4. 参数启发式检查（警告但不阻断常见安全参数）
-
-向后兼容: 旧代码传入 allowed_commands set 仍然工作。
-"""
+"""Command Sandbox — 安全命令执行层。"""
 
 from __future__ import annotations
 
@@ -398,26 +388,11 @@ class SandboxViolation(ValueError):
 
 
 class CommandSandbox:
-    """增强版命令沙箱。
-
-    用法::
-
-        # 向后兼容：简单白名单
-        sandbox = CommandSandbox(allowed_commands={"pwd", "ls"})
-        validated = sandbox.validate("pwd")
-
-        # 新功能：使用默认分级注册表
-        sandbox = CommandSandbox.with_defaults(max_level=ToolSafetyLevel.RESTRICTED)
-        validated = sandbox.validate("ls -la")
-        meta = sandbox.get_tool_metadata("ls")
-
-        # 自定义安全工作目录
-        sandbox = CommandSandbox.with_defaults(allowed_base_path=Path("/safe/dir"))
-    """
+    """命令沙箱。"""
 
     def __init__(
         self,
-        allowed_commands: set[str] | None = None,
+        allowed_tool_names: set[str],
         *,
         allow_shell_injection: bool = False,
         allow_path_traversal: bool = False,
@@ -426,16 +401,13 @@ class CommandSandbox:
     ) -> None:
         """
         Args:
-            allowed_commands: 允许的命令集合。None 表示使用默认全量表。
+            allowed_tool_names: 允许的命令集合。
             allow_shell_injection: 是否允许 shell 注入字符（生产环境必须 False）
             allow_path_traversal: 是否允许 ../ 路径遍历
             allowed_base_path: 限制的工作目录基准路径（None 不限制）
             block_dangerous_args: 是否拦截已知的危险参数组合
         """
-        self.allowed_commands = (
-            allowed_commands if allowed_commands is not None
-            else get_default_allowed_commands()
-        )
+        self.allowed_commands = allowed_tool_names
         self.allow_shell_injection = allow_shell_injection
         self.allow_path_traversal = allow_path_traversal
         self.allowed_base_path = allowed_base_path
@@ -457,7 +429,7 @@ class CommandSandbox:
             allowed_base_path: 限制的工作目录
         """
         return cls(
-            allowed_commands=get_default_allowed_commands(max_level),
+            allowed_tool_names=get_default_allowed_commands(max_level),
             allowed_base_path=allowed_base_path,
         )
 

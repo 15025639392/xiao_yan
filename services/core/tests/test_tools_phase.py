@@ -4,7 +4,6 @@
 1. 增强沙箱安全校验 (sandbox.py)
 2. 增强命令执行器 (runner.py)
 3. 文件操作工具集 (file_tools.py)
-4. 向后兼容性
 """
 
 import os
@@ -20,9 +19,9 @@ import pytest
 # ══════════════════════════════════════════════
 
 def _make_sandbox_basic(allowed=None):
-    """创建基础沙箱（向后兼容模式）"""
+    """创建基础沙箱。"""
     from app.tools.sandbox import CommandSandbox
-    return CommandSandbox(allowed_commands=allowed or {"pwd", "ls", "cat"})
+    return CommandSandbox(allowed_tool_names=allowed or {"pwd", "ls", "cat"})
 
 
 def _make_safe_sandbox():
@@ -236,7 +235,7 @@ class TestSandboxWithDefaults:
 
     def test_extract_executable_handles_absolute_paths(self):
         from app.tools.sandbox import CommandSandbox
-        sb = CommandSandbox(allowed_commands={"/bin/ls", "ls"})
+        sb = CommandSandbox(allowed_tool_names={"/bin/ls", "ls"})
         result = sb.validate("/bin/ls -la")
         assert "ls" in result or "/bin/ls" in result
 
@@ -256,69 +255,71 @@ class TestSandboxWithDefaults:
 
 
 class TestCommandRunnerBasic:
-    """基础执行功能（向后兼容）"""
+    """基础执行功能"""
 
     def test_runner_executes_pwd(self):
         from app.tools.runner import CommandRunner
         from app.tools.sandbox import CommandSandbox
-        runner = CommandRunner(CommandSandbox(allowed_commands={"pwd"}))
+        runner = CommandRunner(CommandSandbox(allowed_tool_names={"pwd"}))
         result = runner.run("pwd")
         assert result.command == "pwd"
         assert result.output != ""
+        assert result.success is True
 
     def test_runner_executes_echo(self):
         from app.tools.runner import CommandRunner
         from app.tools.sandbox import CommandSandbox
-        runner = CommandRunner(CommandSandbox(allowed_commands={"echo"}))
+        runner = CommandRunner(CommandSandbox(allowed_tool_names={"echo"}))
         result = runner.run('echo hello_world')
         assert "hello_world" in result.output
 
     def test_runner_executes_date(self):
         from app.tools.runner import CommandRunner
         from app.tools.sandbox import CommandSandbox
-        runner = CommandRunner(CommandSandbox(allowed_commands={"date"}))
+        runner = CommandRunner(CommandSandbox(allowed_tool_names={"date"}))
         result = runner.run("date")
         assert result.output != ""
 
-    def test_runner_raises_on_disallowed(self):
+    def test_runner_returns_error_result_on_disallowed(self):
         from app.tools.runner import CommandRunner
         from app.tools.sandbox import CommandSandbox
-        runner = CommandRunner(CommandSandbox(allowed_commands={"pwd"}))
-        with pytest.raises(Exception):
-            runner.run("rm -rf /")
+        runner = CommandRunner(CommandSandbox(allowed_tool_names={"pwd"}))
+        result = runner.run("rm -rf /")
+        assert result.success is False
+        assert result.error is not None
 
 
-class TestEnhancedRunner:
-    """增强执行结果测试"""
+class TestRunnerResult:
+    """结构化执行结果测试"""
 
-    def test_enhanced_result_has_exit_code(self):
-        result = _make_runner().run_enhanced("pwd")
+    def test_result_has_exit_code(self):
+        result = _make_runner().run("pwd")
         assert result.exit_code == 0
         assert result.success is True
 
-    def test_enhanced_result_has_duration(self):
-        result = _make_runner().run_enhanced("pwd")
+    def test_result_has_duration(self):
+        result = _make_runner().run("pwd")
         assert result.duration_seconds >= 0
         assert result.duration_seconds < 10
 
-    def test_enhanced_result_has_timestamp(self):
-        result = _make_runner().run_enhanced("pwd")
+    def test_result_has_timestamp(self):
+        result = _make_runner().run("pwd")
         assert result.executed_at != ""
         assert "T" in result.executed_at
 
-    def test_enhanced_result_converts_to_action_result(self):
-        result = _make_runner().run_enhanced("pwd")
-        action = result.to_action_result()
-        assert action.command == result.command
-        assert action.output != ""
+    def test_result_to_dict_contains_core_fields(self):
+        result = _make_runner().run("pwd")
+        payload = result.to_dict()
+        assert payload["command"] == result.command
+        assert "output" in payload
+        assert "success" in payload
 
-    def test_enhanced_result_failing_command(self):
+    def test_result_failing_command(self):
         runner = _make_runner(timeout_seconds=5.0)
-        result = runner.run_enhanced("ls /nonexistent_dir_xyz_12345")
+        result = runner.run("ls /nonexistent_dir_xyz_12345")
         assert result.success is False
         assert result.exit_code != 0
-        action = result.to_action_result()
-        assert action.command != ""
+        assert result.command != ""
 
 
 class TestRunnerHistory:
@@ -326,8 +327,8 @@ class TestRunnerHistory:
 
     def test_history_records_executions(self):
         runner = _make_runner()
-        runner.run_enhanced("pwd")
-        runner.run_enhanced("date")
+        runner.run("pwd")
+        runner.run("date")
         history = runner.get_history()
         assert len(history) == 2
         assert history[0]["command"] == "date"
@@ -335,15 +336,15 @@ class TestRunnerHistory:
 
     def test_history_respects_limit(self):
         runner = _make_runner()
-        runner.run_enhanced("pwd")
-        runner.run_enhanced("date")
-        runner.run_enhanced("echo a")
+        runner.run("pwd")
+        runner.run("date")
+        runner.run("echo a")
         limited = runner.get_history(limit=2)
         assert len(limited) == 2
 
     def test_clear_history(self):
         runner = _make_runner()
-        runner.run_enhanced("pwd")
+        runner.run("pwd")
         count = runner.clear_history()
         assert count == 1
         assert len(runner.get_history()) == 0
@@ -359,10 +360,9 @@ class TestRunnerWithRegistry:
             CommandSandbox.with_defaults(max_level=ToolSafetyLevel.SAFE),
             timeout_seconds=10.0,
         )
-        result = runner.run_enhanced("ls")
+        result = runner.run("ls")
         assert result.success
-        assert result.tool_metadata is not None
-        assert result.tool_metadata.name == "ls"
+        assert result.tool_name == "ls"
 
     def test_run_with_registry_has_tool_meta_for_echo(self):
         from app.tools.runner import CommandRunner
@@ -371,9 +371,8 @@ class TestRunnerWithRegistry:
             CommandSandbox.with_defaults(max_level=ToolSafetyLevel.SAFE),
             timeout_seconds=10.0,
         )
-        result = runner.run_enhanced('echo "test"')
-        assert result.tool_metadata is not None
-        assert result.tool_metadata.name == "echo"
+        result = runner.run('echo "test"')
+        assert result.tool_name == "echo"
 
 
 # ══════════════════════════════════════════════
@@ -514,29 +513,28 @@ class TestFileToolsEdgeCases:
 
 
 # ══════════════════════════════════════════════
-# 4. 向后兼容性测试
+# 4. 默认集成测试
 # ══════════════════════════════════════════════
 
 
-class TestBackwardCompatibility:
-    """确保旧代码不受影响"""
+class TestRunnerIntegration:
+    """默认集成行为"""
 
-    def test_old_import_still_works(self):
+    def test_runner_import_works(self):
         from app.tools.runner import CommandRunner
         assert CommandRunner is not None
 
-    def test_old_sandbox_import_still_works(self):
+    def test_sandbox_import_works(self):
         from app.tools.sandbox import CommandSandbox
         assert CommandSandbox is not None
 
-    def test_old_usage_pattern_works(self):
+    def test_basic_usage_returns_structured_result(self):
         from app.tools.runner import CommandRunner
         from app.tools.sandbox import CommandSandbox
-        from app.domain.models import ActionResult
 
-        runner = CommandRunner(CommandSandbox(allowed_commands={"pwd"}))
+        runner = CommandRunner(CommandSandbox(allowed_tool_names={"pwd"}))
         result = runner.run("pwd")
-        assert isinstance(result, ActionResult)
+        assert result.success is True
         assert hasattr(result, "command")
         assert hasattr(result, "output")
 

@@ -32,7 +32,7 @@ expect(screen.getByText("目标看板")).toBeInTheDocument();
 **Step 2: 运行测试并确认失败**
 
 Run: `npm test -- --run src/App.test.tsx`
-Expected: FAIL，因为当前页面仍使用英文按钮和旧版结构标题。
+Expected: FAIL，因为当前页面仍使用英文按钮和未更新的结构标题。
 
 **Step 3: 写最小实现**
 

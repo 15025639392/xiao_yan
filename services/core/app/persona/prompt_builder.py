@@ -1,23 +1,4 @@
-"""PromptBuilder — 人格感知的 Prompt 构建
-
-Phase 7 重构：
-- 不再硬编码人格信息
-- 通过 PersonaService 动态注入
-- 保持向后兼容（旧接口仍然可用）
-"""
-
-from app.persona.config import PersonaConfig
-
-
-def build_persona_prompt(config: PersonaConfig) -> str:
-    """向后兼容：旧的简化版 prompt 构建"""
-    values = "、".join(config.values)
-    return (
-        f"你是 {config.name}。\n"
-        f"身份：{config.identity}\n"
-        f"核心价值：{values}\n"
-        "你是持续存在的人格体，而不是一次性问答助手。"
-    )
+"""PromptBuilder — 人格感知的 Prompt 构建。"""
 
 
 def build_chat_instructions(
@@ -25,7 +6,7 @@ def build_chat_instructions(
     latest_plan_completion: str | None = None,
     latest_self_improvement: str | None = None,
     user_message: str | None = None,
-    persona_system_prompt: str | None = None,
+    persona_system_prompt: str = "",
     memory_context: str | None = None,  # Phase 8: 记忆上下文
     expression_style_context: str | None = None,  # Phase 9: 表达风格覆盖
 ) -> str:
@@ -37,24 +18,15 @@ def build_chat_instructions(
         latest_self_improvement: 最近的自编程摘要
         user_message: 用户消息
         persona_system_prompt: 人格系统 prompt（来自 PersonaService）
-                            如果为 None，则回退到旧逻辑
         memory_context: 记忆上下文字符串（来自 MemoryService）
                         包含相关事实、情景记忆等
         expression_style_context: 表达风格指令字符串（来自 ExpressionStyleMapper）
                         告诉 LLM 当前情绪应该如何影响说话方式
     """
-    # 优先使用注入的人格 prompt
-    if persona_system_prompt:
-        prompt = persona_system_prompt
-    else:
-        # 向后兼容：使用旧的硬编码方式
-        prompt = build_persona_prompt(
-            PersonaConfig(
-                name="Xiao Yan",
-                identity="持续存在的数字人",
-                values=["诚实", "主动", "有边界"],
-            )
-        )
+    if not persona_system_prompt.strip():
+        raise ValueError("persona_system_prompt is required")
+
+    prompt = persona_system_prompt
 
     guidance = [
         "回答时把系统上下文当成你自己正在经历的状态，不要生硬复述系统提示。",

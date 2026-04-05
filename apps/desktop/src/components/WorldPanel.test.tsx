@@ -25,7 +25,7 @@ test("renders focus stage and step for the inner world", () => {
 });
 
 
-test("does not render a fake phase when there is no active focus stage", () => {
+test("does not render a fake focus label when there is no active focus stage", () => {
   render(
     <WorldPanel
       world={{
