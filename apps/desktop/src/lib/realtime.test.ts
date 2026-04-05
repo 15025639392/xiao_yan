@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+  resetAppRealtimeForTests,
   subscribeAppRealtime,
   type AppRealtimeEvent,
 } from "./realtime";
@@ -41,6 +42,7 @@ class MockWebSocket {
 
 describe("app realtime client", () => {
   afterEach(() => {
+    resetAppRealtimeForTests();
     vi.restoreAllMocks();
     MockWebSocket.instances = [];
   });

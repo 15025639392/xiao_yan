@@ -50,6 +50,23 @@ let reconnectDelayMs = 1000;
 let latestSnapshot: AppRealtimeSnapshot | null = null;
 const listeners = new Set<AppRealtimeListener>();
 
+function resetRealtimeState(): void {
+  listeners.clear();
+
+  if (reconnectTimer != null) {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+
+  latestSnapshot = null;
+  reconnectDelayMs = 1000;
+
+  if (socket && socket.readyState !== 3) {
+    socket.close();
+  }
+  socket = null;
+}
+
 function ensureSocket(): void {
   if (typeof WebSocket === "undefined") {
     return;
@@ -113,4 +130,8 @@ export function subscribeAppRealtime(listener: AppRealtimeListener): () => void 
       socket = null;
     }
   };
+}
+
+export function resetAppRealtimeForTests(): void {
+  resetRealtimeState();
 }

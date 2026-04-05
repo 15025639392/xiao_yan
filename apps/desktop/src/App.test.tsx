@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, vi } from "vitest";
 
 import App from "./App";
+import { resetAppRealtimeForTests } from "./lib/realtime";
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -35,6 +36,7 @@ class MockWebSocket {
 }
 
 afterEach(() => {
+  resetAppRealtimeForTests();
   vi.restoreAllMocks();
   vi.useRealTimers();
   window.location.hash = "";
@@ -308,6 +310,139 @@ test("renders proactive replies from realtime runtime updates in the chat panel"
     expect(screen.getByText("我刚刚又想到你提到的星星了。")).toBeInTheDocument();
   });
 }, 10000);
+
+test("syncs assistant name across app chrome when persona updates arrive", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+          self_programming_job: null,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "night",
+          energy: "low",
+          mood: "tired",
+          focus_tension: "high",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    return new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+
+  await waitFor(() => {
+    expect(screen.getByText("小晏")).toBeInTheDocument();
+  });
+
+  const socket = MockWebSocket.instances[0];
+  socket.open();
+
+  await act(async () => {
+    socket.emit({
+      type: "persona_updated",
+      payload: {
+        profile: {
+          name: "阿晏",
+          identity: "会持续成长的数字人",
+          origin_story: "",
+          created_at: null,
+          personality: {
+            openness: 72,
+            conscientiousness: 60,
+            extraversion: 40,
+            agreeableness: 68,
+            neuroticism: 45,
+          },
+          speaking_style: {
+            formal_level: "casual",
+            sentence_style: "mixed",
+            expression_habit: "gentle",
+            emoji_usage: "sometimes",
+            verbal_tics: [],
+            response_length: "medium",
+          },
+          values: {
+            core_values: [],
+            boundaries: [],
+          },
+          emotion: {
+            primary_emotion: "calm",
+            primary_intensity: "none",
+            secondary_emotion: null,
+            secondary_intensity: "none",
+            mood_valence: 0,
+            arousal: 0,
+            active_entries: [],
+            last_updated: null,
+          },
+          version: 1,
+        },
+        emotion: {
+          primary_emotion: "calm",
+          primary_intensity: "none",
+          secondary_emotion: null,
+          secondary_intensity: "none",
+          mood_valence: 0,
+          arousal: 0,
+          is_calm: true,
+          active_entry_count: 0,
+          active_entries: [],
+          last_updated: null,
+        },
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("阿晏")).toBeInTheDocument();
+    expect(screen.getByText("在下方输入框输入消息，与阿晏开始交流")).toBeInTheDocument();
+  });
+});
 
 test("updates a goal status from the app and refreshes the rendered goal", async () => {
   let stateCallCount = 0;

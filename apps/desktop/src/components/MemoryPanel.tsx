@@ -15,6 +15,7 @@ import {
 import { subscribeAppRealtime } from "../lib/realtime";
 
 type MemoryPanelProps = {
+  assistantName?: string;
   className?: string;
 };
 
@@ -39,7 +40,6 @@ const STRENGTH_COLORS: Record<string, string> = {
 // ── 角色映射 ──
 const ROLE_LABELS: Record<string, string> = {
   user: "你",
-  assistant: "小晏",
   system: "系统",
 };
 
@@ -79,7 +79,7 @@ const THEME_CLUSTERS: Record<string, { label: string; icon: string; keywords: st
   },
 };
 
-export function MemoryPanel({ className }: MemoryPanelProps) {
+export function MemoryPanel({ assistantName = "小晏", className }: MemoryPanelProps) {
   const [summary, setSummary] = useState<MemorySummary | null>(null);
   const [entries, setEntries] = useState<MemoryEntryDisplay[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -462,6 +462,16 @@ export function MemoryPanel({ className }: MemoryPanelProps) {
   }
 
   // 渲染单条记忆条目
+  function roleLabelFor(role: string | null): string | null {
+    if (!role) {
+      return null;
+    }
+    if (role === "assistant") {
+      return assistantName;
+    }
+    return ROLE_LABELS[role] || role;
+  }
+
   function renderMemoryItem(entry: MemoryEntryDisplay) {
     const kindInfo = KIND_LABELS[entry.kind] || KIND_LABELS.chat_raw;
     const borderColor = STRENGTH_COLORS[entry.strength] || STRENGTH_COLORS.normal;
@@ -545,7 +555,7 @@ export function MemoryPanel({ className }: MemoryPanelProps) {
                   {kindInfo.label}
                 </span>
                 {entry.role && (
-                  <span className="memory-item__role">{ROLE_LABELS[entry.role] || entry.role}</span>
+                  <span className="memory-item__role">{roleLabelFor(entry.role)}</span>
                 )}
                 {entry.subject && (
                   <span className="memory-item__subject">@{entry.subject}</span>

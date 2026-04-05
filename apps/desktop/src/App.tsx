@@ -11,7 +11,7 @@ import { PersonaPanel } from "./components/PersonaPanel";
 import { StatusPanel } from "./components/StatusPanel";
 import { ToolPanel } from "./components/ToolPanel";
 import { WorldPanel } from "./components/WorldPanel";
-import type { BeingState, ChatHistoryMessage, Goal, InnerWorldState } from "./lib/api";
+import type { BeingState, ChatHistoryMessage, Goal, InnerWorldState, PersonaProfile } from "./lib/api";
 import {
   chat,
   fetchGoals,
@@ -44,6 +44,7 @@ export default function App() {
   const [autobioEntries, setAutobioEntries] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [persona, setPersona] = useState<PersonaProfile | null>(null);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
@@ -51,6 +52,8 @@ export default function App() {
   const [showBrandMenu, setShowBrandMenu] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
+  const assistantName = persona?.name?.trim() || "小晏";
+  const assistantIdentity = persona?.identity?.trim() || "AI Agent Desktop";
 
   useEffect(() => {
     let cancelled = false;
@@ -101,9 +104,24 @@ export default function App() {
       setError("");
     });
 
+    const unsubscribePersona = subscribeAppRealtime((event) => {
+      if (cancelled) {
+        return;
+      }
+
+      const personaPayload =
+        event.type === "snapshot" ? event.payload.persona : event.type === "persona_updated" ? event.payload : null;
+      if (!personaPayload) {
+        return;
+      }
+
+      setPersona(personaPayload.profile);
+    });
+
     return () => {
       cancelled = true;
       unsubscribe();
+      unsubscribePersona();
     };
   }, []);
 
@@ -243,7 +261,7 @@ export default function App() {
               onClick={() => setShowBrandMenu(!showBrandMenu)}
             >
               <span className="app-sidebar__logo">🤖</span>
-              <span className="app-sidebar__title">小晏</span>
+              <span className="app-sidebar__title">{assistantName}</span>
               <svg
                 className={`app-sidebar__brand-chevron ${showBrandMenu ? 'app-sidebar__brand-chevron--open' : ''}`}
                 width="14"
@@ -394,6 +412,7 @@ export default function App() {
 
         {route === "chat" ? (
           <ChatPanel
+            assistantName={assistantName}
             draft={draft}
             focusGoalTitle={focusGoalTitle}
             focusModeLabel={renderFocusModeLabel(state.focus_mode)}
@@ -409,7 +428,7 @@ export default function App() {
         ) : route === "persona" ? (
           <PersonaPanel />
         ) : route === "memory" ? (
-          <MemoryPage />
+          <MemoryPage assistantName={assistantName} />
         ) : route === "history" ? (
           <HistoryPage onSelectRollback={handleRollback} />
         ) : route === "tools" ? (
@@ -434,7 +453,7 @@ export default function App() {
           <div className="modal-overlay" onClick={() => setShowAbout(false)}>
             <div className="modal modal--sm" onClick={(e) => e.stopPropagation()}>
               <div className="modal__header">
-                <h3 className="modal__title">关于 小晏</h3>
+                <h3 className="modal__title">关于 {assistantName}</h3>
                 <button
                   type="button"
                   className="modal__close"
@@ -446,8 +465,8 @@ export default function App() {
               <div className="modal__body">
                 <div className="about-content">
                   <div className="about-logo">🤖</div>
-                  <h4 className="about-name">小晏</h4>
-                  <p className="about-desc">AI Agent Desktop</p>
+                  <h4 className="about-name">{assistantName}</h4>
+                  <p className="about-desc">{assistantIdentity}</p>
                   <div className="about-meta">
                     <div className="about-meta__item">
                       <span className="about-meta__label">版本</span>
@@ -621,7 +640,7 @@ function mergeMessages(
 // Memory Page — 记忆库页面
 // ═════════════════════════════════════════
 
-function MemoryPage() {
+function MemoryPage({ assistantName }: { assistantName: string }) {
   return (
     <div className="memory-page">
       <header className="memory-page__header">
@@ -629,7 +648,7 @@ function MemoryPage() {
         <p className="memory-page__subtitle">浏览和管理数字人的记忆</p>
       </header>
       <div className="memory-page__content">
-        <MemoryPanel />
+        <MemoryPanel assistantName={assistantName} />
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ export type ChatEntry = {
 };
 
 type ChatPanelProps = {
+  assistantName?: string;
   draft: string;
   focusGoalTitle?: string | null;
   focusModeLabel: string;
@@ -23,6 +24,7 @@ type ChatPanelProps = {
 };
 
 export function ChatPanel({
+  assistantName = "小晏",
   draft,
   focusGoalTitle,
   messages,
@@ -98,7 +100,7 @@ export function ChatPanel({
           <div className="chat-page__empty">
             <div className="chat-page__empty-icon">💬</div>
             <p className="chat-page__empty-title">开始对话</p>
-            <p className="chat-page__empty-desc">在下方输入框输入消息，与小晏开始交流</p>
+            <p className="chat-page__empty-desc">在下方输入框输入消息，与{assistantName}开始交流</p>
             <div className="chat-page__quick-actions">
               <button
                 className="chat-page__quick-btn"
