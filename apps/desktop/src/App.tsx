@@ -4,6 +4,7 @@ import { AutobioPanel } from "./components/AutobioPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
 import { GoalsPanel } from "./components/GoalsPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { StatusPanel } from "./components/StatusPanel";
 import { WorldPanel } from "./components/WorldPanel";
 import type { BeingState, ChatHistoryMessage, Goal, InnerWorldState } from "./lib/api";
@@ -19,7 +20,7 @@ import {
   wake,
 } from "./lib/api";
 
-type AppRoute = "overview" | "chat";
+type AppRoute = "overview" | "chat" | "settings";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -41,6 +42,7 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
 
   useEffect(() => {
@@ -180,102 +182,124 @@ export default function App() {
   const isAwake = state.mode === "awake";
 
   return (
-    <main className="console-shell">
-      {/* Header with Navigation */}
-      <header className="status-strip">
-        <div className="status-strip__brand">
-          <div className="status-strip__logo">🤖</div>
-          <h1 className="status-strip__title">数字人控制台</h1>
+    <div className="app-layout">
+      {/* Left Sidebar - WorkBuddy Style */}
+      <aside className="app-sidebar">
+        <div className="app-sidebar__header">
+          <button
+            className="app-sidebar__brand"
+            onClick={() => handleNavigate("settings")}
+            type="button"
+            title="设置"
+          >
+            <span className="app-sidebar__logo">🤖</span>
+            <span className="app-sidebar__title">数字人</span>
+          </button>
+          <div className={`app-sidebar__status-dot app-sidebar__status-dot--${state.mode}`} />
         </div>
 
-        <nav className="nav-tabs" aria-label="主导航">
+        <nav className="app-sidebar__nav" aria-label="主导航">
           <button
-            className={`nav-tab ${route === "overview" ? "nav-tab--active" : ""}`}
+            className={`app-sidebar__nav-item ${route === "overview" ? "app-sidebar__nav-item--active" : ""}`}
             onClick={() => handleNavigate("overview")}
             type="button"
           >
-            <svg className="nav-tab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="7" height="7" rx="1" />
               <rect x="14" y="3" width="7" height="7" rx="1" />
               <rect x="14" y="14" width="7" height="7" rx="1" />
               <rect x="3" y="14" width="7" height="7" rx="1" />
             </svg>
-            总览
+            <span>总览</span>
           </button>
           <button
-            className={`nav-tab ${route === "chat" ? "nav-tab--active" : ""}`}
+            className={`app-sidebar__nav-item ${route === "chat" ? "app-sidebar__nav-item--active" : ""}`}
             onClick={() => handleNavigate("chat")}
             type="button"
           >
-            <svg className="nav-tab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            对话
+            <span>对话</span>
           </button>
         </nav>
 
-        <div className="status-strip__meta">
-          <div className="status-pill">
-            <span className={`status-pill__dot status-pill__dot--${state.mode}`} />
-            <span className="status-pill__label">状态</span>
-            <span className="status-pill__value">{isAwake ? "运行中" : "休眠中"}</span>
+        <div className="app-sidebar__section">
+          <div className="app-sidebar__section-title">控制</div>
+          <div className="app-sidebar__actions">
+            <button
+              className="app-sidebar__action-btn app-sidebar__action-btn--primary"
+              onClick={handleWake}
+              type="button"
+              disabled={isAwake}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+              </svg>
+              唤醒
+            </button>
+            <button
+              className="app-sidebar__action-btn"
+              onClick={handleSleep}
+              type="button"
+              disabled={!isAwake}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+              休眠
+            </button>
           </div>
         </div>
 
-        <div className="status-strip__actions">
-          <button
-            className="btn btn--primary"
-            onClick={handleWake}
-            type="button"
-            disabled={isAwake}
-          >
-            唤醒
-          </button>
-          <button
-            className="btn btn--secondary"
-            onClick={handleSleep}
-            type="button"
-            disabled={!isAwake}
-          >
-            休眠
-          </button>
+        <div className="app-sidebar__footer">
+          <div className="app-sidebar__status">
+            <span className={`app-sidebar__status-indicator app-sidebar__status-indicator--${state.mode}`} />
+            <span className="app-sidebar__status-text">{isAwake ? "运行中" : "休眠中"}</span>
+          </div>
         </div>
-      </header>
-
-      {/* Error Banner */}
-      {error ? (
-        <div className="error-banner">
-          <strong>错误：</strong>
-          {error}
-        </div>
-      ) : null}
+      </aside>
 
       {/* Main Content */}
-      {route === "chat" ? (
-        <ChatPanel
-          draft={draft}
-          focusGoalTitle={focusGoalTitle}
-          focusModeLabel={renderFocusModeLabel(state.focus_mode)}
-          isSending={isSending}
-          latestActionLabel={state.last_action ? `${state.last_action.command} -> ${state.last_action.output}` : null}
-          messages={messages}
-          modeLabel={isAwake ? "运行中" : "休眠中"}
-          onDraftChange={setDraft}
-          onSend={handleSend}
-        />
-      ) : (
-        <OverviewPanel
-          focusGoalTitle={focusGoalTitle}
-          goals={goals}
-          latestActionLabel={state.last_action ? `${state.last_action.command} -> ${state.last_action.output}` : null}
-          mode={state.mode}
-          onUpdateGoalStatus={handleUpdateGoalStatus}
-          state={state}
-          world={world}
-          autobioEntries={autobioEntries}
-        />
-      )}
-    </main>
+      <main className="app-main">
+        {/* Error Banner */}
+        {error ? (
+          <div className="error-banner">
+            <strong>错误：</strong>
+            {error}
+          </div>
+        ) : null}
+
+        {route === "chat" ? (
+          <ChatPanel
+            draft={draft}
+            focusGoalTitle={focusGoalTitle}
+            focusModeLabel={renderFocusModeLabel(state.focus_mode)}
+            isSending={isSending}
+            messages={messages}
+            modeLabel={isAwake ? "运行中" : "休眠中"}
+            todayPlan={state.today_plan}
+            activeGoals={goals.filter(g => g.status === "active")}
+            onDraftChange={setDraft}
+            onSend={handleSend}
+            onCompleteGoal={(goalId) => handleUpdateGoalStatus(goalId, "completed")}
+          />
+        ) : route === "settings" ? (
+          <SettingsPanel theme={theme} onThemeChange={setTheme} />
+        ) : (
+          <OverviewPanel
+            focusGoalTitle={focusGoalTitle}
+            goals={goals}
+            latestActionLabel={state.last_action ? `${state.last_action.command} -> ${state.last_action.output}` : null}
+            mode={state.mode}
+            onUpdateGoalStatus={handleUpdateGoalStatus}
+            state={state}
+            world={world}
+            autobioEntries={autobioEntries}
+          />
+        )}
+      </main>
+    </div>
   );
 }
 
@@ -302,7 +326,7 @@ function OverviewPanel({
   const isAwake = mode === "awake";
 
   return (
-    <>
+    <div className="overview-page">
       {/* Overview Cards */}
       <section className="overview-stage">
         <div className="overview-grid">
@@ -352,16 +376,20 @@ function OverviewPanel({
       <section className="mission-board">
         <GoalsPanel goals={goals} onUpdateGoalStatus={onUpdateGoalStatus} />
       </section>
-    </>
+    </div>
   );
 }
 
 function resolveRoute(hash: string): AppRoute {
-  return hash === "#/chat" ? "chat" : "overview";
+  if (hash === "#/chat") return "chat";
+  if (hash === "#/settings") return "settings";
+  return "overview";
 }
 
 function routeToHash(route: AppRoute): string {
-  return route === "chat" ? "#/chat" : "#/";
+  if (route === "chat") return "#/chat";
+  if (route === "settings") return "#/settings";
+  return "#/";
 }
 
 function resolveFocusGoalTitle(state: BeingState, goals: Goal[]): string | null {

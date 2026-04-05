@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import type { TodayPlan, Goal } from "../lib/api";
 
 export type ChatEntry = {
   id: string;
@@ -12,24 +13,27 @@ type ChatPanelProps = {
   focusModeLabel: string;
   messages: ChatEntry[];
   isSending: boolean;
-  latestActionLabel?: string | null;
+  todayPlan?: TodayPlan | null;
+  activeGoals?: Goal[];
   modeLabel: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;
+  onCompleteGoal?: (goalId: string) => Promise<void>;
 };
 
 export function ChatPanel({
   draft,
   focusGoalTitle,
-  focusModeLabel,
   messages,
   isSending,
-  latestActionLabel,
-  modeLabel,
+  todayPlan,
+  activeGoals,
   onDraftChange,
   onSend,
+  onCompleteGoal,
 }: ChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -39,6 +43,17 @@ export function ChatPanel({
       textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
     }
   }, [draft]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (messagesEndRef.current && typeof messagesEndRef.current.scrollIntoView === 'function') {
+      try {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+      } catch {
+        // 在测试环境中可能会失败，忽略错误
+      }
+    }
+  }, [messages.length, isSending]);
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -50,131 +65,127 @@ export function ChatPanel({
   }
 
   return (
-    <section className="chat-stage">
-      <div className="chat-container">
-        {/* Main Chat Area */}
-        <div className="panel chat-main">
-          <div className="panel__header">
-            <div className="panel__title-group">
-              <div className="panel__icon">💬</div>
-              <div>
-                <h2 className="panel__title">对话</h2>
-                <p className="panel__subtitle">与小晏实时交流</p>
-              </div>
-            </div>
-            <span className={`status-badge ${isSending ? "status-badge--active" : "status-badge--awake"}`}>
-              {isSending ? "思考中" : "在线"}
+    <section className="chat-page">
+      {/* Header */}
+      <header className="chat-page__header">
+        <div className="chat-page__header-info">
+          <h2 className="chat-page__title">
+            {focusGoalTitle ?? "自由对话"}
+          </h2>
+          {todayPlan && (
+            <span className="chat-page__subtitle">
+              今日计划: {todayPlan.steps.filter(s => s.status === "completed").length}/{todayPlan.steps.length} 完成
             </span>
+          )}
+        </div>
+        <div className="chat-page__header-actions">
+          {todayPlan?.steps.some(s => s.status === "pending") && activeGoals && activeGoals[0] && onCompleteGoal && (
+            <button
+              className="chat-page__action-btn"
+              onClick={() => onCompleteGoal(activeGoals[0].id)}
+              type="button"
+            >
+              <CheckIcon /> 完成目标
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Messages */}
+      <div className="chat-page__messages">
+        {messages.length === 0 ? (
+          <div className="chat-page__empty">
+            <div className="chat-page__empty-icon">💬</div>
+            <p className="chat-page__empty-title">开始对话</p>
+            <p className="chat-page__empty-desc">在下方输入框输入消息，与小晏开始交流</p>
+            <div className="chat-page__quick-actions">
+              <button
+                className="chat-page__quick-btn"
+                onClick={() => onDraftChange("帮我制定今天的计划")}
+                type="button"
+              >
+                制定今日计划
+              </button>
+              <button
+                className="chat-page__quick-btn"
+                onClick={() => onDraftChange("总结一下我们刚才聊的内容")}
+                type="button"
+              >
+                总结对话
+              </button>
+            </div>
           </div>
-
-          <div className="chat-thread">
-            {messages.length === 0 ? (
-              <div className="empty-state empty-state--small">
-                <p>还没有对话记录。</p>
-                <p style={{ color: "var(--text-muted)", marginTop: "8px" }}>在下方输入框开始对话。</p>
-              </div>
-            ) : (
-              messages.map((message) => (
-                <article
-                  key={message.id}
-                  className={`chat-bubble chat-bubble--${message.role}`}
-                >
-                  <p className="chat-bubble__speaker">
-                    {message.role === "user" ? "你" : "小晏"}
-                  </p>
-                  <p className="chat-bubble__content">{message.content}</p>
-                </article>
-              ))
-            )}
-
-            {/* Loading bubble */}
+        ) : (
+          <>
+            {messages.map((message) => (
+              <article
+                key={message.id}
+                className={`chat-message chat-message--${message.role}`}
+              >
+                <div className="chat-message__bubble">
+                  <p className="chat-message__content">{message.content}</p>
+                </div>
+              </article>
+            ))}
             {isSending && (
-              <article className="chat-bubble chat-bubble--loading">
-                <p className="chat-bubble__speaker">小晏</p>
-                <div className="loading-dots">
-                  <span className="loading-dots__dot" />
-                  <span className="loading-dots__dot" />
-                  <span className="loading-dots__dot" />
+              <article className="chat-message chat-message--loading">
+                <div className="chat-message__bubble chat-message__bubble--loading">
+                  <div className="chat-message__dots">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
                 </div>
               </article>
             )}
-          </div>
+            <div ref={messagesEndRef} />
+          </>
+        )}
+      </div>
 
-          <div className="chat-composer">
-            <form
-              className="chat-composer__form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!isSending && draft.trim()) {
-                  onSend();
-                }
-              }}
+      {/* Input */}
+      <div className="chat-page__input-area">
+        <form
+          className="chat-page__input-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!isSending && draft.trim()) {
+              onSend();
+            }
+          }}
+        >
+          <label className="sr-only" htmlFor="chat-input">
+            对话输入
+          </label>
+          <div className="chat-page__input-wrapper">
+            <textarea
+              ref={textareaRef}
+              id="chat-input"
+              className="chat-page__textarea"
+              value={draft}
+              placeholder="输入消息..."
+              onChange={(event) => onDraftChange(event.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={1}
+              disabled={isSending}
+            />
+            <button
+              className="chat-page__send-btn"
+              type="submit"
+              disabled={isSending || !draft.trim()}
+              aria-label="发送"
             >
-              <label className="sr-only" htmlFor="chat-input">
-                对话输入
-              </label>
-              <div className="chat-composer__input-wrapper">
-                <textarea
-                  ref={textareaRef}
-                  id="chat-input"
-                  className="chat-composer__textarea"
-                  value={draft}
-                  placeholder="想和小晏说些什么？"
-                  onChange={(event) => onDraftChange(event.target.value)}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                  disabled={isSending}
-                />
-                <span className="chat-composer__hint">Enter 发送 · Shift+Enter 换行</span>
-              </div>
-              <button
-                className="btn btn--primary chat-composer__send"
-                type="submit"
-                disabled={isSending || !draft.trim()}
-              >
-                {isSending ? (
-                  <>
-                    <LoadingSpinner />
-                    发送中
-                  </>
-                ) : (
-                  <>
-                    <SendIcon />
-                    发送
-                  </>
-                )}
-              </button>
-            </form>
+              {isSending ? (
+                <LoadingSpinner />
+              ) : (
+                <SendIcon />
+              )}
+            </button>
           </div>
-        </div>
-
-        {/* Sidebar */}
-        <aside className="chat-sidebar">
-          <div className="chat-sidebar__section">
-            <h3 className="chat-sidebar__title">当前状态</h3>
-            <div className="chat-sidebar__item">
-              <span className="chat-sidebar__label">运行状态</span>
-              <span className="chat-sidebar__value">{modeLabel}</span>
-            </div>
-            <div className="chat-sidebar__item">
-              <span className="chat-sidebar__label">当前阶段</span>
-              <span className="chat-sidebar__value">{focusModeLabel}</span>
-            </div>
-            <div className="chat-sidebar__item">
-              <span className="chat-sidebar__label">当前焦点</span>
-              <span className="chat-sidebar__value">{focusGoalTitle ?? "暂未锁定"}</span>
-            </div>
+          <div className="chat-page__input-hint">
+            <span>Enter 发送 · Shift+Enter 换行</span>
           </div>
-
-          {latestActionLabel && (
-            <div className="chat-sidebar__section">
-              <h3 className="chat-sidebar__title">最近动作</h3>
-              <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                {latestActionLabel}
-              </p>
-            </div>
-          )}
-        </aside>
+        </form>
       </div>
     </section>
   );
@@ -201,4 +212,47 @@ function LoadingSpinner() {
       <path d="M21 12a9 9 0 1 1-6.219-8.56" />
     </svg>
   );
+}
+
+function TargetIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+}
+
+function ZapIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function calculateProgress(goals: Goal[]): number {
+  if (goals.length === 0) return 0;
+  const completed = goals.filter(g => g.status === "completed").length;
+  return Math.round((completed / goals.length) * 100);
 }

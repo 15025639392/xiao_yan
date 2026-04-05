@@ -66,12 +66,12 @@ test("renders wake and sleep controls", () => {
   expect(screen.getByRole("button", { name: "休眠" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "对话" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "总览" })).toBeInTheDocument();
-  expect(screen.getByText("数字人控制台")).toBeInTheDocument();
+  expect(screen.getByText("数字人")).toBeInTheDocument();
   expect(screen.getByText("目标看板")).toBeInTheDocument();
-  expect(screen.queryByText("对话")).toBeInTheDocument();
+  expect(container.querySelector(".app-layout")).toBeTruthy();
+  expect(container.querySelector(".app-sidebar")).toBeTruthy();
   expect(container.querySelector(".overview-stage")).toBeTruthy();
   expect(container.querySelector(".inspector-grid")).toBeTruthy();
-  expect(container.querySelector(".chat-stage")).toBeNull();
 });
 
 test("sends a chat message and renders the assistant reply", async () => {
@@ -156,7 +156,7 @@ test("sends a chat message and renders the assistant reply", async () => {
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "hello xiao yan" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+  fireEvent.click(screen.getByLabelText("发送"));
 
   await waitFor(() => {
     expect(screen.getByText("hello xiao yan")).toBeInTheDocument();
@@ -165,33 +165,25 @@ test("sends a chat message and renders the assistant reply", async () => {
 });
 
 test("polls state and messages so proactive replies appear in the chat panel", async () => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
 
-  let stateCallCount = 0;
   let messagesCallCount = 0;
-  let goalsCallCount = 0;
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
     if (url.endsWith("/state")) {
-      stateCallCount += 1;
-      const body =
-        stateCallCount === 1
-          ? {
-              mode: "awake",
-              current_thought: "我醒了。",
-              active_goal_ids: [],
-            }
-          : {
-              mode: "awake",
-              current_thought: "我刚刚又想到星星了。",
-              active_goal_ids: [],
-            };
-      return new Response(JSON.stringify(body), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: "我醒了。",
+          active_goal_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     if (url.endsWith("/messages")) {
@@ -211,37 +203,23 @@ test("polls state and messages so proactive replies appear in the chat panel", a
     }
 
     if (url.endsWith("/goals")) {
-      goalsCallCount += 1;
-      const body =
-        goalsCallCount === 1
-          ? {
-              goals: [
-                { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
-              ],
-            }
-          : {
-              goals: [
-                { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
-                { id: "goal-2", title: "整理昨晚关于夜空的聊天", status: "active" },
-              ],
-            };
-      return new Response(JSON.stringify(body), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
       return new Response(
         JSON.stringify({
-          entries: [
-            "我最近像是一路从第1步走到第3步，开始学着把这些变化连成自己的经历。",
+          goals: [
+            { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
           ],
         }),
         {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }
+      );
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(
+        JSON.stringify({ entries: [] }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
 
@@ -252,38 +230,14 @@ test("polls state and messages so proactive replies appear in the chat panel", a
           energy: "low",
           mood: "tired",
           focus_tension: "high",
-          latest_event: "夜里很安静，我有点困，但还惦记着整理今天的对话记忆。",
         }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/chat")) {
-      return new Response(
-        JSON.stringify({
-          response_id: "resp_123",
-          output_text: "hello human",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
+        { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
 
     return new Response(
-      JSON.stringify({
-        mode: "sleeping",
-        current_thought: null,
-        active_goal_ids: [],
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
+      JSON.stringify({ mode: "sleeping", current_thought: null, active_goal_ids: [] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
     );
   });
 
@@ -291,20 +245,24 @@ test("polls state and messages so proactive replies appear in the chat panel", a
   window.location.hash = "#/chat";
 
   render(<App />);
-  expect(screen.getAllByText("对话").length).toBeGreaterThanOrEqual(1);
 
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(0);
+  // 等待初始加载
+  await waitFor(() => {
+    expect(screen.getByText("自由对话")).toBeInTheDocument();
   });
-  expect(screen.getByText("当前状态")).toBeInTheDocument();
 
+  // 推进时间触发轮询
   await act(async () => {
     await vi.advanceTimersByTimeAsync(5000);
-    await vi.advanceTimersByTimeAsync(0);
   });
 
-  expect(screen.getByText("我刚刚又想到你提到的星星了。")).toBeInTheDocument();
-});
+  // 验证消息被渲染
+  await waitFor(() => {
+    expect(screen.getByText("我刚刚又想到你提到的星星了。")).toBeInTheDocument();
+  });
+
+  vi.useRealTimers();
+}, 10000);
 
 test("updates a goal status from the app and refreshes the rendered goal", async () => {
   let stateCallCount = 0;
