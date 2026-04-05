@@ -19,6 +19,8 @@ import {
   wake,
 } from "./lib/api";
 
+type AppRoute = "overview" | "chat";
+
 const initialState: BeingState = {
   mode: "sleeping",
   focus_mode: "sleeping",
@@ -30,6 +32,7 @@ const initialState: BeingState = {
 };
 
 export default function App() {
+  const [route, setRoute] = useState<AppRoute>(() => resolveRoute(window.location.hash));
   const [state, setState] = useState<BeingState>(initialState);
   const [world, setWorld] = useState<InnerWorldState | null>(null);
   const [autobioEntries, setAutobioEntries] = useState<string[]>([]);
@@ -77,6 +80,23 @@ export default function App() {
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncRoute = () => {
+      setRoute(resolveRoute(window.location.hash));
+    };
+
+    if (!window.location.hash) {
+      window.location.hash = routeToHash("overview");
+    } else {
+      syncRoute();
+    }
+
+    window.addEventListener("hashchange", syncRoute);
+    return () => {
+      window.removeEventListener("hashchange", syncRoute);
     };
   }, []);
 
@@ -147,66 +167,201 @@ export default function App() {
     }
   }
 
+  function handleNavigate(nextRoute: AppRoute) {
+    const nextHash = routeToHash(nextRoute);
+    if (window.location.hash !== nextHash) {
+      window.location.hash = nextHash;
+      return;
+    }
+
+    setRoute(nextRoute);
+  }
+
+  const isAwake = state.mode === "awake";
+
   return (
     <main className="console-shell">
-      <section className="command-deck">
-        <div className="section-heading">
-          <p className="section-kicker">数字人控制台</p>
-          <h1 className="section-title">指挥台</h1>
-          <p className="section-summary">
-            在一个界面里查看她的在线状态、当前阶段、专注目标和实时对话。
-          </p>
+      {/* Header with Navigation */}
+      <header className="status-strip">
+        <div className="status-strip__brand">
+          <div className="status-strip__logo">🤖</div>
+          <h1 className="status-strip__title">数字人控制台</h1>
         </div>
-        <div className="command-deck__grid">
-          <article className="command-card">
-            <p className="command-card__label">在线状态</p>
-            <p className="command-card__value">{renderModeLabel(state.mode)}</p>
-          </article>
-          <article className="command-card">
-            <p className="command-card__label">当前阶段</p>
-            <p className="command-card__value">{renderFocusModeLabel(state.focus_mode)}</p>
-          </article>
-          <article className="command-card">
-            <p className="command-card__label">当前专注目标</p>
-            <p className="command-card__value">{focusGoalTitle ?? "暂未锁定"}</p>
-          </article>
-          <article className="command-card">
-            <p className="command-card__label">同步状态</p>
-            <p className="command-card__value">{error ? "需要重试" : "每 5 秒同步"}</p>
-          </article>
+
+        <nav className="nav-tabs" aria-label="主导航">
+          <button
+            className={`nav-tab ${route === "overview" ? "nav-tab--active" : ""}`}
+            onClick={() => handleNavigate("overview")}
+            type="button"
+          >
+            <svg className="nav-tab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+            </svg>
+            总览
+          </button>
+          <button
+            className={`nav-tab ${route === "chat" ? "nav-tab--active" : ""}`}
+            onClick={() => handleNavigate("chat")}
+            type="button"
+          >
+            <svg className="nav-tab__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            对话
+          </button>
+        </nav>
+
+        <div className="status-strip__meta">
+          <div className="status-pill">
+            <span className={`status-pill__dot status-pill__dot--${state.mode}`} />
+            <span className="status-pill__label">状态</span>
+            <span className="status-pill__value">{isAwake ? "运行中" : "休眠中"}</span>
+          </div>
         </div>
-        <div className="command-deck__actions">
-          <button className="soft-button soft-button--primary" onClick={handleWake} type="button">
+
+        <div className="status-strip__actions">
+          <button
+            className="btn btn--primary"
+            onClick={handleWake}
+            type="button"
+            disabled={isAwake}
+          >
             唤醒
           </button>
-          <button className="soft-button" onClick={handleSleep} type="button">
+          <button
+            className="btn btn--secondary"
+            onClick={handleSleep}
+            type="button"
+            disabled={!isAwake}
+          >
             休眠
           </button>
         </div>
+      </header>
+
+      {/* Error Banner */}
+      {error ? (
+        <div className="error-banner">
+          <strong>错误：</strong>
+          {error}
+        </div>
+      ) : null}
+
+      {/* Main Content */}
+      {route === "chat" ? (
+        <ChatPanel
+          draft={draft}
+          focusGoalTitle={focusGoalTitle}
+          focusModeLabel={renderFocusModeLabel(state.focus_mode)}
+          isSending={isSending}
+          latestActionLabel={state.last_action ? `${state.last_action.command} -> ${state.last_action.output}` : null}
+          messages={messages}
+          modeLabel={isAwake ? "运行中" : "休眠中"}
+          onDraftChange={setDraft}
+          onSend={handleSend}
+        />
+      ) : (
+        <OverviewPanel
+          focusGoalTitle={focusGoalTitle}
+          goals={goals}
+          latestActionLabel={state.last_action ? `${state.last_action.command} -> ${state.last_action.output}` : null}
+          mode={state.mode}
+          onUpdateGoalStatus={handleUpdateGoalStatus}
+          state={state}
+          world={world}
+          autobioEntries={autobioEntries}
+        />
+      )}
+    </main>
+  );
+}
+
+// Overview Panel Component
+function OverviewPanel({
+  focusGoalTitle,
+  goals,
+  latestActionLabel,
+  mode,
+  onUpdateGoalStatus,
+  state,
+  world,
+  autobioEntries,
+}: {
+  focusGoalTitle: string | null;
+  goals: Goal[];
+  latestActionLabel: string | null;
+  mode: BeingState["mode"];
+  onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
+  state: BeingState;
+  world: InnerWorldState | null;
+  autobioEntries: string[];
+}) {
+  const isAwake = mode === "awake";
+
+  return (
+    <>
+      {/* Overview Cards */}
+      <section className="overview-stage">
+        <div className="overview-grid">
+          <article className="overview-card overview-card--primary">
+            <p className="overview-card__label">当前焦点</p>
+            <p className="overview-card__value">{focusGoalTitle ?? "暂未锁定"}</p>
+            <p className="overview-card__body">
+              {state.current_thought ?? "现在没有新的显性想法。"}
+            </p>
+          </article>
+
+          <article className="overview-card">
+            <p className="overview-card__label">运行状态</p>
+            <p className="overview-card__value">
+              <span className={`status-badge status-badge--${mode}`}>
+                {isAwake ? "运行中" : "休眠中"}
+              </span>
+            </p>
+            <p className="overview-card__body">
+              {isAwake ? "数字人正在自主运行，处理目标和任务。" : "数字人处于休眠状态，点击唤醒按钮启动。"}
+            </p>
+          </article>
+
+          <article className="overview-card">
+            <p className="overview-card__label">最近动作</p>
+            <p className="overview-card__body">{latestActionLabel ?? "最近没有新的执行动作。"}</p>
+          </article>
+        </div>
       </section>
 
-      <section className="workspace-grid">
-        <div className="workspace-grid__primary">
-          <ChatPanel
-            draft={draft}
-            isSending={isSending}
-            messages={messages}
-            onDraftChange={setDraft}
-            onSend={handleSend}
-          />
+      {/* Inspector Grid - 2-1 Layout */}
+      <section className="inspector-grid">
+        <div className="inspector-grid__rail">
+          <div className="inspector-grid__main">
+            <StatusPanel error={""} focusGoalTitle={focusGoalTitle} state={state} />
+          </div>
+          <div className="inspector-grid__side">
+            <WorldPanel world={world} />
+          </div>
         </div>
-        <div className="workspace-grid__rail">
-          <StatusPanel error={error} focusGoalTitle={focusGoalTitle} state={state} />
-          <WorldPanel world={world} />
+        <div className="inspector-grid__bottom">
           <AutobioPanel entries={autobioEntries} />
         </div>
       </section>
 
+      {/* Goals Board */}
       <section className="mission-board">
-        <GoalsPanel goals={goals} onUpdateGoalStatus={handleUpdateGoalStatus} />
+        <GoalsPanel goals={goals} onUpdateGoalStatus={onUpdateGoalStatus} />
       </section>
-    </main>
+    </>
   );
+}
+
+function resolveRoute(hash: string): AppRoute {
+  return hash === "#/chat" ? "chat" : "overview";
+}
+
+function routeToHash(route: AppRoute): string {
+  return route === "chat" ? "#/chat" : "#/";
 }
 
 function resolveFocusGoalTitle(state: BeingState, goals: Goal[]): string | null {
@@ -218,10 +373,6 @@ function resolveFocusGoalTitle(state: BeingState, goals: Goal[]): string | null 
   }
 
   return state.today_plan?.goal_title ?? null;
-}
-
-function renderModeLabel(mode: BeingState["mode"]): string {
-  return mode === "awake" ? "运行中" : "休眠中";
 }
 
 function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {
