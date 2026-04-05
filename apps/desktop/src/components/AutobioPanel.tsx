@@ -6,12 +6,17 @@ export function AutobioPanel({ entries }: AutobioPanelProps) {
   const uniqueEntries = Array.from(new Set(entries));
 
   return (
-    <section>
-      <h2>Self Narrative</h2>
+    <section className="panel panel--rail">
+      <div className="panel__header">
+        <div>
+          <p className="panel__eyebrow">近期记忆</p>
+          <h2 className="panel__title">自我叙事</h2>
+        </div>
+      </div>
       {uniqueEntries.length === 0 ? (
-        <p>No autobiographical reflection yet.</p>
+        <p className="empty-state">还没有形成自我叙事。</p>
       ) : (
-        <ul>
+        <ul className="narrative-list">
           {uniqueEntries.map((entry) => (
             <li key={entry}>{entry}</li>
           ))}

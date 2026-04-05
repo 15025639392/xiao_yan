@@ -64,7 +64,7 @@ export default function App() {
         setAutobioEntries(nextAutobio.entries);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "sync failed");
+          setError(err instanceof Error ? err.message : "同步失败");
         }
       }
     }
@@ -85,7 +85,7 @@ export default function App() {
       setError("");
       setState(await wake());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "wake failed");
+      setError(err instanceof Error ? err.message : "唤醒失败");
     }
   }
 
@@ -94,7 +94,7 @@ export default function App() {
       setError("");
       setState(await sleep());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "sleep failed");
+      setError(err instanceof Error ? err.message : "休眠失败");
     }
   }
 
@@ -126,7 +126,7 @@ export default function App() {
         },
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "chat failed");
+      setError(err instanceof Error ? err.message : "发送失败");
     } finally {
       setIsSending(false);
     }
@@ -143,30 +143,72 @@ export default function App() {
       );
       setState(refreshedState);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "goal update failed");
+      setError(err instanceof Error ? err.message : "目标状态更新失败");
     }
   }
 
   return (
-    <main>
-      <h1>Digital Being</h1>
-      <StatusPanel error={error} focusGoalTitle={focusGoalTitle} state={state} />
-      <WorldPanel world={world} />
-      <AutobioPanel entries={autobioEntries} />
-      <GoalsPanel goals={goals} onUpdateGoalStatus={handleUpdateGoalStatus} />
-      <ChatPanel
-        draft={draft}
-        isSending={isSending}
-        messages={messages}
-        onDraftChange={setDraft}
-        onSend={handleSend}
-      />
-      <button onClick={handleWake} type="button">
-        Wake
-      </button>
-      <button onClick={handleSleep} type="button">
-        Sleep
-      </button>
+    <main className="console-shell">
+      <section className="command-deck">
+        <div className="section-heading">
+          <p className="section-kicker">数字人控制台</p>
+          <h1 className="section-title">指挥台</h1>
+          <p className="section-summary">
+            在一个界面里查看她的在线状态、当前阶段、专注目标和实时对话。
+          </p>
+        </div>
+        <div className="command-deck__grid">
+          <article className="command-card">
+            <p className="command-card__label">在线状态</p>
+            <p className="command-card__value">{renderModeLabel(state.mode)}</p>
+          </article>
+          <article className="command-card">
+            <p className="command-card__label">当前阶段</p>
+            <p className="command-card__value">{renderFocusModeLabel(state.focus_mode)}</p>
+          </article>
+          <article className="command-card">
+            <p className="command-card__label">当前专注目标</p>
+            <p className="command-card__value">{focusGoalTitle ?? "暂未锁定"}</p>
+          </article>
+          <article className="command-card">
+            <p className="command-card__label">同步状态</p>
+            <p className="command-card__value">{error ? "需要重试" : "每 5 秒同步"}</p>
+          </article>
+        </div>
+        <div className="command-deck__actions">
+          <button className="soft-button soft-button--primary" onClick={handleWake} type="button">
+            唤醒
+          </button>
+          <button className="soft-button" onClick={handleSleep} type="button">
+            休眠
+          </button>
+        </div>
+      </section>
+
+      <section className="workspace-grid">
+        <div className="workspace-grid__primary">
+          <ChatPanel
+            draft={draft}
+            isSending={isSending}
+            messages={messages}
+            onDraftChange={setDraft}
+            onSend={handleSend}
+          />
+        </div>
+        <div className="workspace-grid__rail">
+          <StatusPanel error={error} focusGoalTitle={focusGoalTitle} state={state} />
+          <WorldPanel world={world} />
+          <AutobioPanel entries={autobioEntries} />
+        </div>
+      </section>
+
+      <section className="mission-board">
+        <div className="section-heading section-heading--compact">
+          <p className="section-kicker">任务推进</p>
+          <h2 className="section-title">目标看板</h2>
+        </div>
+        <GoalsPanel goals={goals} onUpdateGoalStatus={handleUpdateGoalStatus} />
+      </section>
     </main>
   );
 }
@@ -180,6 +222,23 @@ function resolveFocusGoalTitle(state: BeingState, goals: Goal[]): string | null 
   }
 
   return state.today_plan?.goal_title ?? null;
+}
+
+function renderModeLabel(mode: BeingState["mode"]): string {
+  return mode === "awake" ? "运行中" : "休眠中";
+}
+
+function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {
+  if (focusMode === "morning_plan") {
+    return "晨间计划";
+  }
+  if (focusMode === "autonomy") {
+    return "常规自主";
+  }
+  if (focusMode === "self_improvement") {
+    return "自我修复";
+  }
+  return "休眠";
 }
 
 function mergeMessages(

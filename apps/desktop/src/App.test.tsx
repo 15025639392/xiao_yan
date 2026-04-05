@@ -61,8 +61,11 @@ test("renders wake and sleep controls", () => {
   );
 
   render(<App />);
-  expect(screen.getByText("Wake")).toBeInTheDocument();
-  expect(screen.getByText("Sleep")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "唤醒" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "休眠" })).toBeInTheDocument();
+  expect(screen.getByText("指挥台")).toBeInTheDocument();
+  expect(screen.getByText("对话控制台")).toBeInTheDocument();
+  expect(screen.getByText("目标看板")).toBeInTheDocument();
 });
 
 test("sends a chat message and renders the assistant reply", async () => {
@@ -141,14 +144,14 @@ test("sends a chat message and renders the assistant reply", async () => {
 
   render(<App />);
 
-  fireEvent.change(screen.getByLabelText("Chat Input"), {
+  fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "hello xiao yan" },
   });
-  fireEvent.click(screen.getByText("Send"));
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
   await waitFor(() => {
-    expect(screen.getByText("You: hello xiao yan")).toBeInTheDocument();
-    expect(screen.getByText("Xiao Yan: hello human")).toBeInTheDocument();
+    expect(screen.getByText("hello xiao yan")).toBeInTheDocument();
+    expect(screen.getByText("hello human")).toBeInTheDocument();
   });
 });
 
@@ -282,7 +285,7 @@ test("polls state and messages so proactive replies appear in the chat panel", a
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  expect(screen.getByText("Mode: awake")).toBeInTheDocument();
+  expect(screen.getByText("当前状态")).toBeInTheDocument();
   expect(screen.getByText("持续理解用户最近在意的话题：星星")).toBeInTheDocument();
   expect(
     screen.getByText("我最近像是一路从第1步走到第3步，开始学着把这些变化连成自己的经历。"),
@@ -293,8 +296,8 @@ test("polls state and messages so proactive replies appear in the chat panel", a
     await vi.advanceTimersByTimeAsync(0);
   });
 
-  expect(screen.getByText("Thought: 我刚刚又想到星星了。")).toBeInTheDocument();
-  expect(screen.getByText("Xiao Yan: 我刚刚又想到你提到的星星了。")).toBeInTheDocument();
+  expect(screen.getByText("我刚刚又想到星星了。")).toBeInTheDocument();
+  expect(screen.getByText("我刚刚又想到你提到的星星了。")).toBeInTheDocument();
   expect(screen.getByText("整理昨晚关于夜空的聊天")).toBeInTheDocument();
 });
 
@@ -406,7 +409,7 @@ test("updates a goal status from the app and refreshes the rendered goal", async
   await waitFor(() => {
     expect(screen.getByText("paused")).toBeInTheDocument();
     expect(screen.getByText("Resume")).toBeInTheDocument();
-    expect(screen.getByText("Phase: 常规自主")).toBeInTheDocument();
+    expect(screen.getAllByText("常规自主")).toHaveLength(2);
   });
 });
 
@@ -479,13 +482,12 @@ test("polls world state and renders the inner world panel", async () => {
 
   render(<App />);
 
-  expect(await screen.findByText("Time: night")).toBeInTheDocument();
-  expect(screen.getByText("Energy: low")).toBeInTheDocument();
-  expect(screen.getByText("Mood: tired")).toBeInTheDocument();
-  expect(screen.getByText("Focus: high")).toBeInTheDocument();
-  expect(
-    screen.getByText("Latest Event: 夜里很安静，我有点困，但还惦记着整理今天的对话记忆。")
-  ).toBeInTheDocument();
+  expect(await screen.findByText("内在世界")).toBeInTheDocument();
+  expect(screen.getByText("夜晚")).toBeInTheDocument();
+  expect(screen.getByText("低")).toBeInTheDocument();
+  expect(screen.getByText("疲惫")).toBeInTheDocument();
+  expect(screen.getByText("高")).toBeInTheDocument();
+  expect(screen.getByText("夜里很安静，我有点困，但还惦记着整理今天的对话记忆。")).toBeInTheDocument();
 });
 
 test("renders self improvement state from polled runtime state", async () => {
@@ -574,10 +576,10 @@ test("renders self improvement state from polled runtime state", async () => {
 
   render(<App />);
 
-  expect(await screen.findByText("Phase: 自我编程")).toBeInTheDocument();
+  expect(await screen.findAllByText("自我修复")).toHaveLength(2);
   expect(screen.getByText("她刚刚为什么改自己")).toBeInTheDocument();
-  expect(screen.getByText("Patch: 已修改状态面板并通过测试。")).toBeInTheDocument();
-  expect(screen.getByText("Red Summary: 1 failed")).toBeInTheDocument();
-  expect(screen.getByText("Verification: passed")).toBeInTheDocument();
-  expect(screen.getByText("Touched Files: apps/desktop/src/components/StatusPanel.tsx, apps/desktop/src/components/StatusPanel.test.tsx")).toBeInTheDocument();
+  expect(screen.getByText("已修改状态面板并通过测试。")).toBeInTheDocument();
+  expect(screen.getByText("1 failed")).toBeInTheDocument();
+  expect(screen.getByText("通过")).toBeInTheDocument();
+  expect(screen.getByText("apps/desktop/src/components/StatusPanel.tsx, apps/desktop/src/components/StatusPanel.test.tsx")).toBeInTheDocument();
 });

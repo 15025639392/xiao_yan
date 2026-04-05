@@ -18,9 +18,10 @@ test("renders focus stage and step for the inner world", () => {
     />
   );
 
-  expect(screen.getByText("Phase: consolidate")).toBeInTheDocument();
-  expect(screen.getByText("Step: 3")).toBeInTheDocument();
-  expect(screen.getByText("Latest Event: 我想先把第3步收束一下。")).toBeInTheDocument();
+  expect(screen.getByText("内在世界")).toBeInTheDocument();
+  expect(screen.getByText("收束中")).toBeInTheDocument();
+  expect(screen.getByText("第 3 步")).toBeInTheDocument();
+  expect(screen.getByText("我想先把第3步收束一下。")).toBeInTheDocument();
 });
 
 
@@ -38,6 +39,6 @@ test("does not render a fake phase when there is no active focus stage", () => {
     />
   );
 
-  expect(screen.queryByText("Phase: none")).not.toBeInTheDocument();
-  expect(screen.queryByText(/Step:/)).not.toBeInTheDocument();
+  expect(screen.queryByText("无专注阶段")).not.toBeInTheDocument();
+  expect(screen.queryByText(/第 .* 步/)).not.toBeInTheDocument();
 });

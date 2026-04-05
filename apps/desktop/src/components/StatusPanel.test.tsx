@@ -26,12 +26,14 @@ test("renders her plan for today when a morning plan exists", () => {
     />
   );
 
-  expect(screen.getByText("她今天的计划")).toBeInTheDocument();
-  expect(screen.getByText("Phase: 她今天的计划")).toBeInTheDocument();
-  expect(screen.getByText("Focus Goal: 整理今天的对话记忆")).toBeInTheDocument();
-  expect(screen.getByText("整理今天的对话记忆")).toBeInTheDocument();
-  expect(screen.getByText(/\[todo\].*轮廓理一下/)).toBeInTheDocument();
-  expect(screen.getByText(/\[todo\].*开始动手推进/)).toBeInTheDocument();
+  expect(screen.getByText("当前状态")).toBeInTheDocument();
+  expect(screen.getByText("今日计划")).toBeInTheDocument();
+  expect(screen.getByText("晨间计划")).toBeInTheDocument();
+  expect(screen.getByText("当前专注目标")).toBeInTheDocument();
+  expect(screen.getAllByText("整理今天的对话记忆")).toHaveLength(2);
+  expect(screen.getAllByText("待处理")).toHaveLength(2);
+  expect(screen.getByText("把“整理今天的对话记忆”的轮廓理一下")).toBeInTheDocument();
+  expect(screen.getByText("开始动手推进")).toBeInTheDocument();
 });
 
 
@@ -62,12 +64,13 @@ test("renders completed state when today's plan is finished", () => {
     />
   );
 
-  expect(screen.getByText("Phase: 常规自主")).toBeInTheDocument();
-  expect(screen.getByText("Focus Goal: 整理今天的对话记忆")).toBeInTheDocument();
-  expect(screen.getByText("Last Action: pwd -> /Users/ldy/Desktop/map/ai")).toBeInTheDocument();
+  expect(screen.getByText("常规自主")).toBeInTheDocument();
+  expect(screen.getByText("当前专注目标")).toBeInTheDocument();
+  expect(screen.getByText("pwd -> /Users/ldy/Desktop/map/ai")).toBeInTheDocument();
   expect(screen.getByText("今日计划已完成")).toBeInTheDocument();
-  expect(screen.getByText(/\[done\].*轮廓理一下/)).toBeInTheDocument();
-  expect(screen.getByText(/\[done\].*开始动手推进/)).toBeInTheDocument();
+  expect(screen.getAllByText("已完成")).toHaveLength(2);
+  expect(screen.getByText("把“整理今天的对话记忆”的轮廓理一下")).toBeInTheDocument();
+  expect(screen.getByText("开始动手推进")).toBeInTheDocument();
 });
 
 
@@ -108,14 +111,14 @@ test("renders self improvement progress and verification result", () => {
     />
   );
 
-  expect(screen.getByText("Phase: 自我编程")).toBeInTheDocument();
+  expect(screen.getByText("自我修复")).toBeInTheDocument();
   expect(screen.getByText("她刚刚为什么改自己")).toBeInTheDocument();
-  expect(screen.getByText("Area: ui")).toBeInTheDocument();
-  expect(screen.getByText("Stage: 验证中")).toBeInTheDocument();
-  expect(screen.getByText(/Reason: 测试失败/)).toBeInTheDocument();
-  expect(screen.getByText("Red Verification: failed")).toBeInTheDocument();
-  expect(screen.getByText("Red Summary: 1 failed")).toBeInTheDocument();
-  expect(screen.getByText("Verification: passed")).toBeInTheDocument();
-  expect(screen.getByText("Verification Summary: 1 passed")).toBeInTheDocument();
-  expect(screen.getByText("Touched Files: apps/desktop/src/components/StatusPanel.tsx, apps/desktop/src/components/StatusPanel.test.tsx")).toBeInTheDocument();
+  expect(screen.getByText("ui")).toBeInTheDocument();
+  expect(screen.getAllByText("验证中")).toHaveLength(2);
+  expect(screen.getByText("测试失败：状态面板没有展示自我编程状态。")).toBeInTheDocument();
+  expect(screen.getByText("失败")).toBeInTheDocument();
+  expect(screen.getByText("1 failed")).toBeInTheDocument();
+  expect(screen.getByText("通过")).toBeInTheDocument();
+  expect(screen.getByText("1 passed")).toBeInTheDocument();
+  expect(screen.getByText("apps/desktop/src/components/StatusPanel.tsx, apps/desktop/src/components/StatusPanel.test.tsx")).toBeInTheDocument();
 });

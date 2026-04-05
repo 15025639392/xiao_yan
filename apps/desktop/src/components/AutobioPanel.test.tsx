@@ -12,7 +12,7 @@ test("renders autobiographical entries", () => {
     />
   );
 
-  expect(screen.getByText("Self Narrative")).toBeInTheDocument();
+  expect(screen.getByText("自我叙事")).toBeInTheDocument();
   expect(
     screen.getByText("我最近像是一路从第1步走到第3步，开始学着把这些变化连成自己的经历。"),
   ).toBeInTheDocument();
@@ -22,7 +22,7 @@ test("renders autobiographical entries", () => {
 test("renders empty autobiographical state", () => {
   render(<AutobioPanel entries={[]} />);
 
-  expect(screen.getByText("No autobiographical reflection yet.")).toBeInTheDocument();
+  expect(screen.getByText("还没有形成自我叙事。")).toBeInTheDocument();
 });
 
 
