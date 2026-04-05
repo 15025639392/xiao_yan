@@ -26,6 +26,10 @@ class MemoryRepository(Protocol):
         """更新指定 ID 的记忆事件的字段，返回是否成功"""
         ...
 
+    def clear_all(self) -> int:
+        """清空所有记忆事件，返回已清除的数量"""
+        ...
+
 
 class InMemoryMemoryRepository:
     def __init__(self, on_change: Callable[[], None] | None = None) -> None:
@@ -63,6 +67,20 @@ class InMemoryMemoryRepository:
 
     def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
         self._on_change = callback
+
+    def clear_all(self) -> int:
+        """清空所有记忆事件，返回已清除的数量"""
+        if not self.storage_path.exists():
+            return 0
+
+        events = self._read_all_events()
+        count = len(events)
+
+        if count > 0:
+            self.storage_path.write_text("", encoding="utf-8")
+            self._notify_change()
+
+        return count
 
     def _notify_change(self) -> None:
         if self._on_change is not None:
@@ -179,6 +197,20 @@ class FileMemoryRepository:
 
     def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
         self._on_change = callback
+
+    def clear_all(self) -> int:
+        """清空所有记忆事件，返回已清除的数量"""
+        if not self.storage_path.exists():
+            return 0
+
+        events = self._read_all_events()
+        count = len(events)
+
+        if count > 0:
+            self.storage_path.write_text("", encoding="utf-8")
+            self._notify_change()
+
+        return count
 
     def _notify_change(self) -> None:
         if self._on_change is not None:

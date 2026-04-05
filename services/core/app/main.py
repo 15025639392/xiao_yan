@@ -1265,6 +1265,48 @@ def reset_persona(
     return {"success": True, "profile": profile.model_dump()}
 
 
+@app.post("/persona/initialize")
+def initialize_persona(
+    state_store: StateStore = Depends(get_state_store),
+    memory_repository: MemoryRepository = Depends(get_memory_repository),
+    goal_repository: GoalRepository = Depends(get_goal_repository),
+    persona_service: PersonaService = Depends(get_persona_service),
+) -> dict:
+    """初始化数字人：清空所有数据并重置为初始状态"""
+    from app.domain.models import BeingState, FocusMode, WakeMode
+
+    # 清空所有记忆
+    memory_count = memory_repository.clear_all()
+
+    # 清空所有目标
+    goal_count = goal_repository.clear_all()
+
+    # 重置人格为默认值
+    profile = persona_service.reset_to_default()
+
+    # 重置状态为初始状态
+    initial_state = BeingState(
+        mode=WakeMode.SLEEPING,
+        focus_mode=FocusMode.SLEEPING,
+        current_thought=None,
+        active_goal_ids=[],
+        today_plan=None,
+        last_action=None,
+        self_programming_job=None,
+    )
+    state_store.set(initial_state)
+
+    return {
+        "success": True,
+        "message": "数字人已初始化",
+        "cleared": {
+            "memories": memory_count,
+            "goals": goal_count,
+        },
+        "profile": profile.model_dump(),
+    }
+
+
 # ── 情绪 API ──────────────────────────────────────────
 
 

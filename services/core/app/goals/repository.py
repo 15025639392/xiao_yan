@@ -23,6 +23,10 @@ class GoalRepository(Protocol):
     def update_status(self, goal_id: str, status: GoalStatus) -> Goal | None:
         ...
 
+    def clear_all(self) -> int:
+        """清空所有目标，返回已清除的数量"""
+        ...
+
 
 class InMemoryGoalRepository:
     def __init__(self, on_change: Callable[[], None] | None = None) -> None:
@@ -60,6 +64,20 @@ class InMemoryGoalRepository:
 
     def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
         self._on_change = callback
+
+    def clear_all(self) -> int:
+        """清空所有目标，返回已清除的数量"""
+        if not self.storage_path.exists():
+            return 0
+
+        goals = self.list_goals()
+        count = len(goals)
+
+        if count > 0:
+            self.storage_path.write_text("[]", encoding="utf-8")
+            self._notify_change()
+
+        return count
 
     def _notify_change(self) -> None:
         if self._on_change is not None:
@@ -112,6 +130,20 @@ class FileGoalRepository:
 
     def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
         self._on_change = callback
+
+    def clear_all(self) -> int:
+        """清空所有目标，返回已清除的数量"""
+        if not self.storage_path.exists():
+            return 0
+
+        goals = self.list_goals()
+        count = len(goals)
+
+        if count > 0:
+            self.storage_path.write_text("[]", encoding="utf-8")
+            self._notify_change()
+
+        return count
 
     def _notify_change(self) -> None:
         if self._on_change is not None:
