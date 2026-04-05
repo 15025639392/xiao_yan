@@ -6,12 +6,12 @@ import type {
 } from "../lib/api";
 import {
   fetchPersona,
+  fetchEmotionState,
   updatePersona,
   updatePersonality,
   updateSpeakingStyle,
   resetPersona,
 } from "../lib/api";
-import { PersonaCard } from "./PersonaCard";
 
 type SettingsPanelProps = {
   onPersonaUpdated?: () => void;
@@ -23,32 +23,137 @@ type SettingsPanelProps = {
 
 export function SettingsPanel({ onPersonaUpdated }: SettingsPanelProps) {
   return (
-    <section className="workbench-page">
+    <section className="persona-page">
       {/* 页面头部 */}
-      <header className="workbench-page__header">
-        <div className="workbench-page__title-group">
-          <h2 className="workbench-page__title">人格配置</h2>
-          <p className="workbench-page__subtitle">管理数字人的性格、风格与身份</p>
+      <header className="persona-page__header">
+        <div className="persona-page__title-group">
+          <h2 className="persona-page__title">🎭 人格配置</h2>
+          <p className="persona-page__subtitle">管理数字人的性格、风格与身份</p>
         </div>
       </header>
 
-      {/* 工作台主体 - 左右分栏 */}
-      <div className="workbench-layout">
-        {/* 左侧：实时人格状态 */}
-        <aside className="workbench-sidebar">
-          <div className="workbench-sidebar__section">
-            <h4 className="workbench-sidebar__section-title">当前状态</h4>
-            <PersonaCard />
-          </div>
-        </aside>
+      {/* 状态概览条 */}
+      <PersonaStatusBar />
 
-        {/* 右侧：人格配置内容 */}
-        <main className="workbench-content">
-          <PersonaWorkbench onUpdated={onPersonaUpdated} />
-        </main>
-      </div>
+      {/* 配置内容区 */}
+      <main className="persona-page__content">
+        <PersonaWorkbench onUpdated={onPersonaUpdated} />
+      </main>
     </section>
   );
+}
+
+// ═══════════════════════════════════════════════════
+// 人格状态概览条 - 横向精简展示
+// ═══════════════════════════════════════════════════
+
+function PersonaStatusBar() {
+  const [profile, setProfile] = useState<PersonaProfile | null>(null);
+  const [emotion, setEmotion] = useState<{
+    primary_emotion: string;
+    primary_intensity: string;
+    mood_valence: number;
+  } | null>(null);
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  async function load() {
+    try {
+      const [p, e] = await Promise.all([fetchPersona(), fetchEmotionState()]);
+      setProfile(p);
+      setEmotion(e);
+    } catch {
+      // 静默失败
+    }
+  }
+
+  if (!profile || !emotion) {
+    return (
+      <div className="persona-status-bar persona-status-bar--loading">
+        <div className="persona-status-bar__skeleton" />
+      </div>
+    );
+  }
+
+  const emotionConfig = getEmotionDisplay(emotion.primary_emotion, emotion.primary_intensity);
+  const moodPercent = ((emotion.mood_valence + 1) / 2) * 100;
+
+  return (
+    <div className="persona-status-bar">
+      <div className="persona-status-bar__item">
+        <span className="persona-status-bar__label">名字</span>
+        <span className="persona-status-bar__value">{profile.name}</span>
+      </div>
+      <div className="persona-status-bar__divider" />
+      <div className="persona-status-bar__item">
+        <span className="persona-status-bar__label">身份</span>
+        <span className="persona-status-bar__value">{profile.identity}</span>
+      </div>
+      <div className="persona-status-bar__divider" />
+      <div className="persona-status-bar__item">
+        <span className="persona-status-bar__label">当前情绪</span>
+        <span 
+          className="persona-status-bar__emotion"
+          style={{ 
+            color: emotionConfig.color,
+            borderColor: emotionConfig.color 
+          }}
+        >
+          {emotionConfig.emoji} {emotionConfig.label}
+        </span>
+      </div>
+      <div className="persona-status-bar__divider" />
+      <div className="persona-status-bar__item persona-status-bar__item--grow">
+        <span className="persona-status-bar__label">心情值</span>
+        <div className="persona-status-bar__mood">
+          <div className="persona-status-bar__mood-track">
+            <div 
+              className="persona-status-bar__mood-fill"
+              style={{ 
+                width: `${moodPercent}%`,
+                background: moodPercent > 60 ? 'var(--success)' : moodPercent > 40 ? 'var(--warning)' : 'var(--danger)'
+              }}
+            />
+          </div>
+          <span className="persona-status-bar__mood-value">{emotion.mood_valence.toFixed(1)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// 人格配置工作台
+// ═══════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════
+// 情绪显示辅助函数
+// ═══════════════════════════════════════════════════
+
+function getEmotionDisplay(emotion: string, intensity: string): {
+  emoji: string;
+  label: string;
+  color: string;
+} {
+  const map: Record<string, { emoji: string; label: string; color: string }> = {
+    joy: { emoji: "😊", label: "开心", color: "#10b981" },
+    sadness: { emoji: "😢", label: "难过", color: "#6b7280" },
+    anger: { emoji: "😠", label: "生气", color: "#ef4444" },
+    fear: { emoji: "😨", label: "害怕", color: "#8b5cf6" },
+    surprise: { emoji: "😲", label: "惊讶", color: "#f59e0b" },
+    disgust: { emoji: "🤢", label: "厌恶", color: "#84cc16" },
+    calm: { emoji: "😌", label: "平静", color: "#3b82f6" },
+    lonely: { emoji: "🥺", label: "孤独", color: "#6366f1" },
+    grateful: { emoji: "🙏", label: "感激", color: "#ec4899" },
+    frustrated: { emoji: "😤", label: "沮丧", color: "#f97316" },
+    proud: { emoji: "😎", label: "自豪", color: "#14b8a6" },
+    engaged: { emoji: "🤔", label: "专注", color: "#0ea5e9" },
+  };
+  return map[emotion] || { emoji: "😐", label: emotion, color: "#9ca3af" };
 }
 
 // ═══════════════════════════════════════════════════
@@ -181,14 +286,7 @@ function PersonaWorkbench({ onUpdated }: { onUpdated?: () => void }) {
   }
 
   if (loading) {
-    return (
-      <div className="workbench-panel workbench-panel--loading">
-        <div className="workbench-panel__skeleton">
-          <div className="workbench-skeleton-header" />
-          <div className="workbench-skeleton-body" />
-        </div>
-      </div>
-    );
+    return <PersonaWorkbenchSkeleton />;
   }
 
   const subTabs = [
@@ -198,30 +296,25 @@ function PersonaWorkbench({ onUpdated }: { onUpdated?: () => void }) {
   ];
 
   return (
-    <div className="workbench-panel">
-      {/* 面板头部 */}
-      <header className="workbench-panel__header">
-        <h3 className="workbench-panel__title">人格配置</h3>
-        {toast && <span className="workbench-panel__toast">{toast}</span>}
-      </header>
-
+    <div className="persona-config-panel">
       {/* 子标签切换 */}
-      <div className="workbench-subtabs">
+      <div className="persona-config-tabs">
         {subTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
-            className={`workbench-subtab ${activeSubTab === tab.id ? "workbench-subtab--active" : ""}`}
+            className={`persona-config-tab ${activeSubTab === tab.id ? "persona-config-tab--active" : ""}`}
             onClick={() => setActiveSubTab(tab.id)}
           >
             <span>{tab.icon}</span>
             <span>{tab.label}</span>
           </button>
         ))}
+        {toast && <span className="persona-config-toast">{toast}</span>}
       </div>
 
       {/* 内容区域 */}
-      <div className="workbench-panel__body">
+      <div className="persona-config-body">
         {activeSubTab === "basic" && (
           <div className="persona-form">
             <div className="persona-form__section">
@@ -451,6 +544,29 @@ function PersonaWorkbench({ onUpdated }: { onUpdated?: () => void }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// 加载状态组件
+// ═══════════════════════════════════════════════════
+
+function PersonaWorkbenchSkeleton() {
+  return (
+    <div className="persona-config-panel">
+      <div className="persona-config-tabs">
+        <div className="persona-config-tab-skeleton" />
+        <div className="persona-config-tab-skeleton" />
+        <div className="persona-config-tab-skeleton" />
+      </div>
+      <div className="persona-config-body">
+        <div className="persona-form-skeleton">
+          <div className="persona-form-skeleton__field" />
+          <div className="persona-form-skeleton__field" />
+          <div className="persona-form-skeleton__field" />
+        </div>
       </div>
     </div>
   );
