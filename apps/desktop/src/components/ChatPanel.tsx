@@ -1,6 +1,7 @@
-import { useRef, useEffect } from "react";
-import type { TodayPlan, Goal } from "../lib/api";
+import { useRef, useEffect, useState } from "react";
+import type { TodayPlan, Goal, MemoryEntryDisplay, AppConfig } from "../lib/api";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { fetchConfig, updateConfig } from "../lib/api";
 
 export type ChatEntry = {
   id: string;
@@ -8,6 +9,7 @@ export type ChatEntry = {
   content: string;
   state?: "streaming" | "failed";
   requestMessage?: string;
+  relatedMemories?: MemoryEntryDisplay[];
 };
 
 type ChatPanelProps = {
@@ -41,6 +43,24 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showMemoryContext, setShowMemoryContext] = useState<Set<string>>(new Set());
+  const [showConfigPanel, setShowConfigPanel] = useState(false);
+  const [config, setConfig] = useState<AppConfig>({ chat_context_limit: 6 });
+  const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
+  const [configError, setConfigError] = useState("");
+
+  // 加载配置
+  useEffect(() => {
+    async function loadConfig() {
+      try {
+        const data = await fetchConfig();
+        setConfig(data);
+      } catch (err) {
+        console.error("加载配置失败:", err);
+      }
+    }
+    loadConfig();
+  }, []);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -71,6 +91,20 @@ export function ChatPanel({
     }
   }
 
+  async function handleUpdateConfig(newConfig: Partial<AppConfig>) {
+    setIsUpdatingConfig(true);
+    setConfigError("");
+
+    try {
+      const updated = await updateConfig(newConfig);
+      setConfig(updated);
+    } catch (err) {
+      setConfigError(err instanceof Error ? err.message : "更新配置失败");
+    } finally {
+      setIsUpdatingConfig(false);
+    }
+  }
+
   return (
     <section className="chat-page">
       {/* Header */}
@@ -86,6 +120,14 @@ export function ChatPanel({
           )}
         </div>
         <div className="chat-page__header-actions">
+          <button
+            className="chat-page__action-btn"
+            onClick={() => setShowConfigPanel(!showConfigPanel)}
+            type="button"
+            title="配置"
+          >
+            ⚙️ 配置
+          </button>
           {todayPlan?.steps.some(s => s.status === "pending") && activeGoals && activeGoals[0] && onCompleteGoal && (
             <button
               className="chat-page__action-btn"
@@ -97,6 +139,17 @@ export function ChatPanel({
           )}
         </div>
       </header>
+
+      {/* 配置面板 */}
+      {showConfigPanel && (
+        <ConfigPanel
+          config={config}
+          isUpdating={isUpdatingConfig}
+          error={configError}
+          onUpdate={handleUpdateConfig}
+          onClose={() => setShowConfigPanel(false)}
+        />
+      )}
 
       {/* Messages */}
       <div className="chat-page__messages">
@@ -138,6 +191,16 @@ export function ChatPanel({
                     <p className="chat-message__content">{message.content}</p>
                   )}
                 </div>
+
+                {/* 记忆上下文（可选显示） */}
+                {message.role === "assistant" && message.relatedMemories && message.relatedMemories.length > 0 && (
+                  <MemoryContext
+                    memories={message.relatedMemories}
+                    isExpanded={showMemoryContext.has(message.id)}
+                    onToggle={() => toggleMemoryContext(message.id)}
+                  />
+                )}
+
                 {message.role === "assistant" && message.state === "failed" && message.requestMessage ? (
                   <button
                     className="chat-page__action-btn"
@@ -212,6 +275,22 @@ export function ChatPanel({
       </div>
     </section>
   );
+
+  // ═══════════════════════════════════════════════════
+  // 组件内部辅助函数
+  // ═══════════════════════════════════════════════════
+
+  function toggleMemoryContext(messageId: string) {
+    setShowMemoryContext((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }
 }
 
 function SendIcon() {
@@ -278,4 +357,278 @@ function calculateProgress(goals: Goal[]): number {
   if (goals.length === 0) return 0;
   const completed = goals.filter(g => g.status === "completed").length;
   return Math.round((completed / goals.length) * 100);
+}
+
+// ═══════════════════════════════════════════════════
+// 情绪徽章组件
+// ═══════════════════════════════════════════════════
+
+function EmotionBadge({ emotion }: { emotion: EmotionState | null }) {
+  if (!emotion) return null;
+
+  const emotionConfig = getEmotionDisplay(emotion.primary_emotion, emotion.primary_intensity);
+
+  return (
+    <div
+      className="emotion-badge"
+      style={{ color: emotionConfig.color, borderColor: emotionConfig.color }}
+    >
+      <span className="emotion-badge__emoji">{emotionConfig.emoji}</span>
+      <span className="emotion-badge__label">{emotionConfig.label}</span>
+      {emotion.primary_intensity !== "none" && (
+        <span className="emotion-badge__intensity">
+          {getIntensityLabel(emotion.primary_intensity)}
+        </span>
+      )}
+      {emotion.secondary_emotion && (
+        <>
+          <span className="emotion-badge__divider">·</span>
+          <span className="emotion-badge__secondary">
+            {getEmotionDisplay(emotion.secondary_emotion, emotion.secondary_intensity).emoji}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function getEmotionDisplay(emotion: string, intensity: string): {
+  emoji: string;
+  label: string;
+  color: string;
+} {
+  const map: Record<string, { emoji: string; label: string; color: string }> = {
+    joy: { emoji: "😊", label: "开心", color: "#10b981" },
+    sadness: { emoji: "😢", label: "难过", color: "#6b7280" },
+    anger: { emoji: "😠", label: "生气", color: "#ef4444" },
+    fear: { emoji: "😨", label: "害怕", color: "#8b5cf6" },
+    surprise: { emoji: "😲", label: "惊讶", color: "#f59e0b" },
+    disgust: { emoji: "🤢", label: "厌恶", color: "#84cc16" },
+    calm: { emoji: "😌", label: "平静", color: "#3b82f6" },
+    lonely: { emoji: "🥺", label: "孤独", color: "#6366f1" },
+    grateful: { emoji: "🙏", label: "感激", color: "#ec4899" },
+    frustrated: { emoji: "😤", label: "沮丧", color: "#f97316" },
+    proud: { emoji: "😎", label: "自豪", color: "#14b8a6" },
+    engaged: { emoji: "🤔", label: "专注", color: "#0ea5e9" },
+  };
+  return map[emotion] || { emoji: "😐", label: emotion, color: "#9ca3af" };
+}
+
+function getIntensityLabel(intensity: string): string {
+  const map: Record<string, string> = {
+    none: "",
+    mild: "轻微",
+    moderate: "中等",
+    strong: "强烈",
+    intense: "极强",
+  };
+  return map[intensity] || "";
+}
+
+// ═══════════════════════════════════════════════════
+// 记忆上下文组件
+// ═══════════════════════════════════════════════════
+
+function MemoryContext({
+  memories,
+  isExpanded,
+  onToggle,
+}: {
+  memories: MemoryEntryDisplay[];
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="chat-message__memory-context">
+      <button
+        type="button"
+        className="chat-message__memory-toggle"
+        onClick={onToggle}
+      >
+        <span className="chat-message__memory-icon">📚</span>
+        <span className="chat-message__memory-label">
+          相关记忆 ({memories.length})
+        </span>
+        <span
+          className={`chat-message__memory-chevron ${isExpanded ? 'chat-message__memory-chevron--expanded' : ''}`}
+        >
+          ▼
+        </span>
+      </button>
+
+      {isExpanded && (
+        <div className="chat-message__memory-list">
+          {memories.map((memory, index) => (
+            <div key={memory.id} className="chat-message__memory-item">
+              <div className="chat-message__memory-header">
+                <span className={`chat-message__memory-kind chat-message__memory-kind--${memory.kind}`}>
+                  {getKindLabel(memory.kind)}
+                </span>
+                {memory.starred && (
+                  <span className="chat-message__memory-starred">⭐</span>
+                )}
+              </div>
+              <p className="chat-message__memory-content">{memory.content}</p>
+              <div className="chat-message__memory-footer">
+                <span className={`chat-message__memory-strength chat-message__memory-strength--${memory.strength}`}>
+                  {getStrengthLabel(memory.strength)}
+                </span>
+                {memory.created_at && (
+                  <span className="chat-message__memory-date">
+                    {formatDate(memory.created_at)}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getKindLabel(kind: string): string {
+  const map: Record<string, string> = {
+    fact: "事实",
+    episodic: "事件",
+    semantic: "语义",
+    emotional: "情感",
+    chat_raw: "对话",
+  };
+  return map[kind] || kind;
+}
+
+function getStrengthLabel(strength: string): string {
+  const map: Record<string, string> = {
+    faint: "微弱",
+    weak: "薄弱",
+    normal: "普通",
+    vivid: "清晰",
+    core: "核心",
+  };
+  return map[strength] || strength;
+}
+
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "刚刚";
+  if (diffMins < 60) return `${diffMins}分钟前`;
+  if (diffHours < 24) return `${diffHours}小时前`;
+  if (diffDays < 7) return `${diffDays}天前`;
+  return date.toLocaleDateString("zh-CN");
+}
+
+// ═══════════════════════════════════════════════════
+// 配置面板组件
+// ═══════════════════════════════════════════════════
+
+function ConfigPanel({
+  config,
+  isUpdating,
+  error,
+  onUpdate,
+  onClose,
+}: {
+  config: AppConfig;
+  isUpdating: boolean;
+  error: string;
+  onUpdate: (config: Partial<AppConfig>) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="config-panel-overlay" onClick={onClose}>
+      <div className="config-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="config-panel__header">
+          <h3 className="config-panel__title">配置</h3>
+          <button
+            type="button"
+            className="config-panel__close"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="config-panel__body">
+          {/* 聊天上下文限制 */}
+          <div className="config-panel__section">
+            <label className="config-panel__label">
+              聊天上下文限制
+            </label>
+            <p className="config-panel__description">
+              每次聊天时携带的相关事件数量。值越小响应越快，但连贯性可能降低；值越大对话越连贯，但响应可能变慢。
+            </p>
+            <div className="config-panel__control">
+              <input
+                type="range"
+                min="1"
+                max="20"
+                value={config.chat_context_limit}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value, 10);
+                  if (!isUpdating) {
+                    onUpdate({ chat_context_limit: value });
+                  }
+                }}
+                disabled={isUpdating}
+                className="config-panel__slider"
+              />
+              <span className="config-panel__value">
+                {config.chat_context_limit}
+              </span>
+            </div>
+            <div className="config-panel__presets">
+              <button
+                type="button"
+                className={`config-panel__preset ${config.chat_context_limit === 3 ? 'config-panel__preset--active' : ''}`}
+                onClick={() => !isUpdating && onUpdate({ chat_context_limit: 3 })}
+                disabled={isUpdating}
+              >
+                保守 (3)
+              </button>
+              <button
+                type="button"
+                className={`config-panel__preset ${config.chat_context_limit === 6 ? 'config-panel__preset--active' : ''}`}
+                onClick={() => !isUpdating && onUpdate({ chat_context_limit: 6 })}
+                disabled={isUpdating}
+              >
+                默认 (6)
+              </button>
+              <button
+                type="button"
+                className={`config-panel__preset ${config.chat_context_limit === 10 ? 'config-panel__preset--active' : ''}`}
+                onClick={() => !isUpdating && onUpdate({ chat_context_limit: 10 })}
+                disabled={isUpdating}
+              >
+                开放 (10)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 错误提示 */}
+        {error && (
+          <div className="config-panel__error">
+            {error}
+          </div>
+        )}
+
+        <div className="config-panel__footer">
+          <button
+            type="button"
+            className="config-panel__btn config-panel__btn--primary"
+            onClick={onClose}
+          >
+            完成
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

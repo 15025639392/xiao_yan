@@ -764,3 +764,21 @@ export function fetchSchedulerStatus(): Promise<{
     running_task_ids: string[];
   }>("/goals/scheduler/status");
 }
+
+// ══════════════════════════════════════════════
+// 配置 API
+// ══════════════════════════════════════════════
+
+export type AppConfig = {
+  chat_context_limit: number;
+};
+
+/** 获取配置 */
+export function fetchConfig(): Promise<AppConfig> {
+  return get<AppConfig>("/config");
+}
+
+/** 更新配置 */
+export function updateConfig(data: Partial<AppConfig>): Promise<AppConfig> {
+  return put<AppConfig>("/config", data);
+}

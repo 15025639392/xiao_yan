@@ -103,13 +103,19 @@ export default function App() {
       }
 
       if (event.type === "chat_delta") {
-        setMessages((current) => appendAssistantDelta(current, event.payload.assistant_message_id, event.payload.delta));
+        setMessages((current) => {
+          const updated = appendAssistantDelta(current, event.payload.assistant_message_id, event.payload.delta);
+          return updated;
+        });
         setError("");
         return;
       }
 
       if (event.type === "chat_completed") {
-        setMessages((current) => finalizeAssistantMessage(current, event.payload.assistant_message_id, event.payload.content));
+        setMessages((current) => {
+          const updated = finalizeAssistantMessage(current, event.payload.assistant_message_id, event.payload.content);
+          return updated;
+        });
         setError("");
         return;
       }
@@ -215,7 +221,7 @@ export default function App() {
     setIsSending(true);
 
     try {
-      await chat(content);
+      const result = await chat(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : "发送失败");
     } finally {
@@ -672,11 +678,19 @@ function mergeMessages(
 
   incoming.forEach((message, index) => {
     const key = `${message.role}:${message.content}`;
-    merged.set(key, {
-      id: `${message.role}-${index}-${message.content}`,
-      role: message.role,
-      content: message.content,
-    });
+    const existing = merged.get(key);
+    
+    // 如果消息已存在，保留其所有字段（包括 relatedMemories 等）
+    if (existing) {
+      merged.set(key, existing);
+    } else {
+      // 否则创建新消息（只有基本字段）
+      merged.set(key, {
+        id: `${message.role}-${index}-${message.content}`,
+        role: message.role,
+        content: message.content,
+      });
+    }
   });
 
   return Array.from(merged.values());
@@ -769,6 +783,21 @@ function finalizeAssistantMessage(
   assistantMessageId: string,
   content: string,
 ): ChatEntry[] {
+  const existing = current.find((message) => message.id === assistantMessageId);
+  if (existing) {
+    // 保留消息的所有现有字段（包括 requestMessage 等）
+    return current.map((message) =>
+      message.id === assistantMessageId
+        ? {
+            ...message,
+            content: content || message.content,
+            state: undefined, // 移除 streaming 状态
+          }
+        : message
+    );
+  }
+
+  // 如果不存在，创建新消息
   return upsertAssistantMessage(current, assistantMessageId, content, undefined);
 }
 
