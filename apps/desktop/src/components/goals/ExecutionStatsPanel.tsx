@@ -1,4 +1,6 @@
 import type { Goal, TaskExecution, TaskExecutionStats } from "../../lib/api";
+import { formatDateTimeZh } from "../../lib/utils";
+import { MetricCard, SurfaceCard } from "../ui";
 import { renderGoalStatus } from "./goalsUtils";
 
 type ExecutionStatsPanelProps = {
@@ -12,14 +14,14 @@ export function ExecutionStatsPanel({ executionStats, activeExecutions, goals }:
     <section style={{ marginBottom: "var(--space-5)" }}>
       <h3 style={{ margin: "0 0 var(--space-3)", fontSize: "0.875rem", fontWeight: 600 }}>任务执行统计</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "var(--space-3)" }}>
-        <StatCard label="总任务数" value={executionStats.total_tasks} />
-        <StatCard label="已完成" value={executionStats.completed} color="success" />
-        <StatCard label="失败" value={executionStats.failed} color="danger" />
-        <StatCard label="活跃中" value={executionStats.active} color="info" />
-        <StatCard
+        <MetricCard label="总任务数" value={executionStats.total_tasks} />
+        <MetricCard label="已完成" value={executionStats.completed} tone="success" />
+        <MetricCard label="失败" value={executionStats.failed} tone="danger" />
+        <MetricCard label="活跃中" value={executionStats.active} tone="info" />
+        <MetricCard
           label="成功率"
           value={`${executionStats.success_rate.toFixed(1)}%`}
-          color={
+          tone={
             executionStats.success_rate >= 80
               ? "success"
               : executionStats.success_rate >= 50
@@ -45,54 +47,11 @@ export function ExecutionStatsPanel({ executionStats, activeExecutions, goals }:
   );
 }
 
-function StatCard({
-  label,
-  value,
-  color = "default",
-}: {
-  label: string;
-  value: number | string;
-  color?: string;
-}) {
-  const colorVar =
-    color === "success"
-      ? "var(--success)"
-      : color === "danger"
-        ? "var(--danger)"
-        : color === "warning"
-          ? "var(--warning)"
-          : color === "info"
-            ? "var(--info)"
-            : "var(--text-primary)";
-  return (
-    <div
-      style={{
-        padding: "var(--space-3)",
-        background: "var(--bg-surface-elevated)",
-        borderRadius: "var(--radius-md)",
-        border: "1px solid var(--border-default)",
-      }}
-    >
-      <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginBottom: "var(--space-1)" }}>
-        {label}
-      </div>
-      <div style={{ fontSize: "1.5rem", fontWeight: 600, color: colorVar }}>{value}</div>
-    </div>
-  );
-}
-
 function ExecutionCard({ execution, allGoals }: { execution: TaskExecution; allGoals: Goal[] }) {
   const goal = allGoals.find((g) => g.id === execution.goal_id);
 
   return (
-    <div
-      style={{
-        padding: "var(--space-3)",
-        background: "var(--bg-surface-elevated)",
-        borderRadius: "var(--radius-md)",
-        border: "1px solid var(--border-default)",
-      }}
-    >
+    <SurfaceCard>
       <div
         style={{
           display: "flex",
@@ -136,9 +95,8 @@ function ExecutionCard({ execution, allGoals }: { execution: TaskExecution; allG
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
         <span>{renderGoalStatus(execution.status)}</span>
-        <span>{new Date(execution.started_at).toLocaleString("zh-CN")}</span>
+        <span>{formatDateTimeZh(execution.started_at)}</span>
       </div>
-    </div>
+    </SurfaceCard>
   );
 }
-

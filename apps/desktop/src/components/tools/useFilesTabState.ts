@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DirectoryEntry, FileReadResult, SearchResult } from "../../lib/api";
 import { listDirectory, readFile, searchFiles } from "../../lib/api";
+import { getParentPath, joinPath } from "../../lib/utils";
 
 export function useFilesTabState() {
   const [currentPath, setCurrentPath] = useState(".");
@@ -47,16 +48,14 @@ export function useFilesTabState() {
   }
 
   function navigateUp() {
-    const parts = currentPath.replace(/\/$/, "").split("/");
-    parts.pop();
-    void loadDir(parts.join("/") || ".");
+    void loadDir(getParentPath(currentPath));
   }
 
   function handleClickEntry(entry: DirectoryEntry) {
     if (entry.type === "dir") {
-      void loadDir(`${currentPath}/${entry.path}`);
+      void loadDir(joinPath(currentPath, entry.path));
     } else {
-      void handleReadFile(`${currentPath}/${entry.path}`);
+      void handleReadFile(joinPath(currentPath, entry.path));
     }
   }
 

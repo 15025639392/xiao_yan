@@ -1,4 +1,5 @@
 import type { GoalChainGroup } from "./goalsUtils";
+import { SurfaceCard } from "../ui";
 
 type GoalsChainsSectionProps = {
   chainedGroups: GoalChainGroup[];
@@ -20,15 +21,7 @@ export function GoalsChainsSection({ chainedGroups }: GoalsChainsSectionProps) {
         }}
       >
         {chainedGroups.map((group) => (
-          <article
-            key={group.chainId}
-            style={{
-              padding: "var(--space-4)",
-              background: "var(--bg-surface-elevated)",
-              border: "1px solid var(--border-default)",
-              borderRadius: "var(--radius-md)",
-            }}
-          >
+          <SurfaceCard key={group.chainId} style={{ padding: "var(--space-4)" }}>
             <h4 style={{ margin: "0 0 var(--space-2)", fontSize: "0.9375rem" }}>链路 {group.chainId}</h4>
             <p
               style={{
@@ -40,7 +33,7 @@ export function GoalsChainsSection({ chainedGroups }: GoalsChainsSectionProps) {
             >
               {group.summary}
             </p>
-          </article>
+          </SurfaceCard>
         ))}
       </div>
     </section>

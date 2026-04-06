@@ -1,5 +1,5 @@
 import type { DirectoryEntry } from "../../lib/api";
-import { formatBytes } from "./toolUtils";
+import { formatBytes } from "../../lib/utils";
 
 type FilesDirectoryListProps = {
   loading: boolean;

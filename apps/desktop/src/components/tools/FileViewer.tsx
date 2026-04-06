@@ -1,5 +1,5 @@
 import type { FileReadResult } from "../../lib/api";
-import { formatBytes } from "./toolUtils";
+import { formatBytes } from "../../lib/utils";
 
 type FileViewerProps = {
   fileContent: FileReadResult;
