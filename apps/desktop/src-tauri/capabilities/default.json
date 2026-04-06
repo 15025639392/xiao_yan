@@ -1,7 +1,1 @@
-{
-  "identifier": "default",
-  "description": "Default capability for main webview.",
-  "windows": ["*"],
-  "permissions": ["core:default", "dialog:default", "dialog:allow-open"]
-}
-
+{"identifier": "default", "description": "Default capability for main webview.", "windows": ["*"], "permissions": ["core:default", "dialog:default", "dialog:allow-open", "core:window:allow-create", "core:window:allow-show", "core:window:allow-hide", "core:window:allow-close", "core:window:allow-is-visible", "core:window:allow-set-focus", "core:window:allow-set-position", "core:window:allow-set-size", "core:window:allow-set-always-on-top", "core:window:allow-start-dragging", "core:webview:default"]}

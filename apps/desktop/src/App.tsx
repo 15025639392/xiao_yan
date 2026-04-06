@@ -233,7 +233,15 @@ export default function App() {
       const result: { visible: boolean } = await invoke("pet_toggle");
       setPetVisible(result.visible);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "宠物操作失败");
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+            ? err
+            : err
+              ? JSON.stringify(err)
+              : "";
+      setError(message || "宠物操作失败");
     }
   }
 

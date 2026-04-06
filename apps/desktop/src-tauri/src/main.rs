@@ -145,18 +145,16 @@ async fn pet_show(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
       win.set_focus().map_err(|e| format!("focus pet: {e}"))?;
     }
     None => {
-      // Resolve absolute path to pet/index.html
-      // Works in both dev mode and production
-      let mut pet_html = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("resource dir: {e}"))?;
-      pet_html.push("pet");
-      pet_html.push("index.html");
-
-      if !pet_html.exists() {
-        return Err(format!("pet page not found at {:?}", pet_html));
+      let mut candidates = Vec::new();
+      if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("pet").join("index.html"));
       }
+      candidates.push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pet").join("index.html"));
+
+      let pet_html = candidates
+        .into_iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| "pet page not found (tried resource_dir and CARGO_MANIFEST_DIR)".to_string())?;
 
       let url = format!(
         "file://{}",
