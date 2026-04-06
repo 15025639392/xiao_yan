@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use tauri::{Emitter, Manager};
 use std::{
   fs,
   path::{Component, Path, PathBuf},
@@ -129,17 +130,100 @@ fn fs_list_dir(state: tauri::State<SharedFsAccessState>, rel_path: String) -> Re
   Ok(names)
 }
 
+// ===== Pet (Desktop Pet) Commands =====
+
+#[derive(serde::Serialize)]
+struct PetStatusResponse {
+  visible: bool,
+}
+
+#[tauri::command]
+async fn pet_show(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
+  match app.get_webview_window("pet") {
+    Some(win) => {
+      win.show().map_err(|e| format!("show pet: {e}"))?;
+      win.set_focus().map_err(|e| format!("focus pet: {e}"))?;
+    }
+    None => {
+      tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::App("pet/index.html".into()))
+        .title("INTP 小紫人")
+        .inner_size(280.0, 380.0)
+        .decorations(false)
+        .always_on_top(true)
+        .resizable(false)
+        .skip_taskbar(true)
+        .build()
+        .map_err(|e| format!("create pet window: {e}"))?;
+    }
+  }
+  Ok(PetStatusResponse { visible: true })
+}
+
+#[tauri::command]
+async fn pet_hide(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
+  if let Some(win) = app.get_webview_window("pet") {
+    win.hide().map_err(|e| format!("hide pet: {e}"))?;
+  }
+  Ok(PetStatusResponse { visible: false })
+}
+
+#[tauri::command]
+async fn pet_is_visible(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
+  let visible = match app.get_webview_window("pet") {
+    Some(win) => win.is_visible().map_err(|e| format!("check visible: {e}"))?,
+    None => false,
+  };
+  Ok(PetStatusResponse { visible })
+}
+
+#[tauri::command]
+async fn pet_send_message(
+  app: tauri::AppHandle,
+  text: String,
+) -> Result<(), String> {
+  if let Some(pet_win) = app.get_webview_window("pet") {
+    pet_win
+      .emit("pet-message", serde_json::json!({ "text": text }))
+      .map_err(|e| format!("send to pet: {e}"))?;
+  }
+  Ok(())
+}
+
+#[tauri::command]
+async fn pet_toggle(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
+  let currently_visible = match app.get_webview_window("pet") {
+    Some(win) => win.is_visible().map_err(|e| format!("check visible: {e}"))?,
+    None => false,
+  };
+
+  if currently_visible {
+    if let Some(win) = app.get_webview_window("pet") {
+      win.hide().map_err(|e| format!("hide pet: {e}"))?;
+    }
+    Ok(PetStatusResponse { visible: false })
+  } else {
+    pet_show(app).await
+  }
+}
+
 fn main() {
   tauri::Builder::default()
     .manage(Mutex::new(FsAccessState::default()))
     .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
+      // FS commands
       fs_set_allowed_directory,
       fs_get_allowed_directory,
       fs_clear_allowed_directory,
       fs_read_text_file,
       fs_write_text_file,
-      fs_list_dir
+      fs_list_dir,
+      // Pet commands
+      pet_show,
+      pet_hide,
+      pet_is_visible,
+      pet_toggle,
+      pet_send_message,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

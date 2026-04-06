@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>INTP 小紫人</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1625;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    border-radius: 20px;
+  }
+
+  body:active { cursor: grabbing; }
+
+  /* 宠物容器 */
+  .pet-container {
+    position: relative;
+    width: 280px;
+    height: 340px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 角色图片区域 */
+  .pet-avatar {
+    position: relative;
+    width: 220px;
+    height: 260px;
+    border-radius: 20px;
+    overflow: hidden;
+    animation: breathe 3s ease-in-out infinite;
+    filter: drop-shadow(0 4px 20px rgba(124, 58, 237, 0.25));
+    transition: filter 0.3s;
+  }
+
+  .pet-avatar:hover {
+    filter: drop-shadow(0 6px 30px rgba(124, 58, 237, 0.4));
+  }
+
+  .pet-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+
+  /* 呼吸动画 */
+  @keyframes breathe {
+    0%, 100% { transform: scale(1) translateY(0); }
+    50% { transform: scale(1.02) translateY(-3px); }
+  }
+
+  /* 眨眼动画 - 覆盖层模拟眨眼 */
+  .pet-avatar::after {
+    content: '';
+    position: absolute;
+    top: 28%;
+    left: 22%;
+    width: 56%;
+    height: 14%;
+    background: transparent;
+    transition: background 0.08s;
+    pointer-events: none;
+    z-index: 10;
+    border-radius: 50%;
+  }
+
+  .pet-avatar.blinking::after {
+    background: #fde8e8;
+  }
+
+  /* 状态指示器 */
+  .pet-status {
+    margin-top: 8px;
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #a78bfa;
+    background: rgba(167, 139, 250, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(167, 139, 250, 0.2);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.5s;
+    animation: fadeInOut 4s ease-in-out infinite;
+  }
+
+  .pet-status.visible { opacity: 1; }
+
+  @keyframes fadeInOut {
+    0%, 15%, 85%, 100% { opacity: 0.6; }
+    40%, 60% { opacity: 1; }
+  }
+
+  /* 对话气泡 */
+  .pet-bubble {
+    position: absolute;
+    top: -70px;
+    left: 50%;
+    transform: translateX(-50%) scale(0);
+    background: white;
+    border-radius: 16px;
+    padding: 10px 16px;
+    min-width: 160px;
+    max-width: 240px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    font-size: 13px;
+    line-height: 1.5;
+    color: #333;
+    text-align: center;
+    z-index: 100;
+    opacity: 0;
+    transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .pet-bubble.show {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+
+  .pet-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid white;
+  }
+
+  /* 右键菜单 */
+  .pet-context-menu {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    transform-origin: bottom right;
+    background: rgba(30, 27, 38, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 12px;
+    padding: 6px 0;
+    min-width: 150px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s;
+    z-index: 200;
+  }
+
+  .pet-context-menu.show {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .pet-context-item {
+    padding: 8px 16px;
+    font-size: 13px;
+    color: #e2d8f0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: background 0.15s;
+  }
+
+  .pet-context-item:hover {
+    background: rgba(167, 139, 250, 0.2);
+    color: #fff;
+  }
+
+  .pet-context-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 4px 0;
+  }
+
+  /* 点击反馈动画 */
+  .pet-avatar.clicked {
+    animation: bounce 0.4s ease-in-out;
+  }
+
+  @keyframes bounce {
+    0% { transform: scale(1); }
+    30% { transform: scale(0.92); }
+    60% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+
+  /* 浮动粒子效果 */
+  .particle {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 50%;
+    opacity: 0;
+    animation: float-up 2s ease-out forwards;
+  }
+
+  @keyframes float-up {
+    0% { opacity: 0.8; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-80px) scale(0.3); }
+  }
+
+  /* 加载中 */
+  .pet-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .pet-loading-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(167, 139, 250, 0.2);
+    border-top-color: #a78bfa;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .pet-loading-text {
+    font-size: 13px;
+    color: #a78bfa;
+  }
+</style>
+</head>
+<body>
+<div class="pet-container" id="petContainer">
+  <div class="pet-bubble" id="petBubble"></div>
+
+  <div class="pet-avatar" id="petAvatar">
+    <img src="../../icons/icon.png" alt="INTP 小紫人" id="petImg" crossorigin="anonymous"/>
+  </div>
+
+  <div class="pet-status visible" id="petStatus">正在思考...</div>
+
+  <!-- 右键菜单 -->
+  <div class="pet-context-menu" id="contextMenu">
+    <div class="pet-context-item" data-action="chat">💬 和我说话</div>
+    <div class="pet-context-item" data-action="main">🏠 打开主界面</div>
+    <div class="pet-context-divider"></div>
+    <div class="pet-context-item" data-action="top">📌 切换置顶</div>
+    <div class="pet-context-item" data-action="size">🔍 切换大小</div>
+    <div class="pet-context-divider"></div>
+    <div class="pet-context-item" data-action="hide">✨ 隐藏到托盘</div>
+  </div>
+</div>
+
+<script type="module">
+const avatar = document.getElementById('petAvatar');
+const bubble = document.getElementById('petBubble');
+const status = document.getElementById('petStatus');
+const contextMenu = document.getElementById('contextMenu');
+const container = document.getElementById('petContainer');
+
+// ===== 状态 =====
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
+let currentSize = 'normal'; // normal | large
+let blinkTimer = null;
+
+// ===== 对话语料库 =====
+const phrases = [
+  "在想一些有趣的事情...",
+  "今天天气不错呢",
+  "要不要聊聊天？",
+  "我在观察这个世界~",
+  "嗯...这个想法不错",
+  "你今天过得好吗？",
+  "让我想想...",
+  "有点困了...",
+  "在思考人生的意义",
+  "想听个冷笑话吗？",
+  "代码写好了吗？",
+  "我在这里陪你呀",
+];
+
+// ===== 初始化 =====
+function init() {
+  startIdleAnimations();
+  setupDrag();
+  setupClick();
+  setupContextMenu();
+}
+
+// ===== 空闲动画循环 =====
+function startIdleAnimations() {
+  // 定时眨眼
+  function scheduleBlink() {
+    const delay = 2500 + Math.random() * 4000;
+    blinkTimer = setTimeout(() => {
+      doBlink();
+      scheduleBlink();
+    }, delay);
+  }
+  scheduleBlink();
+
+  // 随机状态文字
+  setInterval(() => {
+    const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+    status.textContent = phrase;
+    status.classList.add('visible');
+    setTimeout(() => status.classList.remove('visible'), 3500);
+  }, 6000 + Math.random() * 5000);
+
+  // 初始状态
+  setTimeout(() => {
+    const p = phrases[Math.floor(Math.random() * phrases.length)];
+    status.textContent = p;
+  }, 1500);
+}
+
+// ===== 眨眼 =====
+function doBlink() {
+  avatar.classList.add('blinking');
+  setTimeout(() => avatar.classList.remove('blinking'), 120);
+}
+
+// ===== 拖拽 =====
+function setupDrag() {
+  container.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.pet-context-menu')) return;
+    if (e.button !== 0 && e.button !== undefined) return; // 只响应左键拖拽
+    isDragging = true;
+    dragOffset.x = e.clientX;
+    dragOffset.y = e.clientY;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', async (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - dragOffset.x;
+    const dy = e.clientY - dragOffset.y;
+    dragOffset.x = e.clientX;
+    dragOffset.y = e.clientY;
+
+    try {
+      if (window.__TAURI__) {
+        const win = (await import('@tauri-apps/api/window')).getCurrentWindow();
+        const pos = await win.outerPosition();
+        await win.setPosition({ x: pos.x + dx, y: pos.y + dy });
+      }
+    } catch {}
+  });
+
+  document.addEventListener('mouseup', () => {
+    isDragging = false;
+  });
+}
+
+// ===== 点击交互 =====
+function setupClick() {
+  let lastClickTime = 0;
+
+  avatar.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const now = Date.now();
+
+    if (now - lastClickTime < 300) {
+      // 双击 - 说一句话
+      showBubble(phrases[Math.floor(Math.random() * phrases.length)]);
+      spawnParticles(e.clientX, e.clientY);
+    } else {
+      // 单击 - 弹跳动画
+      avatar.classList.add('clicked');
+      setTimeout(() => avatar.classList.remove('clicked'), 400);
+    }
+    lastClickTime = now;
+  });
+}
+
+// ===== 显示气泡 =====
+function showBubble(text) {
+  bubble.textContent = text;
+  bubble.classList.add('show');
+  clearTimeout(bubble._timer);
+  bubble._timer = setTimeout(() => bubble.classList.remove('show'), 3000);
+}
+
+// ===== 粒子特效 =====
+function spawnParticles(x, y) {
+  const colors = ['#A78BFA', '#C4B5FD', '#DDD6FE', '#FDE68A'];
+  for (let i = 0; i < 6; i++) {
+    const particle = document.createElement('div');
+    particle.className = 'particle';
+    const size = 4 + Math.random() * 8;
+    particle.style.width = size + 'px';
+    particle.style.height = size + 'px';
+    particle.style.background = colors[Math.floor(Math.random() * colors.length)];
+    particle.style.left = x + (Math.random() - 0.5) * 40 + 'px';
+    particle.style.top = y + (Math.random() - 0.5) * 40 + 'px';
+    container.appendChild(particle);
+    setTimeout(() => particle.remove(), 2000);
+  }
+}
+
+// ===== 右键菜单 =====
+function setupContextMenu() {
+  contextMenu.addEventListener('click', async (e) => {
+    const item = e.target.closest('.pet-context-item');
+    if (!item) return;
+    const action = item.dataset.action;
+    hideMenu();
+
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const win = getCurrentWindow();
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+
+      switch (action) {
+        case 'chat':
+          showBubble("去主界面找我聊天吧～");
+          break;
+        case 'main':
+          // 尝试打开/聚焦主窗口
+          try {
+            const mainWindow = await WebviewWindow.getByLabel('main');
+            if (mainWindow) { await mainWindow.show(); await mainWindow.setFocus(); }
+          } catch {}
+          break;
+        case 'top':
+          await win.setAlwaysOnTop(!await win.isAlwaysOnTop());
+          break;
+        case 'size': {
+          currentSize = currentSize === 'normal' ? 'large' : 'normal';
+          const s = currentSize === 'large'
+            ? { width: 380, height: 480 }
+            : { width: 280, height: 380 };
+          await win.setSize(s);
+          container.style.width = s.width + 'px';
+          container.style.height = s.height + 'px';
+          avatar.style.width = (currentSize === 'large' ? 300 : 220) + 'px';
+          avatar.style.height = (currentSize === 'large' ? 360 : 260) + 'px';
+          break;
+        }
+        case 'hide':
+          await win.hide();
+          break;
+      }
+    } catch (err) {
+      console.error('Pet action error:', err);
+    }
+  });
+
+  // 全局右键显示菜单
+  container.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showMenu();
+  });
+
+  // 点击其他地方隐藏菜单
+  document.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('.pet-context-menu')) hideMenu();
+  });
+}
+
+function showMenu() {
+  contextMenu.classList.add('show');
+}
+function hideMenu() {
+  contextMenu.classList.remove('show');
+}
+
+// ===== Tauri 窗口事件监听 =====
+async function setupTauriEvents() {
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const { listen } = await import('@tauri-apps/api/event');
+    const win = getCurrentWindow();
+
+    // 监听来自主窗口的消息
+    await listen('pet-message', (event) => {
+      if (event.payload?.text) {
+        showBubble(event.payload.text);
+      }
+      if (event.payload?.action === 'blink') doBlink();
+    });
+
+    // 监听焦点变化
+    await win.onFocusChanged(({ payload }) => {
+      if (!payload) blurPet(); else focusPet();
+    });
+  } catch {
+    // 非 Tauri 环境（开发调试用）
+  }
+}
+
+function focusPet() {
+  container.style.opacity = '1';
+}
+function blurPet() {
+  container.style.opacity = '0.75';
+}
+
+// 启动
+init();
+setupTauriEvents();
+</script>
+</body>
+</html>

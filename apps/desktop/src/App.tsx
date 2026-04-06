@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
@@ -56,6 +57,7 @@ export default function App() {
   const [theme, setTheme] = useState<"dark" | "light">(() => loadThemePreference());
   const [showBrandMenu, setShowBrandMenu] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [petVisible, setPetVisible] = useState(false);
   const pendingRequestMessageRef = useRef<string | null>(null);
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
   const assistantName = persona?.name?.trim() || "小晏";
@@ -222,6 +224,16 @@ export default function App() {
       setState(await sleep());
     } catch (err) {
       setError(err instanceof Error ? err.message : "休眠失败");
+    }
+  }
+
+  // ===== Pet (Desktop Pet) =====
+  async function handlePetToggle() {
+    try {
+      const result: { visible: boolean } = await invoke("pet_toggle");
+      setPetVisible(result.visible);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "宠物操作失败");
     }
   }
 
@@ -437,6 +449,25 @@ export default function App() {
             <span>工具箱</span>
           </button>
         </nav>
+
+        <div className="app-sidebar__section">
+          <div className="app-sidebar__section-title">桌面宠物</div>
+          <div className="app-sidebar__actions">
+            <button
+              className={`app-sidebar__action-btn ${petVisible ? 'app-sidebar__action-btn--primary' : ''}`}
+              onClick={handlePetToggle}
+              type="button"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {petVisible
+                  ? <><path d="M18 6L6 18"/><path d="M6 6l12 12"/></>  // X icon when visible
+                  : <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                     <path d="M12 3v1"/><path d="M18.5 6.5l-.7.7"/><path d="M21 12h-1"/><path d="M5.5 6.5l.7.7"/><path d="M3 12h-1"/></>}
+              </svg>
+              {petVisible ? "隐藏小紫人" : "召唤小紫人"}
+            </button>
+          </div>
+        </div>
 
         <div className="app-sidebar__section">
           <div className="app-sidebar__section-title">控制</div>
