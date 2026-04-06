@@ -112,31 +112,31 @@ export function ChatConfigPanel({
       onClose={onClose}
       error={error}
     >
-      <RangeSettingField
-        label="聊天上下文限制"
-        description="每次聊天时携带的相关事件数量。值越小响应越快，但连贯性可能降低；值越大对话越连贯，但响应可能变慢。"
-        min={1}
-        max={20}
-        value={config.chat_context_limit}
-        presets={CONTEXT_LIMIT_PRESETS}
-        disabled={isUpdating}
-        onChange={(value) => {
-          void onUpdate({ chat_context_limit: value });
-        }}
-      />
+      <div className="config-panel__row">
+        <RangeSettingField
+          label="聊天上下文限制"
+          min={1}
+          max={20}
+          value={config.chat_context_limit}
+          presets={CONTEXT_LIMIT_PRESETS}
+          disabled={isUpdating}
+          onChange={(value) => {
+            void onUpdate({ chat_context_limit: value });
+          }}
+        />
 
-      <RangeSettingField
-        label="Read 超时 (秒)"
-        description="用于流式输出：只要持续有输出，计时会自动刷新；只有长时间无任何输出才会超时。"
-        min={10}
-        max={600}
-        value={config.chat_read_timeout_seconds}
-        presets={READ_TIMEOUT_PRESETS}
-        disabled={isUpdating}
-        onChange={(value) => {
-          void onUpdate({ chat_read_timeout_seconds: value });
-        }}
-      />
+        <RangeSettingField
+          label="Read 超时 (秒)"
+          min={10}
+          max={600}
+          value={config.chat_read_timeout_seconds}
+          presets={READ_TIMEOUT_PRESETS}
+          disabled={isUpdating}
+          onChange={(value) => {
+            void onUpdate({ chat_read_timeout_seconds: value });
+          }}
+        />
+      </div>
 
       {isTauriRuntime() ? (
         <div className="config-panel__section config-panel__section--filesystem">
@@ -144,9 +144,6 @@ export function ChatConfigPanel({
             <span className="config-panel__section-icon">💾</span>
             <label className="config-panel__label">本地文件系统 (Tauri)</label>
           </div>
-          <p className="config-panel__description">
-            选择一个允许访问的根目录。Tauri 侧只允许读取/写入该目录内的相对路径，禁止绝对路径与 .. 越权。
-          </p>
 
           <div className="config-panel__filesystem-compact">
             {tauriAllowedDir && (
@@ -197,9 +194,6 @@ export function ChatConfigPanel({
           <span className="config-panel__section-icon">🤖</span>
           <label className="config-panel__label">聊天模型</label>
         </div>
-        <p className="config-panel__description">
-          模型列表按服务商从后端实时获取。修改后新发起的聊天会使用所选服务商与模型。
-        </p>
 
         <div className="config-panel__model-list">
           <div className="config-panel__model-line">

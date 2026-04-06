@@ -90,6 +90,14 @@
   padding: var(--space-4);
 }
 
+/* Row - 功能项之间的间距 */
+.config-panel__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
 /* Section */
 .config-panel__section {
   margin-bottom: var(--space-5);
@@ -106,6 +114,20 @@
   margin-bottom: var(--space-2);
 }
 
+/* 图标前的竖线 */
+.config-panel__section-header::before {
+  content: '';
+  width: 3px;
+  height: 1rem;
+  background: var(--primary);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.config-panel__section-header .config-panel__label {
+  margin-bottom: 0;
+}
+
 .config-panel__section-icon {
   font-size: 1.125rem;
   line-height: 1;
@@ -117,6 +139,24 @@
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: var(--space-2);
+}
+
+/* RangeSettingField 标题前的竖线 */
+.config-panel__section > .config-panel__label {
+  position: relative;
+  padding-left: var(--space-3);
+}
+
+.config-panel__section > .config-panel__label::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 1rem;
+  background: var(--primary);
+  border-radius: var(--radius-full);
 }
 
 .config-panel__description {
