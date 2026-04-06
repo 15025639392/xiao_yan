@@ -23,6 +23,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.self_programming.git_models import CommitInfo, GitStatus
+from app.self_programming.git_workflow_helpers import (
+    build_branch_name,
+    build_commit_message,
+    parse_porcelain_status,
+    pick_branch_from_list,
+    pick_ref_from_log,
+)
 from app.utils.process_utils import run_command
 
 logger = logging.getLogger(__name__)
@@ -82,23 +89,7 @@ class GitWorkflowManager:
 
         current_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"]).strip()
         status_output = self._run_git(["status", "--porcelain"])
-
-        staged: list[str] = []
-        modified: list[str] = []
-        untracked: list[str] = []
-
-        for line in status_output.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            code = line[:2]
-            filename = line[3:].strip()
-            if code[0] in ("A", "M", "D", "R", "C"):
-                staged.append(filename)
-            if code[1] in ("M", "D") or (code[0] == " " and code[1] == "M"):
-                modified.append(filename)
-            if code == "??":
-                untracked.append(filename)
+        staged, modified, untracked = parse_porcelain_status(status_output)
 
         return GitStatus(
             is_git_repo=True,
@@ -126,8 +117,11 @@ class GitWorkflowManager:
             ["rev-parse", "--abbrev-ref", "HEAD"]
         ).strip() or "main"
 
-        area_slug = target_area.lower().replace(" ", "-").replace("_", "-")[:30]
-        branch_name = f"{self.BRANCH_PREFIX}{area_slug}-{job_id[:12]}" if area_slug else f"{self.BRANCH_PREFIX}{job_id[:12]}"
+        branch_name = build_branch_name(
+            self.BRANCH_PREFIX,
+            job_id=job_id,
+            target_area=target_area,
+        )
 
         if self.dry_run:
             logger.info(f"[dry-run] Would create branch: {branch_name}")
@@ -315,17 +309,18 @@ class GitWorkflowManager:
                 "log", "--oneline", "--all", "--grep", job_id[:12], "-n", "5"
             ]).strip()
             if log_output:
-                lines = log_output.splitlines()
-                if lines:
-                    # 取第一个匹配的 commit 做 reset
-                    ref = lines[0].split()[0]
+                ref = pick_ref_from_log(log_output)
+                if ref:
                     self._run_git(["reset", "--hard", f"{ref}~1"], check=False)
                     logger.info(f"Rolled back via commit search: {ref}")
                     return True
             logger.warning(f"No branch or commit found for job {job_id}")
             return False
 
-        branch_name = branches_output.strip().split("\n")[0].strip().lstrip("* ")
+        branch_name = pick_branch_from_list(branches_output)
+        if not branch_name:
+            logger.warning(f"No branch resolved for job {job_id}")
+            return False
         try:
             self._run_git(["checkout", branch_name])
             self._run_git(["reset", "--hard", "HEAD~1"])
@@ -396,18 +391,14 @@ class GitWorkflowManager:
         candidate_label: str = "",
     ) -> str:
         """构建结构化 commit message。"""
-        body_parts = [f"Job: {job_id}"]
-        if candidate_label:
-            body_parts.append(f"Candidate: {candidate_label}")
-
-        body_parts.append("Files:")
-        for f in files:
-            body_parts.append(f"  - {f}")
-
-        body = "\n".join(body_parts)
-
-        msg = f"{GitWorkflowManager.COMMIT_TAG} {target_area}: {summary}\n\n{body}"
-        return msg
+        return build_commit_message(
+            commit_tag=GitWorkflowManager.COMMIT_TAG,
+            job_id=job_id,
+            target_area=target_area,
+            summary=summary,
+            files=files,
+            candidate_label=candidate_label,
+        )
 
     def _get_head_hash(self) -> str:
         """获取 HEAD commit 的完整 hash。"""
