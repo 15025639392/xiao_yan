@@ -52,6 +52,12 @@ def _infer_wire_api(base_url: str, configured: str | None) -> str:
         return "chat"
     return "responses"
 
+def _normalize_minimax_model_name(model: str) -> str:
+    normalized = model.strip()
+    if normalized.lower().startswith("codex-"):
+        normalized = normalized[6:].strip()
+    return normalized
+
 
 def get_llm_provider_configs() -> list[LLMProviderConfig]:
     load_local_env()
@@ -113,6 +119,7 @@ def get_llm_provider_configs() -> list[LLMProviderConfig]:
         minimax_model = openai_model
     if not minimax_model:
         minimax_model = "MiniMax-M2.7"
+    minimax_model = _normalize_minimax_model_name(minimax_model)
     if minimax_api_key:
         register_provider(
             provider_id="minimaxi",
@@ -236,6 +243,9 @@ def get_chat_model() -> str:
     load_local_env()
     configured = os.getenv("CHAT_MODEL", "").strip()
     if configured:
+        current_provider = get_chat_provider()
+        if current_provider == "minimaxi":
+            return _normalize_minimax_model_name(configured)
         return configured
 
     current_provider = get_chat_provider()

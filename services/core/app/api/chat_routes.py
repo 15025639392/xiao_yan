@@ -215,6 +215,16 @@ def build_chat_router() -> APIRouter:
                     if hub is not None:
                         hub.publish_chat_failed(assistant_message_id, error_message)
                     raise HTTPException(status_code=502, detail=error_message)
+        except httpx.HTTPStatusError as exception:
+            detail = str(exception)
+            try:
+                if exception.response is not None:
+                    detail = exception.response.text or detail
+            except Exception:  # noqa: BLE001
+                pass
+            if hub is not None:
+                hub.publish_chat_failed(assistant_message_id, detail)
+            raise HTTPException(status_code=502, detail=detail) from exception
         except HTTPException:
             raise
         except Exception as exception:
@@ -373,6 +383,8 @@ def build_chat_router() -> APIRouter:
 
         file_tools = _build_chat_file_tools()
         accumulated_input: list[dict] = [message.model_dump() for message in chat_messages]
+        # Lightweight diagnostics: helps identify "content too large" cases in provider errors.
+        payload_hint = f"messages={len(chat_messages)}, instructions_chars={len(instructions or '')}"
 
         try:
             for _ in range(8):
@@ -452,6 +464,16 @@ def build_chat_router() -> APIRouter:
             if hub is not None and started:
                 hub.publish_chat_failed(assistant_message_id, "tool execution failed")
             raise
+        except httpx.HTTPStatusError as exception:
+            detail = str(exception)
+            try:
+                if exception.response is not None:
+                    detail = exception.response.text or detail
+            except Exception:  # noqa: BLE001
+                pass
+            if hub is not None and started:
+                hub.publish_chat_failed(assistant_message_id, f"{payload_hint}; {detail}")
+            raise HTTPException(status_code=502, detail=f"{payload_hint}; {detail}") from exception
         except Exception as exception:  # noqa: BLE001
             if hub is not None and started:
                 hub.publish_chat_failed(assistant_message_id, str(exception))
