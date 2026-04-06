@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 from threading import Thread
 
+import httpx
 from fastapi.testclient import TestClient
 
 from app.domain.models import BeingState, FocusMode, WakeMode
@@ -233,6 +234,44 @@ class WriteToolCallingStubGateway(StubGateway):
                 }
             ],
             "output_text": "写入尝试完成。",
+        }
+
+
+class ToolFallbackResumeStubGateway(StubGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.create_call_count = 0
+        self.stream_call_count = 0
+
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        self.create_call_count += 1
+        request = httpx.Request("POST", "https://api.minimaxi.com/v1/chat/completions")
+        response = httpx.Response(400, request=request, json={"error": {"message": "tools not supported"}})
+        raise httpx.HTTPStatusError("Bad Request", request=request, response=response)
+
+    def stream_response(self, messages, instructions=None):
+        self.stream_call_count += 1
+        self.last_messages = list(messages)
+        self.last_instructions = instructions
+        yield {
+            "type": "response_started",
+            "response_id": "resp_resume_fallback",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "继续补完",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_resume_fallback",
+            "output_text": "继续补完",
         }
 
 
@@ -500,6 +539,48 @@ def test_post_chat_resume_reuses_original_assistant_message_id_and_continues_str
         assert "前半句，" in gateway.last_instructions
         assert "继续生成" in gateway.last_instructions
         assert "不要重复" in gateway.last_instructions
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_resume_falls_back_to_plain_stream_when_tools_request_is_rejected():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    gateway = ToolFallbackResumeStubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_memory_service():
+        return memory_service
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/chat/resume",
+            json={
+                "message": "请继续",
+                "assistant_message_id": "assistant_resume_fallback",
+                "partial_content": "前半句，",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json() == {
+            "response_id": "resp_resume_fallback",
+            "assistant_message_id": "assistant_resume_fallback",
+        }
+        assert gateway.create_call_count == 1
+        assert gateway.stream_call_count == 1
     finally:
         app.dependency_overrides.clear()
 

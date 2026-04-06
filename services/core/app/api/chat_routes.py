@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
+import httpx
 from uuid import uuid4
 
 from app.api.deps import (
@@ -143,6 +144,12 @@ def build_chat_router() -> APIRouter:
             "不要重复已经说过的文字，不要重开话题，不要改写前文。\n\n"
             f"已输出内容：\n{partial_content}"
         )
+
+    def _should_fallback_to_stream_without_tools(exception: Exception) -> bool:
+        if not isinstance(exception, httpx.HTTPStatusError):
+            return False
+        status_code = exception.response.status_code if exception.response is not None else None
+        return status_code in {400, 404, 405, 415, 422, 501}
 
     def _normalize_folder_path(raw_path: str) -> Path:
         path = Path(raw_path).expanduser()
@@ -369,11 +376,28 @@ def build_chat_router() -> APIRouter:
 
         try:
             for _ in range(8):
-                response_payload = create_with_tools(
-                    accumulated_input,
-                    instructions=instructions,
-                    tools=CHAT_FILE_TOOL_DEFINITIONS,
-                )
+                try:
+                    response_payload = create_with_tools(
+                        accumulated_input,
+                        instructions=instructions,
+                        tools=CHAT_FILE_TOOL_DEFINITIONS,
+                    )
+                except Exception as exception:  # noqa: BLE001
+                    # Some providers reject tool payloads; degrade to plain streaming instead of hard failing.
+                    if (
+                        not started
+                        and len(accumulated_input) == len(chat_messages)
+                        and _should_fallback_to_stream_without_tools(exception)
+                    ):
+                        return _run_chat_submission(
+                            request=request,
+                            gateway=gateway,
+                            chat_messages=chat_messages,
+                            instructions=instructions,
+                            assistant_message_id=assistant_message_id,
+                            initial_output_text=initial_output_text,
+                        )
+                    raise
                 if not isinstance(response_payload, dict):
                     raise HTTPException(status_code=502, detail="invalid gateway response payload")
 
