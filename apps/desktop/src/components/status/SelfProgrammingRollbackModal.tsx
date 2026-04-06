@@ -1,4 +1,4 @@
-import { BaseModal } from "../ui";
+import { ConfirmModal } from "../ui";
 
 type SelfProgrammingRollbackModalProps = {
   touchedFiles: string[];
@@ -14,20 +14,21 @@ export function SelfProgrammingRollbackModal({
   onConfirm,
 }: SelfProgrammingRollbackModalProps) {
   return (
-    <BaseModal
+    <ConfirmModal
       title="⚠️ 确认回滚"
-      onClose={onCancel}
+      onCancel={onCancel}
       variant="danger"
-      footer={
-        <>
-          <button type="button" className="btn btn--sm" onClick={onCancel} disabled={rollingBack}>
-            取消
-          </button>
-          <button type="button" className="btn btn--danger btn--sm" onClick={onConfirm} autoFocus>
-            {rollingBack ? "⏳ 执行中..." : "确认回滚"}
-          </button>
-        </>
-      }
+      buttonSize="sm"
+      actions={[
+        { key: "cancel", label: "取消", tone: "secondary", onClick: onCancel, disabled: rollingBack },
+        {
+          key: "confirm",
+          label: rollingBack ? "⏳ 执行中..." : "确认回滚",
+          tone: "danger",
+          onClick: onConfirm,
+          autoFocus: true,
+        },
+      ]}
     >
       <p style={{ margin: "0 0 var(--space-3)" }}>此操作将撤销自我编程对以下文件的修改，恢复到修改前的状态：</p>
       <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-secondary)" }}>
@@ -40,6 +41,6 @@ export function SelfProgrammingRollbackModal({
       <p style={{ margin: "var(--space-4) 0 0", color: "var(--danger)", fontWeight: 500 }}>
         ⚠️ 此操作不可自动重做。请确认要回滚吗？
       </p>
-    </BaseModal>
+    </ConfirmModal>
   );
 }

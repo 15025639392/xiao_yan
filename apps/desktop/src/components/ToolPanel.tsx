@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import type { ToolsListResponse, ToolsStatusResponse } from "../lib/api";
 import { fetchToolHistory, fetchTools, fetchToolsStatus } from "../lib/api";
+import { StatusBadge } from "./ui";
 import { ExecuteTab } from "./tools/ExecuteTab";
 import { FilesTab } from "./tools/FilesTab";
 import { HistoryTab } from "./tools/HistoryTab";
 import { StatusTab } from "./tools/StatusTab";
 import { ToolTabs } from "./tools/ToolTabs";
 import type { ToolTabType } from "./tools/toolTypes";
+import { getSuccessRateBadgeStyle } from "./tools/toolUtils";
 import { ToolsBrowseTab } from "./tools/ToolsBrowseTab";
 
 export function ToolPanel() {
@@ -18,6 +20,8 @@ export function ToolPanel() {
     fetchTools().then(setTools).catch(() => {});
     fetchToolsStatus().then(setStatus).catch(() => {});
   }, []);
+
+  const successRateBadgeStyle = status ? getSuccessRateBadgeStyle(status.statistics.success_rate) : undefined;
 
   return (
     <section className="tool-panel">
@@ -32,18 +36,11 @@ export function ToolPanel() {
 
         {status ? (
           <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-            <span
-              className="status-badge"
-              style={
-                status.statistics.success_rate >= 0.8
-                  ? { background: "var(--success-muted)", color: "var(--success)" }
-                  : status.statistics.success_rate >= 0.5
-                    ? { background: "var(--warning-muted)", color: "var(--warning)" }
-                    : { background: "var(--danger-muted)", color: "var(--danger)" }
-              }
+            <StatusBadge
+              style={successRateBadgeStyle}
             >
               成功率 {Math.round(status.statistics.success_rate * 100)}%
-            </span>
+            </StatusBadge>
             <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
               {status.allowed_command_count} 个工具可用
             </span>
@@ -67,4 +64,3 @@ export function ToolPanel() {
     </section>
   );
 }
-

@@ -1004,61 +1004,6 @@
    删除确认弹窗
    ══════════════════════════════════════════════ */
 
-.memory-delete-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: memory-modal-fade-in 150ms ease;
-}
-
-@keyframes memory-modal-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.memory-delete-modal {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  width: 90%;
-  max-width: 420px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  animation: memory-modal-slide-in 200ms ease;
-}
-
-@keyframes memory-modal-slide-in {
-  from { opacity: 0; transform: translateY(-20px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.memory-delete-modal__header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-4) var(--space-2);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.memory-delete-modal__icon {
-  font-size: 1.25rem;
-}
-
-.memory-delete-modal__header h4 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.memory-delete-modal__content {
-  padding: var(--space-4);
-}
-
 .memory-delete-modal__warning {
   margin: 0 0 var(--space-3);
   font-size: 0.875rem;
@@ -1084,49 +1029,6 @@
   font-size: 0.875rem;
   color: var(--text-primary);
   line-height: 1.5;
-}
-
-.memory-delete-modal__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.memory-delete-modal__btn {
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 120ms ease;
-  border: 1px solid transparent;
-}
-
-.memory-delete-modal__btn:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-.memory-delete-modal__btn--cancel {
-  background: transparent;
-  color: var(--text-secondary);
-  border-color: var(--border-default);
-}
-
-.memory-delete-modal__btn--cancel:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-primary);
-}
-
-.memory-delete-modal__btn--confirm {
-  background: #ef4444;
-  color: #fff;
-  border-color: #ef4444;
-}
-
-.memory-delete-modal__btn--confirm:hover:not(:disabled) {
-  background: #dc2626;
-  border-color: #dc2626;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

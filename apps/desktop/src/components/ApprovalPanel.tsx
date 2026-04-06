@@ -4,6 +4,7 @@ import { ApprovalActions } from "./approval/ApprovalActions";
 import { ApprovalEditsSection } from "./approval/ApprovalEditsSection";
 import { ApprovalResult } from "./approval/ApprovalResult";
 import { ApprovalSummary } from "./approval/ApprovalSummary";
+import { StatusBadge } from "./ui";
 
 type ApprovalPanelProps = {
   job: NonNullable<SelfProgrammingJob>;
@@ -73,7 +74,7 @@ export function ApprovalPanel({ job, onDecision }: ApprovalPanelProps) {
           <h3 className="approval-panel__title">等待审批</h3>
           <p className="approval-panel__subtitle">数字人已完成补丁编写，等待你确认是否应用</p>
         </div>
-        <span className="status-badge status-badge--active">待审批</span>
+        <StatusBadge tone="active">待审批</StatusBadge>
       </div>
 
       <div className="approval-panel__body">

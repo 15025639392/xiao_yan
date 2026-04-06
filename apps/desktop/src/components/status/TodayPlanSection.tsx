@@ -1,4 +1,5 @@
 import type { BeingState } from "../../lib/api";
+import { StatusBadge } from "../ui";
 
 type TodayPlan = NonNullable<BeingState["today_plan"]>;
 
@@ -12,7 +13,7 @@ export function TodayPlanSection({ plan, planCompleted }: TodayPlanSectionProps)
     <section style={{ marginTop: "var(--space-5)" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-3)" }}>
         <h3 style={{ margin: 0, fontSize: "0.875rem", fontWeight: 600 }}>今日计划</h3>
-        {planCompleted ? <span className="status-badge status-badge--completed">已完成</span> : null}
+        {planCompleted ? <StatusBadge tone="completed">已完成</StatusBadge> : null}
       </div>
       <p style={{ margin: "0 0 var(--space-3)", color: "var(--text-secondary)", fontSize: "0.875rem" }}>
         {plan.goal_title}
@@ -57,4 +58,3 @@ export function TodayPlanSection({ plan, planCompleted }: TodayPlanSectionProps)
     </section>
   );
 }
-

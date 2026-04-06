@@ -1,20 +1,9 @@
 import type { MemoryEntryDisplay } from "../../lib/api";
+import { formatRelativeTimeZh, lookupOrKey } from "../../lib/utils";
 import { ROLE_LABELS, THEME_CLUSTERS } from "./memoryConstants";
 
 export function formatRelativeTime(isoStr: string | null): string {
-  if (!isoStr) return "";
-  const d = new Date(isoStr);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-
-  if (diffMin < 1) return "刚刚";
-  if (diffMin < 60) return `${diffMin}分钟前`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}小时前`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}天前`;
-  return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
+  return formatRelativeTimeZh(isoStr, { maxRelativeDays: 7, dateFallback: "short" });
 }
 
 function getDateGroup(isoStr: string | null): string {
@@ -87,6 +76,5 @@ export function roleLabelFor(role: string | null, assistantName: string): string
   if (role === "assistant") {
     return assistantName;
   }
-  return ROLE_LABELS[role] || role;
+  return lookupOrKey(ROLE_LABELS, role);
 }
-

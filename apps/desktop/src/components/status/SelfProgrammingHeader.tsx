@@ -1,3 +1,4 @@
+import { StatusBadge } from "../ui";
 import { HealthRing } from "./HealthRing";
 import type { SelfProgrammingJobState } from "./selfProgrammingTypes";
 import { renderSelfProgrammingStatus, siStatusClass } from "./statusUtils";
@@ -20,7 +21,7 @@ export function SelfProgrammingHeader({ job, showDetails, onToggle }: SelfProgra
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
         {hasHealthData ? <HealthRing score={job.health_score!} grade={job.health_grade!} /> : null}
-        <span className={`status-badge status-badge--${siStatusClass(job.status)}`}>{renderSelfProgrammingStatus(job.status)}</span>
+        <StatusBadge tone={siStatusClass(job.status)}>{renderSelfProgrammingStatus(job.status)}</StatusBadge>
         <svg
           className="si-chevron"
           viewBox="0 0 24 24"

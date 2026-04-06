@@ -1,4 +1,4 @@
-import { healthColor } from "./statusUtils";
+import { getHealthColor } from "../../lib/utils";
 
 type HealthRingProps = {
   score: number;
@@ -9,7 +9,7 @@ export function HealthRing({ score, grade }: HealthRingProps) {
   const radius = 20;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
-  const color = healthColor(score);
+  const color = getHealthColor(score);
 
   return (
     <div className="health-ring" title={`健康度 ${score.toFixed(0)} 分 (${grade})`}>
@@ -35,4 +35,3 @@ export function HealthRing({ score, grade }: HealthRingProps) {
     </div>
   );
 }
-

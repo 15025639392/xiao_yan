@@ -1,3 +1,4 @@
+import { RangeSlider } from "../ui";
 import { DIMENSIONS } from "./personaConstants";
 
 type DimensionSliderProps = {
@@ -41,12 +42,11 @@ export function DimensionSlider({ dimensionKey, value, onChange }: DimensionSlid
         </div>
 
         <div className="personality-dimension__track-wrapper">
-          <input
-            type="range"
+          <RangeSlider
             min={0}
             max={100}
             value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
+            onChange={onChange}
             className="personality-dimension__range"
           />
           <div className="personality-dimension__markers">
@@ -71,4 +71,3 @@ export function DimensionSlider({ dimensionKey, value, onChange }: DimensionSlid
     </div>
   );
 }
-

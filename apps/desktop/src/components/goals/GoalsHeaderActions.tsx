@@ -1,3 +1,5 @@
+import { StatusBadge } from "../ui";
+
 type GoalsHeaderActionsProps = {
   goalsCount: number;
   showExecutionPanel: boolean;
@@ -19,7 +21,7 @@ export function GoalsHeaderActions({
       >
         {showExecutionPanel ? "📊 隐藏统计" : "📊 执行统计"}
       </button>
-      <span className="status-badge status-badge--awake">{goalsCount} 个目标</span>
+      <StatusBadge tone="awake">{goalsCount} 个目标</StatusBadge>
     </div>
   );
 }

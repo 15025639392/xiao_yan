@@ -1,5 +1,5 @@
 import type { BeingState } from "../../lib/api";
-import { getHealthColor } from "../../lib/utils";
+import { lookupOrDefault, lookupOrKey } from "../../lib/utils";
 
 export function renderSelfProgrammingStatus(
   status: NonNullable<BeingState["self_programming_job"]>["status"],
@@ -14,7 +14,7 @@ export function renderSelfProgrammingStatus(
     failed: "失败",
     rejected: "已拒绝",
   };
-  return map[status] ?? status;
+  return lookupOrKey(map, status);
 }
 
 export function siStatusClass(status: string): string {
@@ -28,17 +28,17 @@ export function siStatusClass(status: string): string {
 }
 
 export function conflictIcon(severity: string): string {
-  if (severity === "blocking") return "🚫";
-  if (severity === "warning") return "⚠️";
-  return "✅";
+  const map: Record<string, string> = {
+    blocking: "🚫",
+    warning: "⚠️",
+  };
+  return lookupOrDefault(map, severity, "✅");
 }
 
 export function conflictLabel(severity: string): string {
-  if (severity === "blocking") return "阻断冲突";
-  if (severity === "warning") return "警告";
-  return "安全";
-}
-
-export function healthColor(score: number): string {
-  return getHealthColor(score);
+  const map: Record<string, string> = {
+    blocking: "阻断冲突",
+    warning: "警告",
+  };
+  return lookupOrDefault(map, severity, "安全");
 }

@@ -6,6 +6,8 @@ import { EmotionPanel } from "./status/EmotionPanel";
 import { SelfProgrammingPanel } from "./status/SelfProgrammingPanel";
 import { TodayPlanSection } from "./status/TodayPlanSection";
 import { Panel } from "./ui/Panel";
+import { StatusBadge } from "./ui/StatusBadge";
+import { InlineAlert } from "./ui/InlineAlert";
 
 type StatusPanelProps = {
   state: BeingState;
@@ -27,9 +29,9 @@ export function StatusPanel({ state, error, onRollback, onApprovalDecision }: St
   }, [state.mode, state.focus_mode]);
 
   const headerBadge = state.today_plan ? (
-    <span className={`status-badge ${planCompleted ? "status-badge--completed" : "status-badge--active"}`}>
+    <StatusBadge tone={planCompleted ? "completed" : "active"}>
       {planCompleted ? "已完成" : "进行中"}
-    </span>
+    </StatusBadge>
   ) : null;
 
   return (
@@ -58,18 +60,7 @@ export function StatusPanel({ state, error, onRollback, onApprovalDecision }: St
       ) : null}
 
       {error ? (
-        <div
-          style={{
-            marginTop: "var(--space-4)",
-            padding: "var(--space-3)",
-            background: "var(--danger-muted)",
-            borderRadius: "var(--radius-md)",
-            color: "var(--danger)",
-            fontSize: "0.875rem",
-          }}
-        >
-          {error}
-        </div>
+        <InlineAlert tone="danger">{error}</InlineAlert>
       ) : null}
     </Panel>
   );

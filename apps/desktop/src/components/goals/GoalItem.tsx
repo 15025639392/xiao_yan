@@ -1,4 +1,5 @@
 import type { Goal } from "../../lib/api";
+import { StatusBadge } from "../ui";
 import { renderGoalStatus } from "./goalsUtils";
 
 type GoalItemProps = {
@@ -35,7 +36,7 @@ export function GoalItem({
             ) : null}
           </div>
         </div>
-        <span className={`status-badge status-badge--${goal.status}`}>{renderGoalStatus(goal.status)}</span>
+        <StatusBadge tone={goal.status}>{renderGoalStatus(goal.status)}</StatusBadge>
       </div>
 
       {goal.generation === 0 && goal.status === "active" ? (
