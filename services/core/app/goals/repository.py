@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 from typing import Callable
 from typing import Protocol
 
 from app.goals.models import Goal, GoalStatus
+from app.utils.file_utils import read_json_file, write_json_file, write_text_file
 
 
 class GoalRepository(Protocol):
@@ -74,7 +74,7 @@ class InMemoryGoalRepository:
         count = len(goals)
 
         if count > 0:
-            self.storage_path.write_text("[]", encoding="utf-8")
+            write_text_file(self.storage_path, "[]")
             self._notify_change()
 
         return count
@@ -92,10 +92,11 @@ class FileGoalRepository:
     def save_goal(self, goal: Goal) -> Goal:
         goals = {item.id: item for item in self.list_goals()}
         goals[goal.id] = goal
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps([item.model_dump(mode="json") for item in goals.values()], ensure_ascii=False),
-            encoding="utf-8",
+        write_json_file(
+            self.storage_path,
+            [item.model_dump(mode="json") for item in goals.values()],
+            ensure_ascii=False,
+            create_parent=True,
         )
         self._notify_change()
         return goal
@@ -103,7 +104,7 @@ class FileGoalRepository:
     def list_goals(self) -> list[Goal]:
         if not self.storage_path.exists():
             return []
-        data = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        data = read_json_file(self.storage_path)
         return [Goal.model_validate(item) for item in data]
 
     def list_active_goals(self) -> list[Goal]:
@@ -140,7 +141,7 @@ class FileGoalRepository:
         count = len(goals)
 
         if count > 0:
-            self.storage_path.write_text("[]", encoding="utf-8")
+            write_text_file(self.storage_path, "[]")
             self._notify_change()
 
         return count

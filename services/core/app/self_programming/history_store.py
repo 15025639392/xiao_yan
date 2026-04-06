@@ -9,13 +9,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from app.self_programming.history_models import HistoryEntry, HistoryEntryStatus
 from app.self_programming.history_stats import build_history_statistics
+from app.utils.file_utils import read_json_file, write_json_file, write_text_file
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class FileBackend:
     def _ensure_file(self) -> None:
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.file_path.exists():
-            self.file_path.write_text("[]", encoding="utf-8")
+            write_text_file(self.file_path, "[]")
 
     def save(self, entry_dict: dict) -> None:
         entries = self.load_all()
@@ -62,11 +62,13 @@ class FileBackend:
 
     def load_all(self) -> list[dict]:
         try:
-            raw = self.file_path.read_text(encoding="utf-8").strip()
-            if not raw:
+            loaded = read_json_file(self.file_path)
+            if not loaded:
                 return []
-            return json.loads(raw)
-        except (json.JSONDecodeError, OSError) as exc:
+            if isinstance(loaded, list):
+                return loaded
+            return []
+        except (ValueError, OSError) as exc:
             logger.warning(f"Failed to read history file {self.file_path}: {exc}")
             return []
 
@@ -75,13 +77,15 @@ class FileBackend:
         return all_entries[-n:] if n > 0 else all_entries
 
     def clear(self) -> None:
-        self.file_path.write_text("[]", encoding="utf-8")
+        write_text_file(self.file_path, "[]")
 
     def _write(self, entries: list[dict]) -> None:
         try:
-            self.file_path.write_text(
-                json.dumps(entries, ensure_ascii=False, indent=2),
-                encoding="utf-8",
+            write_json_file(
+                self.file_path,
+                entries,
+                ensure_ascii=False,
+                indent=2,
             )
         except OSError as exc:
             logger.error(f"Failed to write history file: {exc}")

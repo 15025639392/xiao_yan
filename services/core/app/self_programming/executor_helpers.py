@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 
 from app.domain.models import EditKind, SelfProgrammingVerification
+from app.utils.process_utils import format_command_output, run_command
 
 
 def apply_edits(
@@ -58,16 +57,13 @@ def run_verification(workspace_root: Path, commands: list[str]) -> SelfProgrammi
     passed = True
 
     for command in commands:
-        result = subprocess.run(
+        result = run_command(
             command,
             shell=True,
             cwd=workspace_root,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            extra_env={"PYTHONDONTWRITEBYTECODE": "1"},
         )
-        combined = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
-        outputs.append(f"$ {command}\n{combined}".strip())
+        outputs.append(format_command_output(command, result.stdout, result.stderr))
         if result.returncode != 0:
             passed = False
             break
@@ -86,4 +82,3 @@ def restore_files(backups: dict[Path, str]) -> None:
             path.write_text(content, encoding="utf-8")
         elif path.exists():
             path.unlink()
-

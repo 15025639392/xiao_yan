@@ -1,10 +1,10 @@
-import json
 from pathlib import Path
 from threading import Lock
 from typing import Callable
 
 from app.domain.models import BeingState, SelfProgrammingJob, TodayPlan
 from app.memory.repository import MemoryRepository
+from app.utils.file_utils import read_json_file, write_json_file
 from app.usecases.lifecycle import go_to_sleep, wake_up
 
 
@@ -64,7 +64,7 @@ class StateStore:
 
     def _load_state(self, initial_state: BeingState | None) -> BeingState:
         if self._storage_path is not None and self._storage_path.exists():
-            data = json.loads(self._storage_path.read_text(encoding="utf-8"))
+            data = read_json_file(self._storage_path)
             return BeingState.model_validate(data)
         return initial_state or BeingState.default()
 
@@ -72,10 +72,11 @@ class StateStore:
         if self._storage_path is None:
             return
 
-        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self._storage_path.write_text(
-            json.dumps(state.model_dump(mode="json"), ensure_ascii=False),
-            encoding="utf-8",
+        write_json_file(
+            self._storage_path,
+            state.model_dump(mode="json"),
+            ensure_ascii=False,
+            create_parent=True,
         )
 
     def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:

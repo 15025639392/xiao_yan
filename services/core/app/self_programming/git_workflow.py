@@ -17,14 +17,13 @@ Git 工作流管理器
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
 
 from app.self_programming.git_models import CommitInfo, GitStatus
+from app.utils.process_utils import run_command
 
 logger = logging.getLogger(__name__)
 
@@ -445,15 +444,12 @@ class GitWorkflowManager:
         cmd = ["git"] + args
         work_dir = cwd or self.workspace_root
 
-        result = subprocess.run(
+        result = run_command(
             cmd,
             cwd=work_dir,
-            capture_output=True,
-            text=True,
-            env={
-                **__import__("os").environ,
-                "GIT_TERMINAL_PROMPT": "0",  # 禁止交互式提示
-                "GIT_EDITOR": ":",           # 使用空编辑器（禁止打开编辑器）
+            extra_env={
+                "GIT_TERMINAL_PROMPT": "0",
+                "GIT_EDITOR": ":",
                 "GIT_MERGE_AUTOEDIT": "no",
             },
         )

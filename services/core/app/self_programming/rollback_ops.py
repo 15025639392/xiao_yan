@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from app.self_programming.rollback_models import DiffSnapshot, RollbackPlan, RollbackResult, RollbackStatus
+from app.utils.process_utils import format_command_output, run_command
 
 
 def collect_snapshot_files(job: Any, extra_files: list[str] | None = None) -> set[str]:
@@ -115,17 +115,14 @@ def run_post_rollback_verification(
 
     for cmd in commands:
         try:
-            result = subprocess.run(
+            result = run_command(
                 cmd,
                 shell=True,
                 cwd=workspace_root,
-                capture_output=True,
-                text=True,
                 timeout=60,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                extra_env={"PYTHONDONTWRITEBYTECODE": "1"},
             )
-            combined = (result.stdout or "").strip() + "\n" + (result.stderr or "").strip()
-            outputs.append(f"$ {cmd}\n{combined}".strip())
+            outputs.append(format_command_output(cmd, result.stdout, result.stderr))
             if result.returncode != 0:
                 all_passed = False
                 break
@@ -207,4 +204,3 @@ def build_rollback_statistics(history: list[RollbackResult]) -> dict[str, Any]:
             else None
         ),
     }
-
