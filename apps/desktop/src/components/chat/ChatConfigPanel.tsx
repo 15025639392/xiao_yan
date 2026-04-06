@@ -139,99 +139,148 @@ export function ChatConfigPanel({
       />
 
       {isTauriRuntime() ? (
-        <div className="config-panel__section">
-          <label className="config-panel__label">本地文件系统 (Tauri)</label>
+        <div className="config-panel__section config-panel__section--filesystem">
+          <div className="config-panel__section-header">
+            <span className="config-panel__section-icon">💾</span>
+            <label className="config-panel__label">本地文件系统 (Tauri)</label>
+          </div>
           <p className="config-panel__description">
             选择一个允许访问的根目录。Tauri 侧只允许读取/写入该目录内的相对路径，禁止绝对路径与 .. 越权。
           </p>
 
-          <div className="config-panel__folder-picker-row">
-            <div className="config-panel__folder-picker-main" style={{ gap: "var(--space-2)" }}>
-              <button
-                type="button"
-                className="config-panel__btn config-panel__btn--primary"
-                onClick={() => void handlePickTauriAllowedDir()}
-                disabled={isUpdatingTauriFs}
-              >
-                选择允许目录
-              </button>
-              <button
-                type="button"
-                className="config-panel__btn config-panel__btn--danger"
-                onClick={() => void handleClearTauriAllowedDir()}
-                disabled={isUpdatingTauriFs || !tauriAllowedDir}
-                title="清除本地目录授权"
-              >
-                清除
-              </button>
-              <span style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-                {tauriAllowedDir ? `已授权: ${tauriAllowedDir}` : "未授权"}
-              </span>
+          <div className="config-panel__filesystem-compact">
+            {tauriAllowedDir && (
+              <div className="config-panel__fs-path" title={tauriAllowedDir}>
+                {tauriAllowedDir}
+              </div>
+            )}
+            <div className="config-panel__fs-footer">
+              <div className={`config-panel__fs-status ${tauriAllowedDir ? "config-panel__fs-status--active" : ""}`}>
+                <span className="config-panel__fs-status-dot"></span>
+                <span className="config-panel__fs-status-text">{tauriAllowedDir ? "已授权" : "未设置"}</span>
+              </div>
+              <div className="config-panel__fs-actions">
+                <button
+                  type="button"
+                  className="config-panel__fs-btn config-panel__fs-btn--primary"
+                  onClick={() => void handlePickTauriAllowedDir()}
+                  disabled={isUpdatingTauriFs}
+                >
+                  {tauriAllowedDir ? "更改" : "选择目录"}
+                </button>
+                {tauriAllowedDir && (
+                  <button
+                    type="button"
+                    className="config-panel__fs-btn config-panel__fs-btn--danger"
+                    onClick={() => void handleClearTauriAllowedDir()}
+                    disabled={isUpdatingTauriFs}
+                    title="清除授权"
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {tauriFsError ? <p className="config-panel__folder-error">{tauriFsError}</p> : null}
+          {tauriFsError ? (
+            <div className="config-panel__error-box">
+              <span className="config-panel__error-icon">⚠</span>
+              <span>{tauriFsError}</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      <div className="config-panel__section">
-        <label className="config-panel__label">聊天模型</label>
+      <div className="config-panel__section config-panel__section--model">
+        <div className="config-panel__section-header">
+          <span className="config-panel__section-icon">🤖</span>
+          <label className="config-panel__label">聊天模型</label>
+        </div>
         <p className="config-panel__description">
           模型列表按服务商从后端实时获取。修改后新发起的聊天会使用所选服务商与模型。
         </p>
-        <div className="config-panel__model-row">
-          <select
-            id="chat-config-provider-select"
-            aria-label="模型服务商"
-            className="config-panel__folder-select"
-            value={providerDraft}
-            disabled={isUpdating || !hasFetchedProviders}
-            onChange={(event) => {
-              const nextProvider = event.target.value;
-              const provider = chatModelProviders.find((item) => item.provider_id === nextProvider);
-              const nextModel = provider?.models.includes(modelDraft)
-                ? modelDraft
-                : (provider?.default_model ?? provider?.models?.[0] ?? modelDraft);
 
-              setProviderDraft(nextProvider);
-              setModelDraft(nextModel);
-              if (modelError) setModelError("");
-              void onUpdate({ chat_provider: nextProvider, chat_model: nextModel }).catch(() => {});
-            }}
-          >
-            {chatModelProviders.map((provider) => (
-              <option key={provider.provider_id} value={provider.provider_id}>
-                {provider.provider_name}
-              </option>
-            ))}
-          </select>
+        <div className="config-panel__model-list">
+          <div className="config-panel__model-line">
+            <label className="config-panel__model-label" htmlFor="chat-config-provider-select">
+              <span className="config-panel__model-icon">🏢</span>
+              <span>服务商</span>
+            </label>
+            <select
+              id="chat-config-provider-select"
+              aria-label="模型服务商"
+              className="config-panel__model-select"
+              value={providerDraft}
+              disabled={isUpdating || !hasFetchedProviders}
+              onChange={(event) => {
+                const nextProvider = event.target.value;
+                const provider = chatModelProviders.find((item) => item.provider_id === nextProvider);
+                const nextModel = provider?.models.includes(modelDraft)
+                  ? modelDraft
+                  : (provider?.default_model ?? provider?.models?.[0] ?? modelDraft);
+
+                setProviderDraft(nextProvider);
+                setModelDraft(nextModel);
+                if (modelError) setModelError("");
+                void onUpdate({ chat_provider: nextProvider, chat_model: nextModel }).catch(() => {});
+              }}
+            >
+              {chatModelProviders.map((provider) => (
+                <option key={provider.provider_id} value={provider.provider_id}>
+                  {provider.provider_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="config-panel__model-line">
+            <label className="config-panel__model-label" htmlFor="chat-config-model-select">
+              <span className="config-panel__model-icon">💬</span>
+              <span>模型</span>
+            </label>
+            <select
+              id="chat-config-model-select"
+              aria-label="聊天模型"
+              className="config-panel__model-select"
+              value={modelDraft}
+              disabled={isUpdating || !hasFetchedProviders || modelOptions.length === 0}
+              onChange={(event) => {
+                const nextModel = event.target.value;
+                setModelDraft(nextModel);
+                if (modelError) {
+                  setModelError("");
+                }
+                void onUpdate({ chat_provider: providerDraft, chat_model: nextModel }).catch(() => {});
+              }}
+            >
+              {modelOptions.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div className="config-panel__model-row">
-          <select
-            id="chat-config-model-select"
-            aria-label="聊天模型"
-            className="config-panel__folder-select"
-            value={modelDraft}
-            disabled={isUpdating || !hasFetchedProviders || modelOptions.length === 0}
-            onChange={(event) => {
-              const nextModel = event.target.value;
-              setModelDraft(nextModel);
-              if (modelError) {
-                setModelError("");
-              }
-              void onUpdate({ chat_provider: providerDraft, chat_model: nextModel }).catch(() => {});
-            }}
-          >
-            {modelOptions.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
-        </div>
-        {selectedProvider?.error ? <p className="config-panel__folder-error">{selectedProvider.error}</p> : null}
-        {chatModelsError ? <p className="config-panel__folder-error">{chatModelsError}</p> : null}
-        {modelError ? <p className="config-panel__folder-error">{modelError}</p> : null}
+
+        {selectedProvider?.error ? (
+          <div className="config-panel__error-box">
+            <span className="config-panel__error-icon">⚠</span>
+            <span>{selectedProvider.error}</span>
+          </div>
+        ) : null}
+        {chatModelsError ? (
+          <div className="config-panel__error-box">
+            <span className="config-panel__error-icon">⚠</span>
+            <span>{chatModelsError}</span>
+          </div>
+        ) : null}
+        {modelError ? (
+          <div className="config-panel__error-box">
+            <span className="config-panel__error-icon">⚠</span>
+            <span>{modelError}</span>
+          </div>
+        ) : null}
       </div>
     </ConfigModal>
   );
