@@ -1,4 +1,5 @@
 import type { ToolsStatusResponse } from "../../lib/api";
+import { getSuccessRateColor } from "./toolUtils";
 
 type StatusTabProps = {
   status: ToolsStatusResponse | null;
@@ -11,12 +12,7 @@ export function StatusTab({ status, onRefresh }: StatusTabProps) {
   }
 
   const stats = status.statistics;
-  const rateColor =
-    stats.success_rate >= 0.8
-      ? "var(--success)"
-      : stats.success_rate >= 0.5
-        ? "var(--warning)"
-        : "var(--danger)";
+  const rateColor = getSuccessRateColor(stats.success_rate);
 
   return (
     <div className="status-tab">
@@ -91,4 +87,3 @@ export function StatusTab({ status, onRefresh }: StatusTabProps) {
     </div>
   );
 }
-

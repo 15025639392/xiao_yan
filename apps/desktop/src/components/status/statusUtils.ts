@@ -1,4 +1,5 @@
 import type { BeingState } from "../../lib/api";
+import { getHealthColor } from "../../lib/utils";
 
 export function renderSelfProgrammingStatus(
   status: NonNullable<BeingState["self_programming_job"]>["status"],
@@ -39,9 +40,5 @@ export function conflictLabel(severity: string): string {
 }
 
 export function healthColor(score: number): string {
-  if (score >= 80) return "var(--success)";
-  if (score >= 60) return "var(--info)";
-  if (score >= 40) return "var(--warning)";
-  return "var(--danger)";
+  return getHealthColor(score);
 }
-

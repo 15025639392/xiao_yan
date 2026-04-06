@@ -1,23 +1,9 @@
 import { useMemo, useState } from "react";
 import type { ToolInfo, ToolsListResponse } from "../../lib/api";
-import { getCategoryIcon, getCategoryName } from "./toolUtils";
+import { getCategoryIcon, getCategoryName, getSafetyLevelColor, getSafetyLevelLabel } from "./toolUtils";
 
 type ToolsBrowseTabProps = {
   tools: ToolsListResponse | null;
-};
-
-const LEVEL_COLOR: Record<string, string> = {
-  safe: "var(--success)",
-  restricted: "var(--info)",
-  dangerous: "var(--warning)",
-  blocked: "var(--danger)",
-};
-
-const LEVEL_LABEL: Record<string, string> = {
-  safe: "安全",
-  restricted: "受限",
-  dangerous: "危险",
-  blocked: "禁止",
 };
 
 export function ToolsBrowseTab({ tools }: ToolsBrowseTabProps) {
@@ -63,10 +49,10 @@ export function ToolsBrowseTab({ tools }: ToolsBrowseTabProps) {
                   <code className="tool-card__name">{tool.name}</code>
                   <span
                     className="tool-card__level"
-                    style={{ color: LEVEL_COLOR[tool.safety_level] || "inherit" }}
-                    title={LEVEL_LABEL[tool.safety_level]}
+                    style={{ color: getSafetyLevelColor(tool.safety_level) }}
+                    title={getSafetyLevelLabel(tool.safety_level)}
                   >
-                    {LEVEL_LABEL[tool.safety_level]}
+                    {getSafetyLevelLabel(tool.safety_level)}
                   </span>
                 </div>
                 <p className="tool-card__desc">{tool.description}</p>
@@ -92,4 +78,3 @@ export function ToolsBrowseTab({ tools }: ToolsBrowseTabProps) {
     </div>
   );
 }
-
