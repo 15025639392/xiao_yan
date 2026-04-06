@@ -20,39 +20,13 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
+from app.self_programming.git_models import CommitInfo, GitStatus
+
 logger = logging.getLogger(__name__)
-
-
-# ── 数据模型 ────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class CommitInfo:
-    """Git commit 的元信息。"""
-
-    hash: str = ""
-    branch: str = ""
-    message: str = ""
-    short_hash: str = ""  # 前 8 位
-    files_changed: list[str] = field(default_factory=list)
-    committed_at: str = ""  # ISO format timestamp
-
-
-@dataclass
-class GitStatus:
-    """当前工作区 Git 状态快照。"""
-
-    is_git_repo: bool = False
-    current_branch: str = ""
-    is_clean: bool = True  # 无未提交更改
-    staged_files: list[str] = field(default_factory=list)
-    modified_files: list[str] = field(default_factory=list)
-    untracked_files: list[str] = field(default_factory=list)
 
 
 # ── 主类 ────────────────────────────────────────────────

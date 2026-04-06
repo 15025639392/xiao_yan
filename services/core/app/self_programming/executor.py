@@ -1,18 +1,15 @@
 import logging
-import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from app.domain.models import (
-    EditKind,
     SelfProgrammingJob,
     SelfProgrammingStatus,
-    SelfProgrammingVerification,
 )
 from app.self_programming.git_workflow import GitWorkflowManager
 from app.self_programming.sandbox import SandboxEnvironment, SandboxResult
 from app.self_programming.conflict_detector import ConflictDetector, ConflictReport
+from app.self_programming.executor_helpers import apply_edits, restore_files, run_verification
 from app.self_programming.rollback_recovery import (
     RollbackRecovery,
     RollbackReason,
@@ -278,82 +275,18 @@ class SelfProgrammingExecutor:
         backups: dict[Path, str],
         touched_files: list[str],
     ) -> None:
-        for edit in edits:
-            path = self.workspace_root / edit.file_path
-
-            # CREATE kind: write new file
-            if getattr(edit, 'kind', EditKind.REPLACE) == EditKind.CREATE:
-                if not edit.file_content:
-                    raise ValueError(f"CREATE edit missing file_content for {edit.file_path}")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                original = ""
-                if path.exists():
-                    original = path.read_text(encoding="utf-8")
-                backups.setdefault(path, original)
-                path.write_text(edit.file_content, encoding="utf-8")
-                if edit.file_path not in touched_files:
-                    touched_files.append(edit.file_path)
-                continue
-
-            # INSERT kind: insert after anchor text
-            if getattr(edit, 'kind', EditKind.REPLACE) == EditKind.INSERT:
-                original = path.read_text(encoding="utf-8")
-                if not edit.insert_after or edit.insert_after not in original:
-                    raise ValueError(f"insert_after anchor not found in {edit.file_path}")
-                backups.setdefault(path, original)
-                insert_pos = original.index(edit.insert_after) + len(edit.insert_after)
-                updated = original[:insert_pos] + edit.replace_text + original[insert_pos:]
-                path.write_text(updated, encoding="utf-8")
-                if edit.file_path not in touched_files:
-                    touched_files.append(edit.file_path)
-                continue
-
-            # REPLACE kind: 用 search_text 做单点替换
-            original = path.read_text(encoding="utf-8")
-            search_key = edit.search_text or ""
-            replace_val = edit.replace_text or ""
-            if search_key not in original:
-                raise ValueError(f"search text not found in {edit.file_path}")
-            updated = original.replace(search_key, replace_val, 1)
-            backups.setdefault(path, original)
-            path.write_text(updated, encoding="utf-8")
-            if edit.file_path not in touched_files:
-                touched_files.append(edit.file_path)
-
-    def _run_verification(self, commands: list[str]) -> SelfProgrammingVerification:
-        outputs: list[str] = []
-        passed = True
-
-        for command in commands:
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=self.workspace_root,
-                capture_output=True,
-                text=True,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-            )
-            combined = "\n".join(
-                part.strip() for part in (result.stdout, result.stderr) if part.strip()
-            )
-            outputs.append(f"$ {command}\n{combined}".strip())
-            if result.returncode != 0:
-                passed = False
-                break
-
-        summary = "\n\n".join(outputs).strip() or "没有运行验证命令。"
-        return SelfProgrammingVerification(
-            commands=commands,
-            passed=passed,
-            summary=summary,
+        apply_edits(
+            workspace_root=self.workspace_root,
+            edits=edits,
+            backups=backups,
+            touched_files=touched_files,
         )
 
+    def _run_verification(self, commands: list[str]):
+        return run_verification(self.workspace_root, commands)
+
     def _restore_files(self, backups: dict[Path, str]) -> None:
-        for path, content in backups.items():
-            if content:
-                path.write_text(content, encoding="utf-8")
-            elif path.exists():
-                path.unlink()
+        restore_files(backups)
 
     # ── 多候选 A/B 测试 ─────────────────────────
 

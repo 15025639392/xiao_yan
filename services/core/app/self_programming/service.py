@@ -8,11 +8,15 @@ from app.self_programming.executor import SelfProgrammingExecutor
 from app.self_programming.history_store import SelfProgrammingHistory
 from app.self_programming.health_checker import (
     HealthChecker,
-    HealthSignal,
     HealthReport,
-    HealthGrade,
 )
 from app.self_programming.rollback_recovery import RollbackReason
+from app.self_programming.service_helpers import (
+    build_edits_summary as _build_edits_summary,
+    finish_state as _finish_state,
+    reconstruct_candidate as _reconstruct_candidate,
+    evaluate_health,
+)
 from typing import TYPE_CHECKING, Protocol, Any
 
 if TYPE_CHECKING:
@@ -231,141 +235,5 @@ class SelfProgrammingService:
         return _finish_state(state, failed_job)
 
 
-def _reconstruct_candidate(job) -> object:
-    """从 Job 反推一个 Candidate 对象，用于调用 plan_all。
-
-    这是一个轻量级重构——只提取必要字段。
-    """
-    from app.self_programming.models import SelfProgrammingCandidate, SelfProgrammingTrigger
-
-    # 根据 patch_summary 判断触发类型
-    trigger_type = SelfProgrammingTrigger.PROACTIVE
-    if "[LLM]" in (job.patch_summary or ""):
-        trigger_type = SelfProgrammingTrigger.HARD_FAILURE
-
-    test_commands = []
-    if job.verification and job.verification.commands:
-        test_commands = job.verification.commands
-
-    return SelfProgrammingCandidate(
-        trigger=trigger_type,
-        reason=job.reason,
-        target_area=job.target_area,
-        spec=job.spec,
-        test_commands=test_commands,
-    )
-
-
-def _finish_state(state: BeingState, job) -> BeingState:
-    if job.status == SelfProgrammingStatus.APPLIED:
-        thought = f"这次自我编程通过了验证，我刚补强了 {job.target_area}。"
-    else:
-        thought = f"这次自我编程没有通过验证，我先记住问题：{job.patch_summary or job.reason}"
-    return state.model_copy(
-        update={
-            "focus_mode": FocusMode.AUTONOMY,
-            "self_programming_job": job,
-            "current_thought": thought,
-        }
-    )
-
-
-# ── 健康度评估辅助方法 ──────────────────────
-
-
 def _evaluate_health(self, job: Any) -> HealthReport | None:
-    """SelfProgrammingHealthCheck._evaluate_health 的辅助方法（在类内部调用）。
-
-    Args:
-        job: 刚通过验证的 SelfProgrammingJob
-
-    Returns:
-        健康报告，或 None
-    """
-    checker = self.health_checker if hasattr(self, 'health_checker') else None
-    if checker is None:
-        return None
-
-    # 从历史记录中收集数据
-    history_list = []
-    recent_rollbacks = 0
-    recent_conflicts = 0
-
-    if hasattr(self, 'history') and self.history is not None:
-        try:
-            history_list = self.history.get_recent(20)
-            # 统计回滚和冲突次数
-            for entry in history_list:
-                status_val = getattr(entry, 'status', '')
-                if hasattr(status_val, 'value'):
-                    status_val = status_val.value
-                if status_val == 'rolled_back':
-                    recent_rollbacks += 1
-                conflict_count = getattr(entry, 'conflict_count', 0)
-                if conflict_count > 0:
-                    recent_conflicts += 1
-        except Exception:
-            pass  # 历史数据不可用时跳过
-
-    # 构建健康信号
-    signals: list[HealthSignal] = []
-
-    # 从 verification 结果提取测试通过率信号
-    if job.verification and job.verification.passed:
-        signals.append(HealthSignal(
-            source="verification",
-            metric="test_pass_rate",
-            value=100.0,
-            unit="%",
-        ))
-    elif job.verification and not job.verification.passed:
-        signals.append(HealthSignal(
-            source="verification",
-            metric="test_pass_rate",
-            value=0.0,
-            unit="%",
-        ))
-
-    # 执行评估
-    report = checker.check(
-        signals=signals if signals else None,
-        history=history_list if history_list else None,
-        recent_rollbacks=recent_rollbacks,
-        recent_conflicts=recent_conflicts,
-    )
-
-    logger.info(
-        f"Health check for {job.id[:12]}: "
-        f"{report.summary}"
-    )
-
-    return report
-
-
-def _build_edits_summary(job: Any) -> str:
-    """生成编辑摘要，供审批面板展示。
-
-    Args:
-        job: 已 apply（VERIFYING 状态）的 Job
-
-    Returns:
-        人类可读的编辑摘要
-    """
-    edits = job.edits or []
-    touched = job.touched_files or []
-    if not edits and not touched:
-        return job.patch_summary or job.spec[:120]
-
-    kind_counts: dict[str, int] = {}
-    for e in edits:
-        k = getattr(e, 'kind', 'replace')
-        kind_counts[k] = kind_counts.get(k, 0) + 1
-
-    parts = []
-    if kind_counts:
-        for k, c in kind_counts.items():
-            parts.append(f"{k.upper()}×{c}")
-    if touched:
-        parts.append(f"文件: {', '.join(touched[:5])}")
-
-    return " | ".join(parts) if parts else (job.patch_summary or job.spec[:120])
+    return evaluate_health(self, job, logger)
