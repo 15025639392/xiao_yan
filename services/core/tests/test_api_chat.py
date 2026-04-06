@@ -1,4 +1,6 @@
 import time
+import tempfile
+from pathlib import Path
 from threading import Thread
 
 from fastapi.testclient import TestClient
@@ -20,6 +22,7 @@ from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
 from app.memory.service import MemoryService
 from app.runtime import StateStore
+from app.runtime_ext.runtime_config import get_runtime_config
 
 
 class StubGateway:
@@ -98,6 +101,138 @@ class CompletionWinsStubGateway(StubGateway):
             "type": "response_completed",
             "response_id": "resp_completion_wins",
             "output_text": "你好呀，我是小晏。很高兴见到你～\n\n今天想聊点什么？",
+        }
+
+
+class ToolCallingStubGateway(StubGateway):
+    def __init__(self, expected_read_path: str) -> None:
+        super().__init__()
+        self.expected_read_path = expected_read_path
+        self.tool_output_text: str | None = None
+        self.create_calls: list[dict] = []
+
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        self.create_calls.append(
+            {
+                "input_items": input_items,
+                "instructions": instructions,
+                "tools": tools,
+                "previous_response_id": previous_response_id,
+            }
+        )
+
+        has_tool_output = any(
+            isinstance(item, dict) and item.get("type") == "function_call_output"
+            for item in input_items
+        )
+
+        if not has_tool_output:
+            return {
+                "id": "resp_tool_1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc_1",
+                        "call_id": "call_1",
+                        "name": "read_file",
+                        "arguments": f'{{"path": "{self.expected_read_path}"}}',
+                    }
+                ],
+            }
+
+        tool_outputs = [
+            item for item in input_items
+            if isinstance(item, dict) and item.get("type") == "function_call_output"
+        ]
+        assert tool_outputs
+        latest_tool_output = tool_outputs[-1]
+        assert latest_tool_output["call_id"] == "call_1"
+        self.tool_output_text = latest_tool_output["output"]
+        return {
+            "id": "resp_tool_2",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "我已经读取到文件内容。",
+                        }
+                    ],
+                }
+            ],
+            "output_text": "我已经读取到文件内容。",
+        }
+
+
+class WriteToolCallingStubGateway(StubGateway):
+    def __init__(self, target_path: str, content: str) -> None:
+        super().__init__()
+        self.target_path = target_path
+        self.content = content
+        self.tool_output_text: str | None = None
+
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        has_tool_output = any(
+            isinstance(item, dict) and item.get("type") == "function_call_output"
+            for item in input_items
+        )
+
+        if not has_tool_output:
+            return {
+                "id": "resp_write_tool_1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc_write_1",
+                        "call_id": "call_write_1",
+                        "name": "write_file",
+                        "arguments": (
+                            "{"
+                            f"\"path\": \"{self.target_path}\", "
+                            f"\"content\": \"{self.content}\""
+                            "}"
+                        ),
+                    }
+                ],
+            }
+
+        tool_outputs = [
+            item for item in input_items
+            if isinstance(item, dict) and item.get("type") == "function_call_output"
+        ]
+        assert tool_outputs
+        latest_tool_output = tool_outputs[-1]
+        assert latest_tool_output["call_id"] == "call_write_1"
+        self.tool_output_text = latest_tool_output["output"]
+        return {
+            "id": "resp_write_tool_2",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "写入尝试完成。",
+                        }
+                    ],
+                }
+            ],
+            "output_text": "写入尝试完成。",
         }
 
 
@@ -906,4 +1041,239 @@ def test_get_autobio_deduplicates_entries_while_preserving_order():
             ]
         }
     finally:
+        app.dependency_overrides.clear()
+
+
+def test_chat_folder_permissions_crud():
+    config = get_runtime_config()
+    config.clear_folder_permissions()
+
+    try:
+        client = TestClient(app)
+        assert client.get("/chat/folder-permissions").status_code == 200
+        assert client.get("/chat/folder-permissions").json() == {"permissions": []}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folder = Path(tmpdir).resolve()
+
+            response = client.put(
+                "/chat/folder-permissions",
+                json={"path": str(folder), "access_level": "read_only"},
+            )
+            assert response.status_code == 200
+            assert response.json() == {
+                "permissions": [
+                    {"path": str(folder), "access_level": "read_only"},
+                ]
+            }
+
+            response = client.put(
+                "/chat/folder-permissions",
+                json={"path": str(folder), "access_level": "full_access"},
+            )
+            assert response.status_code == 200
+            assert response.json() == {
+                "permissions": [
+                    {"path": str(folder), "access_level": "full_access"},
+                ]
+            }
+
+            delete_resp = client.delete(
+                "/chat/folder-permissions",
+                params={"path": str(folder)},
+            )
+            assert delete_resp.status_code == 200
+            assert delete_resp.json() == {"permissions": []}
+    finally:
+        config.clear_folder_permissions()
+
+
+def test_chat_folder_permissions_rejects_invalid_directory():
+    config = get_runtime_config()
+    config.clear_folder_permissions()
+
+    try:
+        client = TestClient(app)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "sample.txt"
+            file_path.write_text("hello", encoding="utf-8")
+            missing_path = Path(tmpdir) / "missing"
+            relative_path = "relative/path"
+
+            file_resp = client.put(
+                "/chat/folder-permissions",
+                json={"path": str(file_path), "access_level": "read_only"},
+            )
+            assert file_resp.status_code == 400
+            assert file_resp.json()["detail"] == "path is not a directory"
+
+            missing_resp = client.put(
+                "/chat/folder-permissions",
+                json={"path": str(missing_path), "access_level": "full_access"},
+            )
+            assert missing_resp.status_code == 404
+            assert missing_resp.json()["detail"] == "folder not found"
+
+            relative_resp = client.put(
+                "/chat/folder-permissions",
+                json={"path": relative_path, "access_level": "read_only"},
+            )
+            assert relative_resp.status_code == 400
+            assert relative_resp.json()["detail"] == "folder path must be absolute"
+    finally:
+        config.clear_folder_permissions()
+
+
+def test_post_chat_instructions_include_granted_folder_permissions():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    config = get_runtime_config()
+    config.clear_folder_permissions()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir).resolve()
+            config.set_folder_permission(str(folder), "read_only")
+            client = TestClient(app)
+            response = client.post("/chat", json={"message": "帮我看下这个目录"})
+            assert response.status_code == 200
+            assert gateway.last_instructions is not None
+            assert "你当前可访问的文件夹权限如下" in gateway.last_instructions
+            assert str(folder) in gateway.last_instructions
+            assert "read_only（只读）" in gateway.last_instructions
+    finally:
+        app.dependency_overrides.clear()
+        config.clear_folder_permissions()
+
+
+def test_post_chat_executes_file_tools_when_gateway_requests_function_call():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    config = get_runtime_config()
+    config.clear_folder_permissions()
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir).resolve()
+            target_file = folder / "notes.txt"
+            target_file.write_text("hello from tool", encoding="utf-8")
+            config.set_folder_permission(str(folder), "read_only")
+
+            gateway = ToolCallingStubGateway(str(target_file))
+
+            def override_gateway():
+                try:
+                    yield gateway
+                finally:
+                    gateway.close()
+
+            def override_memory_repository():
+                return memory_repository
+
+            def override_memory_service():
+                return memory_service
+
+            app.dependency_overrides[get_chat_gateway] = override_gateway
+            app.dependency_overrides[get_memory_repository] = override_memory_repository
+            app.dependency_overrides[get_memory_service] = override_memory_service
+
+            client = TestClient(app)
+            response = client.post("/chat", json={"message": "请读取我授权目录里的 notes.txt"})
+            assert response.status_code == 200
+            assert response.json()["response_id"] == "resp_tool_2"
+            assert gateway.tool_output_text is not None
+            assert "hello from tool" in gateway.tool_output_text
+            recent = list(reversed(memory_repository.list_recent(limit=5)))
+            assert [event.role for event in recent] == ["user", "assistant"]
+            assert recent[-1].content == "我已经读取到文件内容。"
+    finally:
+        app.dependency_overrides.clear()
+        config.clear_folder_permissions()
+
+
+def test_post_chat_write_file_tool_respects_read_only_folder_permission():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    config = get_runtime_config()
+    config.clear_folder_permissions()
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            folder = Path(temp_dir).resolve()
+            target_file = folder / "blocked.txt"
+            config.set_folder_permission(str(folder), "read_only")
+
+            gateway = WriteToolCallingStubGateway(str(target_file), "should-not-write")
+
+            def override_gateway():
+                try:
+                    yield gateway
+                finally:
+                    gateway.close()
+
+            def override_memory_repository():
+                return memory_repository
+
+            def override_memory_service():
+                return memory_service
+
+            app.dependency_overrides[get_chat_gateway] = override_gateway
+            app.dependency_overrides[get_memory_repository] = override_memory_repository
+            app.dependency_overrides[get_memory_service] = override_memory_service
+
+            client = TestClient(app)
+            response = client.post("/chat", json={"message": "请写入这个文件"})
+            assert response.status_code == 200
+            assert gateway.tool_output_text is not None
+            assert "write not allowed" in gateway.tool_output_text
+            assert not target_file.exists()
+    finally:
+        app.dependency_overrides.clear()
+        config.clear_folder_permissions()
+
+
+def test_post_chat_uses_chat_model_from_runtime_config():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    gateway = StubGateway()
+    gateway.model = "gpt-legacy"
+    config = get_runtime_config()
+    original_model = config.chat_model
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_memory_service():
+        return memory_service
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        config.chat_model = "gpt-5.4-mini"
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "hello"})
+        assert response.status_code == 200
+        assert gateway.model == "gpt-5.4-mini"
+    finally:
+        config.chat_model = original_model
         app.dependency_overrides.clear()

@@ -46,9 +46,16 @@ export function ChatPanel({
     config,
     isUpdatingConfig,
     configError,
+    folderPermissions,
+    isUpdatingFolderPermissions,
+    folderPermissionsError,
+    chatModelProviders,
+    chatModelsError,
     toggleMemoryContext,
     toggleConfigPanel,
     closeConfigPanel,
+    handleAddOrUpdateFolderPermission,
+    handleRemoveFolderPermission,
     handleKeyDown,
     handleSubmit,
     handleUpdateConfig,
@@ -69,6 +76,13 @@ export function ChatPanel({
           config={config}
           isUpdating={isUpdatingConfig}
           error={configError}
+          folderPermissions={folderPermissions}
+          isUpdatingFolderPermissions={isUpdatingFolderPermissions}
+          folderPermissionsError={folderPermissionsError}
+          chatModelProviders={chatModelProviders}
+          chatModelsError={chatModelsError}
+          onAddOrUpdateFolderPermission={handleAddOrUpdateFolderPermission}
+          onRemoveFolderPermission={handleRemoveFolderPermission}
           onUpdate={handleUpdateConfig}
           onClose={closeConfigPanel}
         />

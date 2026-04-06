@@ -7,9 +7,9 @@ from pydantic import BaseModel
 
 from app.tools.runner import CommandRunner
 from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
+from app.runtime_ext.runtime_config import get_runtime_config
 
 _tool_runner_instance: CommandRunner | None = None
-_file_tools_instance = None
 
 
 def _get_command_runner() -> CommandRunner:
@@ -29,13 +29,15 @@ def _get_command_runner() -> CommandRunner:
 
 
 def _get_file_tools():
-    global _file_tools_instance
-    if _file_tools_instance is None:
-        from app.tools.file_tools import FileTools
+    from app.tools.file_tools import FileTools
 
-        workspace = Path(__file__).resolve().parents[4]
-        _file_tools_instance = FileTools(allowed_base_path=workspace)
-    return _file_tools_instance
+    workspace = Path(__file__).resolve().parents[4]
+    config = get_runtime_config()
+    granted_folders = {path: access_level for path, access_level in config.list_folder_permissions()}
+    return FileTools(
+        allowed_base_path=workspace,
+        folder_permissions=granted_folders,
+    )
 
 
 class ToolExecuteRequest(BaseModel):
@@ -148,4 +150,3 @@ def build_tools_router() -> APIRouter:
         }
 
     return router
-

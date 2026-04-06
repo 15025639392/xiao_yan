@@ -28,6 +28,7 @@ from app.tools.file_tools_models import (
     FileWriteResult,
     SearchResult,
 )
+from app.runtime_ext.runtime_config import FolderAccessLevel
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ class FileTools:
         self,
         *,
         allowed_base_path: Path | None = None,
+        folder_permissions: dict[str, FolderAccessLevel] | None = None,
         max_read_bytes: int = DEFAULT_MAX_READ_BYTES,
         max_list_entries: int = DEFAULT_MAX_LIST_ENTRIES,
         auto_backup: bool = True,
@@ -77,16 +79,22 @@ class FileTools:
         """
         Args:
             allowed_base_path: 允许访问的基础路径（None 不限制，但会警告）
+            folder_permissions: 额外授权目录及其权限级别
             max_read_bytes: 单次读取的最大字节数
             max_list_entries: 目录列表返回的最大条目数
             auto_backup: 写入文件前是否自动备份
         """
         self.allowed_base_path = allowed_base_path
+        self.folder_permissions: dict[Path, FolderAccessLevel] = {}
+        if folder_permissions:
+            for raw_path, access_level in folder_permissions.items():
+                resolved = Path(raw_path).expanduser().resolve()
+                self.folder_permissions[resolved] = access_level
         self.max_read_bytes = max_read_bytes
         self.max_list_entries = max_list_entries
         self.auto_backup = auto_backup
 
-    def resolve_path(self, relative_or_absolute: str) -> Path:
+    def resolve_path(self, relative_or_absolute: str, *, access_mode: str = "read") -> Path:
         """将路径解析为绝对路径并校验安全边界。
 
         Raises:
@@ -103,16 +111,38 @@ class FileTools:
         else:
             p = p.resolve()
 
-        # 安全边界检查
-        if self.allowed_base_path is not None:
-            try:
-                p.resolve().relative_to(self.allowed_base_path.resolve())
-            except ValueError:
-                raise PermissionError(
-                    f"path outside allowed base: {p} (base: {self.allowed_base_path})"
-                )
+        resolved = p.resolve()
 
-        return p.resolve()
+        # 优先允许 base_path 内路径（保持既有行为）
+        if self.allowed_base_path is not None:
+            base = self.allowed_base_path.resolve()
+            try:
+                resolved.relative_to(base)
+                return resolved
+            except ValueError:
+                pass
+
+        # 再检查用户授权目录
+        for allowed_root, access_level in self.folder_permissions.items():
+            try:
+                resolved.relative_to(allowed_root)
+            except ValueError:
+                continue
+
+            if access_mode == "write" and access_level != "full_access":
+                raise PermissionError(
+                    f"write not allowed in folder: {resolved} (permission: {access_level})"
+                )
+            return resolved
+
+        # 都不匹配，拒绝访问
+        if self.allowed_base_path is not None:
+            raise PermissionError(
+                f"path outside allowed base and granted folders: {resolved} "
+                f"(base: {self.allowed_base_path})"
+            )
+
+        raise PermissionError(f"path not allowed: {resolved}")
 
     def read_file(self, file_path: str, *, max_bytes: int = 0) -> FileReadResult:
         """安全读取文件内容。
@@ -124,7 +154,7 @@ class FileTools:
         limit = max_bytes or self.max_read_bytes
 
         try:
-            full_path = self.resolve_path(file_path)
+            full_path = self.resolve_path(file_path, access_mode="read")
         except (PermissionError, ValueError) as exc:
             return FileReadResult(path=file_path, content="", size_bytes=0, error=str(exc))
 
@@ -179,7 +209,7 @@ class FileTools:
             create_dirs: 是否自动创建父目录
         """
         try:
-            full_path = self.resolve_path(file_path)
+            full_path = self.resolve_path(file_path, access_mode="write")
         except (PermissionError, ValueError) as exc:
             return FileWriteResult(path=file_path, success=False, error=str(exc))
 
@@ -220,7 +250,7 @@ class FileTools:
             pattern: glob 过滤模式（如 "*.py"）
         """
         try:
-            full_path = self.resolve_path(dir_path)
+            full_path = self.resolve_path(dir_path, access_mode="read")
         except (PermissionError, ValueError) as exc:
             return DirectoryListResult(path=dir_path, error=str(exc))
 
@@ -311,7 +341,7 @@ class FileTools:
         start = _time.monotonic()
 
         try:
-            full_search_path = self.resolve_path(search_path)
+            full_search_path = self.resolve_path(search_path, access_mode="read")
         except (PermissionError, ValueError):
             return SearchResult(query=query, error="path outside allowed base")
 
@@ -367,7 +397,7 @@ class FileTools:
     def get_file_info(self, file_path: str) -> dict[str, Any]:
         """获取文件的详细元信息。"""
         try:
-            full_path = self.resolve_path(file_path)
+            full_path = self.resolve_path(file_path, access_mode="read")
         except (PermissionError, ValueError) as exc:
             return {"path": file_path, "error": str(exc)}
 

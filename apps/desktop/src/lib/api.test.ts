@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+  fetchConfig,
+  fetchChatModels,
+  fetchChatFolderPermissions,
+  removeChatFolderPermission,
   resetPersona,
+  updateConfig,
+  upsertChatFolderPermission,
   updatePersona,
   updatePersonality,
   updateSpeakingStyle,
@@ -45,6 +51,87 @@ describe("persona api methods", () => {
       4,
       "http://127.0.0.1:8000/persona/reset",
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  test("uses chat folder permissions endpoints with expected methods", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ permissions: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchChatFolderPermissions();
+    await upsertChatFolderPermission("/tmp/project", "read_only");
+    await removeChatFolderPermission("/tmp/project");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8000/chat/folder-permissions",
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8000/chat/folder-permissions",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          path: "/tmp/project",
+          access_level: "read_only",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://127.0.0.1:8000/chat/folder-permissions?path=%2Ftmp%2Fproject",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  test("updates chat config with chat_model", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          chat_context_limit: 6,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4-mini",
+          providers: [
+            {
+              provider_id: "openai",
+              provider_name: "OpenAI",
+              models: ["gpt-5.4-mini"],
+              default_model: "gpt-5.4-mini",
+              error: null,
+            },
+          ],
+          current_provider: "openai",
+          current_model: "gpt-5.4-mini",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const config = await fetchConfig();
+    expect(config.chat_model).toBe("gpt-5.4-mini");
+    expect(config.chat_provider).toBe("openai");
+    const models = await fetchChatModels();
+    expect(models.providers[0]?.models).toContain("gpt-5.4-mini");
+
+    await updateConfig({ chat_model: "gpt-5.4" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://127.0.0.1:8000/config",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          chat_model: "gpt-5.4",
+        }),
+      }),
     );
   });
 });

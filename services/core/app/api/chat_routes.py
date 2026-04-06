@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
 from uuid import uuid4
 
@@ -26,7 +29,83 @@ from app.persona.prompt_builder import build_chat_instructions
 from app.persona.service import PersonaService
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import build_chat_messages, find_latest_today_plan_completion
-from app.runtime_ext.runtime_config import get_runtime_config
+from app.runtime_ext.runtime_config import FolderAccessLevel, get_runtime_config
+
+CHAT_FILE_TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "name": "read_file",
+        "description": "Read a file and return its content. Use absolute paths when possible.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "max_bytes": {"type": "integer", "minimum": 1, "maximum": 2 * 1024 * 1024},
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "list_directory",
+        "description": "List files and directories under a path.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "recursive": {"type": "boolean"},
+                "pattern": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "search_files",
+        "description": "Search text in files under a path.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "search_path": {"type": "string"},
+                "file_pattern": {"type": "string"},
+                "max_results": {"type": "integer", "minimum": 1, "maximum": 200},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "write_file",
+        "description": "Write UTF-8 text to a file path. Requires full_access for granted folders.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+                "create_dirs": {"type": "boolean"},
+            },
+            "required": ["path", "content"],
+            "additionalProperties": False,
+        },
+    },
+]
+
+
+class FolderPermissionEntry(BaseModel):
+    path: str = Field(..., min_length=1)
+    access_level: FolderAccessLevel
+
+
+class FolderPermissionRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+    access_level: FolderAccessLevel
+
+
+class FolderPermissionListResponse(BaseModel):
+    permissions: list[FolderPermissionEntry]
 
 
 def build_chat_router() -> APIRouter:
@@ -64,6 +143,20 @@ def build_chat_router() -> APIRouter:
             "不要重复已经说过的文字，不要重开话题，不要改写前文。\n\n"
             f"已输出内容：\n{partial_content}"
         )
+
+    def _normalize_folder_path(raw_path: str) -> Path:
+        path = Path(raw_path).expanduser()
+        if not path.is_absolute():
+            raise HTTPException(status_code=400, detail="folder path must be absolute")
+        return path.resolve()
+
+    def _build_folder_permission_response() -> FolderPermissionListResponse:
+        config = get_runtime_config()
+        entries = [
+            FolderPermissionEntry(path=path, access_level=access_level)
+            for path, access_level in config.list_folder_permissions()
+        ]
+        return FolderPermissionListResponse(permissions=entries)
 
     def _run_chat_submission(
         *,
@@ -135,6 +228,236 @@ def build_chat_router() -> APIRouter:
             output_text,
         )
 
+    def _build_chat_file_tools():
+        from app.tools.file_tools import FileTools
+
+        workspace = Path(__file__).resolve().parents[4]
+        config = get_runtime_config()
+        granted_folders = {path: access_level for path, access_level in config.list_folder_permissions()}
+        return FileTools(
+            allowed_base_path=workspace,
+            folder_permissions=granted_folders,
+        )
+
+    def _execute_file_tool_call(file_tools, tool_name: str, arguments: dict) -> str:
+        try:
+            if tool_name == "read_file":
+                path = str(arguments.get("path", ""))
+                max_bytes = int(arguments.get("max_bytes", 512 * 1024))
+                result = file_tools.read_file(path, max_bytes=max_bytes)
+                payload = result.to_dict()
+                payload["content"] = result.content
+                return json.dumps(payload, ensure_ascii=False)
+
+            if tool_name == "list_directory":
+                path = str(arguments.get("path", "."))
+                recursive = bool(arguments.get("recursive", False))
+                pattern = arguments.get("pattern")
+                pattern_value = None if pattern is None else str(pattern)
+                result = file_tools.list_directory(path, recursive=recursive, pattern=pattern_value)
+                return json.dumps(result.to_dict(), ensure_ascii=False)
+
+            if tool_name == "search_files":
+                query = str(arguments.get("query", ""))
+                if not query:
+                    return json.dumps({"error": "query is required"}, ensure_ascii=False)
+                search_path = str(arguments.get("search_path", "."))
+                file_pattern = str(arguments.get("file_pattern", "*.py"))
+                max_results = int(arguments.get("max_results", 20))
+                result = file_tools.search_content(
+                    query,
+                    search_path,
+                    file_pattern=file_pattern,
+                    max_results=max_results,
+                )
+                return json.dumps(result.to_dict(), ensure_ascii=False)
+
+            if tool_name == "write_file":
+                path = str(arguments.get("path", ""))
+                content = str(arguments.get("content", ""))
+                create_dirs = bool(arguments.get("create_dirs", True))
+                result = file_tools.write_file(path, content, create_dirs=create_dirs)
+                return json.dumps(result.to_dict(), ensure_ascii=False)
+
+            return json.dumps({"error": f"unknown tool: {tool_name}"}, ensure_ascii=False)
+        except Exception as exception:  # noqa: BLE001
+            return json.dumps({"error": str(exception)}, ensure_ascii=False)
+
+    def _extract_function_calls(response_payload: dict) -> list[tuple[str, str, dict]]:
+        calls: list[tuple[str, str, dict]] = []
+        output_items = response_payload.get("output", [])
+        if not isinstance(output_items, list):
+            return calls
+
+        for item in output_items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "function_call":
+                continue
+
+            call_id = item.get("call_id")
+            tool_name = item.get("name")
+            raw_arguments = item.get("arguments", "{}")
+            if not isinstance(call_id, str) or not isinstance(tool_name, str):
+                continue
+
+            arguments: dict = {}
+            if isinstance(raw_arguments, str):
+                try:
+                    parsed = json.loads(raw_arguments)
+                    if isinstance(parsed, dict):
+                        arguments = parsed
+                except json.JSONDecodeError:
+                    arguments = {}
+            elif isinstance(raw_arguments, dict):
+                arguments = raw_arguments
+
+            calls.append((call_id, tool_name, arguments))
+
+        return calls
+
+    def _extract_output_text(response_payload: dict) -> str:
+        if isinstance(response_payload.get("output_text"), str):
+            return response_payload["output_text"]
+
+        output_items = response_payload.get("output", [])
+        if not isinstance(output_items, list):
+            return ""
+
+        for item in output_items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "message":
+                continue
+            for content_item in item.get("content", []):
+                if not isinstance(content_item, dict):
+                    continue
+                content_type = content_item.get("type")
+                if content_type not in {"output_text", "text"}:
+                    continue
+                text = content_item.get("text")
+                if isinstance(text, str) and text:
+                    return text
+        return ""
+
+    def _run_chat_submission_with_tools(
+        *,
+        request: Request,
+        gateway: ChatGateway,
+        chat_messages: list[ChatMessage],
+        instructions: str,
+        assistant_message_id: str,
+        initial_output_text: str = "",
+    ) -> tuple[ChatSubmissionResult, str]:
+        create_with_tools = getattr(gateway, "create_response_with_tools", None)
+        if not callable(create_with_tools):
+            return _run_chat_submission(
+                request=request,
+                gateway=gateway,
+                chat_messages=chat_messages,
+                instructions=instructions,
+                assistant_message_id=assistant_message_id,
+                initial_output_text=initial_output_text,
+            )
+
+        hub = getattr(request.app.state, "realtime_hub", None)
+        started = False
+        response_id: str | None = None
+
+        file_tools = _build_chat_file_tools()
+        accumulated_input: list[dict] = [message.model_dump() for message in chat_messages]
+
+        try:
+            for _ in range(8):
+                response_payload = create_with_tools(
+                    accumulated_input,
+                    instructions=instructions,
+                    tools=CHAT_FILE_TOOL_DEFINITIONS,
+                )
+                if not isinstance(response_payload, dict):
+                    raise HTTPException(status_code=502, detail="invalid gateway response payload")
+
+                current_response_id = response_payload.get("id")
+                if isinstance(current_response_id, str):
+                    response_id = current_response_id
+
+                if hub is not None and not started:
+                    hub.publish_chat_started(assistant_message_id, response_id=response_id)
+                    started = True
+
+                function_calls = _extract_function_calls(response_payload)
+                if not function_calls:
+                    output_text = _extract_output_text(response_payload)
+                    if initial_output_text:
+                        output_text = _merge_chat_stream_content(initial_output_text, output_text)
+
+                    if hub is not None and output_text:
+                        hub.publish_chat_delta(assistant_message_id, output_text)
+                    if hub is not None:
+                        hub.publish_chat_completed(assistant_message_id, response_id, output_text)
+
+                    return (
+                        ChatSubmissionResult(
+                            response_id=response_id,
+                            assistant_message_id=assistant_message_id,
+                        ),
+                        output_text,
+                    )
+
+                tool_outputs: list[dict[str, str]] = []
+                for call_id, tool_name, arguments in function_calls:
+                    tool_output = _execute_file_tool_call(file_tools, tool_name, arguments)
+                    tool_outputs.append(
+                        {
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": tool_output,
+                        }
+                    )
+
+                response_outputs = response_payload.get("output", [])
+                if isinstance(response_outputs, list):
+                    for output_item in response_outputs:
+                        if isinstance(output_item, dict):
+                            accumulated_input.append(output_item)
+
+                accumulated_input.extend(tool_outputs)
+
+            raise HTTPException(status_code=502, detail="tool call recursion limit exceeded")
+        except HTTPException:
+            if hub is not None and started:
+                hub.publish_chat_failed(assistant_message_id, "tool execution failed")
+            raise
+        except Exception as exception:  # noqa: BLE001
+            if hub is not None and started:
+                hub.publish_chat_failed(assistant_message_id, str(exception))
+            raise HTTPException(status_code=502, detail=str(exception)) from exception
+
+    @router.get("/chat/folder-permissions")
+    def get_folder_permissions() -> FolderPermissionListResponse:
+        return _build_folder_permission_response()
+
+    @router.put("/chat/folder-permissions")
+    def upsert_folder_permission(request_body: FolderPermissionRequest) -> FolderPermissionListResponse:
+        folder_path = _normalize_folder_path(request_body.path)
+        if not folder_path.exists():
+            raise HTTPException(status_code=404, detail="folder not found")
+        if not folder_path.is_dir():
+            raise HTTPException(status_code=400, detail="path is not a directory")
+
+        config = get_runtime_config()
+        config.set_folder_permission(str(folder_path), request_body.access_level)
+        return _build_folder_permission_response()
+
+    @router.delete("/chat/folder-permissions")
+    def remove_folder_permission(path: str) -> FolderPermissionListResponse:
+        folder_path = _normalize_folder_path(path)
+        config = get_runtime_config()
+        removed = config.remove_folder_permission(str(folder_path))
+        if not removed:
+            raise HTTPException(status_code=404, detail="folder permission not found")
+        return _build_folder_permission_response()
+
     @router.post("/chat")
     def chat(
         request_body: ChatRequest,
@@ -165,6 +488,7 @@ def build_chat_router() -> APIRouter:
         expression_style_context = style_mapper.build_style_prompt(style_override)
 
         config = get_runtime_config()
+        gateway.model = config.chat_model
         chat_messages = build_chat_messages(
             memory_repository,
             state_store,
@@ -180,10 +504,11 @@ def build_chat_router() -> APIRouter:
             persona_system_prompt=persona_system_prompt,
             memory_context=memory_context or None,
             expression_style_context=expression_style_context or None,
+            folder_permissions=config.list_folder_permissions(),
         )
 
         assistant_message_id = f"assistant_{uuid4().hex}"
-        submission, output_text = _run_chat_submission(
+        submission, output_text = _run_chat_submission_with_tools(
             request=request,
             gateway=gateway,
             chat_messages=chat_messages,
@@ -229,6 +554,7 @@ def build_chat_router() -> APIRouter:
         expression_style_context = style_mapper.build_style_prompt(style_override)
 
         config = get_runtime_config()
+        gateway.model = config.chat_model
         chat_messages = build_chat_messages(
             memory_repository,
             state_store,
@@ -244,10 +570,11 @@ def build_chat_router() -> APIRouter:
             persona_system_prompt=persona_system_prompt,
             memory_context=memory_context or None,
             expression_style_context=expression_style_context or None,
+            folder_permissions=config.list_folder_permissions(),
         )
         instructions = f"{instructions}\n\n{_build_resume_instruction(request_body.partial_content)}"
 
-        submission, output_text = _run_chat_submission(
+        submission, output_text = _run_chat_submission_with_tools(
             request=request,
             gateway=gateway,
             chat_messages=chat_messages,

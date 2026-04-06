@@ -4,6 +4,7 @@ from collections.abc import Generator
 
 from fastapi import Request
 
+from app.config import get_chat_provider, get_llm_provider_configs
 from app.goals.repository import GoalRepository
 from app.llm.gateway import ChatGateway
 from app.memory.repository import MemoryRepository
@@ -12,6 +13,7 @@ from app.persona.service import PersonaService
 from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import ensure_runtime_initialized
+from app.runtime_ext.runtime_config import get_runtime_config
 from app.world.repository import WorldRepository
 from app.world.service import WorldStateService
 
@@ -27,7 +29,26 @@ def get_memory_service(request: Request) -> MemoryService:
 
 
 def get_chat_gateway() -> Generator[ChatGateway, None, None]:
-    gateway = ChatGateway.from_env()
+    provider_catalog = get_llm_provider_configs()
+    if not provider_catalog:
+        raise RuntimeError("no llm provider is configured")
+
+    runtime_config = get_runtime_config()
+    runtime_provider = runtime_config.chat_provider
+    selected_provider = next(
+        (provider for provider in provider_catalog if provider.provider_id == runtime_provider),
+        None,
+    )
+    if selected_provider is None:
+        fallback_provider_id = get_chat_provider()
+        selected_provider = next(
+            (provider for provider in provider_catalog if provider.provider_id == fallback_provider_id),
+            provider_catalog[0],
+        )
+        runtime_config.chat_provider = selected_provider.provider_id
+        runtime_config.chat_model = selected_provider.default_model
+
+    gateway = ChatGateway.from_provider_config(selected_provider, model=runtime_config.chat_model)
     try:
         yield gateway
     finally:

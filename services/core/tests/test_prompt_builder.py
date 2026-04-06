@@ -50,3 +50,25 @@ def test_chat_instructions_require_persona_prompt():
         assert "persona_system_prompt is required" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_chat_instructions_include_folder_permissions_context():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        user_message="帮我看一下项目结构",
+        persona_system_prompt=persona_prompt,
+        folder_permissions=[
+            ("/Users/ldy/Desktop/map/ai", "read_only"),
+            ("/tmp/my-workspace", "full_access"),
+        ],
+    )
+
+    assert "你当前可访问的文件夹权限如下" in instructions
+    assert "/Users/ldy/Desktop/map/ai" in instructions
+    assert "read_only（只读）" in instructions
+    assert "/tmp/my-workspace" in instructions
+    assert "full_access（可读写）" in instructions

@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-import type { AppConfig } from "../../lib/api";
-import { fetchConfig, updateConfig } from "../../lib/api";
+import type { AppConfig, ChatFolderPermission, ChatModelProviderItem, FolderAccessLevel } from "../../lib/api";
+import {
+  DEFAULT_CHAT_PROVIDER,
+  DEFAULT_CHAT_MODEL,
+  fetchChatModels,
+  fetchChatFolderPermissions,
+  fetchConfig,
+  removeChatFolderPermission,
+  updateConfig,
+  upsertChatFolderPermission,
+} from "../../lib/api";
 import type { ChatEntry } from "./chatTypes";
 import { useChatScrollBehavior } from "./useChatScrollBehavior";
 
@@ -21,9 +30,16 @@ type UseChatPanelStateResult = {
   config: AppConfig;
   isUpdatingConfig: boolean;
   configError: string;
+  folderPermissions: ChatFolderPermission[];
+  isUpdatingFolderPermissions: boolean;
+  folderPermissionsError: string;
+  chatModelProviders: ChatModelProviderItem[];
+  chatModelsError: string;
   toggleMemoryContext: (messageId: string) => void;
   toggleConfigPanel: () => void;
   closeConfigPanel: () => void;
+  handleAddOrUpdateFolderPermission: (path: string, accessLevel: FolderAccessLevel) => Promise<void>;
+  handleRemoveFolderPermission: (path: string) => Promise<void>;
   handleKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   handleSubmit: () => void;
   handleUpdateConfig: (newConfig: Partial<AppConfig>) => Promise<void>;
@@ -36,21 +52,54 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
 
   const [showMemoryContext, setShowMemoryContext] = useState<Set<string>>(new Set());
   const [showConfigPanel, setShowConfigPanel] = useState(false);
-  const [config, setConfig] = useState<AppConfig>({ chat_context_limit: 6 });
+  const [config, setConfig] = useState<AppConfig>({
+    chat_context_limit: 6,
+    chat_provider: DEFAULT_CHAT_PROVIDER,
+    chat_model: DEFAULT_CHAT_MODEL,
+  });
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
   const [configError, setConfigError] = useState("");
+  const [folderPermissions, setFolderPermissions] = useState<ChatFolderPermission[]>([]);
+  const [isUpdatingFolderPermissions, setIsUpdatingFolderPermissions] = useState(false);
+  const [folderPermissionsError, setFolderPermissionsError] = useState("");
+  const [chatModelProviders, setChatModelProviders] = useState<ChatModelProviderItem[]>([]);
+  const [chatModelsError, setChatModelsError] = useState("");
 
-  useEffect(() => {
-    async function loadConfig() {
-      try {
-        const data = await fetchConfig();
-        setConfig(data);
-      } catch (error) {
-        console.error("加载配置失败:", error);
-      }
+  async function loadConfigAndFolderPermissions() {
+    setConfigError("");
+    setFolderPermissionsError("");
+    setChatModelsError("");
+
+    const [configResult, permissionsResult, modelsResult] = await Promise.allSettled([
+      fetchConfig(),
+      fetchChatFolderPermissions(),
+      fetchChatModels(),
+    ]);
+
+    if (configResult.status === "fulfilled") {
+      setConfig(configResult.value);
+    } else {
+      const message = configResult.reason instanceof Error ? configResult.reason.message : "加载配置失败";
+      setConfigError(message);
+      console.error("加载配置失败:", configResult.reason);
     }
-    void loadConfig();
-  }, []);
+
+    if (permissionsResult.status === "fulfilled") {
+      setFolderPermissions(permissionsResult.value.permissions);
+    } else {
+      const message = permissionsResult.reason instanceof Error ? permissionsResult.reason.message : "加载文件夹权限失败";
+      setFolderPermissionsError(message);
+      console.error("加载文件夹权限失败:", permissionsResult.reason);
+    }
+
+    if (modelsResult.status === "fulfilled") {
+      setChatModelProviders(modelsResult.value.providers);
+    } else {
+      const message = modelsResult.reason instanceof Error ? modelsResult.reason.message : "加载模型列表失败";
+      setChatModelsError(message);
+      console.error("加载模型列表失败:", modelsResult.reason);
+    }
+  }
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -106,6 +155,38 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     }
   }
 
+  async function handleAddOrUpdateFolderPermission(path: string, accessLevel: FolderAccessLevel) {
+    const normalizedPath = path.trim();
+    if (!normalizedPath) {
+      setFolderPermissionsError("请输入文件夹绝对路径");
+      return;
+    }
+
+    setIsUpdatingFolderPermissions(true);
+    setFolderPermissionsError("");
+    try {
+      const updated = await upsertChatFolderPermission(normalizedPath, accessLevel);
+      setFolderPermissions(updated.permissions);
+    } catch (error) {
+      setFolderPermissionsError(error instanceof Error ? error.message : "更新文件夹权限失败");
+    } finally {
+      setIsUpdatingFolderPermissions(false);
+    }
+  }
+
+  async function handleRemoveFolderPermission(path: string) {
+    setIsUpdatingFolderPermissions(true);
+    setFolderPermissionsError("");
+    try {
+      const updated = await removeChatFolderPermission(path);
+      setFolderPermissions(updated.permissions);
+    } catch (error) {
+      setFolderPermissionsError(error instanceof Error ? error.message : "移除文件夹权限失败");
+    } finally {
+      setIsUpdatingFolderPermissions(false);
+    }
+  }
+
   return {
     textareaRef,
     messagesEndRef,
@@ -115,9 +196,23 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     config,
     isUpdatingConfig,
     configError,
+    folderPermissions,
+    isUpdatingFolderPermissions,
+    folderPermissionsError,
+    chatModelProviders,
+    chatModelsError,
     toggleMemoryContext,
-    toggleConfigPanel: () => setShowConfigPanel((prev) => !prev),
+    toggleConfigPanel: () => {
+      if (showConfigPanel) {
+        setShowConfigPanel(false);
+        return;
+      }
+      setShowConfigPanel(true);
+      void loadConfigAndFolderPermissions();
+    },
     closeConfigPanel: () => setShowConfigPanel(false),
+    handleAddOrUpdateFolderPermission,
+    handleRemoveFolderPermission,
     handleKeyDown,
     handleSubmit,
     handleUpdateConfig,

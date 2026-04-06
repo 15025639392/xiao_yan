@@ -103,6 +103,17 @@ export type ChatSubmissionResult = {
   assistant_message_id: string;
 };
 
+export type FolderAccessLevel = "read_only" | "full_access";
+
+export type ChatFolderPermission = {
+  path: string;
+  access_level: FolderAccessLevel;
+};
+
+export type ChatFolderPermissionsResponse = {
+  permissions: ChatFolderPermission[];
+};
+
 export type ChatResumeRequest = {
   message: string;
   assistant_message_id: string;
@@ -234,6 +245,30 @@ export function sleep(): Promise<BeingState> {
 
 export function chat(message: string): Promise<ChatSubmissionResult> {
   return post<ChatSubmissionResult>("/chat", { message });
+}
+
+export function fetchChatFolderPermissions(): Promise<ChatFolderPermissionsResponse> {
+  return get<ChatFolderPermissionsResponse>("/chat/folder-permissions");
+}
+
+export function upsertChatFolderPermission(
+  path: string,
+  accessLevel: FolderAccessLevel,
+): Promise<ChatFolderPermissionsResponse> {
+  return put<ChatFolderPermissionsResponse>("/chat/folder-permissions", {
+    path,
+    access_level: accessLevel,
+  });
+}
+
+export async function removeChatFolderPermission(path: string): Promise<ChatFolderPermissionsResponse> {
+  const response = await fetch(`${BASE_URL}/chat/folder-permissions?path=${encodeURIComponent(path)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`request failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 export function resumeChat(body: ChatResumeRequest): Promise<ChatSubmissionResult> {
@@ -789,14 +824,49 @@ export function fetchSchedulerStatus(): Promise<{
 
 export type AppConfig = {
   chat_context_limit: number;
+  chat_provider: string;
+  chat_model: string;
 };
 
+export type ChatModelProviderItem = {
+  provider_id: string;
+  provider_name: string;
+  models: string[];
+  default_model: string;
+  error?: string | null;
+};
+
+export type ChatModelsResponse = {
+  providers: ChatModelProviderItem[];
+  current_provider: string;
+  current_model: string;
+};
+
+export const DEFAULT_CHAT_PROVIDER = "openai";
+export const DEFAULT_CHAT_MODEL = "gpt-5.4";
+
 /** 获取配置 */
-export function fetchConfig(): Promise<AppConfig> {
-  return get<AppConfig>("/config");
+export async function fetchConfig(): Promise<AppConfig> {
+  const payload = await get<Partial<AppConfig>>("/config");
+  return {
+    chat_context_limit: typeof payload.chat_context_limit === "number" ? payload.chat_context_limit : 6,
+    chat_provider:
+      typeof payload.chat_provider === "string" && payload.chat_provider.trim()
+        ? payload.chat_provider.trim()
+        : DEFAULT_CHAT_PROVIDER,
+    chat_model:
+      typeof payload.chat_model === "string" && payload.chat_model.trim()
+        ? payload.chat_model.trim()
+        : DEFAULT_CHAT_MODEL,
+  };
 }
 
 /** 更新配置 */
 export function updateConfig(data: Partial<AppConfig>): Promise<AppConfig> {
   return put<AppConfig>("/config", data);
+}
+
+/** 获取可选聊天模型列表 */
+export function fetchChatModels(): Promise<ChatModelsResponse> {
+  return get<ChatModelsResponse>("/config/chat-models");
 }

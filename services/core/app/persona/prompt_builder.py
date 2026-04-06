@@ -9,6 +9,7 @@ def build_chat_instructions(
     persona_system_prompt: str = "",
     memory_context: str | None = None,  # 记忆上下文
     expression_style_context: str | None = None,  # 表达风格覆盖
+    folder_permissions: list[tuple[str, str]] | None = None,  # 目录权限上下文
 ) -> str:
     """构建聊天指令 prompt
 
@@ -22,6 +23,7 @@ def build_chat_instructions(
                         包含相关事实、情景记忆等
         expression_style_context: 表达风格指令字符串（来自 ExpressionStyleMapper）
                         告诉 LLM 当前情绪应该如何影响说话方式
+        folder_permissions: 可访问目录权限列表，格式 [(path, access_level)]
     """
     if not persona_system_prompt.strip():
         raise ValueError("persona_system_prompt is required")
@@ -51,6 +53,15 @@ def build_chat_instructions(
             "如果用户在问你当前状态、最近在忙什么、今天过得怎样或你现在在想什么，"
             "先回答你此刻最在意的目标、今天的计划、刚完成的事或最近一次自我编程，再补充相关记忆。"
         )
+
+    if folder_permissions:
+        permission_lines = ["你当前可访问的文件夹权限如下（仅在这些范围内操作文件）："]
+        for folder_path, access_level in sorted(folder_permissions, key=lambda item: item[0]):
+            if access_level == "full_access":
+                permission_lines.append(f"- {folder_path}: full_access（可读写）")
+            else:
+                permission_lines.append(f"- {folder_path}: read_only（只读）")
+        guidance.extend(permission_lines)
 
     result = f"{prompt}\n" + "\n".join(guidance)
 

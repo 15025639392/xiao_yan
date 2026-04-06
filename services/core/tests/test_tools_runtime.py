@@ -8,6 +8,7 @@
 
 import os
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -510,6 +511,52 @@ class TestFileToolsEdgeCases:
         result = ft.search_content("XYZ_NONEXISTENT_QUERY_12345", ".")
         assert result.total_matches == 0
         assert len(result.matches) == 0
+
+
+class TestFileToolsFolderPermissions:
+    """目录权限模型（read_only / full_access）"""
+
+    def test_read_allowed_in_read_only_granted_folder(self):
+        ft = _make_ft()
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside_file = Path(outside_dir) / "outside.txt"
+            outside_file.write_text("outside content", encoding="utf-8")
+
+            ft_with_perm = _make_ft(
+                allowed_base_path=ft.allowed_base_path,
+                folder_permissions={str(Path(outside_dir).resolve()): "read_only"},
+            )
+            result = ft_with_perm.read_file(str(outside_file))
+            assert result.error is None
+            assert result.content == "outside content"
+
+    def test_write_blocked_in_read_only_granted_folder(self):
+        ft = _make_ft()
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside_file = Path(outside_dir) / "new.txt"
+            ft_with_perm = _make_ft(
+                allowed_base_path=ft.allowed_base_path,
+                folder_permissions={str(Path(outside_dir).resolve()): "read_only"},
+            )
+
+            result = ft_with_perm.write_file(str(outside_file), "should fail")
+            assert result.success is False
+            assert result.error is not None
+            assert "write not allowed" in result.error
+
+    def test_write_allowed_in_full_access_granted_folder(self):
+        ft = _make_ft()
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside_file = Path(outside_dir) / "new.txt"
+            ft_with_perm = _make_ft(
+                allowed_base_path=ft.allowed_base_path,
+                folder_permissions={str(Path(outside_dir).resolve()): "full_access"},
+            )
+
+            result = ft_with_perm.write_file(str(outside_file), "allowed")
+            assert result.success is True
+            assert outside_file.exists()
+            assert outside_file.read_text(encoding="utf-8") == "allowed"
 
 
 # ══════════════════════════════════════════════
