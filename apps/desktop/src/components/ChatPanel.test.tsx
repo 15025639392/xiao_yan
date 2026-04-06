@@ -285,7 +285,6 @@ test("updates chat model inside config modal", async () => {
 
   const modelSelect = await screen.findByLabelText("聊天模型");
   fireEvent.change(modelSelect, { target: { value: "gpt-5.4-mini" } });
-  fireEvent.click(screen.getByRole("button", { name: "应用模型" }));
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(

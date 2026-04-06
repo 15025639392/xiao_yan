@@ -72,31 +72,6 @@ export function ChatConfigPanel({
     }
   }, [modelDraft, modelOptions, selectedProvider]);
 
-  async function handleApplyModel() {
-    const nextProvider = providerDraft.trim();
-    if (!nextProvider) {
-      setModelError("服务商不能为空");
-      return;
-    }
-    const provider = chatModelProviders.find((item) => item.provider_id === nextProvider);
-    if (!provider) {
-      setModelError("请选择有效的服务商");
-      return;
-    }
-
-    const nextModel = modelDraft.trim() || provider.default_model.trim();
-    if (!nextModel.trim()) {
-      setModelError("模型名不能为空");
-      return;
-    }
-    try {
-      setModelError("");
-      await onUpdate({ chat_provider: nextProvider, chat_model: nextModel });
-    } catch {
-      // 错误由父级统一处理并展示在 ConfigModal 顶部
-    }
-  }
-
   async function handlePickTauriAllowedDir() {
     if (!isTauriRuntime()) return;
     setTauriFsError("");
@@ -136,7 +111,6 @@ export function ChatConfigPanel({
       title="配置"
       onClose={onClose}
       error={error}
-      actions={[{ key: "done", label: "完成", tone: "primary", onClick: onClose }]}
     >
       <RangeSettingField
         label="聊天上下文限制"
@@ -214,20 +188,15 @@ export function ChatConfigPanel({
             disabled={isUpdating || !hasFetchedProviders}
             onChange={(event) => {
               const nextProvider = event.target.value;
-              setProviderDraft(nextProvider);
               const provider = chatModelProviders.find((item) => item.provider_id === nextProvider);
-              if (provider) {
-                if (provider.models.includes(modelDraft)) {
-                  return;
-                }
-                if (provider.default_model) {
-                  setModelDraft(provider.default_model);
-                  return;
-                }
-                if (provider.models.length > 0) {
-                  setModelDraft(provider.models[0]);
-                }
-              }
+              const nextModel = provider?.models.includes(modelDraft)
+                ? modelDraft
+                : (provider?.default_model ?? provider?.models?.[0] ?? modelDraft);
+
+              setProviderDraft(nextProvider);
+              setModelDraft(nextModel);
+              if (modelError) setModelError("");
+              void onUpdate({ chat_provider: nextProvider, chat_model: nextModel }).catch(() => {});
             }}
           >
             {chatModelProviders.map((provider) => (
@@ -245,10 +214,12 @@ export function ChatConfigPanel({
             value={modelDraft}
             disabled={isUpdating || !hasFetchedProviders || modelOptions.length === 0}
             onChange={(event) => {
-              setModelDraft(event.target.value);
+              const nextModel = event.target.value;
+              setModelDraft(nextModel);
               if (modelError) {
                 setModelError("");
               }
+              void onUpdate({ chat_provider: providerDraft, chat_model: nextModel }).catch(() => {});
             }}
           >
             {modelOptions.map((model) => (
@@ -257,14 +228,6 @@ export function ChatConfigPanel({
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            className="config-panel__btn config-panel__btn--primary"
-            disabled={isUpdating || !hasFetchedProviders}
-            onClick={() => void handleApplyModel()}
-          >
-            应用模型
-          </button>
         </div>
         {selectedProvider?.error ? <p className="config-panel__folder-error">{selectedProvider.error}</p> : null}
         {chatModelsError ? <p className="config-panel__folder-error">{chatModelsError}</p> : null}
