@@ -223,12 +223,12 @@ test("manages folder permission inside config modal via system folder picker", a
 
     if (url.endsWith("/config")) {
       if (method === "GET") {
-        return new Response(JSON.stringify({ chat_context_limit: 6, chat_provider: "openai", chat_model: "gpt-5.4" }), {
+        return new Response(JSON.stringify({ chat_context_limit: 6, chat_provider: "openai", chat_model: "gpt-5.4", chat_read_timeout_seconds: 180 }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ chat_context_limit: 6, chat_provider: "openai", chat_model: "gpt-5.4-mini" }), {
+      return new Response(JSON.stringify({ chat_context_limit: 6, chat_provider: "openai", chat_model: "gpt-5.4-mini", chat_read_timeout_seconds: 180 }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -347,12 +347,12 @@ test("updates chat model inside config modal", async () => {
 
     if (url.endsWith("/config")) {
       if (method === "GET") {
-        return new Response(JSON.stringify({ chat_context_limit: 6, chat_provider: "openai", chat_model: "gpt-5.4" }), {
+        return new Response(JSON.stringify({ chat_context_limit: 6, chat_provider: "openai", chat_model: "gpt-5.4", chat_read_timeout_seconds: 180 }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ chat_context_limit: 6, chat_provider: "openai", chat_model: "gpt-5.4-mini" }), {
+      return new Response(JSON.stringify({ chat_context_limit: 6, chat_provider: "openai", chat_model: "gpt-5.4-mini", chat_read_timeout_seconds: 180 }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });

@@ -25,6 +25,12 @@ const CONTEXT_LIMIT_PRESETS = [
   { label: "开放 (10)", value: 10 },
 ];
 
+const READ_TIMEOUT_PRESETS = [
+  { label: "1 分钟", value: 60 },
+  { label: "3 分钟 (默认)", value: 180 },
+  { label: "5 分钟", value: 300 },
+];
+
 const FOLDER_PATH_PRESETS = [
   { label: "桌面", path: "~/Desktop" },
   { label: "文档", path: "~/Documents" },
@@ -213,6 +219,19 @@ export function ChatConfigPanel({
         disabled={isUpdating}
         onChange={(value) => {
           void onUpdate({ chat_context_limit: value });
+        }}
+      />
+
+      <RangeSettingField
+        label="Read 超时 (秒)"
+        description="用于流式输出：只要持续有输出，计时会自动刷新；只有长时间无任何输出才会超时。"
+        min={10}
+        max={600}
+        value={config.chat_read_timeout_seconds}
+        presets={READ_TIMEOUT_PRESETS}
+        disabled={isUpdating}
+        onChange={(value) => {
+          void onUpdate({ chat_read_timeout_seconds: value });
         }}
       />
 

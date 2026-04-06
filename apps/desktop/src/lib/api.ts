@@ -826,6 +826,7 @@ export type AppConfig = {
   chat_context_limit: number;
   chat_provider: string;
   chat_model: string;
+  chat_read_timeout_seconds: number;
 };
 
 export type ChatModelProviderItem = {
@@ -858,6 +859,8 @@ export async function fetchConfig(): Promise<AppConfig> {
       typeof payload.chat_model === "string" && payload.chat_model.trim()
         ? payload.chat_model.trim()
         : DEFAULT_CHAT_MODEL,
+    chat_read_timeout_seconds:
+      typeof payload.chat_read_timeout_seconds === "number" ? payload.chat_read_timeout_seconds : 180,
   };
 }
 
