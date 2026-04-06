@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
-import type { AppConfig, ChatFolderPermission, ChatModelProviderItem, FolderAccessLevel } from "../../lib/api";
+import { useEffect, useState } from "react";
+import type { AppConfig, ChatModelProviderItem } from "../../lib/api";
 import { fsClearAllowedDirectory, fsGetAllowedDirectory, fsSetAllowedDirectory, isTauriRuntime, pickDirectory } from "../../lib/tauri";
 import { ConfigModal, RangeSettingField } from "../ui";
 
@@ -10,11 +9,6 @@ type ChatConfigPanelProps = {
   error: string;
   chatModelProviders: ChatModelProviderItem[];
   chatModelsError: string;
-  folderPermissions: ChatFolderPermission[];
-  isUpdatingFolderPermissions: boolean;
-  folderPermissionsError: string;
-  onAddOrUpdateFolderPermission: (path: string, accessLevel: FolderAccessLevel) => Promise<void>;
-  onRemoveFolderPermission: (path: string) => Promise<void>;
   onUpdate: (config: Partial<AppConfig>) => Promise<void>;
   onClose: () => void;
 };
@@ -31,30 +25,15 @@ const READ_TIMEOUT_PRESETS = [
   { label: "5 分钟", value: 300 },
 ];
 
-const FOLDER_PATH_PRESETS = [
-  { label: "桌面", path: "~/Desktop" },
-  { label: "文档", path: "~/Documents" },
-  { label: "下载", path: "~/Downloads" },
-];
-
 export function ChatConfigPanel({
   config,
   isUpdating,
   error,
   chatModelProviders,
   chatModelsError,
-  folderPermissions,
-  isUpdatingFolderPermissions,
-  folderPermissionsError,
-  onAddOrUpdateFolderPermission,
-  onRemoveFolderPermission,
   onUpdate,
   onClose,
 }: ChatConfigPanelProps) {
-  const pickerInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFolderPath, setSelectedFolderPath] = useState("");
-  const [accessLevel, setAccessLevel] = useState<FolderAccessLevel>("read_only");
-  const [pickerError, setPickerError] = useState("");
   const [providerDraft, setProviderDraft] = useState(config.chat_provider);
   const [modelDraft, setModelDraft] = useState(config.chat_model);
   const [modelError, setModelError] = useState("");
@@ -64,15 +43,6 @@ export function ChatConfigPanel({
   const hasFetchedProviders = chatModelProviders.length > 0;
   const selectedProvider = chatModelProviders.find((provider) => provider.provider_id === providerDraft);
   const modelOptions = selectedProvider?.models ?? [];
-
-  useEffect(() => {
-    const input = pickerInputRef.current;
-    if (!input) {
-      return;
-    }
-    input.setAttribute("webkitdirectory", "");
-    input.setAttribute("directory", "");
-  }, []);
 
   useEffect(() => {
     setProviderDraft(config.chat_provider);
@@ -125,47 +95,6 @@ export function ChatConfigPanel({
     } catch {
       // 错误由父级统一处理并展示在 ConfigModal 顶部
     }
-  }
-
-  function handleSystemFolderPick() {
-    setPickerError("");
-    pickerInputRef.current?.click();
-  }
-
-  function handlePickerChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    const folderPath = extractFolderPathFromPickedFile(file);
-    if (!folderPath) {
-      setPickerError("无法从系统选择器获取路径（浏览器安全限制），请手动输入文件夹绝对路径");
-      return;
-    }
-    setSelectedFolderPath(folderPath);
-    setPickerError("");
-  }
-
-  async function handleAddOrUpdateClick() {
-    const normalizedPath = selectedFolderPath.trim();
-    if (!normalizedPath) {
-      setPickerError("请先选择文件夹，或手动输入绝对路径");
-      return;
-    }
-    if (!isLikelyAbsolutePath(normalizedPath)) {
-      setPickerError("请输入绝对路径，例如 /Users/name/workspace 或 C:\\workspace");
-      return;
-    }
-    
-    // 检查是否已存在
-    const existingPermission = folderPermissions.find(p => p.path === normalizedPath);
-    if (existingPermission) {
-      if (existingPermission.access_level === accessLevel) {
-        setPickerError(`文件夹 "${normalizedPath}" 已存在且权限相同`);
-        return;
-      }
-    }
-    
-    await onAddOrUpdateFolderPermission(normalizedPath, accessLevel);
-    setSelectedFolderPath("");
-    setAccessLevel("read_only");
   }
 
   async function handlePickTauriAllowedDir() {
@@ -341,176 +270,6 @@ export function ChatConfigPanel({
         {chatModelsError ? <p className="config-panel__folder-error">{chatModelsError}</p> : null}
         {modelError ? <p className="config-panel__folder-error">{modelError}</p> : null}
       </div>
-
-      <div className="config-panel__section">
-        <label className="config-panel__label">文件夹访问权限</label>
-        <p className="config-panel__description">
-          授权聊天可访问的文件夹目录。可通过系统选择器或手动输入绝对路径。
-          <br />
-          <span className="config-panel__hint">
-            提示：系统选择器在某些浏览器可能无法获取路径，如遇此情况请手动输入路径
-          </span>
-        </p>
-
-        <input
-          ref={pickerInputRef}
-          aria-label="系统文件夹选择器"
-          type="file"
-          className="chat-config-file-input"
-          onChange={handlePickerChange}
-          onClick={(event) => {
-            (event.currentTarget as HTMLInputElement).value = "";
-          }}
-        />
-
-        <div className="config-panel__folder-picker-row">
-          <div className="config-panel__folder-picker-main">
-            <button
-              type="button"
-              className="config-panel__preset config-panel__folder-picker-btn"
-              onClick={handleSystemFolderPick}
-              disabled={isUpdatingFolderPermissions}
-            >
-              选择文件夹
-            </button>
-            <label className="sr-only" htmlFor="chat-config-folder-path">
-              文件夹绝对路径
-            </label>
-            <input
-              id="chat-config-folder-path"
-              className="config-panel__folder-input"
-              placeholder="/Users/name/workspace"
-              value={selectedFolderPath}
-              onChange={(event) => {
-                setSelectedFolderPath(event.target.value);
-                if (pickerError) {
-                  setPickerError("");
-                }
-              }}
-              disabled={isUpdatingFolderPermissions}
-            />
-            <label className="sr-only" htmlFor="chat-config-folder-access">
-              权限级别
-            </label>
-            <select
-              id="chat-config-folder-access"
-              className="config-panel__folder-select"
-              value={accessLevel}
-              onChange={(event) => setAccessLevel(event.target.value as FolderAccessLevel)}
-              disabled={isUpdatingFolderPermissions}
-              aria-label="权限级别"
-            >
-              <option value="read_only">只读</option>
-              <option value="full_access">完全访问</option>
-            </select>
-          </div>
-          <button
-            type="button"
-            className="config-panel__btn config-panel__btn--primary config-panel__folder-add-btn"
-            onClick={() => void handleAddOrUpdateClick()}
-            disabled={isUpdatingFolderPermissions}
-          >
-            添加/更新权限
-          </button>
-        </div>
-
-        {pickerError ? <p className="config-panel__folder-error">{pickerError}</p> : null}
-        {folderPermissionsError ? <p className="config-panel__folder-error">{folderPermissionsError}</p> : null}
-
-        <div className="config-panel__folder-presets">
-          <span className="config-panel__folder-presets-label">快捷路径：</span>
-          {FOLDER_PATH_PRESETS.map((preset) => (
-            <button
-              key={preset.path}
-              type="button"
-              className="config-panel__folder-preset-btn"
-              onClick={() => {
-                setSelectedFolderPath(preset.path);
-                setPickerError("");
-              }}
-              disabled={isUpdatingFolderPermissions}
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-
-        {folderPermissions.length === 0 ? (
-          <p className="config-panel__folder-empty">当前未授权任何文件夹</p>
-        ) : (
-          <ul className="config-panel__folder-list">
-            {folderPermissions.map((permission) => (
-              <li key={permission.path} className="config-panel__folder-item">
-                <code className="config-panel__folder-item-path">{permission.path}</code>
-                <span 
-                  className="config-panel__folder-badge"
-                  data-level={permission.access_level}
-                >
-                  {permission.access_level === "full_access" ? "可读写" : "只读"}
-                </span>
-                <button
-                  type="button"
-                  className="config-panel__btn config-panel__btn--danger"
-                  onClick={() => void onRemoveFolderPermission(permission.path)}
-                  disabled={isUpdatingFolderPermissions}
-                  title="移除此文件夹权限"
-                >
-                  移除
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </ConfigModal>
   );
-}
-
-function isLikelyAbsolutePath(path: string): boolean {
-  if (path.startsWith("/")) {
-    return true;
-  }
-  if (path.startsWith("~/")) {
-    return true;
-  }
-  return /^[A-Za-z]:[\\/]/.test(path);
-}
-
-function extractFolderPathFromPickedFile(file: File | null): string | null {
-  if (!file) {
-    return null;
-  }
-
-  const pickedFile = file as File & { path?: string; webkitRelativePath?: string };
-  const absoluteFilePath = pickedFile.path;
-  if (!absoluteFilePath) {
-    return null;
-  }
-
-  const relativePath = pickedFile.webkitRelativePath || file.webkitRelativePath || file.name;
-  if (!relativePath) {
-    return null;
-  }
-
-  const normalizedAbsolute = absoluteFilePath.replace(/\\/g, "/");
-  const normalizedRelative = relativePath.replace(/\\/g, "/");
-  const absoluteFileDir = normalizedAbsolute.slice(0, normalizedAbsolute.lastIndexOf("/"));
-  const relativeDir = normalizedRelative.includes("/") ? normalizedRelative.slice(0, normalizedRelative.lastIndexOf("/")) : "";
-
-  if (!relativeDir) {
-    return absoluteFileDir || "/";
-  }
-
-  const relativeParts = relativeDir.split("/").filter(Boolean);
-  const subPathUnderRoot = relativeParts.slice(1).join("/");
-  if (!subPathUnderRoot) {
-    return absoluteFileDir || "/";
-  }
-
-  if (absoluteFileDir.endsWith(`/${subPathUnderRoot}`)) {
-    const rootFolderPath = absoluteFileDir.slice(0, absoluteFileDir.length - subPathUnderRoot.length - 1);
-    return rootFolderPath || "/";
-  }
-
-  return absoluteFileDir || "/";
 }
