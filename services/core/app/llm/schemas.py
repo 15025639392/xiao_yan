@@ -27,8 +27,11 @@ class ChatSubmissionResult(BaseModel):
 
 
 class ChatHistoryMessage(BaseModel):
+    id: str
     role: str
     content: str
+    created_at: str | None = None
+    session_id: str | None = None
 
 
 class ChatHistoryResponse(BaseModel):

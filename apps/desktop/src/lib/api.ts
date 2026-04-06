@@ -110,8 +110,11 @@ export type ChatResumeRequest = {
 };
 
 export type ChatHistoryMessage = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
+  created_at?: string | null;
+  session_id?: string | null;
 };
 
 export type ChatHistoryResponse = {

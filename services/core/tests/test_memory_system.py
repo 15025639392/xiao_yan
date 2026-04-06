@@ -346,6 +346,21 @@ class TestConversationExtraction:
         chat_raws = [e for e in extracted if e.kind == MemoryKind.CHAT_RAW]
         assert len(chat_raws) == 2  # user + assistant
 
+    def test_assistant_chat_raw_keeps_assistant_session_id(self, service: MemoryService):
+        extracted = service.extract_from_conversation(
+            user_message="你好",
+            assistant_response="你好呀，我是小晏。",
+            assistant_session_id="assistant_test_1",
+        )
+        assistant_chat = next(
+            e for e in extracted if e.kind == MemoryKind.CHAT_RAW and e.role == "assistant"
+        )
+        user_chat = next(
+            e for e in extracted if e.kind == MemoryKind.CHAT_RAW and e.role == "user"
+        )
+        assert assistant_chat.session_id == "assistant_test_1"
+        assert user_chat.session_id is None
+
     def test_neutral_message_no_fact_extraction(self, service: MemoryService):
         """中性消息不会产生额外 fact 记忆（只有 chat_raw）"""
         extracted = service.extract_from_conversation(

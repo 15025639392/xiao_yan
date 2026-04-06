@@ -752,6 +752,188 @@ test("continues generation in the same assistant bubble after failure", async ()
   expect(screen.queryAllByText("前半句，后半句。")).toHaveLength(1);
 });
 
+test("merges runtime-updated final assistant content into the in-flight bubble when the final text inserts content mid-sentence", async () => {
+  let resolveChatRequest: ((response: Response) => void) | null = null;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+          self_programming_job: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/chat")) {
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ message: "你好" }));
+      return await new Promise<Response>((resolve) => {
+        resolveChatRequest = resolve;
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  const socket = MockWebSocket.instances[0];
+  socket.open();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "你好" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_started",
+      payload: {
+        assistant_message_id: "assistant_race_1",
+        response_id: "resp_race_1",
+        session_id: "assistant_race_1",
+        sequence: 1,
+      },
+    });
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_delta",
+      payload: {
+        assistant_message_id: "assistant_race_1",
+        delta: "你好呀，我是小晏。很高兴见到～\n\n今天想聊点什么？",
+        session_id: "assistant_race_1",
+        sequence: 2,
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("你好呀，我是小晏。很高兴见到～")).toBeInTheDocument();
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "runtime_updated",
+      payload: {
+        state: {
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+          self_programming_job: null,
+        },
+        messages: [
+          { id: "mem_user_1", role: "user", content: "你好" },
+          {
+            id: "mem_assistant_1",
+            role: "assistant",
+            content: "你好呀，我是小晏。很高兴见到你～\n\n今天想聊点什么？",
+            session_id: "assistant_race_1",
+          },
+        ],
+        goals: [],
+        world: {
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        },
+        autobio: [],
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("你好呀，我是小晏。很高兴见到你～")).toBeInTheDocument();
+  });
+
+  resolveChatRequest?.(
+    new Response(
+      JSON.stringify({
+        response_id: "resp_race_1",
+        assistant_message_id: "assistant_race_1",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    ),
+  );
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_completed",
+      payload: {
+        assistant_message_id: "assistant_race_1",
+        response_id: "resp_race_1",
+        content: "你好呀，我是小晏。很高兴见到你～\n\n今天想聊点什么？",
+        session_id: "assistant_race_1",
+        sequence: 3,
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("你好呀，我是小晏。很高兴见到你～")).toBeInTheDocument();
+  });
+
+  expect(screen.queryAllByText("你好呀，我是小晏。很高兴见到你～")).toHaveLength(1);
+});
+
 test("renders proactive replies from realtime runtime updates in the chat panel", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);

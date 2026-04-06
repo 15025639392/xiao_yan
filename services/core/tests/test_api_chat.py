@@ -82,6 +82,25 @@ class ResumeStubGateway(StubGateway):
         }
 
 
+class CompletionWinsStubGateway(StubGateway):
+    def stream_response(self, messages, instructions=None):
+        self.last_messages = list(messages)
+        self.last_instructions = instructions
+        yield {
+            "type": "response_started",
+            "response_id": "resp_completion_wins",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "你好呀，我是小晏。很高兴见到～\n\n今天想聊点什么？",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_completion_wins",
+            "output_text": "你好呀，我是小晏。很高兴见到你～\n\n今天想聊点什么？",
+        }
+
+
 def test_post_chat_returns_submission_confirmation():
     memory_repository = InMemoryMemoryRepository()
     memory_service = MemoryService(repository=memory_repository)
@@ -112,6 +131,38 @@ def test_post_chat_returns_submission_confirmation():
         recent = memory_repository.list_recent(limit=5)
         assert [event.role for event in reversed(recent)] == ["user", "assistant"]
         assert [event.content for event in reversed(recent)] == ["hello", "echo:hello"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_uses_response_completed_output_text_as_final_content():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    gateway = CompletionWinsStubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_memory_service():
+        return memory_service
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "你好"})
+        assert response.status_code == 200
+        recent = list(reversed(memory_repository.list_recent(limit=5)))
+        assert [event.role for event in recent] == ["user", "assistant"]
+        assert recent[1].content == "你好呀，我是小晏。很高兴见到你～\n\n今天想聊点什么？"
     finally:
         app.dependency_overrides.clear()
 
@@ -166,11 +217,17 @@ def test_post_chat_streams_reply_over_realtime_socket():
 
         assert started_event["type"] == "chat_started"
         assert started_event["payload"]["assistant_message_id"].startswith("assistant_")
+        assert started_event["payload"]["session_id"] == started_event["payload"]["assistant_message_id"]
+        assert started_event["payload"]["sequence"] == 1
+        assert isinstance(started_event["payload"]["timestamp_ms"], int)
         assert delta_event_first == {
             "type": "chat_delta",
             "payload": {
                 "assistant_message_id": started_event["payload"]["assistant_message_id"],
                 "delta": "echo:",
+                "session_id": started_event["payload"]["assistant_message_id"],
+                "sequence": 2,
+                "timestamp_ms": delta_event_first["payload"]["timestamp_ms"],
             },
         }
         assert delta_event_second == {
@@ -178,16 +235,25 @@ def test_post_chat_streams_reply_over_realtime_socket():
             "payload": {
                 "assistant_message_id": started_event["payload"]["assistant_message_id"],
                 "delta": "hello",
+                "session_id": started_event["payload"]["assistant_message_id"],
+                "sequence": 3,
+                "timestamp_ms": delta_event_second["payload"]["timestamp_ms"],
             },
         }
+        assert isinstance(delta_event_first["payload"]["timestamp_ms"], int)
+        assert isinstance(delta_event_second["payload"]["timestamp_ms"], int)
         assert completed_event == {
             "type": "chat_completed",
             "payload": {
                 "assistant_message_id": started_event["payload"]["assistant_message_id"],
                 "response_id": "resp_test",
                 "content": "echo:hello",
+                "session_id": started_event["payload"]["assistant_message_id"],
+                "sequence": 4,
+                "timestamp_ms": completed_event["payload"]["timestamp_ms"],
             },
         }
+        assert isinstance(completed_event["payload"]["timestamp_ms"], int)
         assert response.status_code == 200
         assert response.json()["assistant_message_id"] == started_event["payload"]["assistant_message_id"]
     finally:
@@ -261,23 +327,35 @@ def test_post_chat_resume_reuses_original_assistant_message_id_and_continues_str
             "payload": {
                 "assistant_message_id": "assistant_resume_1",
                 "response_id": "resp_resume",
+                "session_id": "assistant_resume_1",
+                "sequence": 1,
+                "timestamp_ms": started_event["payload"]["timestamp_ms"],
             },
         }
+        assert isinstance(started_event["payload"]["timestamp_ms"], int)
         assert delta_event == {
             "type": "chat_delta",
             "payload": {
                 "assistant_message_id": "assistant_resume_1",
                 "delta": "继续的一半",
+                "session_id": "assistant_resume_1",
+                "sequence": 2,
+                "timestamp_ms": delta_event["payload"]["timestamp_ms"],
             },
         }
+        assert isinstance(delta_event["payload"]["timestamp_ms"], int)
         assert completed_event == {
             "type": "chat_completed",
             "payload": {
                 "assistant_message_id": "assistant_resume_1",
                 "response_id": "resp_resume",
                 "content": "前半句，继续的一半",
+                "session_id": "assistant_resume_1",
+                "sequence": 3,
+                "timestamp_ms": completed_event["payload"]["timestamp_ms"],
             },
         }
+        assert isinstance(completed_event["payload"]["timestamp_ms"], int)
         assert response.status_code == 200
         assert response.json() == {
             "response_id": "resp_resume",
@@ -734,7 +812,7 @@ def test_get_messages_returns_recent_chat_events():
         MemoryEvent(kind="assistant_note", role="assistant", content="内部笔记")
     )
     memory_repository.save_event(
-        MemoryEvent(kind="chat", role="assistant", content="第二句")
+        MemoryEvent(kind="chat", role="assistant", content="第二句", session_id="assistant_2")
     )
 
     def override_memory_repository():
@@ -746,12 +824,26 @@ def test_get_messages_returns_recent_chat_events():
         client = TestClient(app)
         response = client.get("/messages")
         assert response.status_code == 200
-        assert response.json() == {
-            "messages": [
-                {"role": "user", "content": "第一句"},
-                {"role": "assistant", "content": "第二句"},
-            ]
-        }
+        payload = response.json()
+        assert payload["messages"] == [
+            {
+                "id": payload["messages"][0]["id"],
+                "role": "user",
+                "content": "第一句",
+                "created_at": payload["messages"][0]["created_at"],
+                "session_id": None,
+            },
+            {
+                "id": payload["messages"][1]["id"],
+                "role": "assistant",
+                "content": "第二句",
+                "created_at": payload["messages"][1]["created_at"],
+                "session_id": "assistant_2",
+            },
+        ]
+        assert all(isinstance(message["id"], str) for message in payload["messages"])
+        assert all(isinstance(message["created_at"], str) for message in payload["messages"])
+        assert payload["messages"][0]["session_id"] is None
     finally:
         app.dependency_overrides.clear()
 

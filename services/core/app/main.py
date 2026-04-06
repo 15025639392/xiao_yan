@@ -221,7 +221,13 @@ def _build_runtime_payload(target_app: FastAPI) -> dict:
     goal_repository = target_app.state.goal_repository
 
     messages = [
-        ChatHistoryMessage(role=event.role, content=event.content).model_dump()
+        ChatHistoryMessage(
+            id=event.entry_id,
+            role=event.role,
+            content=event.content,
+            created_at=event.created_at.isoformat() if event.created_at else None,
+            session_id=event.session_id,
+        ).model_dump()
         for event in reversed(memory_repository.list_recent(limit=20))
         if event.kind == "chat" and event.role in {"user", "assistant"}
     ]
@@ -465,7 +471,13 @@ def get_messages(
 ) -> ChatHistoryResponse:
     recent_events = list(reversed(memory_repository.list_recent(limit=20)))
     messages = [
-        ChatHistoryMessage(role=event.role, content=event.content)
+        ChatHistoryMessage(
+            id=event.entry_id,
+            role=event.role,
+            content=event.content,
+            created_at=event.created_at.isoformat() if event.created_at else None,
+            session_id=event.session_id,
+        )
         for event in recent_events
         if event.kind == "chat" and event.role in {"user", "assistant"}
     ]
@@ -602,10 +614,9 @@ def _run_chat_submission(
 
             if event_type == "response_completed":
                 response_id = event.get("response_id") or response_id
-                output_text = _merge_chat_stream_content(
-                    output_text,
-                    event.get("output_text") or "",
-                )
+                completed_output_text = event.get("output_text") or ""
+                if completed_output_text and completed_output_text not in output_text:
+                    output_text = completed_output_text
                 continue
 
             if event_type == "response_failed":
@@ -863,6 +874,7 @@ def chat(
     extracted = memory_service.extract_from_conversation(
         user_message=request.message,
         assistant_response=output_text,
+        assistant_session_id=assistant_message_id,
     )
     for entry in extracted:
         memory_service.save(entry)
@@ -923,6 +935,7 @@ def resume_chat(
     extracted = memory_service.extract_from_conversation(
         user_message=request.message,
         assistant_response=output_text,
+        assistant_session_id=request.assistant_message_id,
     )
     for entry in extracted:
         memory_service.save(entry)

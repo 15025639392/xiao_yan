@@ -61,6 +61,7 @@ class MemoryEntry(BaseModel):
     kind: MemoryKind = MemoryKind.CHAT_RAW
     content: str = Field(min_length=1, description="记忆内容")
     role: str | None = Field(default=None, description="说话人角色（仅 chat_raw 使用）")
+    session_id: str | None = Field(default=None, description="对话会话 ID（用于流式 chat 对齐）")
 
     # ── 强度与生命周期 ──
     strength: MemoryStrength = MemoryStrength.NORMAL
@@ -91,6 +92,7 @@ class MemoryEntry(BaseModel):
         kind: MemoryKind,
         content: str,
         role: str | None = None,
+        session_id: str | None = None,
         strength: MemoryStrength = MemoryStrength.NORMAL,
         importance: int = 5,
         emotion_tag: MemoryEmotion = MemoryEmotion.NEUTRAL,
@@ -103,6 +105,7 @@ class MemoryEntry(BaseModel):
             kind=kind,
             content=content,
             role=role,
+            session_id=session_id,
             strength=strength,
             importance=importance,
             emotion_tag=emotion_tag,
@@ -255,6 +258,7 @@ class MemoryEvent(BaseModel):
     kind: str
     content: str
     role: str | None = None
+    session_id: str | None = None
     source_context: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     entry_id: str = Field(
@@ -273,6 +277,7 @@ class MemoryEvent(BaseModel):
             kind=_storage_kind_for_entry(entry),
             content=entry.content,
             role=entry.role,
+            session_id=entry.session_id,
             source_context=entry.source_context,
             created_at=entry.created_at,
             entry_id=entry.id,  # 保存 ID 用于后续匹配
@@ -309,6 +314,7 @@ class MemoryEvent(BaseModel):
             kind=kind,
             content=self.content,
             role=self.role,
+            session_id=self.session_id,
             source_context=self.source_context,
             created_at=self.created_at,
             importance=default_importance,

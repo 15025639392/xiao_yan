@@ -148,4 +148,101 @@ describe("app realtime client", () => {
     unsubscribeFirst();
     unsubscribeSecond();
   });
+
+  test("reorders chat events by session sequence before notifying listeners", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+
+    const listener = vi.fn();
+    const unsubscribe = subscribeAppRealtime(listener);
+    const socket = MockWebSocket.instances[0];
+
+    socket.open();
+    socket.emit({
+      type: "chat_started",
+      payload: {
+        assistant_message_id: "assistant_1",
+        response_id: "resp_1",
+        session_id: "assistant_1",
+        sequence: 1,
+      },
+    });
+    socket.emit({
+      type: "chat_delta",
+      payload: {
+        assistant_message_id: "assistant_1",
+        delta: "你",
+        session_id: "assistant_1",
+        sequence: 2,
+      },
+    });
+    socket.emit({
+      type: "chat_completed",
+      payload: {
+        assistant_message_id: "assistant_1",
+        response_id: "resp_1",
+        content: "你好",
+        session_id: "assistant_1",
+        sequence: 4,
+      },
+    });
+    socket.emit({
+      type: "chat_delta",
+      payload: {
+        assistant_message_id: "assistant_1",
+        delta: "好",
+        session_id: "assistant_1",
+        sequence: 3,
+      },
+    });
+
+    expect(listener.mock.calls).toEqual([
+      [
+        {
+          type: "chat_started",
+          payload: {
+            assistant_message_id: "assistant_1",
+            response_id: "resp_1",
+            session_id: "assistant_1",
+            sequence: 1,
+          },
+        },
+      ],
+      [
+        {
+          type: "chat_delta",
+          payload: {
+            assistant_message_id: "assistant_1",
+            delta: "你",
+            session_id: "assistant_1",
+            sequence: 2,
+          },
+        },
+      ],
+      [
+        {
+          type: "chat_delta",
+          payload: {
+            assistant_message_id: "assistant_1",
+            delta: "好",
+            session_id: "assistant_1",
+            sequence: 3,
+          },
+        },
+      ],
+      [
+        {
+          type: "chat_completed",
+          payload: {
+            assistant_message_id: "assistant_1",
+            response_id: "resp_1",
+            content: "你好",
+            session_id: "assistant_1",
+            sequence: 4,
+          },
+        },
+      ],
+    ]);
+
+    unsubscribe();
+  });
 });

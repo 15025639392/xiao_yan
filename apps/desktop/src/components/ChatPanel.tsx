@@ -10,6 +10,7 @@ export type ChatEntry = {
   state?: "streaming" | "failed";
   requestMessage?: string;
   relatedMemories?: MemoryEntryDisplay[];
+  streamSequence?: number;
 };
 
 type ChatPanelProps = {

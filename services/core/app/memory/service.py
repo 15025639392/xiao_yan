@@ -84,6 +84,7 @@ class MemoryService:
         content: str,
         *,
         role: str | None = None,
+        session_id: str | None = None,
         strength: MemoryStrength = MemoryStrength.NORMAL,
         importance: int = 5,
         emotion_tag: MemoryEmotion = MemoryEmotion.NEUTRAL,
@@ -96,6 +97,7 @@ class MemoryService:
             kind=kind,
             content=content,
             role=role,
+            session_id=session_id,
             strength=strength,
             importance=importance,
             emotion_tag=emotion_tag,
@@ -111,6 +113,7 @@ class MemoryService:
         kind: MemoryKind,
         content: str,
         role: str | None = None,
+        session_id: str | None = None,
         strength: MemoryStrength = MemoryStrength.NORMAL,
         importance: int = 5,
         emotion_tag: MemoryEmotion = MemoryEmotion.NEUTRAL,
@@ -123,6 +126,7 @@ class MemoryService:
             kind=kind,
             content=content,
             role=role,
+            session_id=session_id,
             strength=self._adjust_strength_for_personality(kind, strength),
             importance=importance,
             emotion_tag=emotion_tag,
@@ -308,6 +312,7 @@ class MemoryService:
         self,
         user_message: str,
         assistant_response: str,
+        assistant_session_id: str | None = None,
     ) -> list[MemoryEntry]:
         """从对话中自动提取值得记住的信息
 
@@ -395,6 +400,7 @@ class MemoryService:
             kind=MemoryKind.CHAT_RAW,
             content=assistant_response,
             role="assistant",
+            session_id=assistant_session_id,
             strength=MemoryStrength.FAINT,
             importance=2,
         )

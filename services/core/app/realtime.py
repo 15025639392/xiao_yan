@@ -2,6 +2,7 @@ import asyncio
 from concurrent.futures import Future
 from logging import getLogger
 from typing import Any, Callable
+from uuid import uuid4
 
 from fastapi import WebSocket
 
@@ -13,6 +14,8 @@ class AppRealtimeHub:
         self._loop = loop
         self._snapshot_builder = snapshot_builder
         self._connections: set[WebSocket] = set()
+        # 为每个会话维护序列号计数器
+        self._sequence_counters: dict[str, int] = {}
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -40,21 +43,39 @@ class AppRealtimeHub:
     def publish_persona(self) -> None:
         self._schedule_broadcast("persona_updated", lambda snapshot: snapshot["persona"])
 
-    def publish_chat_started(self, assistant_message_id: str, response_id: str | None = None) -> None:
+    def publish_chat_started(
+        self,
+        assistant_message_id: str,
+        response_id: str | None = None,
+        session_id: str | None = None,
+    ) -> None:
+        seq = self._get_next_sequence(session_id or assistant_message_id)
         self._schedule_payload(
             "chat_started",
             {
                 "assistant_message_id": assistant_message_id,
                 "response_id": response_id,
+                "session_id": session_id or assistant_message_id,
+                "sequence": seq,
+                "timestamp_ms": _current_timestamp_ms(),
             },
         )
 
-    def publish_chat_delta(self, assistant_message_id: str, delta: str) -> None:
+    def publish_chat_delta(
+        self,
+        assistant_message_id: str,
+        delta: str,
+        session_id: str | None = None,
+    ) -> None:
+        seq = self._get_next_sequence(session_id or assistant_message_id)
         self._schedule_payload(
             "chat_delta",
             {
                 "assistant_message_id": assistant_message_id,
                 "delta": delta,
+                "session_id": session_id or assistant_message_id,
+                "sequence": seq,
+                "timestamp_ms": _current_timestamp_ms(),
             },
         )
 
@@ -63,22 +84,36 @@ class AppRealtimeHub:
         assistant_message_id: str,
         response_id: str | None,
         content: str,
+        session_id: str | None = None,
     ) -> None:
+        seq = self._get_next_sequence(session_id or assistant_message_id)
         self._schedule_payload(
             "chat_completed",
             {
                 "assistant_message_id": assistant_message_id,
                 "response_id": response_id,
                 "content": content,
+                "session_id": session_id or assistant_message_id,
+                "sequence": seq,
+                "timestamp_ms": _current_timestamp_ms(),
             },
         )
 
-    def publish_chat_failed(self, assistant_message_id: str, error: str) -> None:
+    def publish_chat_failed(
+        self,
+        assistant_message_id: str,
+        error: str,
+        session_id: str | None = None,
+    ) -> None:
+        seq = self._get_next_sequence(session_id or assistant_message_id)
         self._schedule_payload(
             "chat_failed",
             {
                 "assistant_message_id": assistant_message_id,
                 "error": error,
+                "session_id": session_id or assistant_message_id,
+                "sequence": seq,
+                "timestamp_ms": _current_timestamp_ms(),
             },
         )
 
@@ -156,3 +191,16 @@ class AppRealtimeHub:
         exception = future.exception()
         if exception is not None:
             logger.warning("Realtime broadcast failed: %s", exception)
+
+    def _get_next_sequence(self, session_id: str) -> int:
+        """获取指定会话的下一个序列号"""
+        if session_id not in self._sequence_counters:
+            self._sequence_counters[session_id] = 0
+        self._sequence_counters[session_id] += 1
+        return self._sequence_counters[session_id]
+
+
+def _current_timestamp_ms() -> int:
+    """获取当前时间戳（毫秒）"""
+    import time
+    return int(time.time() * 1000)

@@ -130,25 +130,24 @@ def test_realtime_socket_pushes_chat_stream_events():
         app.state.realtime_hub.publish_chat_completed("assistant_1", "resp_1", "你好")
         completed_event = websocket.receive_json()
 
-    assert started_event == {
-        "type": "chat_started",
-        "payload": {
-            "assistant_message_id": "assistant_1",
-            "response_id": "resp_1",
-        },
-    }
-    assert delta_event == {
-        "type": "chat_delta",
-        "payload": {
-            "assistant_message_id": "assistant_1",
-            "delta": "你",
-        },
-    }
-    assert completed_event == {
-        "type": "chat_completed",
-        "payload": {
-            "assistant_message_id": "assistant_1",
-            "response_id": "resp_1",
-            "content": "你好",
-        },
-    }
+    assert started_event["type"] == "chat_started"
+    assert started_event["payload"]["assistant_message_id"] == "assistant_1"
+    assert started_event["payload"]["response_id"] == "resp_1"
+    assert started_event["payload"]["session_id"] == "assistant_1"
+    assert started_event["payload"]["sequence"] == 1
+    assert isinstance(started_event["payload"]["timestamp_ms"], int)
+
+    assert delta_event["type"] == "chat_delta"
+    assert delta_event["payload"]["assistant_message_id"] == "assistant_1"
+    assert delta_event["payload"]["delta"] == "你"
+    assert delta_event["payload"]["session_id"] == "assistant_1"
+    assert delta_event["payload"]["sequence"] == 2
+    assert isinstance(delta_event["payload"]["timestamp_ms"], int)
+
+    assert completed_event["type"] == "chat_completed"
+    assert completed_event["payload"]["assistant_message_id"] == "assistant_1"
+    assert completed_event["payload"]["response_id"] == "resp_1"
+    assert completed_event["payload"]["content"] == "你好"
+    assert completed_event["payload"]["session_id"] == "assistant_1"
+    assert completed_event["payload"]["sequence"] == 3
+    assert isinstance(completed_event["payload"]["timestamp_ms"], int)

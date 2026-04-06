@@ -95,7 +95,14 @@ export default function App() {
       if (event.type === "chat_started") {
         const requestMessage = pendingRequestMessageRef.current ?? undefined;
         setMessages((current) =>
-          upsertAssistantMessage(current, event.payload.assistant_message_id, "", "streaming", requestMessage)
+          upsertAssistantMessage(
+            current,
+            event.payload.assistant_message_id,
+            "",
+            "streaming",
+            requestMessage,
+            event.payload.sequence,
+          )
         );
         pendingRequestMessageRef.current = null;
         setError("");
@@ -104,7 +111,12 @@ export default function App() {
 
       if (event.type === "chat_delta") {
         setMessages((current) => {
-          const updated = appendAssistantDelta(current, event.payload.assistant_message_id, event.payload.delta);
+          const updated = appendAssistantDelta(
+            current,
+            event.payload.assistant_message_id,
+            event.payload.delta,
+            event.payload.sequence,
+          );
           return updated;
         });
         setError("");
@@ -113,7 +125,12 @@ export default function App() {
 
       if (event.type === "chat_completed") {
         setMessages((current) => {
-          const updated = finalizeAssistantMessage(current, event.payload.assistant_message_id, event.payload.content);
+          const updated = finalizeAssistantMessage(
+            current,
+            event.payload.assistant_message_id,
+            event.payload.content,
+            event.payload.sequence,
+          );
           return updated;
         });
         setError("");
@@ -121,7 +138,9 @@ export default function App() {
       }
 
       if (event.type === "chat_failed") {
-        setMessages((current) => markAssistantMessageFailed(current, event.payload.assistant_message_id));
+        setMessages((current) =>
+          markAssistantMessageFailed(current, event.payload.assistant_message_id, event.payload.sequence)
+        );
         setError(event.payload.error);
         return;
       }
@@ -670,30 +689,150 @@ function mergeMessages(
   current: ChatEntry[],
   incoming: ChatHistoryMessage[],
 ): ChatEntry[] {
-  const merged = new Map<string, ChatEntry>();
-
-  for (const message of current) {
-    merged.set(`${message.role}:${message.content}`, message);
-  }
+  const merged = [...current];
+  const matchedIndexes = new Set<number>();
 
   incoming.forEach((message, index) => {
-    const key = `${message.role}:${message.content}`;
-    const existing = merged.get(key);
-    
-    // 如果消息已存在，保留其所有字段（包括 relatedMemories 等）
-    if (existing) {
-      merged.set(key, existing);
-    } else {
-      // 否则创建新消息（只有基本字段）
-      merged.set(key, {
-        id: `${message.role}-${index}-${message.content}`,
+    const incomingMessageId = message.id;
+    const incomingSessionId = message.session_id;
+    const exactMatchIndex =
+      incomingMessageId == null
+        ? -1
+        : merged.findIndex((entry) => entry.id === incomingMessageId);
+    if (exactMatchIndex >= 0 && incomingMessageId != null) {
+      merged[exactMatchIndex] = {
+        ...merged[exactMatchIndex],
+        id: incomingMessageId,
         role: message.role,
         content: message.content,
-      });
+      };
+      matchedIndexes.add(exactMatchIndex);
+      return;
     }
+
+    const sessionMatchIndex = findAssistantSessionMatchIndex(
+      merged,
+      matchedIndexes,
+      message.role,
+      incomingSessionId,
+    );
+    if (sessionMatchIndex >= 0) {
+      merged[sessionMatchIndex] = {
+        ...merged[sessionMatchIndex],
+        role: message.role,
+        content: message.content,
+      };
+      matchedIndexes.add(sessionMatchIndex);
+      return;
+    }
+
+    const fallbackMatchIndex = merged.findIndex(
+      (entry, index) =>
+        !matchedIndexes.has(index) &&
+        entry.role === message.role &&
+        entry.content === message.content,
+    );
+    if (fallbackMatchIndex >= 0) {
+      merged[fallbackMatchIndex] = {
+        ...merged[fallbackMatchIndex],
+        id: incomingMessageId ?? merged[fallbackMatchIndex].id,
+        role: message.role,
+        content: message.content,
+      };
+      matchedIndexes.add(fallbackMatchIndex);
+      return;
+    }
+
+    const previousIncomingUserContent = findPreviousIncomingUserContent(incoming, index);
+    const inFlightMatchIndex = findInFlightAssistantMatchIndex(
+      merged,
+      matchedIndexes,
+      message,
+      previousIncomingUserContent,
+    );
+    if (inFlightMatchIndex >= 0) {
+      merged[inFlightMatchIndex] = {
+        ...merged[inFlightMatchIndex],
+        role: message.role,
+        content: message.content,
+      };
+      matchedIndexes.add(inFlightMatchIndex);
+      return;
+    }
+
+    merged.push({
+      id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
+      role: message.role,
+      content: message.content,
+    });
+    matchedIndexes.add(merged.length - 1);
   });
 
-  return Array.from(merged.values());
+  return merged;
+}
+
+function findAssistantSessionMatchIndex(
+  current: ChatEntry[],
+  matchedIndexes: Set<number>,
+  role: ChatHistoryMessage["role"],
+  sessionId: string | null | undefined,
+): number {
+  if (role !== "assistant" || !sessionId) {
+    return -1;
+  }
+
+  return current.findIndex(
+    (entry, index) =>
+      !matchedIndexes.has(index) &&
+      entry.role === "assistant" &&
+      entry.id === sessionId,
+  );
+}
+
+function findPreviousIncomingUserContent(
+  incoming: ChatHistoryMessage[],
+  currentIndex: number,
+): string | null {
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    if (incoming[index].role === "user") {
+      return incoming[index].content;
+    }
+  }
+
+  return null;
+}
+
+function findInFlightAssistantMatchIndex(
+  current: ChatEntry[],
+  matchedIndexes: Set<number>,
+  incoming: ChatHistoryMessage,
+  previousIncomingUserContent: string | null,
+): number {
+  if (incoming.role !== "assistant") {
+    return -1;
+  }
+
+  for (let index = current.length - 1; index >= 0; index -= 1) {
+    const entry = current[index];
+    if (matchedIndexes.has(index)) {
+      continue;
+    }
+    if (entry.role !== "assistant" || (entry.state !== "streaming" && entry.state !== "failed")) {
+      continue;
+    }
+    if (
+      previousIncomingUserContent != null &&
+      entry.requestMessage != null &&
+      entry.requestMessage === previousIncomingUserContent
+    ) {
+      return index;
+    }
+    if (incoming.content.startsWith(entry.content) || entry.content.startsWith(incoming.content)) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function upsertAssistantMessage(
@@ -702,6 +841,7 @@ function upsertAssistantMessage(
   content: string,
   state?: ChatEntry["state"],
   requestMessage?: string,
+  sequence?: number,
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (existing) {
@@ -712,6 +852,7 @@ function upsertAssistantMessage(
             content: content || message.content,
             state,
             requestMessage: requestMessage ?? message.requestMessage,
+            streamSequence: maxStreamSequence(message.streamSequence, sequence),
           }
         : message
     );
@@ -725,6 +866,7 @@ function upsertAssistantMessage(
       content,
       state,
       requestMessage,
+      streamSequence: sequence,
     },
   ];
 }
@@ -733,24 +875,38 @@ function appendAssistantDelta(
   current: ChatEntry[],
   assistantMessageId: string,
   delta: string,
+  sequence?: number,
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (!existing) {
-    return upsertAssistantMessage(current, assistantMessageId, delta, "streaming");
+    return upsertAssistantMessage(current, assistantMessageId, delta, "streaming", undefined, sequence);
   }
 
+  if (!shouldApplyStreamSequence(existing.streamSequence, sequence)) {
+    return current;
+  }
   return current.map((message) =>
     message.id === assistantMessageId
       ? {
           ...message,
-          content: mergeAssistantStreamContent(message.content, delta),
+          content: mergeAssistantStreamContent(message.content, delta, message.streamSequence, sequence),
           state: "streaming",
+          streamSequence: maxStreamSequence(message.streamSequence, sequence),
         }
       : message
   );
 }
 
-function mergeAssistantStreamContent(currentContent: string, delta: string): string {
+function mergeAssistantStreamContent(
+  currentContent: string,
+  delta: string,
+  currentSequence?: number,
+  incomingSequence?: number,
+): string {
+  if (!shouldApplyStreamSequence(currentSequence, incomingSequence)) {
+    return currentContent;
+  }
+
   if (!currentContent) {
     return delta;
   }
@@ -782,9 +938,14 @@ function finalizeAssistantMessage(
   current: ChatEntry[],
   assistantMessageId: string,
   content: string,
+  sequence?: number,
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (existing) {
+    if (!shouldApplyStreamSequence(existing.streamSequence, sequence)) {
+      return current;
+    }
+
     // 保留消息的所有现有字段（包括 requestMessage 等）
     return current.map((message) =>
       message.id === assistantMessageId
@@ -792,27 +953,33 @@ function finalizeAssistantMessage(
             ...message,
             content: content || message.content,
             state: undefined, // 移除 streaming 状态
+            streamSequence: maxStreamSequence(message.streamSequence, sequence),
           }
         : message
     );
   }
 
   // 如果不存在，创建新消息
-  return upsertAssistantMessage(current, assistantMessageId, content, undefined);
+  return upsertAssistantMessage(current, assistantMessageId, content, undefined, undefined, sequence);
 }
 
 function markAssistantMessageFailed(
   current: ChatEntry[],
   assistantMessageId: string,
+  sequence?: number,
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (!existing) {
-    return upsertAssistantMessage(current, assistantMessageId, "", "failed");
+    return upsertAssistantMessage(current, assistantMessageId, "", "failed", undefined, sequence);
+  }
+
+  if (!shouldApplyStreamSequence(existing.streamSequence, sequence)) {
+    return current;
   }
 
   return current.map((message) =>
     message.id === assistantMessageId
-      ? { ...message, state: "failed" }
+      ? { ...message, state: "failed", streamSequence: maxStreamSequence(message.streamSequence, sequence) }
       : message
   );
 }
@@ -826,6 +993,24 @@ function markAssistantMessageStreaming(
       ? { ...message, state: "streaming" }
       : message
   );
+}
+
+function shouldApplyStreamSequence(currentSequence?: number, incomingSequence?: number): boolean {
+  if (incomingSequence == null || currentSequence == null) {
+    return true;
+  }
+
+  return incomingSequence > currentSequence;
+}
+
+function maxStreamSequence(currentSequence?: number, incomingSequence?: number): number | undefined {
+  if (incomingSequence == null) {
+    return currentSequence;
+  }
+  if (currentSequence == null) {
+    return incomingSequence;
+  }
+  return Math.max(currentSequence, incomingSequence);
 }
 
 // ═════════════════════════════════════════
