@@ -145,7 +145,25 @@ async fn pet_show(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
       win.set_focus().map_err(|e| format!("focus pet: {e}"))?;
     }
     None => {
-      tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::App("pet/index.html".into()))
+      // Resolve absolute path to pet/index.html
+      // Works in both dev mode and production
+      let mut pet_html = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("resource dir: {e}"))?;
+      pet_html.push("pet");
+      pet_html.push("index.html");
+
+      if !pet_html.exists() {
+        return Err(format!("pet page not found at {:?}", pet_html));
+      }
+
+      let url = format!(
+        "file://{}",
+        pet_html.to_string_lossy().replace(' ', "%20").replace('#', "%23")
+      );
+
+      tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::External(url.parse().unwrap()))
         .title("INTP 小紫人")
         .inner_size(280.0, 380.0)
         .decorations(false)
