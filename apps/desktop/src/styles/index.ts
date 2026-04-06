@@ -21,7 +21,7 @@ import "./variables.css";
 import "./base.css";
 import "./layout.css";
 import "./components.css";
-import "./chat.css";
+import "./chat/index.css";
 import "./overview.css";
 import "./modal.css";
 import "./self-programming.css";
