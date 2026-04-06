@@ -24,7 +24,7 @@ npm run tauri:build
 
 ## Icons
 
-Tauri reads icon assets from `apps/desktop/src-tauri/icons`. The high-resolution base is `icon.png`; we regenerate platform-specific files (ICNS, ICO, PNG, Android, iOS, etc.) with `npx tauri icon src-tauri/icons/icon.png`. Keep `bundle.icon` in `src-tauri/tauri.conf.json` pointing at the generated `icons/icon.png`, `icons/icon.ico`, and `icons/icon.icns` so each platform picks up the right source. Rerun the CLI whenever the base artwork changes.
+The current mascot is a stylized “咕咕嘎嘎” duck. Tauri reads icon assets from `apps/desktop/src-tauri/icons`, where the high-resolution base is `icon.png` (the duck illustration). Regenerate every platform-specific file (ICNS, ICO, PNG, Android, iOS, etc.) by running `npx tauri icon src-tauri/icons/icon.png`, then keep `bundle.icon` in `src-tauri/tauri.conf.json` pointed at `icons/icon.png`, `icons/icon.ico`, and `icons/icon.icns`. Rerun the CLI whenever you update the duck art so all targets stay in sync.
 
 ## Getting Absolute Folder Paths (Recommended Pattern)
 
