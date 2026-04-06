@@ -5,6 +5,8 @@ import {
   fetchTaskExecutionStats,
   fetchActiveTaskExecutions,
 } from "../lib/api";
+import { EmptyState } from "./ui/EmptyState";
+import { Panel } from "./ui/Panel";
 
 type GoalsPanelProps = {
   goals: Goal[];
@@ -111,15 +113,11 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
   }
 
   return (
-    <section className="panel">
-      <div className="panel__header">
-        <div className="panel__title-group">
-          <div className="panel__icon">🎯</div>
-          <div>
-            <h2 className="panel__title">目标看板</h2>
-            <p className="panel__subtitle">管理和追踪所有目标</p>
-          </div>
-        </div>
+    <Panel
+      icon="🎯"
+      title="目标看板"
+      subtitle="管理和追踪所有目标"
+      actions={
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <button
             className="btn btn--secondary btn--sm"
@@ -129,13 +127,10 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
           >
             {showExecutionPanel ? "📊 隐藏统计" : "📊 执行统计"}
           </button>
-          <span className="status-badge status-badge--awake">
-            {goals.length} 个目标
-          </span>
+          <span className="status-badge status-badge--awake">{goals.length} 个目标</span>
         </div>
-      </div>
-
-      <div className="panel__content">
+      }
+    >
         {/* 任务执行统计面板 */}
         {showExecutionPanel && executionStats ? (
           <section style={{ marginBottom: "var(--space-5)" }}>
@@ -168,9 +163,9 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
         ) : null}
 
         {goals.length === 0 ? (
-          <div className="empty-state empty-state--small">
+          <EmptyState size="small">
             <p>还没有目标。</p>
-          </div>
+          </EmptyState>
         ) : null}
 
         {chainedGroups.length > 0 ? (
@@ -228,9 +223,9 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
                   {!isCollapsed && (
                     <>
                       {column.goals.length === 0 ? (
-                        <div className="empty-state empty-state--small">
+                        <EmptyState size="small">
                           <p style={{ fontSize: "0.8125rem" }}>{column.description}</p>
-                        </div>
+                        </EmptyState>
                       ) : (
                         <ul className="goal-list">
                           {column.goals.map((goal) => (
@@ -277,9 +272,9 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
                 {!isCollapsed && (
                   <>
                     {closedColumn.goals.length === 0 ? (
-                      <div className="empty-state empty-state--small">
+                      <EmptyState size="small">
                         <p style={{ fontSize: "0.8125rem" }}>{closedColumn.description}</p>
-                      </div>
+                      </EmptyState>
                     ) : (
                       <ul className="goal-list goal-list--horizontal">
                         {closedColumn.goals.map((goal) => (
@@ -302,7 +297,6 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
             );
           })()}
         </section>
-      </div>
 
       {/* Confirmation Modal */}
       {confirmModal.isOpen && (
@@ -335,7 +329,7 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
           </div>
         </div>
       )}
-    </section>
+    </Panel>
   );
 }
 
