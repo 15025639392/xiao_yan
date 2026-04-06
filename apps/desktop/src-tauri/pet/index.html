@@ -4,347 +4,397 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>INTP 小紫人</title>
-<script src="avatar_data.js"></script>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; overflow: hidden; }
 
   body {
-    background: #1a1625;
+    font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    background:
+      radial-gradient(110% 80% at 50% 8%, rgba(124, 58, 237, 0.28), transparent 60%),
+      radial-gradient(60% 45% at 15% 90%, rgba(59, 130, 246, 0.16), transparent 72%),
+      linear-gradient(160deg, #070811 0%, #0c1021 48%, #090b16 100%);
+    color: #e7defe;
     user-select: none;
     -webkit-user-select: none;
-    cursor: grab;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
-    -webkit-font-smoothing: antialiased;
   }
-  body:active { cursor: grabbing; }
 
-  /* ===== Pet Container ===== */
-  .pet {
+  .stage {
     position: relative;
     width: 100%;
     height: 100%;
+    display: grid;
+    place-items: center;
+    cursor: grab;
+  }
+  .stage:active { cursor: grabbing; }
+
+  .stage__grain {
+    position: absolute;
+    inset: 0;
+    opacity: 0.06;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+    background-size: 34px 34px;
+    pointer-events: none;
+  }
+
+  .pet {
+    position: relative;
+    width: min(80vw, 230px);
+    aspect-ratio: 1 / 1.1;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  /* ===== Avatar ===== */
+  .pet__halo {
+    position: absolute;
+    inset: 15% 7% 10% 7%;
+    border-radius: 36px;
+    background: radial-gradient(70% 70% at 50% 38%, rgba(167, 139, 250, 0.3), rgba(29, 19, 53, 0.28) 70%, transparent 100%);
+    filter: blur(12px);
+    animation: halo-breathe 4s ease-in-out infinite;
+  }
+
   .pet__avatar {
     position: relative;
-    width: min(78vw, 220px);
-    height: auto;
-    aspect-ratio: 0.94;
-    animation: breathe 3s ease-in-out infinite;
-    filter: drop-shadow(0 6px 24px rgba(124,58,237,0.35));
-    transition: filter 0.4s ease, transform 0.2s ease;
-    border-radius: 20px;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 28px;
+    background: linear-gradient(180deg, rgba(20, 23, 42, 0.74), rgba(10, 12, 25, 0.88));
     overflow: hidden;
-    background: #1a1625;
+    box-shadow:
+      0 24px 60px rgba(5, 7, 16, 0.56),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    animation: breathe 3.2s ease-in-out infinite;
+    transition: transform 0.18s ease, box-shadow 0.25s ease;
+    cursor: pointer;
   }
-
   .pet__avatar:hover {
-    filter: drop-shadow(0 8px 36px rgba(124,58,237,0.5));
+    box-shadow:
+      0 28px 70px rgba(5, 7, 16, 0.66),
+      0 0 28px rgba(167, 139, 250, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
-
-  .pet__avatar img { width: 100%; height: 100%; display: block; pointer-events: none; object-fit: cover; }
-
-  .pet__avatar--bounce { animation: bounce 0.45s cubic-bezier(.34,1.56,.64,1); }
-
-  @keyframes breathe {
-    0%, 100% { transform: scale(1) translateY(0); }
-    50%      { transform: scale(1.03) translateY(-4px); }
+  .pet__avatar img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center center;
+    pointer-events: none;
+    filter: saturate(1.06) contrast(1.06);
   }
-  @keyframes bounce {
-    0%   { transform: scale(1); }
-    30%  { transform: scale(0.88); }
-    60%  { transform: scale(1.06); }
-    100% { transform: scale(1); }
-  }
+  .pet__avatar--bounce { animation: click-bounce 0.45s cubic-bezier(.22, 1.2, .39, 1); }
 
-  /* ===== Blink overlay ===== */
-  .pet__blink {
-    position: absolute; top: 26%; left: 18%;
-    width: 64%; height: 13%;
-    z-index: 5; pointer-events: none;
-    border-radius: 50%;
-    background: transparent;
-    transition: background 0.06s linear;
+  .pet__eyelids {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
   }
-  .pet__blink.active { background: #fde8e8; }
-
-  /* ===== Status text ===== */
-  .pet__status {
-    position: absolute; bottom: 10px;
-    left: 50%; transform: translateX(-50%);
-    padding: 3px 14px;
-    font-size: 11px; color: #c4b5fd;
-    background: rgba(167,139,250,0.08);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(167,139,250,0.15);
-    border-radius: 20px; white-space: nowrap;
-    opacity: 0.65;
-    transition: opacity 0.4s;
+  .pet__eyelids::before,
+  .pet__eyelids::after {
+    content: "";
+    position: absolute;
+    left: 19%;
+    width: 62%;
+    height: 7%;
+    background: rgba(255, 235, 248, 0.86);
+    border-radius: 999px;
+    transform: scaleY(0);
+    transform-origin: center;
+    transition: transform 90ms linear;
   }
-  .pet__status--visible { opacity: 1; animation: pulse-text 4s ease-in-out infinite; }
+  .pet__eyelids::before { top: 28%; }
+  .pet__eyelids::after { top: 34%; }
+  .pet__eyelids.active::before,
+  .pet__eyelids.active::after { transform: scaleY(1); }
 
-  @keyframes pulse-text {
-    0%, 16%, 84%, 100% { opacity: 0.55; }
-    42%, 62%           { opacity: 1;   }
-  }
-
-  /* ===== Bubble ===== */
   .pet__bubble {
     position: absolute;
-    top: -72px; left: 50%; transform: translateX(-50%) scale(0.7) translateY(12px);
-    background: #fff; color: #333;
-    padding: 10px 18px;
-    border-radius: 18px;
-    font-size: 13px; line-height: 1.55;
-    max-width: 230px; min-width: 120px;
+    top: -72px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px) scale(0.78);
+    max-width: 240px;
+    min-width: 132px;
+    padding: 11px 14px;
     text-align: center;
-    box-shadow: 0 6px 28px rgba(0,0,0,0.14);
-    opacity: 0; visibility: hidden;
-    transition: all 0.32s cubic-bezier(.22,1,.36,1);
-    z-index: 20;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #f3ebff;
+    background: rgba(17, 21, 43, 0.9);
+    border: 1px solid rgba(196, 181, 253, 0.3);
+    border-radius: 16px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 12px 30px rgba(3, 5, 14, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.25s ease;
+    pointer-events: none;
   }
   .pet__bubble::after {
-    content: ''; position: absolute;
-    bottom: -9px; left: 50%;
-    margin-left: -9px;
-    border-left: 9px solid transparent;
-    border-right: 9px solid transparent;
-    border-top: 9px solid #fff;
+    content: "";
+    position: absolute;
+    left: calc(50% - 8px);
+    bottom: -8px;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid rgba(17, 21, 43, 0.9);
   }
   .pet__bubble.show {
-    opacity: 1; visibility: visible;
-    transform: translateX(-50%) scale(1) translateY(0);
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0) scale(1);
   }
 
-  /* ===== Context Menu ===== */
-  .pet__menu {
+  .pet__hint {
     position: absolute;
-    bottom: 0; right: 0;
-    transform-origin: bottom right;
-    background: rgba(30,27,40,0.94);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-radius: 14px;
-    padding: 5px 0;
-    min-width: 160px;
-    box-shadow: 0 10px 38px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.08);
-    opacity: 0; visibility: hidden;
-    transition: all 0.18s ease;
-    z-index: 50;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 12px;
+    font-size: 11px;
+    color: rgba(224, 214, 255, 0.9);
+    border-radius: 999px;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+    background: rgba(13, 16, 35, 0.68);
+    white-space: nowrap;
+    letter-spacing: 0.02em;
   }
-  .pet__menu.open { opacity: 1; visibility: visible; }
 
-  .pet__menu-item {
-    padding: 9px 18px; font-size: 13px; color: #d8cee8;
-    cursor: pointer; display: flex; gap: 10px; align-items: center;
-    transition: all 0.12s;
+  .pet__spark {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    pointer-events: none;
+    opacity: 0.9;
+    animation: spark 540ms ease-out forwards;
   }
-  .pet__menu-item:hover { background: rgba(167,139,250,0.2); color: #fff; }
 
-  .pet__menu-sep { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0; }
-
-  /* ===== Particles ===== */
-  .pet__particle {
-    position: absolute; border-radius: 50%; pointer-events: none;
-    opacity: 0; animation: particle-float 2s ease-out forwards;
+  @keyframes breathe {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-4px) scale(1.02); }
   }
-  @keyframes particle-float {
-    0%   { opacity: 0.85; transform: translateY(0) scale(1); }
-    100% { opacity: 0;     transform: translateY(-90px) scale(0.25); }
+  @keyframes halo-breathe {
+    0%, 100% { opacity: 0.64; transform: scale(1); }
+    50% { opacity: 0.92; transform: scale(1.03); }
+  }
+  @keyframes click-bounce {
+    0% { transform: scale(1); }
+    36% { transform: scale(0.9); }
+    64% { transform: scale(1.07); }
+    100% { transform: scale(1); }
+  }
+  @keyframes spark {
+    from { transform: translate(0, 0) scale(1); opacity: 0.9; }
+    to { transform: translate(var(--dx), var(--dy)) scale(0.2); opacity: 0; }
   }
 </style>
 </head>
-
 <body>
-<div class="pet" id="petEl">
-  <div class="pet__bubble" id="bubbleEl"></div>
+  <main class="stage" id="stageEl">
+    <div class="stage__grain" aria-hidden="true"></div>
+    <section class="pet" id="petEl">
+      <div class="pet__halo" aria-hidden="true"></div>
+      <div class="pet__bubble" id="bubbleEl"></div>
+      <button class="pet__avatar" id="avatarEl" type="button" aria-label="INTP 小紫人">
+        <img id="imgEl" alt="INTP 小紫人" src="./avatar.png">
+        <div class="pet__eyelids" id="blinkEl" aria-hidden="true"></div>
+      </button>
+      <div class="pet__hint" id="statusEl">拖拽移动 · 单击弹跳 · 双击说话</div>
+    </section>
+  </main>
 
-  <div class="pet__avatar" id="avatarEl">
-    <img id="imgEl" alt="INTP 小紫人"/>
-    <div class="pet__blink" id="blinkEl"></div>
-  </div>
+<script>
+const stage = document.getElementById("stageEl");
+const pet = document.getElementById("petEl");
+const avatar = document.getElementById("avatarEl");
+const img = document.getElementById("imgEl");
+const blink = document.getElementById("blinkEl");
+const bubble = document.getElementById("bubbleEl");
+const status = document.getElementById("statusEl");
 
-  <div class="pet__status pet__status--visible" id="statusEl">正在思考...</div>
-
-  <nav class="pet__menu" id="menuEl" role="menu">
-    <div class="pet__menu-item" data-action="chat" role="menuitem">💬 和我说话</div>
-    <div class="pet__menu-item" data-action="main" role="menuitem">🏠 打开主界面</div>
-    <div class="pet__menu-sep"/>
-    <div class="pet__menu-item" data-action="top" role="menuitem">📌 切换置顶</div>
-    <div class="pet__menu-item" data-action="size" role="menuitem">🔍 切换大小</div>
-    <div class="pet__menu-sep"/>
-    <div class="pet__menu-item" data-action="hide" role="menuitem">✨ 隐藏</div>
-  </nav>
-</div>
-
-<script type="module">
-import { AVATAR_DATA_URI } from './avatar_data.js';
-
-/* ---- DOM refs ---- */
-const img = document.getElementById('imgEl');
-const avatar = document.getElementById('avatarEl');
-const blink = document.getElementById('blinkEl');
-const status = document.getElementById('statusEl');
-const bubble = document.getElementById('bubbleEl');
-const menu = document.getElementById('menuEl');
-const pet = document.getElementById('petEl');
-
-/* ---- Load avatar ---- */
-img.src = AVATAR_DATA_URI;
-
-/* ---- State ---- */
-let dragging = false, dragStart = null;
-let sizeMode = 'normal';
-let bubbleTimer;
-
-/* ---- Phrases ---- */
-const PHRASES = [
-  "在想有趣的事情...", "今天天气不错呢", "要不要聊聊天？",
-  "我在观察这个世界~", "嗯...这个想法不错", "你今天过得好吗？",
-  "让我想想...", "有点困了...", "在思考人生的意义",
-  "想听个冷笑话吗？", "代码写好了吗？", "我在这里陪你呀",
+const idlePhrases = [
+  "今晚继续思考世界模型。",
+  "我在这儿，随时待命。",
+  "你写代码，我盯细节。",
+  "保持冷静，继续推进。"
 ];
 
-/* ---- Init ---- */
-function init() { idleLoop(); drag(); click(); contextMenu(); tauriBridge(); }
+const speakPhrases = [
+  "我是 INTP 小紫人，开始同步。",
+  "我在，继续说你的想法。",
+  "收到，正在分析下一步。",
+  "问题越复杂，我越兴奋。"
+];
 
-/* ---- Idle animations ---- */
-function idleLoop() {
-  // Blink schedule
-  function nextBlink() {
-    const delay = 2600 + Math.random() * 4200;
-    setTimeout(() => { doBlink(); nextBlink(); }, delay);
-  }
-  nextBlink();
+let bubbleTimer = 0;
+let clickTimer = 0;
+let dragState = null;
+let suppressClick = false;
+let winApiPromise = null;
 
-  // Rotating status
-  function nextStatus() {
-    const p = PHRASES[Math.random() * PHRASES.length | 0];
-    status.textContent = p;
-  }
-  nextStatus();
-  setInterval(nextStatus, 5500 + Math.random() * 4500);
+startBlinkLoop();
+startIdleLoop();
+bindDrag();
+bindInteractions();
+bindTauriEvents();
+
+img.addEventListener("error", () => {
+  status.textContent = "头像加载失败";
+});
+
+function startBlinkLoop() {
+  const run = () => {
+    const wait = 1800 + Math.random() * 3200;
+    setTimeout(() => {
+      blink.classList.add("active");
+      setTimeout(() => blink.classList.remove("active"), 110);
+      run();
+    }, wait);
+  };
+  run();
 }
 
-function doBlink() {
-  blink.classList.add('active');
-  setTimeout(() => blink.classList.remove('active'), 110);
+function startIdleLoop() {
+  const refresh = () => {
+    status.textContent = idlePhrases[Math.floor(Math.random() * idlePhrases.length)];
+  };
+  refresh();
+  setInterval(refresh, 6000);
 }
 
-/* ---- Drag ---- */
-function drag() {
-  pet.addEventListener('mousedown', e => {
-    if (e.target.closest('.pet__menu') || e.button !== 0) return;
-    dragging = true;
-    dragStart = e;
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', async e => {
-    if (!dragging || !dragStart) return;
-    const dx = e.clientX - dragStart.clientX, dy = e.clientY - dragStart.clientY;
-    dragStart = e;
-    try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      const w = getCurrentWindow(), pos = await w.outerPosition();
-      await w.setPosition({ x: pos.x + dx, y: pos.y + dy });
-    } catch {}
-  });
-  document.addEventListener('mouseup', () => { dragging = false; dragStart = null; });
-}
-
-/* ---- Click ---- */
-function click() {
-  let lastT = 0;
-  avatar.addEventListener('click', e => {
-    e.stopPropagation();
-    const now = Date.now();
-    if (now - lastT < 320) {
-      showBubble(PHRASES[Math.random() * PHRASES.length | 0]);
-      particles(e.offsetX, e.offsetY);
-    } else {
-      avatar.classList.add('pet__avatar--bounce');
-      setTimeout(() => avatar.classList.remove('pet__avatar--bounce'), 450);
+function bindInteractions() {
+  avatar.addEventListener("click", (event) => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
     }
-    lastT = now;
+    clearTimeout(clickTimer);
+    clickTimer = setTimeout(() => {
+      avatar.classList.add("pet__avatar--bounce");
+      burstSparks(event.clientX, event.clientY, false);
+      setTimeout(() => avatar.classList.remove("pet__avatar--bounce"), 450);
+    }, 220);
+  });
+
+  avatar.addEventListener("dblclick", (event) => {
+    clearTimeout(clickTimer);
+    const text = speakPhrases[Math.floor(Math.random() * speakPhrases.length)];
+    showBubble(text, 3200);
+    status.textContent = "双击已触发：正在说话";
+    burstSparks(event.clientX, event.clientY, true);
+    speak(text);
   });
 }
 
-function showBubble(text) {
+function showBubble(text, durationMs) {
   bubble.textContent = text;
-  bubble.classList.add('show');
+  bubble.classList.add("show");
   clearTimeout(bubbleTimer);
-  bubbleTimer = setTimeout(() => bubble.classList.remove('show'), 3000);
+  bubbleTimer = setTimeout(() => bubble.classList.remove("show"), durationMs);
 }
 
-function particles(x, y) {
-  const colors = ['#A78BFA','#C4B5FD','#DDD6FE','#FDE68A','#FBCFE8'];
-  for (let i = 0; i < 7; i++) {
-    const d = document.createElement('div');
-    d.className = 'pet__particle';
-    const s = 4 + Math.random() * 8;
-    Object.assign(d.style, { width:s+'px',height:s+'px',
-      background:colors[Math.random()*colors.length|0],
-      left:x+(Math.random()-0.5)*44+'px',top:y+(Math.random()-0.5)*44+'px' });
-    pet.appendChild(d);
-    setTimeout(()=>d.remove(),2100);
+function speak(text) {
+  if (!("speechSynthesis" in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "zh-CN";
+    utterance.rate = 1.02;
+    utterance.pitch = 1.08;
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    // ignore speech failures in unsupported webview runtimes
   }
 }
 
-/* ---- Context menu ---- */
-function contextMenu() {
-  menu.addEventListener('click', async e => {
-    const item = e.target.closest('.pet__menu-item');
-    if (!item) return;
-    closeMenu();
-    const action = item.dataset.action;
+function burstSparks(clientX, clientY, rich) {
+  const rect = pet.getBoundingClientRect();
+  const originX = Math.min(Math.max(clientX - rect.left, 36), rect.width - 36);
+  const originY = Math.min(Math.max(clientY - rect.top, 36), rect.height - 36);
+  const colors = rich
+    ? ["#f5d0fe", "#c4b5fd", "#93c5fd", "#f9a8d4"]
+    : ["#c4b5fd", "#93c5fd", "#a5b4fc"];
+  const total = rich ? 9 : 6;
+
+  for (let index = 0; index < total; index += 1) {
+    const dot = document.createElement("span");
+    dot.className = "pet__spark";
+    dot.style.left = `${originX}px`;
+    dot.style.top = `${originY}px`;
+    dot.style.background = colors[index % colors.length];
+    dot.style.setProperty("--dx", `${(Math.random() - 0.5) * 64}px`);
+    dot.style.setProperty("--dy", `${-22 - Math.random() * 54}px`);
+    pet.appendChild(dot);
+    setTimeout(() => dot.remove(), 560);
+  }
+}
+
+function bindDrag() {
+  stage.addEventListener("pointerdown", async (event) => {
+    if (event.button !== 0) return;
+    const inAvatar = event.target.closest("#avatarEl");
+    if (inAvatar) return;
+    suppressClick = true;
+
     try {
-      const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      const win = getCurrentWindow();
-      switch (action) {
-        case 'chat': showBubble("去主界面找我聊天吧～"); break;
-        case 'main': {
-          const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-          try { const mw = await WebviewWindow.getByLabel('main'); if(mw){await mw.show();await mw.setFocus();} } catch{}
-          break;
-        }
-        case 'top': await win.setAlwaysOnTop(!await win.isAlwaysOnTop()); break;
-        case 'size': {
-          sizeMode = sizeMode === 'normal' ? 'large' : 'normal';
-          const sz = sizeMode === 'large' ? {w:380,h:480} : {w:280,h:380};
-          await win.setSize(sz);
-          break;
-        }
-        case 'hide': await win.hide(); break;
-      }
-    } catch(err){ console.error('[Pet]', err); }
+      const win = await getCurrentWindowApi();
+      await win.startDragging();
+      return;
+    } catch {
+      dragState = { x: event.clientX, y: event.clientY };
+    }
   });
 
-  pet.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(); });
-  document.addEventListener('mousedown', e => { if(!e.target.closest('.pet__menu')) closeMenu(); });
-}
-function openMenu(){ menu.classList.add('open'); }
-function closeMenu(){ menu.classList.remove('open'); }
+  window.addEventListener("pointermove", async (event) => {
+    if (!dragState) return;
+    try {
+      const win = await getCurrentWindowApi();
+      const pos = await win.outerPosition();
+      const dx = event.clientX - dragState.x;
+      const dy = event.clientY - dragState.y;
+      dragState = { x: event.clientX, y: event.clientY };
+      await win.setPosition({ x: pos.x + dx, y: pos.y + dy });
+    } catch {
+      dragState = null;
+    }
+  });
 
-/* ---- Tauri bridge ---- */
-async function tauriBridge() {
+  window.addEventListener("pointerup", () => {
+    dragState = null;
+  });
+}
+
+async function getCurrentWindowApi() {
+  if (!winApiPromise) {
+    winApiPromise = import("@tauri-apps/api/window").then((module) => module.getCurrentWindow());
+  }
+  return winApiPromise;
+}
+
+async function bindTauriEvents() {
   try {
-    const { listen } = await import('@tauri-apps/api/event');
-    await listen('pet-message', ev => {
-      if(ev.payload?.text) showBubble(ev.payload.text);
-      if(ev.payload?.action==='blink') doBlink();
+    const { listen } = await import("@tauri-apps/api/event");
+    await listen("pet-message", (event) => {
+      const payload = event.payload || {};
+      if (typeof payload.text === "string" && payload.text.trim()) {
+        showBubble(payload.text.trim(), 3200);
+      }
+      if (payload.action === "blink") {
+        blink.classList.add("active");
+        setTimeout(() => blink.classList.remove("active"), 110);
+      }
     });
-  } catch {}
+  } catch {
+    // ignore when not running in tauri runtime
+  }
 }
-
-/* Go */
-init();
 </script>
 </body>
 </html>

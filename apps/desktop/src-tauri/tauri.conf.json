@@ -28,7 +28,8 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "pet/**/*"
+      "pet/**/*",
+      "icons/icon.png"
     ],
     "icon": [
       "icons/icon.png",
