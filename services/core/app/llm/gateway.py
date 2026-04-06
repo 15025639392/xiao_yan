@@ -6,6 +6,12 @@ from typing import Optional, List, Dict
 import httpx
 
 from app.config import load_local_env
+from app.llm.gateway_events import (
+    extract_error_message as _extract_error_message,
+    extract_output_text as _extract_output_text,
+    extract_response_id as _extract_response_id,
+    iter_sse_events as _iter_sse_events,
+)
 from app.llm.schemas import ChatMessage, ChatResult
 
 
@@ -149,71 +155,6 @@ class ChatGateway:
 
 
 GatewayResponse = ChatResult
-
-
-def _extract_output_text(data: dict) -> str:
-    if data.get("output_text"):
-        return data["output_text"]
-
-    for item in data.get("output", []):
-        if item.get("type") != "message":
-            continue
-
-        for content in item.get("content", []):
-            if content.get("type") not in {"output_text", "text"}:
-                continue
-
-            text = content.get("text")
-            if text:
-                return text
-
-    raise ValueError("response payload did not contain output text")
-
-
-def _extract_response_id(data: dict) -> str | None:
-    if isinstance(data.get("response"), dict):
-        response_id = data["response"].get("id")
-        if response_id:
-            return response_id
-    response_id = data.get("id")
-    if isinstance(response_id, str):
-        return response_id
-    return None
-
-
-def _extract_error_message(data: dict) -> str:
-    if isinstance(data.get("error"), dict):
-        message = data["error"].get("message")
-        if message:
-            return str(message)
-    message = data.get("message")
-    if message:
-        return str(message)
-    return "streaming failed"
-
-
-def _iter_sse_events(lines) -> Generator[tuple[str | None, str], None, None]:
-    event_name: str | None = None
-    data_lines: list[str] = []
-
-    for raw_line in lines:
-        line = raw_line.strip()
-        if not line:
-            if data_lines:
-                yield event_name, "\n".join(data_lines)
-            event_name = None
-            data_lines = []
-            continue
-
-        if line.startswith("event:"):
-            event_name = line.removeprefix("event:").strip()
-            continue
-
-        if line.startswith("data:"):
-            data_lines.append(line.removeprefix("data:").strip())
-
-    if data_lines:
-        yield event_name, "\n".join(data_lines)
 
 
 class EnhancedChatGateway:

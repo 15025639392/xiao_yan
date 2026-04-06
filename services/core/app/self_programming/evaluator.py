@@ -3,6 +3,11 @@ from datetime import datetime, timedelta
 from app.domain.models import BeingState, FocusMode, WakeMode
 from app.memory.models import MemoryEvent
 from app.self_programming.models import SelfProgrammingCandidate, SelfProgrammingTrigger
+from app.self_programming.evaluator_rules import (
+    build_hard_failure_spec as _build_hard_failure_spec,
+    default_test_commands as _default_test_commands,
+    infer_target_area as _infer_target_area,
+)
 
 
 class SelfProgrammingEvaluator:
@@ -72,25 +77,3 @@ class SelfProgrammingEvaluator:
             test_commands=_default_test_commands("agent"),
             created_at=now,
         )
-
-
-def _infer_target_area(reason: str) -> str:
-    if "前端" in reason or "状态面板" in reason or "UI" in reason:
-        return "ui"
-    if "计划" in reason:
-        return "planning"
-    return "agent"
-
-
-def _build_hard_failure_spec(reason: str) -> str:
-    return f"修复当前硬故障：{reason}"
-
-
-def _default_test_commands(target_area: str) -> list[str]:
-    if target_area == "ui":
-        return [
-            "npm test -- --run src/App.test.tsx src/components/StatusPanel.test.tsx",
-        ]
-    if target_area == "planning":
-        return ["pytest tests/test_morning_plan_planner.py -q"]
-    return ["pytest tests/test_autonomy_loop.py -q"]
