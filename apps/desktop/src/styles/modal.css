@@ -54,14 +54,6 @@
   line-height: 1.6;
 }
 
-.modal__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-top: 1px solid var(--border-subtle);
-}
-
 /* Small modal for about dialog */
 .modal--sm {
   width: min(320px, calc(100% - var(--space-8)));

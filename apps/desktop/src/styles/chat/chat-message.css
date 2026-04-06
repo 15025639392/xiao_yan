@@ -119,29 +119,6 @@
   background: var(--bg-surface-overlay);
 }
 
-.emotion-badge__emoji {
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.emotion-badge__label {
-  font-weight: 500;
-}
-
-.emotion-badge__intensity {
-  opacity: 0.7;
-  font-size: 0.6875rem;
-}
-
-.emotion-badge__divider {
-  opacity: 0.5;
-  margin-left: var(--space-1);
-}
-
-.emotion-badge__secondary {
-  opacity: 0.8;
-}
-
 /* Memory Context */
 .chat-message__memory-context {
   margin-top: var(--space-2);

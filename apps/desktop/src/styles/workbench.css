@@ -593,19 +593,6 @@
   line-height: 1.5;
 }
 
-/* ── Personality Slider Layout ───────────────── */
-.personality-sliders {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-}
-
-.personality-slider {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
 /* ── 风格选项 ── */
 .style-options {
   display: flex;
@@ -636,39 +623,7 @@
   font-weight: 500;
 }
 
-/* ── 骨架屏 ── */
-.workbench-panel__skeleton {
-  width: 100%;
-  max-width: 600px;
-  padding: var(--space-4);
-}
 
-.workbench-skeleton-header {
-  height: 24px;
-  background: var(--bg-surface-overlay);
-  border-radius: var(--radius-md);
-  margin-bottom: var(--space-4);
-  animation: workbench-skeleton-pulse 1.5s infinite;
-}
-
-.workbench-skeleton-body {
-  height: 200px;
-  background: var(--bg-surface-overlay);
-  border-radius: var(--radius-lg);
-  animation: workbench-skeleton-pulse 1.5s infinite 0.2s;
-}
-
-@keyframes workbench-skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
-}
-
-/* ── 按钮样式扩展 ── */
-.btn--ghost {
-  background: transparent;
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
-}
 
 .btn--ghost:hover {
   background: var(--bg-surface-elevated);

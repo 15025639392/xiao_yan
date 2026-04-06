@@ -27,12 +27,6 @@
   font-weight: 500;
 }
 
-.emotion-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
 .emotion-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -54,102 +48,6 @@
   border: 1px solid var(--border-default);
 }
 
-.emotion-icon--primary {
-  font-size: 1.5rem;
-}
-
-.emotion-icon--secondary {
-  font-size: 1.25rem;
-  opacity: 0.8;
-}
-
-/* 任务执行面板样式 */
-
-.task-execution-panel {
-  padding: var(--space-4);
-  background: var(--bg-surface-elevated);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-default);
-}
-
-.execution-stat-card {
-  padding: var(--space-3);
-  background: var(--bg-surface);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-default);
-}
-
-.execution-stat-card__label {
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
-  margin-bottom: var(--space-1);
-}
-
-.execution-stat-card__value {
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.execution-card {
-  padding: var(--space-3);
-  background: var(--bg-surface-elevated);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-default);
-  margin-bottom: var(--space-2);
-}
-
-.execution-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-2);
-}
-
-.execution-card__progress-bar {
-  height: 4px;
-  background: var(--bg-surface);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-  margin-bottom: var(--space-2);
-}
-
-.execution-card__progress-fill {
-  height: 100%;
-  background: var(--info);
-  border-radius: var(--radius-full);
-  transition: width 300ms ease;
-}
-
-.execution-card__progress-fill.completed {
-  background: var(--success);
-}
-
-.execution-card__progress-fill.failed {
-  background: var(--danger);
-}
-
-.execution-card__footer {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
-}
-
-/* 进度条动画 */
-
-@keyframes progress-glow {
-  0%, 100% {
-    box-shadow: 0 0 5px rgba(59, 130, 246, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
-  }
-}
-
-.execution-card__progress-fill.active {
-  animation: progress-glow 2s ease-in-out infinite;
-}
-
 /* 目标卡片增强样式 */
 
 .goal-card__decompose-btn {
@@ -168,36 +66,10 @@
 
 .goal-card__decompose-btn:hover {
   background: var(--bg-surface);
-  border-color: var(--border-hover);
   color: var(--text-primary);
 }
 
 .goal-card__decompose-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.goal-card__complexity {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.goal-card__complexity--simple {
-  background: var(--success-muted);
-  color: var(--success);
-}
-
-.goal-card__complexity--moderate {
-  background: var(--warning-muted);
-  color: var(--warning);
-}
-
-.goal-card__complexity--complex {
-  background: var(--danger-muted);
-  color: var(--danger);
 }
