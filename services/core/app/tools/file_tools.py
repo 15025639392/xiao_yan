@@ -13,127 +13,23 @@ File Tools — 安全文件操作工具集
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from dataclasses import dataclass, field
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.tools.file_tools_mime import guess_mime_type
+from app.tools.file_tools_models import (
+    DirectoryEntry,
+    DirectoryListResult,
+    FileReadResult,
+    FileWriteResult,
+    SearchResult,
+)
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class FileReadResult:
-    """文件读取结果。"""
-    path: str
-    content: str
-    size_bytes: int
-    encoding: str = "utf-8"
-    line_count: int = 0
-    truncated: bool = False
-    error: str | None = None
-    mime_type: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
-            "path": str(self.path),
-            "size_bytes": self.size_bytes,
-            "encoding": self.encoding,
-            "line_count": self.line_count,
-            "truncated": self.truncated,
-        }
-        if self.error:
-            d["error"] = self.error
-        if self.mime_type:
-            d["mime_type"] = self.mime_type
-        return d
-
-
-@dataclass
-class FileWriteResult:
-    """文件写入结果。"""
-    path: str
-    success: bool
-    bytes_written: int = 0
-    backup_path: str | None = None
-    error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
-            "path": str(self.path),
-            "success": self.success,
-            "bytes_written": self.bytes_written,
-        }
-        if self.backup_path:
-            d["backup_path"] = self.backup_path
-        if self.error:
-            d["error"] = self.error
-        return d
-
-
-@dataclass
-class DirectoryEntry:
-    """目录条目。"""
-    name: str
-    path: str
-    type: str  # file / dir / symlink / other
-    size_bytes: int = 0
-    modified_at: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "path": str(self.path),
-            "type": self.type,
-            "size_bytes": self.size_bytes,
-            "modified_at": self.modified_at,
-        }
-
-
-@dataclass
-class DirectoryListResult:
-    """目录列表结果。"""
-    path: str
-    entries: list[DirectoryEntry] = field(default_factory=list)
-    total_files: int = 0
-    total_dirs: int = 0
-    error: str | None = None
-    truncated: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
-            "path": str(self.path),
-            "entries": [e.to_dict() for e in self.entries],
-            "total_files": self.total_files,
-            "total_dirs": self.total_dirs,
-            "truncated": self.truncated,
-        }
-        if self.error:
-            d["error"] = self.error
-        return d
-
-
-@dataclass
-class SearchResult:
-    """文件搜索结果。"""
-    query: str
-    matches: list[dict[str, Any]] = field(default_factory=list)
-    total_matches: int = 0
-    search_duration_seconds: float = 0.0
-    error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
-            "query": self.query,
-            "matches": self.matches[:100],  # 最多返回 100 条详情
-            "total_matches": self.total_matches,
-            "search_duration_seconds": round(self.search_duration_seconds, 3),
-        }
-        if self.error:
-            d["error"] = self.error
-        return d
 
 
 # ── 工具类 ──────────────────────────────────────────────
@@ -499,31 +395,4 @@ class FileTools:
 
     @staticmethod
     def _guess_mime_type(path: Path) -> str:
-        """简单猜测 MIME 类型（不依赖 python-magic）。"""
-        ext_map = {
-            ".py": "text/x-python",
-            ".js": "text/javascript",
-            ".ts": "text/typescript",
-            ".tsx": "text/typescript-jsx",
-            ".jsx": "text/javascript-jsx",
-            ".json": "application/json",
-            ".md": "text/markdown",
-            ".html": "text/html",
-            ".css": "text/css",
-            ".yaml": "text/yaml",
-            ".yml": "text/yml",
-            ".toml": "text/toml",
-            ".xml": "text/xml",
-            ".csv": "text/csv",
-            ".txt": "text/plain",
-            ".log": "text/plain",
-            ".sh": "text/x-shellscript",
-            ".sql": "text/x-sql",
-            ".env": "text/x-env",
-            ".lock": "text/x-json",
-        }
-        return ext_map.get(path.suffix.lower(), "application/octet-stream")
-
-
-# 导入 re（用于 search_content 方法中的正则匹配）
-import re
+        return guess_mime_type(path)
