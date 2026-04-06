@@ -238,6 +238,19 @@ def get_chat_context_limit() -> int:
     return 6  # 默认值
 
 
+def get_chat_read_timeout_seconds() -> int:
+    """获取聊天 read 超时时间（秒）。用于流式输出：只要持续有输出，read 超时会自动刷新。"""
+    load_local_env()
+    configured = os.getenv("CHAT_READ_TIMEOUT_SECONDS", "").strip()
+    if configured:
+        try:
+            value = int(configured)
+            return max(10, min(600, value))
+        except ValueError:
+            pass
+    return 180
+
+
 def get_chat_model() -> str:
     """获取聊天默认模型。"""
     load_local_env()

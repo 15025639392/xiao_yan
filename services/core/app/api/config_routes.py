@@ -23,12 +23,14 @@ class ConfigUpdateRequest(BaseModel):
     chat_context_limit: int | None = Field(default=None, ge=1, le=20, description="聊天上下文相关事件数量限制（1-20）")
     chat_provider: str | None = Field(default=None, min_length=1, description="聊天服务商标识，例如 openai/minimaxi")
     chat_model: str | None = Field(default=None, min_length=1, description="聊天模型名称，例如 gpt-5.4")
+    chat_read_timeout_seconds: int | None = Field(default=None, ge=10, le=600, description="聊天 read 超时（秒），默认 180")
 
 
 class ConfigResponse(BaseModel):
     chat_context_limit: int
     chat_provider: str
     chat_model: str
+    chat_read_timeout_seconds: int
 
 
 class ChatModelProviderItem(BaseModel):
@@ -59,11 +61,17 @@ def build_config_router() -> APIRouter:
             chat_context_limit=config.chat_context_limit,
             chat_provider=config.chat_provider,
             chat_model=config.chat_model,
+            chat_read_timeout_seconds=config.chat_read_timeout_seconds,
         )
 
     @router.put("/config")
     def update_config(request: ConfigUpdateRequest) -> ConfigResponse:
-        if request.chat_context_limit is None and request.chat_provider is None and request.chat_model is None:
+        if (
+            request.chat_context_limit is None
+            and request.chat_provider is None
+            and request.chat_model is None
+            and request.chat_read_timeout_seconds is None
+        ):
             raise HTTPException(status_code=400, detail="at least one config field is required")
 
         config = get_runtime_config()
@@ -72,6 +80,8 @@ def build_config_router() -> APIRouter:
 
         if request.chat_context_limit is not None:
             config.chat_context_limit = request.chat_context_limit
+        if request.chat_read_timeout_seconds is not None:
+            config.chat_read_timeout_seconds = request.chat_read_timeout_seconds
         if request.chat_provider is not None:
             chat_provider = request.chat_provider.strip().lower()
             if not chat_provider:
@@ -93,6 +103,7 @@ def build_config_router() -> APIRouter:
             chat_context_limit=config.chat_context_limit,
             chat_provider=next_provider,
             chat_model=config.chat_model,
+            chat_read_timeout_seconds=config.chat_read_timeout_seconds,
         )
 
     @router.get("/config/chat-models")

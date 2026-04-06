@@ -26,9 +26,7 @@ class ChatGateway:
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.wire_api = wire_api
-        # MiniMax / ChatCompletions often has slower time-to-first-token for long prompts.
-        # Use a more tolerant default timeout unless the caller provides a client.
-        self._http_client = http_client or httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0))
+        self._http_client = http_client or httpx.Client(timeout=httpx.Timeout(180.0, connect=10.0))
 
     @classmethod
     def from_env(cls) -> "ChatGateway":

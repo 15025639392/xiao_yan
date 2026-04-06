@@ -33,11 +33,13 @@ def test_get_config_returns_context_limit_provider_and_chat_model():
     original_limit = config.chat_context_limit
     original_provider = config.chat_provider
     original_model = config.chat_model
+    original_timeout = config.chat_read_timeout_seconds
 
     try:
         config.chat_context_limit = 7
         config.chat_provider = "minimaxi"
         config.chat_model = "gpt-5.4-mini"
+        config.chat_read_timeout_seconds = 240
         client = TestClient(app)
         response = client.get("/config")
         assert response.status_code == 200
@@ -45,11 +47,13 @@ def test_get_config_returns_context_limit_provider_and_chat_model():
             "chat_context_limit": 7,
             "chat_provider": "minimaxi",
             "chat_model": "gpt-5.4-mini",
+            "chat_read_timeout_seconds": 240,
         }
     finally:
         config.chat_context_limit = original_limit
         config.chat_provider = original_provider
         config.chat_model = original_model
+        config.chat_read_timeout_seconds = original_timeout
 
 
 def test_update_config_supports_provider_and_model_patch(monkeypatch):
@@ -57,6 +61,7 @@ def test_update_config_supports_provider_and_model_patch(monkeypatch):
     original_limit = config.chat_context_limit
     original_provider = config.chat_provider
     original_model = config.chat_model
+    original_timeout = config.chat_read_timeout_seconds
 
     monkeypatch.setattr(config_routes, "get_llm_provider_configs", _provider_catalog)
 
@@ -68,18 +73,20 @@ def test_update_config_supports_provider_and_model_patch(monkeypatch):
         client = TestClient(app)
         response = client.put(
             "/config",
-            json={"chat_provider": "minimaxi", "chat_model": "MiniMax-M2.7"},
+            json={"chat_provider": "minimaxi", "chat_model": "MiniMax-M2.7", "chat_read_timeout_seconds": 200},
         )
         assert response.status_code == 200
         assert response.json() == {
             "chat_context_limit": 6,
             "chat_provider": "minimaxi",
             "chat_model": "MiniMax-M2.7",
+            "chat_read_timeout_seconds": 200,
         }
     finally:
         config.chat_context_limit = original_limit
         config.chat_provider = original_provider
         config.chat_model = original_model
+        config.chat_read_timeout_seconds = original_timeout
 
 
 def test_update_config_rejects_empty_patch():
@@ -93,6 +100,7 @@ def test_update_config_switch_provider_without_model_uses_provider_default(monke
     config = get_runtime_config()
     original_provider = config.chat_provider
     original_model = config.chat_model
+    original_timeout = config.chat_read_timeout_seconds
 
     monkeypatch.setattr(config_routes, "get_llm_provider_configs", _provider_catalog)
 
@@ -106,10 +114,12 @@ def test_update_config_switch_provider_without_model_uses_provider_default(monke
             "chat_context_limit": config.chat_context_limit,
             "chat_provider": "minimaxi",
             "chat_model": "MiniMax-M2.7",
+            "chat_read_timeout_seconds": config.chat_read_timeout_seconds,
         }
     finally:
         config.chat_provider = original_provider
         config.chat_model = original_model
+        config.chat_read_timeout_seconds = original_timeout
 
 
 def test_get_chat_models_returns_multi_provider_catalog_and_partial_errors(monkeypatch):

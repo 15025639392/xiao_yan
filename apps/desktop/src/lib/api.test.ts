@@ -96,6 +96,7 @@ describe("persona api methods", () => {
           chat_context_limit: 6,
           chat_provider: "openai",
           chat_model: "gpt-5.4-mini",
+          chat_read_timeout_seconds: 180,
           providers: [
             {
               provider_id: "openai",

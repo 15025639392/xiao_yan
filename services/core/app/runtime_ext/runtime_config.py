@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import Lock
 from typing import ClassVar, Literal
 
-from app.config import get_chat_context_limit, get_chat_model, get_chat_provider
+from app.config import get_chat_context_limit, get_chat_model, get_chat_provider, get_chat_read_timeout_seconds
 
 FolderAccessLevel = Literal["read_only", "full_access"]
 
@@ -21,6 +21,7 @@ class RuntimeConfig:
         instance._chat_context_limit = get_chat_context_limit()
         instance._chat_provider = get_chat_provider()
         instance._chat_model = get_chat_model()
+        instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
         instance._folder_permissions = {}
         return instance
 
@@ -35,6 +36,8 @@ class RuntimeConfig:
                 instance._chat_provider = get_chat_provider()
             if not hasattr(instance, "_chat_model"):
                 instance._chat_model = get_chat_model()
+            if not hasattr(instance, "_chat_read_timeout_seconds"):
+                instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
             if not hasattr(instance, "_folder_permissions") or not isinstance(instance._folder_permissions, dict):
                 instance._folder_permissions = {}
 
@@ -81,6 +84,16 @@ class RuntimeConfig:
             return
         with self._lock:
             self._chat_model = normalized
+
+    @property
+    def chat_read_timeout_seconds(self) -> int:
+        with self._lock:
+            return self._chat_read_timeout_seconds
+
+    @chat_read_timeout_seconds.setter
+    def chat_read_timeout_seconds(self, value: int) -> None:
+        with self._lock:
+            self._chat_read_timeout_seconds = max(10, min(600, int(value)))
 
     def list_folder_permissions(self) -> list[tuple[str, FolderAccessLevel]]:
         with self._lock:

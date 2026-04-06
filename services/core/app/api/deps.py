@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
+import httpx
 from fastapi import Request
 
 from app.config import get_chat_provider, get_llm_provider_configs
@@ -48,7 +49,12 @@ def get_chat_gateway() -> Generator[ChatGateway, None, None]:
         runtime_config.chat_provider = selected_provider.provider_id
         runtime_config.chat_model = selected_provider.default_model
 
-    gateway = ChatGateway.from_provider_config(selected_provider, model=runtime_config.chat_model)
+    http_client = httpx.Client(timeout=httpx.Timeout(runtime_config.chat_read_timeout_seconds, connect=10.0))
+    gateway = ChatGateway.from_provider_config(
+        selected_provider,
+        model=runtime_config.chat_model,
+        http_client=http_client,
+    )
     try:
         yield gateway
     finally:
