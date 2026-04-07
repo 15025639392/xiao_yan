@@ -87,9 +87,10 @@ test("renders relationship context above the chat input when available", async (
   await waitFor(() => {
     expect(screen.getByText("当前相处语境")).toBeInTheDocument();
   });
-  expect(screen.getByText("先直接说判断，不用绕弯")).toBeInTheDocument();
-  expect(screen.getByText("答应你先说风险再给建议")).toBeInTheDocument();
-  expect(screen.getByText("喜欢先听理由再做决定")).toBeInTheDocument();
+  expect(screen.getByText("本次回应原则")).toBeInTheDocument();
+  expect(screen.getAllByText("先直接说判断，不用绕弯").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText("答应你先说风险再给建议").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText("喜欢先听理由再做决定").length).toBeGreaterThanOrEqual(2);
 });
 
 test("updates relationship context from realtime memory events", async () => {
@@ -159,7 +160,7 @@ test("updates relationship context from realtime memory events", async () => {
   });
 
   await waitFor(() => {
-    expect(screen.getByText("如果我判断错了，希望你直接纠正我")).toBeInTheDocument();
+    expect(screen.getAllByText("如果我判断错了，希望你直接纠正我").length).toBeGreaterThanOrEqual(2);
   });
 });
 
