@@ -19,6 +19,7 @@ from app.persona.models import (
     EmotionalState,
     EmotionType,
     PersonaProfile,
+    default_value_foundation,
     default_persona,
 )
 from app.persona.emotion_engine import EmotionEngine
@@ -92,12 +93,13 @@ class PersonaService:
     def profile(self) -> PersonaProfile:
         """获取当前人格档案，自动加载或使用默认值"""
         if self._profile is not None:
+            self._profile = self._ensure_value_foundation(self._profile)
             return self._profile
         if self.repository is not None:
             loaded = self.repository.load()
             if loaded is not None:
-                self._profile = loaded
-                return loaded
+                self._profile = self._ensure_value_foundation(loaded)
+                return self._profile
         # 使用默认人格
         self._profile = default_persona()
         if self.repository is not None:
@@ -288,3 +290,30 @@ class PersonaService:
     def _notify_change(self) -> None:
         if self._on_change is not None:
             self._on_change()
+
+    def _ensure_value_foundation(self, profile: PersonaProfile) -> PersonaProfile:
+        if profile.values.core_values and profile.values.boundaries:
+            return profile
+
+        foundation = default_value_foundation()
+        merged = profile.model_copy(
+            update={
+                "values": profile.values.model_copy(
+                    update={
+                        "core_values": (
+                            profile.values.core_values
+                            if profile.values.core_values
+                            else foundation.core_values
+                        ),
+                        "boundaries": (
+                            profile.values.boundaries
+                            if profile.values.boundaries
+                            else foundation.boundaries
+                        ),
+                    }
+                ),
+                "version": profile.version + 1,
+            }
+        )
+        self._save_silent(merged)
+        return merged
