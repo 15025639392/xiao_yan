@@ -58,6 +58,13 @@ def test_realtime_socket_sends_initial_snapshot():
     memory_repository.save_event(MemoryEvent(kind="chat", role="user", content="你好"))
     memory_repository.save_event(MemoryEvent(kind="chat", role="assistant", content="你好，我在。"))
     memory_repository.save_event(MemoryEvent(kind="autobio", content="我刚整理过记忆。"))
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="fact",
+            content="用户边界：你别催我，我希望先自己想一想再决定",
+            source_context="value_signal:boundary",
+        )
+    )
 
     client = TestClient(app)
     with client.websocket_connect("/ws/app") as websocket:
@@ -68,7 +75,12 @@ def test_realtime_socket_sends_initial_snapshot():
     assert message["payload"]["runtime"]["messages"][0]["content"] == "你好"
     assert message["payload"]["runtime"]["goals"][0]["title"] == "整理今天的记忆"
     assert message["payload"]["runtime"]["autobio"][0] == "我刚整理过记忆。"
-    assert message["payload"]["memory"]["timeline"][0]["content"] == "我刚整理过记忆。"
+    assert any(
+        item["content"] == "我刚整理过记忆。"
+        for item in message["payload"]["memory"]["timeline"]
+    )
+    assert message["payload"]["memory"]["relationship"]["available"] is True
+    assert any("别催我" in item for item in message["payload"]["memory"]["relationship"]["boundaries"])
     assert message["payload"]["persona"]["profile"]["name"] == persona_service.profile.name
 
 
@@ -101,6 +113,16 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
         runtime_event_after_memory = websocket.receive_json()
         memory_event = websocket.receive_json()
 
+        memory_repository.save_event(
+            MemoryEvent(
+                kind="fact",
+                content="承诺/计划：答应你明天提醒你复盘",
+                source_context="value_signal:commitment",
+            )
+        )
+        websocket.receive_json()
+        memory_event_with_relationship = websocket.receive_json()
+
         persona_service.update_personality(openness=81)
         persona_event = websocket.receive_json()
 
@@ -110,6 +132,11 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
     assert runtime_event_after_memory["payload"]["messages"][0]["content"] == "新的记忆"
     assert memory_event["type"] == "memory_updated"
     assert memory_event["payload"]["timeline"][0]["content"] == "新的记忆"
+    assert memory_event_with_relationship["type"] == "memory_updated"
+    assert any(
+        "提醒你复盘" in item
+        for item in memory_event_with_relationship["payload"]["relationship"]["commitments"]
+    )
     assert persona_event["type"] == "persona_updated"
     assert persona_event["payload"]["profile"]["personality"]["openness"] == 81
 

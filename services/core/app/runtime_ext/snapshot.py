@@ -174,6 +174,7 @@ def build_memory_payload(target_app: FastAPI) -> dict[str, Any]:
     memory_service = target_app.state.memory_service
     return {
         "summary": memory_service.get_memory_summary(),
+        "relationship": memory_service.get_relationship_summary(),
         "timeline": memory_service.get_memory_timeline(limit=40),
     }
 
@@ -192,4 +193,3 @@ def build_app_snapshot(target_app: FastAPI) -> dict[str, Any]:
         "memory": build_memory_payload(target_app),
         "persona": build_persona_payload(target_app),
     }
-
