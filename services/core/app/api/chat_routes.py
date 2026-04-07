@@ -526,6 +526,7 @@ def build_chat_router() -> APIRouter:
         memory_context = memory_service.build_memory_prompt_context(
             user_message=request_body.message,
             max_chars=600,
+            persona_values=persona_service.profile.values,
         )
 
         current_emotion = persona_service.profile.emotion
@@ -593,6 +594,7 @@ def build_chat_router() -> APIRouter:
         memory_context = memory_service.build_memory_prompt_context(
             user_message=request_body.message,
             max_chars=600,
+            persona_values=persona_service.profile.values,
         )
         current_emotion = persona_service.profile.emotion
         style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)

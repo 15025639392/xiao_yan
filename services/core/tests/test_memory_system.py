@@ -24,7 +24,7 @@ from app.memory.models import (
 )
 from app.memory.repository import InMemoryMemoryRepository, MemoryRepository
 from app.memory.service import MemoryService
-from app.persona.models import PersonalityDimensions
+from app.persona.models import PersonalityDimensions, default_value_foundation
 
 
 # ═══════════════════════════════════════════════════
@@ -478,6 +478,23 @@ class TestPromptIntegration:
         ctx = service.build_memory_prompt_context(user_message="Python 怎么写 API")
         # 应该搜索并找到相关的 Python 记忆
         assert "Python" in ctx or len(ctx) > 0 or ctx == ""
+
+    def test_context_highlights_relationship_continuity(self, service_with_data):
+        service, repo = service_with_data
+        service.create(MemoryKind.FACT, "用户不喜欢被催促，希望先自己想一想", importance=9)
+        service.create(MemoryKind.FACT, "我答应明天提醒用户复盘", importance=8)
+        service.create(MemoryKind.FACT, "用户喜欢先看方案再做决定", importance=7)
+        service.create(MemoryKind.FACT, "昨天聊到一半转去看电影了", importance=3)
+
+        ctx = service.build_memory_prompt_context(
+            user_message="你最近怎么样",
+            persona_values=default_value_foundation(),
+        )
+
+        assert "关系连续性" in ctx
+        assert "尊重" in ctx
+        assert "不喜欢被催促" in ctx
+        assert "答应明天提醒用户复盘" in ctx
 
     def test_summary_stats(self, service_with_data):
         service, repo = service_with_data
