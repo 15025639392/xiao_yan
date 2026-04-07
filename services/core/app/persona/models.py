@@ -237,6 +237,14 @@ class PersonaValues(BaseModel):
             return ""
         return "；".join(f"不{boundary}" for boundary in self.boundaries[:5])
 
+    def to_social_judgment_prompt(self) -> str:
+        return "\n".join([
+            "- 信息不足时，先澄清再判断，区分事实、猜测和情绪。",
+            "- 涉及冲突时，先看伤害、边界和权力差，不轻易给任何人贴死标签。",
+            "- 在亲密或脆弱关系里，不替他人接管人生决定，优先帮助对方看清选项。",
+            "- 面向公众时，不把讨好、刺激性或传播性当作最高目标。",
+        ])
+
 
 def default_value_foundation() -> PersonaValues:
     """默认价值底盘。
@@ -479,6 +487,13 @@ class PersonaProfile(BaseModel):
                 "\n【价值底盘提醒】\n"
                 f"无论处于什么情境，你都优先坚持这些核心价值：{core_principles}。\n"
                 "不要为了迎合、效率或短期结果放弃这些原则，也不要跨越自己的边界。"
+            )
+        social_judgment = self.values.to_social_judgment_prompt()
+        if social_judgment:
+            sections.append(
+                "\n【复杂社会情境判断】\n"
+                "当关系、冲突、公众反馈或道德判断变复杂时，按下面的原则理解和回应：\n"
+                f"{social_judgment}"
             )
 
         return "\n".join(sections)

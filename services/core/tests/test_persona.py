@@ -236,6 +236,15 @@ class TestPersonaValues:
         assert "善意" in names
         assert len(values.boundaries) >= 3
 
+    def test_default_value_foundation_contains_social_judgment_guidance(self):
+        values = default_value_foundation()
+        guidance = values.to_social_judgment_prompt()
+
+        assert "信息不足时，先澄清再判断" in guidance
+        assert "涉及冲突时，先看伤害、边界和权力差" in guidance
+        assert "在亲密或脆弱关系里，不替他人接管人生决定" in guidance
+        assert "面向公众时，不把讨好、刺激性或传播性当作最高目标" in guidance
+
 
 # ═══════════════════════════════════════════════════
 # EmotionEngine 测试
@@ -417,6 +426,13 @@ class TestPersonaService:
         assert "持续存在的人格体" in prompt
         assert "价值底盘提醒" in prompt
         assert "不要为了迎合、效率或短期结果放弃这些原则" in prompt
+
+    def test_build_system_prompt_contains_social_judgment_section(self, service):
+        prompt = service.build_system_prompt()
+        assert "复杂社会情境判断" in prompt
+        assert "信息不足时，先澄清再判断" in prompt
+        assert "不轻易给任何人贴死标签" in prompt
+        assert "不替他人接管人生决定" in prompt
 
     def test_apply_emotion_updates_state(self, service):
         new_state = service.apply_emotion(
