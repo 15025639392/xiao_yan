@@ -223,6 +223,25 @@ export type GoalsResponse = {
   goals: Goal[];
 };
 
+export type GoalAdmissionThresholds = {
+  user_topic: { min_score: number; defer_score: number };
+  world_event: { min_score: number; defer_score: number };
+  chain_next: { min_score: number; defer_score: number };
+};
+
+export type GoalAdmissionStats = {
+  mode: "off" | "shadow" | "enforce";
+  today: {
+    admit: number;
+    defer: number;
+    drop: number;
+    wip_blocked: number;
+  };
+  deferred_queue_size: number;
+  wip_limit: number;
+  thresholds: GoalAdmissionThresholds;
+};
+
 export type AutobioResponse = {
   entries: string[];
 };
@@ -321,6 +340,10 @@ export function fetchMessages(): Promise<ChatHistoryResponse> {
 
 export function fetchGoals(): Promise<GoalsResponse> {
   return get<GoalsResponse>("/goals");
+}
+
+export function fetchGoalAdmissionStats(): Promise<GoalAdmissionStats> {
+  return get<GoalAdmissionStats>("/goals/admission/stats");
 }
 
 export function fetchWorld(): Promise<InnerWorldState> {

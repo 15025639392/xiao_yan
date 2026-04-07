@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 
-const { fetchMemorySummary } = vi.hoisted(() => ({
+const { fetchMemorySummary, fetchGoalAdmissionStats } = vi.hoisted(() => ({
   fetchMemorySummary: vi.fn(),
+  fetchGoalAdmissionStats: vi.fn(),
 }));
 
 const { subscribeAppRealtime } = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ vi.mock("../lib/api", async () => {
   return {
     ...actual,
     fetchMemorySummary,
+    fetchGoalAdmissionStats,
   };
 });
 
@@ -25,8 +27,10 @@ import { GoalsPanel } from "./GoalsPanel";
 
 beforeEach(() => {
   fetchMemorySummary.mockReset();
+  fetchGoalAdmissionStats.mockReset();
   subscribeAppRealtime.mockReset();
   fetchMemorySummary.mockReturnValue(new Promise(() => {}));
+  fetchGoalAdmissionStats.mockReturnValue(new Promise(() => {}));
   subscribeAppRealtime.mockReturnValue(() => {});
 });
 
@@ -429,4 +433,49 @@ test("renders per-goal relationship hints inside goal cards", async () => {
   expect(alignedGoal).not.toBeNull();
   expect(within(alignedGoal as HTMLElement).getByText("承接承诺")).toBeInTheDocument();
   expect(within(alignedGoal as HTMLElement).getByText("贴合偏好")).toBeInTheDocument();
+});
+
+test("renders goal admission overview when admission stats are available", async () => {
+  fetchGoalAdmissionStats.mockResolvedValue({
+    mode: "shadow",
+    today: {
+      admit: 8,
+      defer: 3,
+      drop: 2,
+      wip_blocked: 1,
+    },
+    deferred_queue_size: 2,
+    wip_limit: 2,
+    thresholds: {
+      user_topic: { min_score: 0.68, defer_score: 0.45 },
+      world_event: { min_score: 0.75, defer_score: 0.52 },
+      chain_next: { min_score: 0.62, defer_score: 0.45 },
+    },
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "先比较方案并整理利弊分析",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText("目标准入守门")).toBeInTheDocument();
+  });
+  const admissionSection = screen.getByLabelText("目标准入守门");
+  expect(screen.getByText("shadow 模式：当前先观测建议，不直接拦截目标落地。")).toBeInTheDocument();
+  expect(screen.getByText("今日通过")).toBeInTheDocument();
+  expect(within(admissionSection).getByText("8")).toBeInTheDocument();
+  expect(screen.getByText("延后队列")).toBeInTheDocument();
+  expect(within(admissionSection).getAllByText("2").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText("用户话题 ≥ 0.68 直接通过，≥ 0.45 进入延后观察。")).toBeInTheDocument();
+  expect(screen.getByText("当前并行上限 2 个目标，今天已有 1 次因 WIP 满载被延后。")).toBeInTheDocument();
 });

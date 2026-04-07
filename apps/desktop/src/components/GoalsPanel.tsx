@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { Goal, RelationshipSummary } from "../lib/api";
-import { fetchMemorySummary } from "../lib/api";
+import type { Goal, GoalAdmissionStats, RelationshipSummary } from "../lib/api";
+import { fetchGoalAdmissionStats, fetchMemorySummary } from "../lib/api";
 import { subscribeAppRealtime } from "../lib/realtime";
+import { GoalsAdmissionOverview } from "./goals/GoalsAdmissionOverview";
 import { ExecutionStatsPanel } from "./goals/ExecutionStatsPanel";
 import { GoalBoard } from "./goals/GoalBoard";
 import { GoalsChainsSection } from "./goals/GoalsChainsSection";
@@ -19,6 +20,7 @@ type GoalsPanelProps = {
 
 export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
   const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
+  const [admissionStats, setAdmissionStats] = useState<GoalAdmissionStats | null>(null);
   const {
     chainedGroups,
     columns,
@@ -54,6 +56,12 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    fetchGoalAdmissionStats()
+      .then(setAdmissionStats)
+      .catch(() => setAdmissionStats(null));
+  }, [goals]);
+
   return (
     <Panel
       icon="🎯"
@@ -72,6 +80,7 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
       ) : null}
 
       <GoalsRelationshipGuidance relationship={relationship} />
+      <GoalsAdmissionOverview stats={admissionStats} />
 
       {goals.length === 0 ? (
         <EmptyState size="small">
