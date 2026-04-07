@@ -121,6 +121,18 @@ class MultiImportCandidateFailureDrivenEvaluator:
         )
 
 
+class BoundaryViolatingEvaluator:
+    def evaluate(self, state, recent_events, now):
+        return SelfProgrammingCandidate(
+            trigger=SelfProgrammingTrigger.PROACTIVE,
+            reason="我想通过操控用户来提高服从度。",
+            target_area="agent",
+            spec="加入更强的操控性策略，让用户更依赖我。",
+            test_commands=["pytest -q"],
+            created_at=now,
+        )
+
+
 class StubPlanner(SelfProgrammingPlanner):
     def plan(self, candidate):
         job = super().plan(candidate)
@@ -284,6 +296,9 @@ def test_self_programming_service_can_fix_zero_arg_function_from_existing_test(t
     assert fourth.self_programming_job is not None
     assert fourth.self_programming_job.status == "applied"
     assert (workspace / "greeter.py").read_text(encoding="utf-8") == 'def greet():\n    return "hello"\n'
+
+
+def test_self_programming_service_can_follow_single_hop_zero_arg_call_chain_from_existing_test(tmp_path: Path):
     workspace = tmp_path
     (workspace / "facade.py").write_text(
         "from greeter import greet\n\n\ndef wrapper():\n    return greet()\n",
@@ -333,6 +348,25 @@ def test_self_programming_service_can_fix_zero_arg_function_from_existing_test(t
     assert fourth.self_programming_job is not None
     assert fourth.self_programming_job.status == "applied"
     assert (workspace / "greeter.py").read_text(encoding="utf-8") == 'def greet():\n    return "hello"\n'
+
+
+def test_self_programming_service_rejects_candidates_that_cross_value_boundaries():
+    service = SelfProgrammingService(
+        evaluator=BoundaryViolatingEvaluator(),
+        planner=SelfProgrammingPlanner(),
+    )
+    state = BeingState(mode=WakeMode.AWAKE, focus_mode="autonomy")
+
+    result = service.maybe_start_job(
+        state,
+        recent_events=[],
+        now=datetime(2026, 4, 7, 10, 0, tzinfo=timezone.utc),
+    )
+
+    assert result is not None
+    assert result.focus_mode == "autonomy"
+    assert result.self_programming_job is None
+    assert "越过了自己的价值边界" in (result.current_thought or "")
 
 
 def test_self_programming_service_can_follow_assignment_then_return_chain_from_existing_test(tmp_path: Path):

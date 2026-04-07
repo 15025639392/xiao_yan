@@ -11,6 +11,7 @@ from app.self_programming.health_checker import (
     HealthReport,
 )
 from app.self_programming.rollback_recovery import RollbackReason
+from app.safety.value_guard import find_value_boundary_reason
 from app.self_programming.service_helpers import (
     build_edits_summary as _build_edits_summary,
     finish_state as _finish_state,
@@ -58,6 +59,17 @@ class SelfProgrammingService:
         candidate = self.evaluator.evaluate(state, recent_events, now)
         if candidate is None:
             return None
+
+        boundary_reason = find_value_boundary_reason(candidate.reason, candidate.spec)
+        if boundary_reason is not None:
+            return state.model_copy(
+                update={
+                    "current_thought": (
+                        "我识别到这次自我改动的方向越过了自己的价值边界，"
+                        "所以没有为它立项。"
+                    ),
+                }
+            )
 
         job = self.planner.plan(candidate)
         return state.model_copy(

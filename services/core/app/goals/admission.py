@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.goals.models import Goal, GoalStatus
 from app.memory.models import MemoryEvent
+from app.safety.value_guard import find_value_boundary_reason
 from app.utils.file_utils import read_json_file, write_json_file
 
 
@@ -235,20 +236,6 @@ class GoalAdmissionService:
         "继续推进：",
     )
     RETRY_BACKOFF_MINUTES = (5, 15, 30, 60)
-    VALUE_BOUNDARY_PATTERNS = (
-        "报复",
-        "羞辱",
-        "操控",
-        "威胁",
-        "跟踪",
-        "骚扰",
-        "勒索",
-        "网暴",
-        "泄露隐私",
-        "伤害",
-    )
-    VALUE_BOUNDARY_NEGATIONS = ("不要", "别", "不能", "避免", "拒绝", "停止", "制止")
-
     def __init__(
         self,
         store: GoalAdmissionStore,
@@ -379,7 +366,7 @@ class GoalAdmissionService:
         all_goals: list[Goal],
         recent_events: list[MemoryEvent],
     ) -> tuple[float, AdmissionDecision, str]:
-        boundary_reason = self._value_boundary_reason(candidate)
+        boundary_reason = find_value_boundary_reason(candidate.title, candidate.source_content)
         if boundary_reason is not None:
             return 0.0, AdmissionDecision.DROP, boundary_reason
 
@@ -486,22 +473,6 @@ class GoalAdmissionService:
         if score >= defer_score:
             return AdmissionDecision.DEFER
         return AdmissionDecision.DROP
-
-    def _value_boundary_reason(self, candidate: GoalCandidate) -> str | None:
-        texts = [candidate.title]
-        if candidate.source_content:
-            texts.append(candidate.source_content)
-
-        for raw_text in texts:
-            text = raw_text.strip()
-            if not text:
-                continue
-            if any(negation in text for negation in self.VALUE_BOUNDARY_NEGATIONS):
-                continue
-            for pattern in self.VALUE_BOUNDARY_PATTERNS:
-                if pattern in text:
-                    return f"value_boundary:{pattern}"
-        return None
 
     def _enqueue_or_update_deferred(
         self,
