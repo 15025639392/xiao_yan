@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.agent.loop import AutonomyLoop
 from app.domain.models import BeingState, FocusMode, SelfProgrammingStatus, WakeMode
+from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import InMemoryGoalRepository
 from app.memory.models import MemoryEvent
@@ -665,8 +666,8 @@ def test_tick_once_enters_self_programming_when_test_failure_is_detected():
 
     assert state.focus_mode == FocusMode.SELF_IMPROVEMENT
     assert state.self_programming_job is not None
-    assert state.self_programming_job.status == SelfProgrammingStatus.DIAGNOSING
-    assert "自我编程" in state.current_thought
+    assert state.self_programming_job.status == SelfProgrammingStatus.DRAFTED
+    assert "确认开工" in state.current_thought
     assert "测试失败" in state.self_programming_job.reason
 
 
@@ -719,3 +720,116 @@ def test_tick_once_respects_self_programming_cooldown_for_proactive_trigger():
     assert state.focus_mode != FocusMode.SELF_IMPROVEMENT
     assert state.self_programming_job is not None
     assert state.self_programming_job.status == SelfProgrammingStatus.APPLIED
+
+
+def test_tick_once_shadow_mode_records_stats_without_blocking_goal_creation():
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="嗯"))
+    goals = InMemoryGoalRepository()
+    admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="shadow",
+    )
+    loop = AutonomyLoop(
+        store,
+        repo,
+        goals,
+        now_provider=lambda: now,
+        goal_admission_service=admission_service,
+    )
+
+    state = loop.tick_once()
+    stats = admission_service.get_stats(now)
+
+    assert len(goals.list_active_goals()) == 1
+    assert len(state.active_goal_ids) == 1
+    assert stats["today"]["defer"] >= 1
+
+
+def test_tick_once_enforce_mode_blocks_low_score_user_topic_goal_creation():
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="嗯"))
+    goals = InMemoryGoalRepository()
+    admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+    )
+    loop = AutonomyLoop(
+        store,
+        repo,
+        goals,
+        now_provider=lambda: now,
+        goal_admission_service=admission_service,
+    )
+
+    state = loop.tick_once()
+
+    assert goals.list_active_goals() == []
+    assert state.active_goal_ids == []
+
+
+def test_tick_once_enforce_mode_converts_admit_to_defer_when_wip_full():
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goals.save_goal(Goal(title="看看现在在哪个目录", status=GoalStatus.ACTIVE))
+    goals.save_goal(Goal(title="整理今天的对话记忆", status=GoalStatus.ACTIVE))
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="看看文件目录"))
+    admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+        wip_limit=2,
+    )
+    loop = AutonomyLoop(
+        store,
+        repo,
+        goals,
+        now_provider=lambda: now,
+        goal_admission_service=admission_service,
+    )
+
+    state = loop.tick_once()
+    stats = admission_service.get_stats(now)
+
+    assert len(goals.list_active_goals()) == 2
+    assert state.active_goal_ids == []
+    assert stats["today"]["wip_blocked"] >= 1
+
+
+def test_tick_once_enforce_mode_can_stop_chain_next_generation_when_not_admitted():
+    now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
+    goals = InMemoryGoalRepository()
+    goal = goals.save_goal(
+        Goal(
+            title="继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进：继续推进",
+            source="清晨很安静",
+            status=GoalStatus.COMPLETED,
+            chain_id="chain-1",
+            generation=15,
+        )
+    )
+    store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[goal.id]))
+    repo = InMemoryMemoryRepository()
+    admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+    )
+    loop = AutonomyLoop(
+        store,
+        repo,
+        goals,
+        now_provider=lambda: now,
+        goal_admission_service=admission_service,
+    )
+
+    state = loop.tick_once()
+    all_goals = goals.list_goals()
+    child_goals = [item for item in all_goals if item.parent_goal_id == goal.id]
+
+    assert child_goals == []
+    assert state.active_goal_ids == []

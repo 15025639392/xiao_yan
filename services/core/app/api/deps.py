@@ -6,6 +6,7 @@ import httpx
 from fastapi import Request
 
 from app.config import get_chat_provider, get_llm_provider_configs
+from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.gateway import ChatGateway
 from app.memory.repository import MemoryRepository
@@ -74,6 +75,11 @@ def get_state_store(request: Request) -> StateStore:
 def get_goal_repository(request: Request) -> GoalRepository:
     ensure_runtime_initialized(request.app)
     return request.app.state.goal_repository
+
+
+def get_goal_admission_service(request: Request) -> GoalAdmissionService:
+    ensure_runtime_initialized(request.app)
+    return request.app.state.goal_admission_service
 
 
 def get_world_repository(request: Request) -> WorldRepository:

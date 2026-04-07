@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from app.api.deps import (
+    get_goal_admission_service,
     get_goal_repository,
     get_memory_repository,
     get_morning_plan_draft_generator,
@@ -10,6 +11,7 @@ from app.api.deps import (
     get_state_store,
 )
 from app.domain.models import FocusMode, WakeMode
+from app.goals.admission import GoalAdmissionService
 from app.goals.models import Goal
 from app.goals.models import GoalStatus, GoalStatusUpdate
 from app.goals.repository import GoalRepository
@@ -69,6 +71,12 @@ def build_runtime_router() -> APIRouter:
     @router.get("/goals")
     def get_goals(goal_repository: GoalRepository = Depends(get_goal_repository)) -> dict[str, list[Goal]]:
         return {"goals": goal_repository.list_goals()}
+
+    @router.get("/goals/admission/stats")
+    def get_goal_admission_stats(
+        admission_service: GoalAdmissionService = Depends(get_goal_admission_service),
+    ) -> dict:
+        return admission_service.get_stats()
 
     def _rebuild_today_plan_for_goal(
         goal: Goal,

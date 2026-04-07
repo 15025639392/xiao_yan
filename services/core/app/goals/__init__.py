@@ -4,6 +4,14 @@
 """
 
 from app.goals.models import Goal, GoalStatus, GoalStatusUpdate
+from app.goals.admission import (
+    AdmissionDecision,
+    GoalAdmissionMode,
+    GoalAdmissionService,
+    GoalAdmissionStore,
+    GoalCandidate,
+    GoalCandidateSource,
+)
 from app.goals.decomposer import GoalDecomposer
 from app.goals.scheduler import TaskScheduler
 from app.goals.executor import TaskExecutor, TaskExecution
@@ -12,6 +20,12 @@ __all__ = [
     "Goal",
     "GoalStatus",
     "GoalStatusUpdate",
+    "AdmissionDecision",
+    "GoalAdmissionMode",
+    "GoalAdmissionService",
+    "GoalAdmissionStore",
+    "GoalCandidate",
+    "GoalCandidateSource",
     "GoalDecomposer",
     "TaskScheduler",
     "TaskExecutor",

@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
 from app.domain.models import BeingState, FocusMode, WakeMode
+from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import InMemoryGoalRepository
-from app.main import app, get_goal_repository, get_state_store
+from app.main import app, get_goal_admission_service, get_goal_repository, get_state_store
 from app.runtime import StateStore
 
 
@@ -168,5 +169,33 @@ def test_resuming_goal_makes_it_current_focus_and_rebuilds_plan():
         assert current_state.today_plan is not None
         assert current_state.today_plan.goal_id == second_goal.id
         assert [step.status for step in current_state.today_plan.steps] == ["pending", "pending"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_goal_admission_stats_returns_current_snapshot():
+    repository = InMemoryGoalRepository()
+    admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="shadow",
+    )
+
+    def override_goal_repository():
+        return repository
+
+    def override_goal_admission_service():
+        return admission_service
+
+    app.dependency_overrides[get_goal_repository] = override_goal_repository
+    app.dependency_overrides[get_goal_admission_service] = override_goal_admission_service
+
+    try:
+        client = TestClient(app)
+        response = client.get("/goals/admission/stats")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["mode"] == "shadow"
+        assert "today" in body
+        assert "deferred_queue_size" in body
     finally:
         app.dependency_overrides.clear()

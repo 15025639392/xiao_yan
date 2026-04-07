@@ -9,11 +9,19 @@ from fastapi import FastAPI
 from app.agent.loop import AutonomyLoop
 from app.config import (
     get_goal_storage_path,
+    get_goal_admission_defer_score,
+    get_goal_admission_max_retries,
+    get_goal_admission_min_score,
+    get_goal_admission_mode,
+    get_goal_admission_storage_path,
+    get_goal_wip_limit,
+    is_goal_admission_world_enabled,
     get_memory_storage_path,
     get_persona_storage_path,
     get_state_storage_path,
     get_world_storage_path,
 )
+from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
 from app.goals.repository import FileGoalRepository
 from app.memory.repository import FileMemoryRepository
 from app.memory.service import MemoryService
@@ -31,6 +39,7 @@ from app.runtime_ext.snapshot import (
     find_latest_today_plan_completion,
     find_recent_autobio,
 )
+from app.self_programming.history_store import SelfProgrammingHistory
 from app.world.repository import FileWorldRepository
 from app.world.service import WorldStateService
 
@@ -47,6 +56,15 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
         storage_path=get_state_storage_path(),
     )
     goal_repository = FileGoalRepository(get_goal_storage_path())
+    goal_admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore(get_goal_admission_storage_path()),
+        mode=get_goal_admission_mode(),
+        min_score=get_goal_admission_min_score(),
+        defer_score=get_goal_admission_defer_score(),
+        wip_limit=get_goal_wip_limit(),
+        world_enabled=is_goal_admission_world_enabled(),
+        max_retries=get_goal_admission_max_retries(),
+    )
     world_repository = FileWorldRepository(get_world_storage_path())
     persona_repository = FilePersonaRepository(get_persona_storage_path())
     persona_service = PersonaService(repository=persona_repository)
@@ -55,6 +73,9 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
         personality=persona_service.profile.personality,
     )
     stop_event = Event()
+    self_programming_history = SelfProgrammingHistory(
+        storage_path=get_state_storage_path().parent / ".self-programming-history.json",
+    )
 
     try:
         from app.llm.gateway import ChatGateway
@@ -67,7 +88,9 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
         state_store,
         memory_repository,
         goal_repository,
+        goal_admission_service=goal_admission_service,
         gateway=loop_gateway,
+        self_programming_history=self_programming_history,
     )
     world_state_service = WorldStateService()
 
@@ -89,11 +112,14 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.state_store = state_store
     target_app.state.memory_repository = memory_repository
     target_app.state.goal_repository = goal_repository
+    target_app.state.goal_admission_service = goal_admission_service
     target_app.state.world_repository = world_repository
     target_app.state.persona_service = persona_service
     target_app.state.memory_service = memory_service
     target_app.state.stop_event = stop_event
     target_app.state.autonomy_thread = worker
+    target_app.state.autonomy_loop = loop
+    target_app.state.self_programming_history = self_programming_history
 
 
 def shutdown_runtime(target_app: FastAPI) -> None:

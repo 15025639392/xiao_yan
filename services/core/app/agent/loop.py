@@ -32,6 +32,13 @@ from app.agent.loop_helpers import (
     workspace_root as _workspace_root,
 )
 from app.domain.models import FocusMode, TodayPlanStepKind, TodayPlanStepStatus, WakeMode
+from app.goals.admission import (
+    AdmissionDecision,
+    GoalAdmissionService,
+    GoalAdmissionStore,
+    GoalCandidate,
+    GoalCandidateSource,
+)
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import GoalRepository, InMemoryGoalRepository
 from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
@@ -39,6 +46,7 @@ from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanPlanner
 from app.runtime import StateStore
 from app.self_programming.executor import SelfProgrammingExecutor
+from app.self_programming.history_store import SelfProgrammingHistory
 from app.self_programming.llm_planner import LLMPlanner
 from app.self_programming.planner import SelfProgrammingPlanner
 from app.self_programming.service import SelfProgrammingService
@@ -59,7 +67,9 @@ class AutonomyLoop:
         world_state_service: WorldStateService | None = None,
         command_runner: CommandRunner | None = None,
         morning_plan_planner: MorningPlanPlanner | None = None,
+        goal_admission_service: GoalAdmissionService | None = None,
         self_programming_service: SelfProgrammingService | None = None,
+        self_programming_history: SelfProgrammingHistory | None = None,
         gateway=None,
     ) -> None:
         self.state_store = state_store
@@ -71,6 +81,9 @@ class AutonomyLoop:
             CommandSandbox.with_defaults(max_level=ToolSafetyLevel.SAFE)
         )
         self.morning_plan_planner = morning_plan_planner or MorningPlanPlanner()
+        self.goal_admission_service = goal_admission_service or GoalAdmissionService(
+            store=GoalAdmissionStore.in_memory(),
+        )
         workspace_root = _workspace_root()
 
         # 构建自我编程服务：优先使用 LLMPlanner（如果提供了 gateway）
@@ -91,6 +104,7 @@ class AutonomyLoop:
             self.self_programming_service = SelfProgrammingService(
                 planner=planner,  # type: ignore[arg-type]
                 executor=executor,
+                history=self_programming_history,
             )
 
     def tick_once(self):
@@ -118,70 +132,39 @@ class AutonomyLoop:
             or now - state.last_proactive_at >= timedelta(seconds=60)
         )
 
+        promoted_state = self._maybe_promote_deferred_candidate(state, recent_events, now)
+        if promoted_state is not None:
+            return promoted_state
+
         if not state.active_goal_ids and cooldown_ready:
             latest_user_event = _find_latest_user_event(recent_events)
             if (
                 latest_user_event is not None
                 and latest_user_event.content != state.last_proactive_source
             ):
-                goal_world_state = self.world_state_service.bootstrap(
-                    being_state=state.model_copy(update={"active_goal_ids": ["pending-goal"]}),
-                    focused_goals=[Goal(title=_build_goal_title(latest_user_event.content))],
+                maybe_state = self._try_create_user_topic_goal(
+                    state=state,
+                    latest_user_event=latest_user_event,
+                    recent_events=recent_events,
                     now=now,
                 )
-                goal = self.goal_repository.save_goal(
-                    Goal(
-                        title=_build_goal_title(latest_user_event.content),
-                        source=latest_user_event.content,
-                    )
-                )
-                proactive_message = _build_proactive_message(
-                    latest_user_event.content,
-                    now,
-                    goal_world_state,
-                )
-                entry = MemoryEntry.create(
-                    kind=MemoryKind.CHAT_RAW,
-                    content=proactive_message,
-                    role="assistant",
-                )
-                self.memory_repository.save_event(MemoryEvent.from_entry(entry))
-                next_state = state.model_copy(
-                    update={
-                        "active_goal_ids": [goal.id],
-                        "current_thought": proactive_message,
-                        "last_proactive_source": latest_user_event.content,
-                        "last_proactive_at": now,
-                    }
-                )
-                return self.state_store.set(next_state)
+                if maybe_state is not None:
+                    return maybe_state
 
             latest_world_event = _find_latest_world_event(recent_events)
             if (
                 latest_world_event is not None
                 and latest_world_event.content != state.last_proactive_source
             ):
-                goal = self.goal_repository.save_goal(
-                    Goal(
-                        title=_build_world_goal_title(latest_world_event.content),
-                        source=latest_world_event.content,
-                        chain_id=uuid4().hex,
-                    )
+                maybe_state = self._try_create_world_event_goal(
+                    state=state,
+                    latest_world_event=latest_world_event,
+                    recent_events=recent_events,
+                    world_state=world_state,
+                    now=now,
                 )
-                proactive_thought = _build_world_goal_start(
-                    latest_world_event.content,
-                    now,
-                    world_state,
-                )
-                next_state = state.model_copy(
-                    update={
-                        "active_goal_ids": [goal.id],
-                        "current_thought": proactive_thought,
-                        "last_proactive_source": latest_world_event.content,
-                        "last_proactive_at": now,
-                    }
-                )
-                return self.state_store.set(next_state)
+                if maybe_state is not None:
+                    return maybe_state
 
         self._maybe_record_world_event(state, recent_events, world_state, now)
 
@@ -292,6 +275,196 @@ class AutonomyLoop:
 
         return state
 
+    def _try_create_user_topic_goal(self, state, latest_user_event, recent_events, now: datetime):
+        candidate = GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title=_build_goal_title(latest_user_event.content),
+            source_content=latest_user_event.content,
+        )
+        admission = self.goal_admission_service.evaluate_candidate(
+            candidate,
+            now=now,
+            active_goals=self.goal_repository.list_active_goals(),
+            all_goals=self.goal_repository.list_goals(),
+            recent_events=recent_events,
+        )
+        if admission.applied_decision != AdmissionDecision.ADMIT:
+            next_state = state.model_copy(
+                update={
+                    "last_proactive_source": latest_user_event.content,
+                    "last_proactive_at": now,
+                }
+            )
+            return self.state_store.set(next_state)
+
+        goal_world_state = self.world_state_service.bootstrap(
+            being_state=state.model_copy(update={"active_goal_ids": ["pending-goal"]}),
+            focused_goals=[Goal(title=candidate.title)],
+            now=now,
+        )
+        goal = self.goal_repository.save_goal(
+            Goal(
+                title=candidate.title,
+                source=latest_user_event.content,
+            )
+        )
+        proactive_message = _build_proactive_message(
+            latest_user_event.content,
+            now,
+            goal_world_state,
+        )
+        entry = MemoryEntry.create(
+            kind=MemoryKind.CHAT_RAW,
+            content=proactive_message,
+            role="assistant",
+        )
+        self.memory_repository.save_event(MemoryEvent.from_entry(entry))
+        next_state = state.model_copy(
+            update={
+                "active_goal_ids": [goal.id],
+                "current_thought": proactive_message,
+                "last_proactive_source": latest_user_event.content,
+                "last_proactive_at": now,
+            }
+        )
+        return self.state_store.set(next_state)
+
+    def _try_create_world_event_goal(self, state, latest_world_event, recent_events, world_state, now: datetime):
+        candidate = GoalCandidate(
+            source_type=GoalCandidateSource.WORLD_EVENT,
+            title=_build_world_goal_title(latest_world_event.content),
+            source_content=latest_world_event.content,
+            chain_id=uuid4().hex,
+        )
+        admission = self.goal_admission_service.evaluate_candidate(
+            candidate,
+            now=now,
+            active_goals=self.goal_repository.list_active_goals(),
+            all_goals=self.goal_repository.list_goals(),
+            recent_events=recent_events,
+        )
+        if admission.applied_decision != AdmissionDecision.ADMIT:
+            next_state = state.model_copy(
+                update={
+                    "last_proactive_source": latest_world_event.content,
+                    "last_proactive_at": now,
+                }
+            )
+            return self.state_store.set(next_state)
+
+        goal = self.goal_repository.save_goal(
+            Goal(
+                title=candidate.title,
+                source=latest_world_event.content,
+                chain_id=candidate.chain_id,
+            )
+        )
+        proactive_thought = _build_world_goal_start(
+            latest_world_event.content,
+            now,
+            world_state,
+        )
+        next_state = state.model_copy(
+            update={
+                "active_goal_ids": [goal.id],
+                "current_thought": proactive_thought,
+                "last_proactive_source": latest_world_event.content,
+                "last_proactive_at": now,
+            }
+        )
+        return self.state_store.set(next_state)
+
+    def _maybe_promote_deferred_candidate(self, state, recent_events, now: datetime):
+        deferred = self.goal_admission_service.pop_due_candidate(now)
+        if deferred is None:
+            return None
+
+        admission = self.goal_admission_service.evaluate_candidate(
+            deferred,
+            now=now,
+            active_goals=self.goal_repository.list_active_goals(),
+            all_goals=self.goal_repository.list_goals(),
+            recent_events=recent_events,
+        )
+        source_content = deferred.source_content or state.last_proactive_source
+
+        if admission.applied_decision != AdmissionDecision.ADMIT:
+            return self.state_store.set(
+                state.model_copy(
+                    update={
+                        "last_proactive_source": source_content,
+                        "last_proactive_at": now,
+                    }
+                )
+            )
+
+        if deferred.source_type == GoalCandidateSource.USER_TOPIC:
+            goal_world_state = self.world_state_service.bootstrap(
+                being_state=state.model_copy(update={"active_goal_ids": ["pending-goal"]}),
+                focused_goals=[Goal(title=deferred.title)],
+                now=now,
+            )
+            goal = self.goal_repository.save_goal(Goal(title=deferred.title, source=deferred.source_content))
+            proactive_message = _build_proactive_message(deferred.source_content or deferred.title, now, goal_world_state)
+            entry = MemoryEntry.create(
+                kind=MemoryKind.CHAT_RAW,
+                content=proactive_message,
+                role="assistant",
+            )
+            self.memory_repository.save_event(MemoryEvent.from_entry(entry))
+            return self.state_store.set(
+                state.model_copy(
+                    update={
+                        "active_goal_ids": [goal.id],
+                        "current_thought": proactive_message,
+                        "last_proactive_source": source_content,
+                        "last_proactive_at": now,
+                    }
+                )
+            )
+
+        if deferred.source_type == GoalCandidateSource.WORLD_EVENT:
+            goal = self.goal_repository.save_goal(
+                Goal(title=deferred.title, source=deferred.source_content, chain_id=deferred.chain_id or uuid4().hex)
+            )
+            world_state = self._world_state_for(state, now)
+            proactive_thought = _build_world_goal_start(deferred.source_content or deferred.title, now, world_state)
+            return self.state_store.set(
+                state.model_copy(
+                    update={
+                        "active_goal_ids": [goal.id],
+                        "current_thought": proactive_thought,
+                        "last_proactive_source": source_content,
+                        "last_proactive_at": now,
+                    }
+                )
+            )
+
+        if deferred.source_type == GoalCandidateSource.CHAIN_NEXT:
+            goal = self.goal_repository.save_goal(
+                Goal(
+                    title=deferred.title,
+                    source=deferred.source_content,
+                    chain_id=deferred.chain_id,
+                    parent_goal_id=deferred.parent_goal_id,
+                    generation=deferred.generation,
+                )
+            )
+            world_state = self._world_state_for(state, now)
+            thought = _build_goal_focus(goal.title, now, world_state)
+            return self.state_store.set(
+                state.model_copy(
+                    update={
+                        "active_goal_ids": [goal.id],
+                        "current_thought": thought,
+                        "last_proactive_source": source_content,
+                        "last_proactive_at": now,
+                    }
+                )
+            )
+
+        return None
+
     def _sync_goal_focus(self, state, now: datetime):
         active_goal_ids: list[str] = []
 
@@ -314,15 +487,31 @@ class AutonomyLoop:
                 )
                 next_goal = None
                 if goal.chain_id:
-                    next_goal = self.goal_repository.save_goal(
-                        Goal(
-                            title=_build_next_goal_title(goal.title),
-                            source=goal.source,
-                            chain_id=goal.chain_id,
-                            parent_goal_id=goal.id,
-                            generation=goal.generation + 1,
-                        )
+                    candidate = GoalCandidate(
+                        source_type=GoalCandidateSource.CHAIN_NEXT,
+                        title=_build_next_goal_title(goal.title),
+                        source_content=goal.source,
+                        chain_id=goal.chain_id,
+                        parent_goal_id=goal.id,
+                        generation=goal.generation + 1,
                     )
+                    admission = self.goal_admission_service.evaluate_candidate(
+                        candidate,
+                        now=now,
+                        active_goals=self.goal_repository.list_active_goals(),
+                        all_goals=self.goal_repository.list_goals(),
+                        recent_events=list(reversed(self.memory_repository.list_recent(limit=20))),
+                    )
+                    if admission.applied_decision == AdmissionDecision.ADMIT:
+                        next_goal = self.goal_repository.save_goal(
+                            Goal(
+                                title=candidate.title,
+                                source=goal.source,
+                                chain_id=goal.chain_id,
+                                parent_goal_id=goal.id,
+                                generation=goal.generation + 1,
+                            )
+                        )
                 chain_progress = (
                     None if next_goal is None else _build_chain_transition(self.goal_repository, next_goal)
                 )
