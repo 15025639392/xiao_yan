@@ -3,6 +3,7 @@ import { MemoryDeleteModal } from "./memory/MemoryDeleteModal";
 import { MemoryFooter } from "./memory/MemoryFooter";
 import { MemoryItem } from "./memory/MemoryItem";
 import { MemoryList } from "./memory/MemoryList";
+import { MemoryRelationshipSummary } from "./memory/MemoryRelationshipSummary";
 import { MemoryStatsHeader } from "./memory/MemoryStatsHeader";
 import { MemoryCreateForm, MemoryToolbar } from "./memory/MemoryToolbar";
 import { useMemoryPanelState } from "./memory/useMemoryPanel";
@@ -22,6 +23,8 @@ export function MemoryPanel({ assistantName = "小晏", className }: MemoryPanel
         activeFilter={state.activeFilter}
         onFilterToggle={(kind) => state.setActiveFilter(state.activeFilter === kind ? null : kind)}
       />
+
+      <MemoryRelationshipSummary relationship={state.relationship} />
 
       <MemoryToolbar
         searchQuery={state.searchQuery}
@@ -110,4 +113,3 @@ export function MemoryPanel({ assistantName = "小晏", className }: MemoryPanel
     </section>
   );
 }
-

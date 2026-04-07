@@ -609,7 +609,15 @@ export type MemorySummary = {
   by_kind: Record<string, number>;
   recent_count: number;
   strong_memories: number;
+  relationship: RelationshipSummary;
   available: boolean;
+};
+
+export type RelationshipSummary = {
+  available: boolean;
+  boundaries: string[];
+  commitments: string[];
+  preferences: string[];
 };
 
 export type MemorySearchResult = {

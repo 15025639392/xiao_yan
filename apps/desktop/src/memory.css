@@ -59,6 +59,84 @@
   border-color: var(--primary);
 }
 
+.memory-relationship {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(180deg, rgba(99, 102, 241, 0.05), rgba(99, 102, 241, 0.01)),
+    var(--bg-surface);
+}
+
+.memory-relationship__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.memory-relationship__title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.memory-relationship__hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.memory-relationship__groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.memory-relationship__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.memory-relationship__group--boundary {
+  border-color: rgba(244, 114, 182, 0.28);
+}
+
+.memory-relationship__group--commitment {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.memory-relationship__group--preference {
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.memory-relationship__group-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.memory-relationship__list {
+  margin: 0;
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memory-relationship__item {
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
 /* ── 工具栏（搜索 + 视图切换 + 新建）── */
 .memory-toolbar {
   display: flex;

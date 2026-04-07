@@ -8,6 +8,7 @@ import type {
   MemoryEntryDisplay,
   MemorySummary,
   PersonaProfile,
+  RelationshipSummary,
 } from "./api";
 
 export type AppRuntimeRealtimePayload = {
@@ -20,6 +21,7 @@ export type AppRuntimeRealtimePayload = {
 
 export type AppMemoryRealtimePayload = {
   summary: MemorySummary;
+  relationship: RelationshipSummary;
   timeline: MemoryEntryDisplay[];
 };
 
