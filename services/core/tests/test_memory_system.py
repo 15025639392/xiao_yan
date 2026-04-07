@@ -328,6 +328,25 @@ class TestConversationExtraction:
         assert any(e.importance >= 6 and ("明天" in e.content or "3点" in e.content or "提醒" in e.content)
                     for e in fact_entries)
 
+    def test_extract_user_boundary_as_value_signal(self, service: MemoryService):
+        extracted = service.extract_from_conversation(
+            user_message="你别催我，我希望先自己想一想再决定",
+            assistant_response="好，我会给你一点空间。",
+        )
+        boundary_entries = [e for e in extracted if e.source_context == "value_signal:boundary"]
+        assert len(boundary_entries) >= 1
+        assert any(e.subject == "用户边界" for e in boundary_entries)
+        assert any("别催我" in e.content or "先自己想一想" in e.content for e in boundary_entries)
+
+    def test_extract_assistant_commitment_as_value_signal(self, service: MemoryService):
+        extracted = service.extract_from_conversation(
+            user_message="那你明天提醒我复盘一下",
+            assistant_response="好，我答应你明天提醒你复盘。",
+        )
+        commitment_entries = [e for e in extracted if e.source_context == "value_signal:commitment"]
+        assert len(commitment_entries) >= 1
+        assert any("答应你明天提醒你复盘" in e.content or "明天提醒你复盘" in e.content for e in commitment_entries)
+
     def test_extract_positive_emotion(self, service: MemoryService):
         """检测到正面情绪关键词"""
         extracted = service.extract_from_conversation(

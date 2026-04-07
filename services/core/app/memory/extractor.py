@@ -14,6 +14,7 @@ from app.memory.models import (
     MemoryEmotion,
     MemoryStrength,
 )
+from app.memory.value_signals import extract_commitments, extract_user_boundaries
 from app.persona.models import PersonalityDimensions
 from app.llm.schemas import ChatMessage
 
@@ -63,6 +64,17 @@ class MemoryExtractor:
         """提取用户信息"""
         events = []
         content = message.content
+
+        # 1. 识别用户偏好
+        boundaries = extract_user_boundaries(content)
+        for boundary in boundaries:
+            events.append(MemoryEvent(
+                kind=MemoryKind.FACT.value,
+                content=f"用户边界：{boundary}",
+                role="user",
+                created_at=datetime.now(timezone.utc),
+                source_context="value_signal:boundary",
+            ))
 
         # 1. 识别用户偏好
         preferences = self._extract_preferences(content)
@@ -124,6 +136,7 @@ class MemoryExtractor:
                 content=f"承诺/计划：{commitment}",
                 role="assistant",
                 created_at=datetime.now(timezone.utc),
+                source_context="value_signal:commitment",
             ))
 
         # 识别学习到的知识
@@ -247,27 +260,7 @@ class MemoryExtractor:
 
     def _extract_commitments(self, content: str) -> List[str]:
         """提取承诺"""
-        commitments = []
-
-        # 规则匹配
-        commitment_patterns = [
-            r"我会(.+)",
-            r"我决定(.+)",
-            r"计划(.+)",
-            r"下次(.+)",
-            r"我承诺(.+)",
-            r"我会帮你(.+)",
-            r"我一定会(.+)",
-        ]
-
-        for pattern in commitment_patterns:
-            matches = re.findall(pattern, content)
-            for match in matches:
-                clean_match = match.strip("，。！？、")
-                if len(clean_match) > 0:
-                    commitments.append(clean_match)
-
-        return list(set(commitments))
+        return extract_commitments(content)
 
     def _extract_knowledge(self, content: str) -> List[str]:
         """提取学习到的知识"""

@@ -107,7 +107,10 @@ class MemoryPromptMixin:
                 continue
             if entry.kind not in (MemoryKind.FACT, MemoryKind.EPISODIC):
                 continue
-            if not any(marker in entry.content for marker in continuity_markers):
+            if (
+                entry.source_context not in {"value_signal:boundary", "value_signal:commitment"}
+                and not any(marker in entry.content for marker in continuity_markers)
+            ):
                 continue
             seen_ids.add(entry.id)
             merged_entries.append(entry)

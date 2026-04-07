@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from app.llm.schemas import ChatMessage
 from app.memory.models import MemoryEmotion, MemoryEntry, MemoryEvent, MemoryKind, MemoryStrength
+from app.memory.value_signals import extract_commitments, extract_user_boundaries
 
 if TYPE_CHECKING:
     from app.memory.service import MemoryService
@@ -56,6 +57,20 @@ class MemoryExtractionMixin:
                 extracted.append(entry)
                 break
 
+        for boundary in extract_user_boundaries(user_message):
+            extracted.append(
+                self._build_entry(
+                    kind=MemoryKind.FACT,
+                    content=f"用户边界：{boundary}",
+                    role="user",
+                    strength=MemoryStrength.VIVID,
+                    importance=9,
+                    emotion_tag=MemoryEmotion.NEUTRAL,
+                    subject="用户边界",
+                    source_context="value_signal:boundary",
+                )
+            )
+
         emotional_keywords = {
             "positive": ["太棒了", "太好了", "开心", "高兴", "爱", "感谢", "谢谢"],
             "negative": ["生气", "烦", "讨厌", "难过", "伤心", "失望", "无语"],
@@ -76,6 +91,21 @@ class MemoryExtractionMixin:
                     )
                     extracted.append(entry)
                     break
+
+        for commitment in extract_commitments(assistant_response):
+            extracted.append(
+                self._build_entry(
+                    kind=MemoryKind.FACT,
+                    content=f"承诺/计划：{commitment}",
+                    role="assistant",
+                    session_id=assistant_session_id,
+                    strength=MemoryStrength.VIVID,
+                    importance=8,
+                    emotion_tag=MemoryEmotion.NEUTRAL,
+                    subject="对用户承诺",
+                    source_context="value_signal:commitment",
+                )
+            )
 
         chat_user = self._build_entry(
             kind=MemoryKind.CHAT_RAW,
@@ -141,4 +171,3 @@ class MemoryExtractionMixin:
 
         sentence = text[start:end].strip()
         return sentence if len(sentence) > 3 else None
-
