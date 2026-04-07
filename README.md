@@ -302,7 +302,20 @@ A: 删除 `services/core/.data/` 目录下的文件，重启服务即可。
 
 A: 目前支持 macOS、Linux 和 Windows（通过 WSL）。
 
-## 未来规划
+## 未来规划（TODO）
+
+### 目标准入降噪路线图
+
+参考文档：
+- `docs/goal-admission-roadmap.md`
+- `docs/goal-generation-flow.md`
+
+- [x] Phase 1: Shadow Baseline（打分不拦截，建立基线）
+- [x] Phase 2: Enforce Gate（规则准入 + WIP 限制）
+- [ ] Phase 3: Calibrated Enforce（分来源/分场景调参）
+- [ ] Phase 4: Hybrid Intelligence（规则护栏 + LLM 评审 + 数据闭环）
+
+### 通用能力演进
 
 - [ ] 增强人格系统的多样性和真实感
 - [ ] 优化长期记忆的检索和管理
