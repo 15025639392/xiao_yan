@@ -1,5 +1,7 @@
 # 设计文档模板
 
+使用前建议先阅读 `docs/plans/design-template-usage.md`。
+
 日期：YYYY-MM-DD
 
 ## 1. 背景
