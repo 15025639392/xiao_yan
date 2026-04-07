@@ -7,6 +7,7 @@ def build_chat_instructions(
     latest_self_programming: str | None = None,
     user_message: str | None = None,
     persona_system_prompt: str = "",
+    relationship_summary: dict | None = None,
     memory_context: str | None = None,  # 记忆上下文
     expression_style_context: str | None = None,  # 表达风格覆盖
     folder_permissions: list[tuple[str, str]] | None = None,  # 目录权限上下文
@@ -19,6 +20,7 @@ def build_chat_instructions(
         latest_self_programming: 最近的自我编程摘要
         user_message: 用户消息
         persona_system_prompt: 人格系统 prompt（来自 PersonaService）
+        relationship_summary: 当前关系状态摘要（来自 MemoryService）
         memory_context: 记忆上下文字符串（来自 MemoryService）
                         包含相关事实、情景记忆等
         expression_style_context: 表达风格指令字符串（来自 ExpressionStyleMapper）
@@ -53,6 +55,10 @@ def build_chat_instructions(
             "如果用户在问你当前状态、最近在忙什么、今天过得怎样或你现在在想什么，"
             "先回答你此刻最在意的目标、今天的计划、刚完成的事或最近一次自我编程，再补充相关记忆。"
         )
+
+    relationship_guidance = _build_relationship_guidance(relationship_summary)
+    if relationship_guidance:
+        guidance.extend(relationship_guidance)
 
     if folder_permissions:
         permission_lines = ["你当前可访问的文件夹权限如下（仅在这些范围内操作文件）："]
@@ -90,3 +96,25 @@ def _is_status_question(user_message: str | None) -> bool:
         "过得怎么样",
     )
     return any(pattern in user_message for pattern in patterns)
+
+
+def _build_relationship_guidance(relationship_summary: dict | None) -> list[str]:
+    if not relationship_summary or not relationship_summary.get("available"):
+        return []
+
+    lines = [
+        "先尊重这段关系里已经形成的边界、承诺和偏好，再决定怎么回应，不要为了推进感或效率跨线。",
+    ]
+
+    boundaries = relationship_summary.get("boundaries") or []
+    commitments = relationship_summary.get("commitments") or []
+    preferences = relationship_summary.get("preferences") or []
+
+    if boundaries:
+        lines.append("如果回复会触碰这些相处边界，优先放慢、澄清并给对方空间：" + "；".join(boundaries[:3]))
+    if commitments:
+        lines.append("如果当前话题与这些事项相关，优先兑现或回应这些已形成的承诺：" + "；".join(commitments[:3]))
+    if preferences:
+        lines.append("组织建议或方案时，尽量贴合对方已经表现出的偏好：" + "；".join(preferences[:3]))
+
+    return lines

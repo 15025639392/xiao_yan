@@ -528,6 +528,7 @@ def build_chat_router() -> APIRouter:
             max_chars=600,
             persona_values=persona_service.profile.values,
         )
+        relationship_summary = memory_service.get_relationship_summary()
 
         current_emotion = persona_service.profile.emotion
         style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
@@ -549,6 +550,7 @@ def build_chat_router() -> APIRouter:
             latest_self_programming=latest_self_programming,
             user_message=request_body.message,
             persona_system_prompt=persona_system_prompt,
+            relationship_summary=relationship_summary,
             memory_context=memory_context or None,
             expression_style_context=expression_style_context or None,
             folder_permissions=config.list_folder_permissions(),
@@ -596,6 +598,7 @@ def build_chat_router() -> APIRouter:
             max_chars=600,
             persona_values=persona_service.profile.values,
         )
+        relationship_summary = memory_service.get_relationship_summary()
         current_emotion = persona_service.profile.emotion
         style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
         style_override = style_mapper.map_from_state(current_emotion)
@@ -616,6 +619,7 @@ def build_chat_router() -> APIRouter:
             latest_self_programming=latest_self_programming,
             user_message=request_body.message,
             persona_system_prompt=persona_system_prompt,
+            relationship_summary=relationship_summary,
             memory_context=memory_context or None,
             expression_style_context=expression_style_context or None,
             folder_permissions=config.list_folder_permissions(),
