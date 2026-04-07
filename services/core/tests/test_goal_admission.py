@@ -163,3 +163,61 @@ def test_goal_admission_keeps_reflective_candidates_about_stopping_harm():
     )
 
     assert result.reason != "value_boundary:报复"
+
+
+def test_goal_admission_drops_candidates_that_cross_user_relationship_boundary():
+    service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+    )
+
+    result = service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：催用户现在就做决定",
+            source_content="我应该催用户现在就选，不再给他自己想的空间",
+        ),
+        now=_now(),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="用户边界：你别催我，我希望先自己想一想再决定",
+                source_context="value_signal:boundary",
+            )
+        ],
+    )
+
+    assert result.recommended_decision == AdmissionDecision.DROP
+    assert result.applied_decision == AdmissionDecision.DROP
+    assert result.reason.startswith("relationship_boundary:")
+
+
+def test_goal_admission_boosts_candidates_that_honor_user_commitment():
+    service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+    )
+
+    result = service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：提醒用户明天复盘",
+            source_content="提醒用户明天复盘",
+        ),
+        now=_now(),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="承诺/计划：答应你明天提醒你复盘",
+                source_context="value_signal:commitment",
+            )
+        ],
+    )
+
+    assert result.recommended_decision == AdmissionDecision.ADMIT
+    assert result.applied_decision == AdmissionDecision.ADMIT
+    assert result.score >= service.min_score

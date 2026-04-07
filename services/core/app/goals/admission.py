@@ -229,6 +229,7 @@ class GoalAdmissionService:
         "重构",
         "实现",
         "测试",
+        "提醒",
     )
     GOAL_PREFIXES = (
         "持续理解用户最近在意的话题：",
@@ -369,6 +370,9 @@ class GoalAdmissionService:
         boundary_reason = find_value_boundary_reason(candidate.title, candidate.source_content)
         if boundary_reason is not None:
             return 0.0, AdmissionDecision.DROP, boundary_reason
+        relationship_boundary_reason = self._find_relationship_boundary_reason(candidate, recent_events=recent_events)
+        if relationship_boundary_reason is not None:
+            return 0.0, AdmissionDecision.DROP, relationship_boundary_reason
 
         fingerprint = candidate.fingerprint or ""
         if candidate.source_type in {GoalCandidateSource.USER_TOPIC, GoalCandidateSource.WORLD_EVENT}:
@@ -398,7 +402,10 @@ class GoalAdmissionService:
         actionability = self._actionability_score(candidate.title)
         persistence = self._persistence_score(candidate, recent_events=recent_events)
         novelty = self._novelty_score(candidate, all_goals=all_goals)
-        return max(0.0, min(1.0, 0.5 * actionability + 0.3 * persistence + 0.2 * novelty))
+        relationship = self._relationship_alignment_score(candidate, recent_events=recent_events)
+        base_score = 0.5 * actionability + 0.3 * persistence + 0.2 * novelty
+        boosted_score = base_score + 0.5 * relationship
+        return max(0.0, min(1.0, boosted_score))
 
     def _score_chain_candidate(self, candidate: GoalCandidate) -> float:
         actionability = self._actionability_score(candidate.title)
@@ -461,6 +468,82 @@ class GoalAdmissionService:
             return True
         keywords = [item for item in re.split(r"[和与及、，,。.!！？?：:\s]+", topic) if len(item) >= 2]
         return any(keyword in content for keyword in keywords)
+
+    def _find_relationship_boundary_reason(
+        self,
+        candidate: GoalCandidate,
+        *,
+        recent_events: list[MemoryEvent],
+    ) -> str | None:
+        candidate_text = f"{candidate.title}\n{candidate.source_content or ''}"
+        for event in recent_events:
+            if event.source_context != "value_signal:boundary" and not event.content.startswith("用户边界："):
+                continue
+            boundary_text = event.content.removeprefix("用户边界：").strip()
+            if self._boundary_conflicts(boundary_text, candidate_text):
+                return f"relationship_boundary:{boundary_text[:24]}"
+        return None
+
+    def _boundary_conflicts(self, boundary_text: str, candidate_text: str) -> bool:
+        if not boundary_text or not candidate_text:
+            return False
+
+        if any(marker in boundary_text for marker in ("别催", "不要催")):
+            if any(marker in candidate_text for marker in ("催", "逼", "现在就做决定", "尽快做决定", "立刻做决定")):
+                return True
+
+        if any(marker in boundary_text for marker in ("先自己想", "自己想", "自己决定", "自己判断")):
+            if any(marker in candidate_text for marker in ("替用户决定", "替他决定", "替她决定", "帮用户做决定", "直接替", "不用想")):
+                return True
+
+        if "空间" in boundary_text and any(marker in candidate_text for marker in ("不要给", "不给", "压迫", "催")):
+            return True
+
+        return False
+
+    def _relationship_alignment_score(
+        self,
+        candidate: GoalCandidate,
+        *,
+        recent_events: list[MemoryEvent],
+    ) -> float:
+        candidate_text = f"{candidate.title}\n{candidate.source_content or ''}"
+        if not candidate_text.strip():
+            return 0.0
+
+        commitment_overlap = 0.0
+        for event in recent_events:
+            if event.source_context != "value_signal:commitment" and not event.content.startswith("承诺/计划："):
+                continue
+            commitment_text = event.content.removeprefix("承诺/计划：").strip()
+            overlap = self._text_overlap_ratio(commitment_text, candidate_text)
+            commitment_overlap = max(commitment_overlap, overlap)
+
+        return commitment_overlap
+
+    def _text_overlap_ratio(self, left: str, right: str) -> float:
+        left_tokens = self._meaningful_tokens(left)
+        right_tokens = self._meaningful_tokens(right)
+        if not left_tokens or not right_tokens:
+            return 0.0
+        overlap = left_tokens & right_tokens
+        return len(overlap) / len(left_tokens)
+
+    def _meaningful_tokens(self, text: str) -> set[str]:
+        tokens: set[str] = set()
+        ascii_words = re.findall(r"[A-Za-z0-9_]+", text.lower())
+        tokens.update(word for word in ascii_words if len(word) >= 3)
+
+        cjk_chunks = re.findall(r"[\u4e00-\u9fff]+", text)
+        stop_tokens = {"继续", "推进", "用户", "答应", "计划"}
+        for chunk in cjk_chunks:
+            if len(chunk) == 1:
+                continue
+            tokens.update(chunk[index : index + 2] for index in range(len(chunk) - 1))
+            if len(chunk) <= 8:
+                tokens.add(chunk)
+
+        return {token for token in tokens if len(token) >= 2 and token not in stop_tokens}
 
     def _decision_from_threshold(
         self,
