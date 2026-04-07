@@ -19,6 +19,7 @@ from app.persona.models import (
     ExpressionHabit,
     FormalLevel,
     PersonalityDimensions,
+    PersonaFeatures,
     PersonaProfile,
     SentenceStyle,
     SpeakingStyle,
@@ -59,6 +60,11 @@ class TestPersonaProfile:
         p = default_persona()
         assert len(p.values.core_values) >= 3
         assert len(p.values.boundaries) >= 2
+
+    def test_default_persona_has_features(self):
+        p = default_persona()
+        assert isinstance(p.features, PersonaFeatures)
+        assert p.features.avatar_enabled is False
 
     def test_version_increments_on_update(self):
         p = default_persona()

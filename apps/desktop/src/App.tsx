@@ -16,6 +16,7 @@ import {
   resumeChat,
   sleep,
   updateGoalStatus,
+  updatePersonaFeatures,
   wake,
 } from "./lib/api";
 import { subscribeAppRealtime } from "./lib/realtime";
@@ -209,6 +210,35 @@ export default function App() {
     };
   }, []);
 
+  // Pet visibility probe (Tauri). Best-effort: feature might be unavailable on some platforms.
+  useEffect(() => {
+    invoke("pet_is_visible")
+      .then((result: any) => {
+        if (result && typeof result.visible === "boolean") {
+          setPetVisible(result.visible);
+        }
+      })
+      .catch(() => {
+        // ignore
+      });
+  }, []);
+
+  // Keep pet window in sync with persona feature toggle.
+  useEffect(() => {
+    const enabled = persona?.features?.avatar_enabled ?? false;
+    invoke(enabled ? "pet_show" : "pet_close")
+      .then((result: any) => {
+        if (result && typeof result.visible === "boolean") {
+          setPetVisible(result.visible);
+        } else {
+          setPetVisible(enabled);
+        }
+      })
+      .catch(() => {
+        // ignore
+      });
+  }, [persona?.features?.avatar_enabled]);
+
   async function handleWake() {
     try {
       setError("");
@@ -228,10 +258,14 @@ export default function App() {
   }
 
   // ===== Pet (Desktop Pet) =====
-  async function handlePetToggle() {
+  async function handlePetEnabledChange(enabled: boolean) {
     try {
-      const result: { visible: boolean } = await invoke("pet_toggle");
-      setPetVisible(result.visible);
+      setError("");
+      const updated = await updatePersonaFeatures({ avatar_enabled: enabled });
+      setPersona(updated.profile);
+      // Window lifecycle is centralized in the persona-sync effect
+      // to avoid duplicate concurrent `pet_show` / `pet_close` calls.
+      setPetVisible(enabled);
     } catch (err) {
       const message =
         err instanceof Error
@@ -459,25 +493,6 @@ export default function App() {
         </nav>
 
         <div className="app-sidebar__section">
-          <div className="app-sidebar__section-title">桌面宠物</div>
-          <div className="app-sidebar__actions">
-            <button
-              className={`app-sidebar__action-btn ${petVisible ? 'app-sidebar__action-btn--primary' : ''}`}
-              onClick={handlePetToggle}
-              type="button"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                {petVisible
-                  ? <><path d="M18 6L6 18"/><path d="M6 6l12 12"/></>  // X icon when visible
-                  : <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                     <path d="M12 3v1"/><path d="M18.5 6.5l-.7.7"/><path d="M21 12h-1"/><path d="M5.5 6.5l.7.7"/><path d="M3 12h-1"/></>}
-              </svg>
-              {petVisible ? "隐藏小紫人" : "召唤小紫人"}
-            </button>
-          </div>
-        </div>
-
-        <div className="app-sidebar__section">
           <div className="app-sidebar__section-title">控制</div>
           <div className="app-sidebar__actions">
             <button
@@ -540,7 +555,12 @@ export default function App() {
             onCompleteGoal={(goalId) => handleUpdateGoalStatus(goalId, "completed")}
           />
         ) : route === "persona" ? (
-          <PersonaPanel />
+          <PersonaPanel
+            assistantName={assistantName}
+            petEnabled={persona?.features?.avatar_enabled ?? false}
+            petVisible={petVisible}
+            onSetPetEnabled={handlePetEnabledChange}
+          />
         ) : route === "memory" ? (
           <MemoryPage assistantName={assistantName} />
         ) : route === "history" ? (
