@@ -28,6 +28,13 @@ class MemoryPromptMixin:
                     parts.append(context)
 
         recent = self.list_recent(limit=20)
+        relationship_summary_context = self._build_relationship_summary_context(
+            recent_entries=recent.entries,
+            max_chars=max_chars // 4,
+        )
+        if relationship_summary_context:
+            parts.insert(0, relationship_summary_context)
+
         continuity_context = self._build_relationship_continuity_context(
             relevant_entries=relevant_entries,
             recent_entries=recent.entries,
@@ -53,6 +60,27 @@ class MemoryPromptMixin:
             return ""
 
         return "【你记得的事情】\n" + "\n".join(parts)
+
+    def _build_relationship_summary_context(
+        self: "MemoryService",
+        *,
+        recent_entries,
+        max_chars: int,
+    ) -> str:
+        summary = self._relationship_summary_from_entries(recent_entries)
+        if not summary["available"]:
+            return ""
+
+        lines: list[str] = ["【关系状态摘要】"]
+        if summary["boundaries"]:
+            lines.append("相处边界：" + "；".join(summary["boundaries"]))
+        if summary["commitments"]:
+            lines.append("对用户承诺：" + "；".join(summary["commitments"]))
+        if summary["preferences"]:
+            lines.append("用户偏好：" + "；".join(summary["preferences"]))
+
+        result = "\n".join(lines)
+        return result[:max_chars] if len(result) > max_chars else result
 
     def _build_relationship_continuity_context(
         self: "MemoryService",
@@ -121,6 +149,67 @@ class MemoryPromptMixin:
         )
         return merged_entries[:4]
 
+    def get_relationship_summary(self: "MemoryService") -> dict:
+        if self.repository is None:
+            return {
+                "available": False,
+                "boundaries": [],
+                "commitments": [],
+                "preferences": [],
+            }
+
+        recent = self.list_recent(limit=80)
+        return self._relationship_summary_from_entries(recent.entries)
+
+    def _relationship_summary_from_entries(self: "MemoryService", entries) -> dict:
+        boundaries = self._collect_relationship_items(
+            entries,
+            matcher=lambda entry: entry.source_context == "value_signal:boundary" or entry.subject == "用户边界",
+            prefixes=("用户边界：",),
+        )
+        commitments = self._collect_relationship_items(
+            entries,
+            matcher=lambda entry: entry.source_context == "value_signal:commitment" or entry.subject == "对用户承诺",
+            prefixes=("承诺/计划：",),
+        )
+        preferences = self._collect_relationship_items(
+            entries,
+            matcher=lambda entry: entry.subject in {"用户偏好", "用户习惯"} or entry.content.startswith("用户偏好："),
+            prefixes=("用户偏好：", "用户习惯："),
+        )
+
+        return {
+            "available": bool(boundaries or commitments or preferences),
+            "boundaries": boundaries,
+            "commitments": commitments,
+            "preferences": preferences,
+        }
+
+    def _collect_relationship_items(self: "MemoryService", entries, *, matcher, prefixes: tuple[str, ...]) -> list[str]:
+        matched = [entry for entry in entries if matcher(entry)]
+        matched.sort(
+            key=lambda entry: (entry.importance, entry.retention_score, entry.created_at),
+            reverse=True,
+        )
+
+        items: list[str] = []
+        seen: set[str] = set()
+        for entry in matched:
+            content = entry.content
+            for prefix in prefixes:
+                if content.startswith(prefix):
+                    content = content[len(prefix):]
+                    break
+            content = content.strip()
+            if not content or content in seen:
+                continue
+            seen.add(content)
+            items.append(content)
+            if len(items) >= 3:
+                break
+
+        return items
+
     def get_memory_summary(self: "MemoryService") -> dict:
         if self.repository is None:
             return {
@@ -146,6 +235,7 @@ class MemoryPromptMixin:
             "by_kind": by_kind,
             "recent_count": len(recent.entries),
             "strong_memories": strong,
+            "relationship": self._relationship_summary_from_entries(recent.entries),
             "available": True,
         }
 
