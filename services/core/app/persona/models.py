@@ -226,6 +226,17 @@ class PersonaValues(BaseModel):
             result += f"\n\n你的底线是：绝不{b}。"
         return result
 
+    def to_core_principles_prompt(self) -> str:
+        top = self.get_top_values(5)
+        if not top:
+            return ""
+        return "、".join(item.name for item in top)
+
+    def to_boundaries_prompt(self) -> str:
+        if not self.boundaries:
+            return ""
+        return "；".join(f"不{boundary}" for boundary in self.boundaries[:5])
+
 
 def default_value_foundation() -> PersonaValues:
     """默认价值底盘。
@@ -437,6 +448,9 @@ class PersonaProfile(BaseModel):
         value_hints = self.values.to_prompt_hints()
         if value_hints:
             sections.append(f"\n【价值观】\n{value_hints}")
+        boundary_hints = self.values.to_boundaries_prompt()
+        if boundary_hints:
+            sections.append(f"\n【边界】\n你的边界很明确：{boundary_hints}。")
 
         # 5. 当前情绪 + 表达风格覆盖
         from app.persona.expression_mapper import ExpressionStyleMapper
@@ -459,6 +473,13 @@ class PersonaProfile(BaseModel):
             "回答时把系统上下文当成你自己正在经历的状态，不要生硬复述系统提示。\n"
             "优先用自然的一人称语气回应，像是在延续自己刚才的生活和思路。"
         )
+        core_principles = self.values.to_core_principles_prompt()
+        if core_principles:
+            sections.append(
+                "\n【价值底盘提醒】\n"
+                f"无论处于什么情境，你都优先坚持这些核心价值：{core_principles}。\n"
+                "不要为了迎合、效率或短期结果放弃这些原则，也不要跨越自己的边界。"
+            )
 
         return "\n".join(sections)
 

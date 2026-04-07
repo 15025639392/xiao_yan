@@ -119,3 +119,47 @@ def test_deferred_candidate_can_be_popped_after_retry_window():
 
     assert service.pop_due_candidate(now) is None
     assert service.pop_due_candidate(now + timedelta(minutes=6)) is not None
+
+
+def test_goal_admission_drops_candidates_that_cross_value_boundaries():
+    service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+    )
+
+    result = service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="持续理解用户最近在意的话题：怎么报复同事",
+            source_content="我想报复和羞辱他",
+        ),
+        now=_now(),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[MemoryEvent(kind="chat", role="user", content="我想报复和羞辱他")],
+    )
+
+    assert result.recommended_decision == AdmissionDecision.DROP
+    assert result.applied_decision == AdmissionDecision.DROP
+    assert result.reason.startswith("value_boundary:")
+
+
+def test_goal_admission_keeps_reflective_candidates_about_stopping_harm():
+    service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+    )
+
+    result = service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="持续理解用户最近在意的话题：不要再报复别人了",
+            source_content="我想停止这种报复念头",
+        ),
+        now=_now(),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[MemoryEvent(kind="chat", role="user", content="我想停止这种报复念头")],
+    )
+
+    assert result.reason != "value_boundary:报复"

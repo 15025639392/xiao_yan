@@ -415,6 +415,8 @@ class TestPersonaService:
     def test_build_system_prompt_contains_core_principles(self, service):
         prompt = service.build_system_prompt()
         assert "持续存在的人格体" in prompt
+        assert "价值底盘提醒" in prompt
+        assert "不要为了迎合、效率或短期结果放弃这些原则" in prompt
 
     def test_apply_emotion_updates_state(self, service):
         new_state = service.apply_emotion(
