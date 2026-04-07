@@ -1,7 +1,34 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, vi } from "vitest";
+
+const { fetchMemorySummary } = vi.hoisted(() => ({
+  fetchMemorySummary: vi.fn(),
+}));
+
+const { subscribeAppRealtime } = vi.hoisted(() => ({
+  subscribeAppRealtime: vi.fn(),
+}));
+
+vi.mock("../lib/api", async () => {
+  const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
+  return {
+    ...actual,
+    fetchMemorySummary,
+  };
+});
+
+vi.mock("../lib/realtime", () => ({
+  subscribeAppRealtime,
+}));
 
 import { GoalsPanel } from "./GoalsPanel";
+
+beforeEach(() => {
+  fetchMemorySummary.mockReset();
+  subscribeAppRealtime.mockReset();
+  fetchMemorySummary.mockReturnValue(new Promise(() => {}));
+  subscribeAppRealtime.mockReturnValue(() => {});
+});
 
 test("renders goals and forwards status updates", () => {
   const onUpdateGoalStatus = vi.fn();
@@ -241,4 +268,116 @@ test("can cancel confirmation modal", () => {
 
   expect(screen.queryByText("确认放弃目标")).not.toBeInTheDocument();
   expect(onUpdateGoalStatus).not.toHaveBeenCalled();
+});
+
+test("renders relationship-aware goal guidance when relationship summary is available", async () => {
+  fetchMemorySummary.mockResolvedValue({
+    total_estimated: 14,
+    by_kind: {},
+    recent_count: 2,
+    strong_memories: 1,
+    relationship: {
+      available: true,
+      boundaries: ["别催我做决定，先让我自己想清楚"],
+      commitments: ["答应你重要选择前先把利弊分析给你"],
+      preferences: ["更喜欢先比较方案再推进"],
+    },
+    available: true,
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "整理今天的关键判断",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText("目标关系约束")).toBeInTheDocument();
+  });
+  expect(screen.getByText("避免把目标做成催促式推进，别逼用户现在就决定。")).toBeInTheDocument();
+  expect(screen.getByText("涉及重要判断时，优先支持用户自己比较、思考、决定。")).toBeInTheDocument();
+  expect(screen.getByText("优先让目标服务这项承诺：答应你重要选择前先把利弊分析给你")).toBeInTheDocument();
+  expect(screen.getByText("推进方式尽量贴合这个偏好：更喜欢先比较方案再推进")).toBeInTheDocument();
+});
+
+test("updates goal guidance from realtime memory events", async () => {
+  fetchMemorySummary.mockResolvedValue({
+    total_estimated: 0,
+    by_kind: {},
+    recent_count: 0,
+    strong_memories: 0,
+    relationship: {
+      available: false,
+      boundaries: [],
+      commitments: [],
+      preferences: [],
+    },
+    available: true,
+  });
+
+  let listener: ((event: any) => void) | null = null;
+  subscribeAppRealtime.mockImplementation((callback) => {
+    listener = callback;
+    return () => {};
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "整理今天的关键判断",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(subscribeAppRealtime).toHaveBeenCalled();
+  });
+
+  await act(async () => {
+    listener?.({
+      type: "memory_updated",
+      payload: {
+        summary: {
+          total_estimated: 16,
+          by_kind: {},
+          recent_count: 3,
+          strong_memories: 2,
+          relationship: {
+            available: true,
+            boundaries: ["不要催我，给我一点空间"],
+            commitments: ["答应你先说明不确定性再建议下一步"],
+            preferences: ["更喜欢先对齐判断再行动"],
+          },
+          available: true,
+        },
+        relationship: {
+          available: true,
+          boundaries: ["不要催我，给我一点空间"],
+          commitments: ["答应你先说明不确定性再建议下一步"],
+          preferences: ["更喜欢先对齐判断再行动"],
+        },
+        timeline: [],
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("目标关系约束")).toBeInTheDocument();
+  });
+  expect(screen.getByText("优先让目标服务这项承诺：答应你先说明不确定性再建议下一步")).toBeInTheDocument();
+  expect(screen.getByText("推进方式尽量贴合这个偏好：更喜欢先对齐判断再行动")).toBeInTheDocument();
 });

@@ -1,9 +1,13 @@
-import type { Goal } from "../lib/api";
+import { useEffect, useState } from "react";
+import type { Goal, RelationshipSummary } from "../lib/api";
+import { fetchMemorySummary } from "../lib/api";
+import { subscribeAppRealtime } from "../lib/realtime";
 import { ExecutionStatsPanel } from "./goals/ExecutionStatsPanel";
 import { GoalBoard } from "./goals/GoalBoard";
 import { GoalsChainsSection } from "./goals/GoalsChainsSection";
 import { GoalsConfirmModal } from "./goals/GoalsConfirmModal";
 import { GoalsHeaderActions } from "./goals/GoalsHeaderActions";
+import { GoalsRelationshipGuidance } from "./goals/GoalsRelationshipGuidance";
 import { useGoalsPanelState } from "./goals/useGoalsPanelState";
 import { EmptyState } from "./ui/EmptyState";
 import { Panel } from "./ui/Panel";
@@ -14,6 +18,7 @@ type GoalsPanelProps = {
 };
 
 export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
+  const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const {
     chainedGroups,
     columns,
@@ -31,6 +36,24 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     toggleExecutionPanel,
   } = useGoalsPanelState({ goals, onUpdateGoalStatus });
 
+  useEffect(() => {
+    fetchMemorySummary()
+      .then((summary) => setRelationship(summary.relationship))
+      .catch(() => setRelationship(null));
+
+    const unsubscribe = subscribeAppRealtime((event) => {
+      const memoryPayload =
+        event.type === "snapshot" ? event.payload.memory : event.type === "memory_updated" ? event.payload : null;
+      if (!memoryPayload) {
+        return;
+      }
+
+      setRelationship(memoryPayload.relationship ?? memoryPayload.summary.relationship ?? null);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   return (
     <Panel
       icon="🎯"
@@ -47,6 +70,8 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
       {showExecutionPanel && executionStats ? (
         <ExecutionStatsPanel executionStats={executionStats} activeExecutions={activeExecutions} goals={goals} />
       ) : null}
+
+      <GoalsRelationshipGuidance relationship={relationship} />
 
       {goals.length === 0 ? (
         <EmptyState size="small">
