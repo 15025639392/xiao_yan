@@ -1,6 +1,7 @@
-import type { Goal } from "../../lib/api";
+import type { Goal, RelationshipSummary } from "../../lib/api";
 import { StatusBadge } from "../ui";
 import { renderGoalStatus } from "./goalsUtils";
+import { getGoalRelationshipHints } from "./relationshipGoalHints";
 
 type GoalItemProps = {
   goal: Goal;
@@ -9,6 +10,7 @@ type GoalItemProps = {
   onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
   onDecomposeGoal: (goalId: string) => void;
   loadingDecompose: Set<string>;
+  relationship: RelationshipSummary | null;
 };
 
 export function GoalItem({
@@ -18,7 +20,10 @@ export function GoalItem({
   onUpdateGoalStatus,
   onDecomposeGoal,
   loadingDecompose,
+  relationship,
 }: GoalItemProps) {
+  const relationshipHints = getGoalRelationshipHints(goal, relationship);
+
   return (
     <li className="goal-card">
       <div className="goal-card__top">
@@ -38,6 +43,20 @@ export function GoalItem({
         </div>
         <StatusBadge tone={goal.status}>{renderGoalStatus(goal.status)}</StatusBadge>
       </div>
+
+      {relationshipHints.length > 0 ? (
+        <section className="goal-card__relationship" aria-label="关系提示">
+          <span className="goal-card__relationship-title">关系提示</span>
+          <div className="goal-card__relationship-list">
+            {relationshipHints.map((hint) => (
+              <div key={`${hint.label}:${hint.reason}`} className={`goal-card__relationship-item goal-card__relationship-item--${hint.tone}`}>
+                <span className="goal-card__relationship-chip">{hint.label}</span>
+                <span className="goal-card__relationship-text">{hint.reason}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {goal.generation === 0 && goal.status === "active" ? (
         <div

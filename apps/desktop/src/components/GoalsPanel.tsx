@@ -84,6 +84,7 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
       <GoalBoard
         columns={columns}
         collapsedColumns={collapsedColumns}
+        relationship={relationship}
         onToggleColumn={toggleColumn}
         onAbandonClick={(goalId, goalTitle) => openConfirm(goalId, goalTitle, "abandon")}
         onCompleteClick={(goalId, goalTitle) => openConfirm(goalId, goalTitle, "complete")}

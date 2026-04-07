@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 
 const { fetchMemorySummary } = vi.hoisted(() => ({
@@ -380,4 +380,53 @@ test("updates goal guidance from realtime memory events", async () => {
   });
   expect(screen.getByText("优先让目标服务这项承诺：答应你先说明不确定性再建议下一步")).toBeInTheDocument();
   expect(screen.getByText("推进方式尽量贴合这个偏好：更喜欢先对齐判断再行动")).toBeInTheDocument();
+});
+
+test("renders per-goal relationship hints inside goal cards", async () => {
+  fetchMemorySummary.mockResolvedValue({
+    total_estimated: 14,
+    by_kind: {},
+    recent_count: 2,
+    strong_memories: 1,
+    relationship: {
+      available: true,
+      boundaries: ["别催我做决定，先让我自己想清楚"],
+      commitments: ["答应你重要选择前先把利弊分析给你"],
+      preferences: ["更喜欢先比较方案再推进"],
+    },
+    available: true,
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "现在就替用户做决定并推进结论",
+          status: "active",
+          generation: 0,
+        },
+        {
+          id: "goal-2",
+          title: "先比较方案并整理利弊分析",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  const boundaryCard = await screen.findByText("现在就替用户做决定并推进结论");
+  const boundaryGoal = boundaryCard.closest("li");
+  expect(boundaryGoal).not.toBeNull();
+  expect(within(boundaryGoal as HTMLElement).getByText("关系提示")).toBeInTheDocument();
+  expect(within(boundaryGoal as HTMLElement).getByText("避免催促")).toBeInTheDocument();
+  expect(within(boundaryGoal as HTMLElement).getByText("让用户自己判断")).toBeInTheDocument();
+
+  const alignedCard = screen.getByText("先比较方案并整理利弊分析");
+  const alignedGoal = alignedCard.closest("li");
+  expect(alignedGoal).not.toBeNull();
+  expect(within(alignedGoal as HTMLElement).getByText("承接承诺")).toBeInTheDocument();
+  expect(within(alignedGoal as HTMLElement).getByText("贴合偏好")).toBeInTheDocument();
 });
