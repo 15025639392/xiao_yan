@@ -65,7 +65,8 @@ class SelfProgrammingService:
                 "focus_mode": FocusMode.SELF_IMPROVEMENT,
                 "self_programming_job": job,
                 "current_thought": (
-                    f'我觉得自己在"{job.target_area}"这块还不够好，先停下来做一次自我编程：{job.reason}'
+                    f'我觉得自己在"{job.target_area}"这块还不够好。'
+                    "已生成改进草案，等待你确认开工。"
                 ),
             }
         )
@@ -74,6 +75,26 @@ class SelfProgrammingService:
         job = state.self_programming_job
         if state.focus_mode != FocusMode.SELF_IMPROVEMENT or job is None:
             return None
+
+        if job.status == SelfProgrammingStatus.DRAFTED:
+            return None
+
+        if job.status == SelfProgrammingStatus.PENDING_START_APPROVAL:
+            return None
+
+        if job.status == SelfProgrammingStatus.QUEUED:
+            return None
+
+        if job.status == SelfProgrammingStatus.FROZEN:
+            return None
+
+        if job.status == SelfProgrammingStatus.RUNNING:
+            job = job.model_copy(
+                update={
+                    "status": SelfProgrammingStatus.DIAGNOSING,
+                    "queue_status": SelfProgrammingStatus.RUNNING.value,
+                }
+            )
 
         if job.status == SelfProgrammingStatus.DIAGNOSING:
             return state.model_copy(

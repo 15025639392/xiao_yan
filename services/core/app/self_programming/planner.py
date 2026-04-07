@@ -9,6 +9,7 @@ from app.domain.models import (
 )
 from app.self_programming.models import SelfProgrammingCandidate, SelfProgrammingTrigger
 from app.self_programming.planner_inference import PlannerInferenceMixin
+from app.runtime_ext.runtime_config import get_runtime_config
 
 
 class SelfProgrammingPlanner(PlannerInferenceMixin):
@@ -16,19 +17,33 @@ class SelfProgrammingPlanner(PlannerInferenceMixin):
         self.workspace_root = workspace_root
 
     def plan(self, candidate: SelfProgrammingCandidate) -> SelfProgrammingJob:
-        cooldown = (
-            timedelta(hours=1)
+        runtime_config = get_runtime_config()
+        hard_minutes = runtime_config.self_programming_hard_failure_cooldown_minutes
+        proactive_minutes = runtime_config.self_programming_proactive_cooldown_minutes
+        cooldown_minutes = (
+            hard_minutes
             if candidate.trigger == SelfProgrammingTrigger.HARD_FAILURE
-            else timedelta(hours=12)
+            else proactive_minutes
         )
+        cooldown = timedelta(minutes=cooldown_minutes)
         return SelfProgrammingJob(
             reason=candidate.reason,
+            reason_statement=candidate.reason,
+            direction_statement=candidate.spec,
             target_area=candidate.target_area,
-            status=SelfProgrammingStatus.DIAGNOSING,
+            status=SelfProgrammingStatus.DRAFTED,
+            queue_status=SelfProgrammingStatus.DRAFTED.value,
+            owner_type="delegate",
+            delegate_provider="codex",
+            promotion_status="not_ready",
             spec=candidate.spec,
             test_edits=self._build_test_edits(candidate),
             edits=self._build_edits(candidate),
             verification=SelfProgrammingVerification(commands=candidate.test_commands),
+            cooldown_policy_snapshot={
+                "hard_failure_minutes": hard_minutes,
+                "proactive_minutes": proactive_minutes,
+            },
             cooldown_until=(candidate.created_at + cooldown) if candidate.created_at else None,
         )
 

@@ -22,6 +22,8 @@ class RuntimeConfig:
         instance._chat_provider = get_chat_provider()
         instance._chat_model = get_chat_model()
         instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
+        instance._self_programming_hard_failure_cooldown_minutes = 60
+        instance._self_programming_proactive_cooldown_minutes = 720
         instance._folder_permissions = {}
         return instance
 
@@ -38,6 +40,10 @@ class RuntimeConfig:
                 instance._chat_model = get_chat_model()
             if not hasattr(instance, "_chat_read_timeout_seconds"):
                 instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
+            if not hasattr(instance, "_self_programming_hard_failure_cooldown_minutes"):
+                instance._self_programming_hard_failure_cooldown_minutes = 60
+            if not hasattr(instance, "_self_programming_proactive_cooldown_minutes"):
+                instance._self_programming_proactive_cooldown_minutes = 720
             if not hasattr(instance, "_folder_permissions") or not isinstance(instance._folder_permissions, dict):
                 instance._folder_permissions = {}
 
@@ -94,6 +100,26 @@ class RuntimeConfig:
     def chat_read_timeout_seconds(self, value: int) -> None:
         with self._lock:
             self._chat_read_timeout_seconds = max(10, min(600, int(value)))
+
+    @property
+    def self_programming_hard_failure_cooldown_minutes(self) -> int:
+        with self._lock:
+            return self._self_programming_hard_failure_cooldown_minutes
+
+    @self_programming_hard_failure_cooldown_minutes.setter
+    def self_programming_hard_failure_cooldown_minutes(self, value: int) -> None:
+        with self._lock:
+            self._self_programming_hard_failure_cooldown_minutes = max(1, min(7 * 24 * 60, int(value)))
+
+    @property
+    def self_programming_proactive_cooldown_minutes(self) -> int:
+        with self._lock:
+            return self._self_programming_proactive_cooldown_minutes
+
+    @self_programming_proactive_cooldown_minutes.setter
+    def self_programming_proactive_cooldown_minutes(self, value: int) -> None:
+        with self._lock:
+            self._self_programming_proactive_cooldown_minutes = max(1, min(7 * 24 * 60, int(value)))
 
     def list_folder_permissions(self) -> list[tuple[str, FolderAccessLevel]]:
         with self._lock:

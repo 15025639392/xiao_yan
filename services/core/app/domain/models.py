@@ -42,6 +42,12 @@ class TodayPlan(BaseModel):
 
 
 class SelfProgrammingStatus(str, Enum):
+    DRAFTED = "drafted"
+    PENDING_START_APPROVAL = "pending_start_approval"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FROZEN = "frozen"
     PENDING = "pending"
     DIAGNOSING = "diagnosing"
     PATCHING = "patching"
@@ -76,8 +82,18 @@ class SelfProgrammingEdit(BaseModel):
 class SelfProgrammingJob(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     reason: str
+    reason_statement: str | None = None
+    direction_statement: str | None = None
     target_area: str
     status: SelfProgrammingStatus
+    queue_status: str | None = None
+    owner_type: str | None = None
+    delegate_provider: str | None = None
+    delegate_run_id: str | None = None
+    execution_workspace: str | None = None
+    risk_level: str | None = None
+    promotion_status: str | None = None
+    frozen_reason: str | None = None
     spec: str
     patch_summary: str | None = None
     red_verification: SelfProgrammingVerification | None = None
@@ -109,6 +125,18 @@ class SelfProgrammingJob(BaseModel):
     approval_requested_at: datetime | None = None
     approval_edits_summary: str | None = None
     approval_reason: str | None = None
+    start_approval_reason: str | None = None
+    start_approved_by: str | None = None
+    start_approved_at: datetime | None = None
+
+    # 拒绝审计
+    rejection_phase: str | None = None
+    rejection_reason: str | None = None
+    rejected_by: str | None = None
+    rejected_at: datetime | None = None
+
+    # 冷却快照
+    cooldown_policy_snapshot: dict[str, int] | None = None
 
 
 class BeingState(BaseModel):

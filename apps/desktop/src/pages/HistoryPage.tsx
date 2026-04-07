@@ -25,13 +25,25 @@ export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: s
               <dt>目标区域</dt>
               <dd>{selectedEntry.target_area}</dd>
               <dt>原因</dt>
-              <dd>{selectedEntry.reason}</dd>
+              <dd>{selectedEntry.reason_statement ?? selectedEntry.reason}</dd>
+              {selectedEntry.direction_statement ? (
+                <>
+                  <dt>方向</dt>
+                  <dd>{selectedEntry.direction_statement}</dd>
+                </>
+              ) : null}
               <dt>结果</dt>
               <dd>{selectedEntry.outcome}</dd>
               <dt>状态</dt>
               <dd>{historyStatusLabel(selectedEntry.status)}</dd>
               <dt>创建时间</dt>
               <dd>{new Date(selectedEntry.created_at).toLocaleString("zh-CN")}</dd>
+              {selectedEntry.rejection_reason ? (
+                <>
+                  <dt>拒绝原因</dt>
+                  <dd>{selectedEntry.rejection_reason}</dd>
+                </>
+              ) : null}
             </dl>
 
             {selectedEntry.touched_files.length > 0 ? (
@@ -85,6 +97,12 @@ function varStr(name: string): string {
 
 function historyStatusLabel(status: string): string {
   const map: Record<string, string> = {
+    drafted: "草案",
+    pending_start_approval: "待开工审批",
+    queued: "已排队",
+    running: "执行中",
+    completed: "已完成",
+    frozen: "已冻结",
     applied: "已生效",
     failed: "失败",
     verifying: "验证中",
@@ -103,4 +121,3 @@ function healthColor(score: number): string {
   if (score >= 40) return "var(--warning)";
   return "var(--danger)";
 }
-

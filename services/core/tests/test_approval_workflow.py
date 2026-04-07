@@ -30,11 +30,18 @@ from app.runtime import StateStore
 
 
 def test_pending_approval_status_exists():
-    """PENDING_APPROVAL 和 REJECTED 枚举值存在。"""
+    """审批与开工门禁相关状态枚举值存在。"""
     assert hasattr(SelfProgrammingStatus, "PENDING_APPROVAL")
     assert hasattr(SelfProgrammingStatus, "REJECTED")
+    assert hasattr(SelfProgrammingStatus, "DRAFTED")
+    assert hasattr(SelfProgrammingStatus, "PENDING_START_APPROVAL")
+    assert hasattr(SelfProgrammingStatus, "QUEUED")
+    assert hasattr(SelfProgrammingStatus, "RUNNING")
+    assert hasattr(SelfProgrammingStatus, "COMPLETED")
+    assert hasattr(SelfProgrammingStatus, "FROZEN")
     assert SelfProgrammingStatus.PENDING_APPROVAL.value == "pending_approval"
     assert SelfProgrammingStatus.REJECTED.value == "rejected"
+    assert SelfProgrammingStatus.PENDING_START_APPROVAL.value == "pending_start_approval"
 
 
 def test_job_model_has_approval_fields():
@@ -258,7 +265,155 @@ def test_full_approval_flow_via_api():
 
 
 # ═══════════════════════════════════════════════════
-# 4. 辅助函数测试
+# 4. 开工审批门禁测试
+# ═══════════════════════════════════════════════════
+
+
+def test_request_start_requires_reason_and_direction():
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    job = SelfProgrammingJob(
+        id="start-need-reason",
+        target_area="agent",
+        reason="测试",
+        spec="测试",
+        status="drafted",
+    )
+    store.set(
+        store.get().model_copy(
+            update={
+                "focus_mode": "self_programming",
+                "self_programming_job": job,
+            }
+        )
+    )
+    app.state.state_store = store
+
+    client = TestClient(app)
+    resp = client.post("/self-programming/start-need-reason/request-start", json={})
+    assert resp.status_code == 400
+    assert "reason_statement" in resp.json()["detail"]
+
+
+def test_request_start_transitions_to_pending_start_approval():
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    job = SelfProgrammingJob(
+        id="start-request-ok",
+        target_area="agent",
+        reason="测试",
+        spec="测试",
+        status="drafted",
+        reason_statement="我要提升稳定性",
+        direction_statement="优先修复自检失败路径",
+    )
+    store.set(
+        store.get().model_copy(
+            update={
+                "focus_mode": "self_programming",
+                "self_programming_job": job,
+            }
+        )
+    )
+    app.state.state_store = store
+
+    client = TestClient(app)
+    resp = client.post("/self-programming/start-request-ok/request-start", json={})
+    assert resp.status_code == 200
+    updated = store.get().self_programming_job
+    assert updated is not None
+    assert updated.status == "pending_start_approval"
+
+
+def test_approve_start_transitions_to_queued_and_records_audit_fields():
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    job = SelfProgrammingJob(
+        id="start-approve-ok",
+        target_area="agent",
+        reason="测试",
+        spec="测试",
+        status="pending_start_approval",
+        reason_statement="我要提升稳定性",
+        direction_statement="优先修复自检失败路径",
+    )
+    store.set(
+        store.get().model_copy(
+            update={
+                "focus_mode": "self_programming",
+                "self_programming_job": job,
+            }
+        )
+    )
+    app.state.state_store = store
+
+    client = TestClient(app)
+    resp = client.post("/self-programming/start-approve-ok/approve-start", json={"reason": "可以开工"})
+    assert resp.status_code == 200
+    updated = store.get().self_programming_job
+    assert updated is not None
+    assert updated.status == "queued"
+    assert updated.start_approved_at is not None
+    assert updated.start_approval_reason == "可以开工"
+
+
+def test_reject_start_records_rejection_and_returns_to_drafted():
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    job = SelfProgrammingJob(
+        id="start-reject-ok",
+        target_area="agent",
+        reason="测试",
+        spec="测试",
+        status="pending_start_approval",
+        reason_statement="我要提升稳定性",
+        direction_statement="优先修复自检失败路径",
+    )
+    store.set(
+        store.get().model_copy(
+            update={
+                "focus_mode": "self_programming",
+                "self_programming_job": job,
+            }
+        )
+    )
+    app.state.state_store = store
+
+    client = TestClient(app)
+    resp = client.post("/self-programming/start-reject-ok/reject-start", json={"reason": "方向不清晰"})
+    assert resp.status_code == 200
+    updated = store.get().self_programming_job
+    assert updated is not None
+    assert updated.status == "drafted"
+    assert updated.rejection_phase == "start"
+    assert updated.rejection_reason == "方向不清晰"
+
+
+def test_delegate_requires_queued_status():
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    job = SelfProgrammingJob(
+        id="delegate-blocked",
+        target_area="agent",
+        reason="测试",
+        spec="测试",
+        status="pending_start_approval",
+        reason_statement="我要提升稳定性",
+        direction_statement="优先修复自检失败路径",
+    )
+    store.set(
+        store.get().model_copy(
+            update={
+                "focus_mode": "self_programming",
+                "self_programming_job": job,
+            }
+        )
+    )
+    app.state.state_store = store
+
+    client = TestClient(app)
+    resp = client.post("/self-programming/delegate-blocked/delegate", json={})
+    assert resp.status_code == 409
+    assert "queued" in resp.json()["detail"]
+
+
+# ═══════════════════════════════════════════════════
+# 5. 辅助函数测试
 # ═══════════════════════════════════════════════════
 
 

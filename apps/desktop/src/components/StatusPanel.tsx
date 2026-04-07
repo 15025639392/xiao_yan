@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import type { BeingState, EmotionState } from "../lib/api";
 import { fetchEmotionState } from "../lib/api";
 import { ApprovalPanel } from "./ApprovalPanel";
+import { StartApprovalPanel } from "./StartApprovalPanel";
 import { EmotionPanel } from "./status/EmotionPanel";
+import { SelfProgrammingCooldownSettings } from "./status/SelfProgrammingCooldownSettings";
 import { SelfProgrammingPanel } from "./status/SelfProgrammingPanel";
 import { TodayPlanSection } from "./status/TodayPlanSection";
 import { Panel } from "./ui/Panel";
@@ -47,7 +49,16 @@ export function StatusPanel({ state, error, onRollback, onApprovalDecision }: St
       ) : null}
 
       {selfProgrammingJob ? (
-        selfProgrammingJob.status === "pending_approval" ? (
+        selfProgrammingJob.status === "pending_start_approval"
+        || selfProgrammingJob.status === "drafted"
+        || selfProgrammingJob.status === "queued" ? (
+          <StartApprovalPanel
+            job={selfProgrammingJob}
+            onDecision={(jobId) => {
+              onApprovalDecision?.(jobId, true);
+            }}
+          />
+        ) : selfProgrammingJob.status === "pending_approval" ? (
           <ApprovalPanel
             job={selfProgrammingJob}
             onDecision={(jobId, approved) => {
@@ -62,6 +73,8 @@ export function StatusPanel({ state, error, onRollback, onApprovalDecision }: St
       {error ? (
         <InlineAlert tone="danger">{error}</InlineAlert>
       ) : null}
+
+      {selfProgrammingJob ? <SelfProgrammingCooldownSettings /> : null}
     </Panel>
   );
 }

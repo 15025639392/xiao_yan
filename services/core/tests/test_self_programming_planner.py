@@ -3,6 +3,7 @@ from pathlib import Path
 
 from app.self_programming.models import SelfProgrammingCandidate, SelfProgrammingTrigger
 from app.self_programming.planner import SelfProgrammingPlanner
+from app.runtime_ext.runtime_config import get_runtime_config
 
 
 def test_planner_inferrs_python_constant_edit_from_existing_failing_test(tmp_path: Path):
@@ -346,3 +347,34 @@ function renderFocusMode(focusMode: BeingState["focus_mode"]): string {
     assert {edit.file_path for edit in job.edits} == {"apps/desktop/src/components/StatusPanel.tsx"}
     assert any("她刚刚为什么改自己" in edit.replace_text for edit in job.edits)
     assert any('if (focusMode === "self_programming")' in edit.replace_text for edit in job.edits)
+
+
+def test_planner_uses_runtime_cooldown_config_and_snapshots_policy(tmp_path: Path):
+    config = get_runtime_config()
+    original_hard = config.self_programming_hard_failure_cooldown_minutes
+    original_proactive = config.self_programming_proactive_cooldown_minutes
+    try:
+        config.self_programming_hard_failure_cooldown_minutes = 30
+        config.self_programming_proactive_cooldown_minutes = 240
+
+        planner = SelfProgrammingPlanner(workspace_root=tmp_path)
+        now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
+        job = planner.plan(
+            SelfProgrammingCandidate(
+                trigger=SelfProgrammingTrigger.HARD_FAILURE,
+                reason="测试失败：X",
+                target_area="agent",
+                spec="修复",
+                test_commands=["pytest -q"],
+                created_at=now,
+            )
+        )
+
+        assert job.cooldown_until == datetime(2026, 4, 5, 10, 30, tzinfo=timezone.utc)
+        assert job.cooldown_policy_snapshot == {
+            "hard_failure_minutes": 30,
+            "proactive_minutes": 240,
+        }
+    finally:
+        config.self_programming_hard_failure_cooldown_minutes = original_hard
+        config.self_programming_proactive_cooldown_minutes = original_proactive

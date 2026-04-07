@@ -91,7 +91,7 @@ export function HistoryPanel({ visible = true, onSelectEntry }: HistoryPanelProp
               {/* 核心信息 */}
               <div className="history-item__body">
                 <h4 className="history-item__area">{entry.target_area}</h4>
-                <p className="history-item__reason">{entry.reason}</p>
+                <p className="history-item__reason">{entry.reason_statement ?? entry.reason}</p>
               </div>
 
               {/* 元数据行 */}

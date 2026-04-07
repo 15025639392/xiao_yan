@@ -26,6 +26,8 @@ class HistoryEntry:
     target_area: str
     reason: str
     spec: str
+    reason_statement: str | None = None
+    direction_statement: str | None = None
     status: HistoryEntryStatus = HistoryEntryStatus.APPLIED
     patch_summary: str | None = None
     touched_files: list[str] = field(default_factory=list)
@@ -40,6 +42,13 @@ class HistoryEntry:
     sandbox_duration: float = 0.0
     conflict_severity: str = "safe"
     conflict_count: int = 0
+    health_score: float | None = None
+    rejection_phase: str | None = None
+    rejection_reason: str | None = None
+    approved_at: str | None = None
+    approved_by: str | None = None
+    start_approved_at: str | None = None
+    start_approved_by: str | None = None
     created_at: str = ""
     completed_at: str = ""
 
@@ -54,7 +63,11 @@ class HistoryEntry:
         status_map = {
             "applied": HistoryEntryStatus.APPLIED,
             "failed": HistoryEntryStatus.FAILED,
+            "rolled_back": HistoryEntryStatus.ROLLED_BACK,
         }
+        raw_status = getattr(job, "status", "")
+        if hasattr(raw_status, "value"):
+            raw_status = raw_status.value
 
         edits_summary = []
         for e in (job.edits or []):
@@ -75,8 +88,10 @@ class HistoryEntry:
             job_id=job.id,
             target_area=job.target_area,
             reason=job.reason,
+            reason_statement=getattr(job, "reason_statement", None),
+            direction_statement=getattr(job, "direction_statement", None),
             spec=job.spec,
-            status=status_map.get(job.status, HistoryEntryStatus.FAILED),
+            status=status_map.get(str(raw_status), HistoryEntryStatus.FAILED),
             patch_summary=job.patch_summary,
             touched_files=list(job.touched_files or []),
             edits_summary=edits_summary,
@@ -84,6 +99,21 @@ class HistoryEntry:
             commit_hash=job.commit_hash,
             commit_message=job.commit_message,
             candidate_label=job.candidate_label,
+            health_score=getattr(job, "health_score", None),
+            rejection_phase=getattr(job, "rejection_phase", None),
+            rejection_reason=getattr(job, "rejection_reason", None),
+            approved_at=(
+                job.approval_requested_at.isoformat()
+                if getattr(job, "approval_requested_at", None) is not None
+                else None
+            ),
+            approved_by=getattr(job, "approved_by", None),
+            start_approved_at=(
+                job.start_approved_at.isoformat()
+                if getattr(job, "start_approved_at", None) is not None
+                else None
+            ),
+            start_approved_by=getattr(job, "start_approved_by", None),
             created_at=datetime.now(timezone.utc).isoformat(),
             **overrides,
         )

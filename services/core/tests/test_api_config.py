@@ -228,3 +228,46 @@ def test_get_chat_models_minimaxi_404_falls_back_without_error(monkeypatch):
     finally:
         config.chat_provider = original_provider
         config.chat_model = original_model
+
+
+def test_get_self_programming_config_returns_defaults():
+    client = TestClient(app)
+    response = client.get("/config/self-programming")
+    assert response.status_code == 200
+    assert response.json() == {
+        "hard_failure_cooldown_minutes": 60,
+        "proactive_cooldown_minutes": 720,
+    }
+
+
+def test_update_self_programming_config_supports_patch():
+    client = TestClient(app)
+    response = client.put(
+        "/config/self-programming",
+        json={
+            "hard_failure_cooldown_minutes": 45,
+            "proactive_cooldown_minutes": 360,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "hard_failure_cooldown_minutes": 45,
+        "proactive_cooldown_minutes": 360,
+    }
+
+    # 恢复默认值，避免污染后续测试
+    restore = client.put(
+        "/config/self-programming",
+        json={
+            "hard_failure_cooldown_minutes": 60,
+            "proactive_cooldown_minutes": 720,
+        },
+    )
+    assert restore.status_code == 200
+
+
+def test_update_self_programming_config_rejects_empty_patch():
+    client = TestClient(app)
+    response = client.put("/config/self-programming", json={})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "at least one self-programming config field is required"

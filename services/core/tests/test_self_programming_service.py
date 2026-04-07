@@ -22,6 +22,21 @@ def _approve_pending_job(store: StateStore) -> None:
         store.set(state.model_copy(update={"self_programming_job": approved}))
 
 
+def _approve_start_and_delegate_job(store: StateStore) -> None:
+    """模拟用户点击确认开工并触发委托执行。"""
+    state = store.get()
+    job = state.self_programming_job
+    if not job:
+        return
+    if job.status == SelfProgrammingStatus.DRAFTED:
+        job = job.model_copy(update={"status": SelfProgrammingStatus.PENDING_START_APPROVAL})
+    if job.status == SelfProgrammingStatus.PENDING_START_APPROVAL:
+        job = job.model_copy(update={"status": SelfProgrammingStatus.QUEUED})
+    if job.status == SelfProgrammingStatus.QUEUED:
+        job = job.model_copy(update={"status": SelfProgrammingStatus.RUNNING})
+    store.set(state.model_copy(update={"self_programming_job": job}))
+
+
 class StubEvaluator:
     def evaluate(self, state, recent_events, now):
         return SelfProgrammingCandidate(
@@ -153,12 +168,13 @@ def test_self_programming_service_can_complete_patch_and_verification_cycle(tmp_
     )
 
     first = loop.tick_once()
+    _approve_start_and_delegate_job(store)
     second = loop.tick_once()
     third = loop.tick_once()
 
     assert first.focus_mode == "self_programming"
     assert first.self_programming_job is not None
-    assert first.self_programming_job.status == "diagnosing"
+    assert first.self_programming_job.status == "drafted"
     assert second.self_programming_job.status == "patching"
     # PATCHING 后进入 PENDING_APPROVAL 等待用户审批
     assert third.self_programming_job.status == "pending_approval"
@@ -202,6 +218,7 @@ def test_self_programming_service_can_use_failure_driven_planner_for_existing_te
     )
 
     first = loop.tick_once()
+    _approve_start_and_delegate_job(store)
     second = loop.tick_once()
     third = loop.tick_once()
 
@@ -250,6 +267,7 @@ def test_self_programming_service_can_fix_zero_arg_function_from_existing_test(t
     )
 
     first = loop.tick_once()
+    _approve_start_and_delegate_job(store)
     second = loop.tick_once()
     third = loop.tick_once()
 
@@ -298,6 +316,7 @@ def test_self_programming_service_can_fix_zero_arg_function_from_existing_test(t
     )
 
     first = loop.tick_once()
+    _approve_start_and_delegate_job(store)
     second = loop.tick_once()
     third = loop.tick_once()
 
@@ -349,6 +368,7 @@ def test_self_programming_service_can_follow_assignment_then_return_chain_from_e
     )
 
     first = loop.tick_once()
+    _approve_start_and_delegate_job(store)
     second = loop.tick_once()
     third = loop.tick_once()
     fourth = loop.tick_once()
@@ -408,6 +428,7 @@ def test_self_programming_service_can_follow_multi_step_assignment_chain_from_ex
     )
 
     first = loop.tick_once()
+    _approve_start_and_delegate_job(store)
     second = loop.tick_once()
     third = loop.tick_once()
 
@@ -465,6 +486,7 @@ def test_self_programming_service_chooses_returned_call_from_multi_import_candid
     )
 
     first = loop.tick_once()
+    _approve_start_and_delegate_job(store)
     second = loop.tick_once()
     third = loop.tick_once()
 

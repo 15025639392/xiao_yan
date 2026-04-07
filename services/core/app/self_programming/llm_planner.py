@@ -31,6 +31,7 @@ from app.llm.schemas import ChatMessage, ChatResult
 from app.self_programming.models import SelfProgrammingCandidate
 from app.self_programming.planner import SelfProgrammingPlanner
 from app.self_programming.scorer import CandidateScorer, ScoredCandidate
+from app.runtime_ext.runtime_config import get_runtime_config
 
 logger = logging.getLogger(__name__)
 
@@ -241,13 +242,23 @@ class LLMPlanner:
             cooldown = _cooldown_for(candidate)
             job = SelfProgrammingJob(
                 reason=candidate.reason,
+                reason_statement=candidate.reason,
+                direction_statement=candidate.spec,
                 target_area=candidate.target_area,
-                status=SelfProgrammingStatus.DIAGNOSING,
+                status=SelfProgrammingStatus.DRAFTED,
+                queue_status=SelfProgrammingStatus.DRAFTED.value,
+                owner_type="delegate",
+                delegate_provider="codex",
+                promotion_status="not_ready",
                 spec=candidate.spec,
                 test_edits=[],
                 edits=edits,
                 verification=SelfProgrammingVerification(commands=candidate.test_commands),
                 patch_summary=f"[LLM-{cand_id}] {metadata.get('description', metadata.get('diagnosis', ''))}",
+                cooldown_policy_snapshot={
+                    "hard_failure_minutes": get_runtime_config().self_programming_hard_failure_cooldown_minutes,
+                    "proactive_minutes": get_runtime_config().self_programming_proactive_cooldown_minutes,
+                },
                 cooldown_until=(candidate.created_at + cooldown) if candidate.created_at else None,
             )
             scored = self.scorer.score(job, metadata)
@@ -416,8 +427,9 @@ class LLMPlanner:
 
 def _cooldown_for(candidate: SelfProgrammingCandidate) -> timedelta:
     """根据触发类型返回冷却时间。"""
+    runtime = get_runtime_config()
     return (
-        timedelta(hours=1)
+        timedelta(minutes=runtime.self_programming_hard_failure_cooldown_minutes)
         if candidate.trigger.value == "hard_failure"
-        else timedelta(hours=12)
+        else timedelta(minutes=runtime.self_programming_proactive_cooldown_minutes)
     )

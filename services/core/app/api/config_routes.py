@@ -33,6 +33,16 @@ class ConfigResponse(BaseModel):
     chat_read_timeout_seconds: int
 
 
+class SelfProgrammingConfigUpdateRequest(BaseModel):
+    hard_failure_cooldown_minutes: int | None = Field(default=None, ge=1, le=10080)
+    proactive_cooldown_minutes: int | None = Field(default=None, ge=1, le=10080)
+
+
+class SelfProgrammingConfigResponse(BaseModel):
+    hard_failure_cooldown_minutes: int
+    proactive_cooldown_minutes: int
+
+
 class ChatModelProviderItem(BaseModel):
     provider_id: str
     provider_name: str
@@ -62,6 +72,14 @@ def build_config_router() -> APIRouter:
             chat_provider=config.chat_provider,
             chat_model=config.chat_model,
             chat_read_timeout_seconds=config.chat_read_timeout_seconds,
+        )
+
+    @router.get("/config/self-programming")
+    def get_self_programming_config() -> SelfProgrammingConfigResponse:
+        config = get_runtime_config()
+        return SelfProgrammingConfigResponse(
+            hard_failure_cooldown_minutes=config.self_programming_hard_failure_cooldown_minutes,
+            proactive_cooldown_minutes=config.self_programming_proactive_cooldown_minutes,
         )
 
     @router.put("/config")
@@ -104,6 +122,30 @@ def build_config_router() -> APIRouter:
             chat_provider=next_provider,
             chat_model=config.chat_model,
             chat_read_timeout_seconds=config.chat_read_timeout_seconds,
+        )
+
+    @router.put("/config/self-programming")
+    def update_self_programming_config(
+        request: SelfProgrammingConfigUpdateRequest,
+    ) -> SelfProgrammingConfigResponse:
+        if (
+            request.hard_failure_cooldown_minutes is None
+            and request.proactive_cooldown_minutes is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="at least one self-programming config field is required",
+            )
+
+        config = get_runtime_config()
+        if request.hard_failure_cooldown_minutes is not None:
+            config.self_programming_hard_failure_cooldown_minutes = request.hard_failure_cooldown_minutes
+        if request.proactive_cooldown_minutes is not None:
+            config.self_programming_proactive_cooldown_minutes = request.proactive_cooldown_minutes
+
+        return SelfProgrammingConfigResponse(
+            hard_failure_cooldown_minutes=config.self_programming_hard_failure_cooldown_minutes,
+            proactive_cooldown_minutes=config.self_programming_proactive_cooldown_minutes,
         )
 
     @router.get("/config/chat-models")

@@ -31,8 +31,16 @@ export type SelfProgrammingVerification = {
 export type SelfProgrammingJob = {
   id: string;
   reason: string;
+  reason_statement?: string | null;
+  direction_statement?: string | null;
   target_area: string;
   status:
+    | "drafted"
+    | "pending_start_approval"
+    | "queued"
+    | "running"
+    | "completed"
+    | "frozen"
     | "pending"
     | "diagnosing"
     | "patching"
@@ -72,6 +80,23 @@ export type SelfProgrammingJob = {
   approval_requested_at?: string | null;
   approval_edits_summary?: string | null;
   approval_reason?: string | null;
+
+  // 开工审批信息
+  start_approval_reason?: string | null;
+  start_approved_by?: string | null;
+  start_approved_at?: string | null;
+
+  // 拒绝审计
+  rejection_phase?: "start" | "promotion" | null;
+  rejection_reason?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | null;
+
+  // 冷却快照
+  cooldown_policy_snapshot?: {
+    hard_failure_minutes: number;
+    proactive_minutes: number;
+  } | null;
 };
 
 // 自我编程历史记录
@@ -79,6 +104,8 @@ export type SelfProgrammingHistoryEntry = {
   job_id: string;
   target_area: string;
   reason: string;
+  reason_statement?: string | null;
+  direction_statement?: string | null;
   status: string;
   outcome: string;
   touched_files: string[];
@@ -86,6 +113,15 @@ export type SelfProgrammingHistoryEntry = {
   completed_at?: string | null;
   health_score?: number | null;
   had_rollback?: boolean;
+  rejection_phase?: "start" | "promotion" | null;
+  rejection_reason?: string | null;
+  start_approved_at?: string | null;
+  approved_at?: string | null;
+};
+
+export type SelfProgrammingRuntimeConfig = {
+  hard_failure_cooldown_minutes: number;
+  proactive_cooldown_minutes: number;
 };
 
 export type BeingState = {
@@ -314,6 +350,50 @@ export function rollbackSelfProgrammingJob(jobId: string, reason?: string): Prom
   return post<{ success: boolean; message: string }>(`/self-programming/${jobId}/rollback`, { reason });
 }
 
+/** 提交开工申请 */
+export function requestStartSelfProgrammingJob(
+  jobId: string,
+  reason?: string,
+): Promise<{ success: boolean; message: string; job_id: string }> {
+  return post<{ success: boolean; message: string; job_id: string }>(
+    `/self-programming/${jobId}/request-start`,
+    reason ? { reason } : undefined,
+  );
+}
+
+/** 确认开工 */
+export function approveStartSelfProgrammingJob(
+  jobId: string,
+  reason?: string,
+): Promise<{ success: boolean; message: string; job_id: string }> {
+  return post<{ success: boolean; message: string; job_id: string }>(
+    `/self-programming/${jobId}/approve-start`,
+    reason ? { reason } : undefined,
+  );
+}
+
+/** 拒绝开工 */
+export function rejectStartSelfProgrammingJob(
+  jobId: string,
+  reason: string,
+): Promise<{ success: boolean; message: string; job_id: string }> {
+  return post<{ success: boolean; message: string; job_id: string }>(
+    `/self-programming/${jobId}/reject-start`,
+    { reason },
+  );
+}
+
+/** 触发委托执行 */
+export function delegateSelfProgrammingJob(
+  jobId: string,
+  provider = "codex",
+): Promise<{ success: boolean; message: string; job_id: string }> {
+  return post<{ success: boolean; message: string; job_id: string }>(
+    `/self-programming/${jobId}/delegate`,
+    { provider },
+  );
+}
+
 /** 批准自我编程 Job */
 export function approveSelfProgrammingJob(
   jobId: string,
@@ -334,6 +414,18 @@ export function rejectSelfProgrammingJob(
     `/self-programming/${jobId}/reject`,
     { reason },
   );
+}
+
+/** 获取自我编程冷却配置 */
+export function fetchSelfProgrammingConfig(): Promise<SelfProgrammingRuntimeConfig> {
+  return get<SelfProgrammingRuntimeConfig>("/config/self-programming");
+}
+
+/** 更新自我编程冷却配置 */
+export function updateSelfProgrammingConfig(
+  patch: Partial<SelfProgrammingRuntimeConfig>,
+): Promise<SelfProgrammingRuntimeConfig> {
+  return put<SelfProgrammingRuntimeConfig>("/config/self-programming", patch);
 }
 
 // ══════════════════════════════════════════════

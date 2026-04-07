@@ -246,7 +246,7 @@ class SelfProgrammingExecutor:
                 updates["sandbox_prechecked"] = True
                 updates["sandbox_result"] = sandbox_result.summary
 
-                if not sandbox_result.success and not sandbox_result.timed_out:
+                if not sandbox_result.success:
                     return job.model_copy(
                         update={
                             **updates,

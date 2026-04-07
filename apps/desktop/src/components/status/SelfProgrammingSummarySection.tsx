@@ -23,14 +23,24 @@ export function SelfProgrammingSummarySection({ job }: SelfProgrammingSummarySec
         <div className="si-section__row">
           <div className="si-section__col">
             <h4 className="si-section__title">原因</h4>
-            <p className="si-section__text">{job.reason}</p>
+            <p className="si-section__text">{job.reason_statement ?? job.reason}</p>
           </div>
           <div className="si-section__col">
             <h4 className="si-section__title">方案</h4>
-            <p className="si-section__text">{job.spec}</p>
+            <p className="si-section__text">{job.direction_statement ?? job.spec}</p>
           </div>
         </div>
       </div>
+
+      {job.cooldown_policy_snapshot ? (
+        <div className="si-section">
+          <h4 className="si-section__title">冷却策略快照</h4>
+          <p className="si-section__text">
+            硬故障 {job.cooldown_policy_snapshot.hard_failure_minutes} 分钟，
+            主动优化 {job.cooldown_policy_snapshot.proactive_minutes} 分钟
+          </p>
+        </div>
+      ) : null}
 
       {job.patch_summary ? (
         <div className="si-section">
