@@ -161,15 +161,32 @@ async fn pet_show(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
         pet_html.to_string_lossy().replace(' ', "%20").replace('#', "%23")
       );
 
-      tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::External(url.parse().unwrap()))
+      let build_result = tauri::WebviewWindowBuilder::new(&app, "pet", tauri::WebviewUrl::External(url.parse().unwrap()))
         .title("INTP 小紫人")
         .inner_size(280.0, 380.0)
         .decorations(false)
         .always_on_top(true)
         .resizable(false)
         .skip_taskbar(true)
-        .build()
-        .map_err(|e| format!("create pet window: {e}"))?;
+        .build();
+
+      match build_result {
+        Ok(win) => {
+          win.show().map_err(|e| format!("show pet: {e}"))?;
+          win.set_focus().map_err(|e| format!("focus pet: {e}"))?;
+        }
+        Err(err) => {
+          let err_text = err.to_string();
+          if err_text.contains("already exists") {
+            if let Some(win) = app.get_webview_window("pet") {
+              win.show().map_err(|e| format!("show pet: {e}"))?;
+              win.set_focus().map_err(|e| format!("focus pet: {e}"))?;
+              return Ok(PetStatusResponse { visible: true });
+            }
+          }
+          return Err(format!("create pet window: {err}"));
+        }
+      }
     }
   }
   Ok(PetStatusResponse { visible: true })
@@ -179,6 +196,17 @@ async fn pet_show(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
 async fn pet_hide(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
   if let Some(win) = app.get_webview_window("pet") {
     win.hide().map_err(|e| format!("hide pet: {e}"))?;
+  }
+  Ok(PetStatusResponse { visible: false })
+}
+
+#[tauri::command]
+async fn pet_close(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
+  if let Some(win) = app.get_webview_window("pet") {
+    // Best-effort: hide first to ensure it disappears immediately,
+    // then request close to fully exit the window.
+    let _ = win.hide();
+    win.close().map_err(|e| format!("close pet: {e}"))?;
   }
   Ok(PetStatusResponse { visible: false })
 }
@@ -237,6 +265,7 @@ fn main() {
       // Pet commands
       pet_show,
       pet_hide,
+      pet_close,
       pet_is_visible,
       pet_toggle,
       pet_send_message,

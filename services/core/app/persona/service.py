@@ -161,6 +161,15 @@ class PersonaService:
         self._persist(updated)
         return updated
 
+    def update_features(self, **feature_kwargs) -> PersonaProfile:
+        """更新人格内功能开关"""
+        current = self.profile
+        new_features = current.features.model_copy(update=feature_kwargs)
+        updated = current.model_copy(update={"features": new_features, "version": current.version + 1})
+        self._profile = updated
+        self._persist(updated)
+        return updated
+
     def reset_to_default(self) -> PersonaProfile:
         """重置为默认人格"""
         self._profile = default_persona()

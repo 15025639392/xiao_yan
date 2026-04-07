@@ -19,6 +19,18 @@
   flex-shrink: 0;
 }
 
+.persona-page__header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.persona-page__feature {
+  flex-shrink: 0;
+  min-width: 260px;
+}
+
 .persona-page__title-group {
   display: flex;
   flex-direction: column;
@@ -37,6 +49,83 @@
   margin: 0;
   font-size: 0.875rem;
   color: var(--text-tertiary);
+}
+
+/* ── Persona Features Toggle ── */
+.persona-feature-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.persona-feature-toggle__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.persona-feature-toggle__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.persona-feature-toggle__desc {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.persona-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.persona-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.persona-switch__track {
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg-surface-overlay);
+  border: 1px solid var(--border-default);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+.persona-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--text-primary);
+  opacity: 0.85;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.persona-switch input:checked + .persona-switch__track {
+  background: color-mix(in srgb, var(--accent) 30%, var(--bg-surface-overlay));
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border-default));
+}
+
+.persona-switch input:checked + .persona-switch__track::after {
+  transform: translateX(18px);
+  opacity: 1;
+}
+
+.persona-switch input:focus-visible + .persona-switch__track {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 3px;
 }
 
 /* ── 状态概览条 ── */
