@@ -1,8 +1,10 @@
-import type { GoalAdmissionStats } from "../../lib/api";
+import { useEffect, useState } from "react";
+import type { GoalAdmissionRuntimeConfig, GoalAdmissionStats } from "../../lib/api";
 import { MetricCard, SurfaceCard } from "../ui";
 
 type GoalsAdmissionOverviewProps = {
   stats: GoalAdmissionStats | null;
+  onUpdateStabilityThresholds?: (patch: Partial<GoalAdmissionRuntimeConfig>) => Promise<void>;
 };
 
 const DEFAULT_WARNING_RATE = 0.6;
@@ -77,13 +79,59 @@ function buildStabilityAlert(stats: GoalAdmissionStats): {
   };
 }
 
-export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
+export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: GoalsAdmissionOverviewProps) {
+  const [warningDraft, setWarningDraft] = useState<number>(Math.round(DEFAULT_WARNING_RATE * 100));
+  const [dangerDraft, setDangerDraft] = useState<number>(Math.round(DEFAULT_DANGER_RATE * 100));
+  const [savingThresholds, setSavingThresholds] = useState(false);
+  const [thresholdError, setThresholdError] = useState<string | null>(null);
+  const [thresholdOk, setThresholdOk] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!stats) {
+      return;
+    }
+    const warning = stats.admitted_stability_alert?.warning_rate ?? DEFAULT_WARNING_RATE;
+    const danger = stats.admitted_stability_alert?.danger_rate ?? DEFAULT_DANGER_RATE;
+    setWarningDraft(Math.round(warning * 100));
+    setDangerDraft(Math.round(danger * 100));
+  }, [
+    stats?.admitted_stability_alert?.warning_rate,
+    stats?.admitted_stability_alert?.danger_rate,
+  ]);
+
   if (!stats) {
     return null;
   }
   const stability = stats.admitted_stability_24h;
   const stabilityRate = describeStabilityRate(stats.admitted_stability_24h_rate);
   const stabilityAlert = buildStabilityAlert(stats);
+
+  async function saveThresholds() {
+    if (!onUpdateStabilityThresholds || savingThresholds) {
+      return;
+    }
+    const warning = Math.max(0, Math.min(100, warningDraft)) / 100;
+    const danger = Math.max(0, Math.min(100, dangerDraft)) / 100;
+    if (danger > warning) {
+      setThresholdError("告警线不能高于健康线。");
+      setThresholdOk(null);
+      return;
+    }
+    setSavingThresholds(true);
+    setThresholdError(null);
+    setThresholdOk(null);
+    try {
+      await onUpdateStabilityThresholds({
+        stability_warning_rate: warning,
+        stability_danger_rate: danger,
+      });
+      setThresholdOk("阈值已保存");
+    } catch (error) {
+      setThresholdError(error instanceof Error ? error.message : "阈值保存失败");
+    } finally {
+      setSavingThresholds(false);
+    }
+  }
 
   return (
     <section className="goals-admission" aria-label="目标准入守门">
@@ -133,6 +181,40 @@ export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
           <div className={`goals-admission__detail-text goals-admission__detail-text--${stabilityRate.tone}`}>
             {stabilityRate.text}
           </div>
+          <div className="goals-admission__threshold-editor">
+            <label className="goals-admission__threshold-field">
+              <span>健康线(%)</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={warningDraft}
+                onChange={(event) => setWarningDraft(Number(event.target.value || 0))}
+              />
+            </label>
+            <label className="goals-admission__threshold-field">
+              <span>告警线(%)</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={dangerDraft}
+                onChange={(event) => setDangerDraft(Number(event.target.value || 0))}
+              />
+            </label>
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              onClick={saveThresholds}
+              disabled={savingThresholds || !onUpdateStabilityThresholds}
+            >
+              保存阈值
+            </button>
+          </div>
+          {thresholdOk ? <div className="goals-admission__detail-text goals-admission__detail-text--success">{thresholdOk}</div> : null}
+          {thresholdError ? (
+            <div className="goals-admission__detail-text goals-admission__detail-text--danger">{thresholdError}</div>
+          ) : null}
         </SurfaceCard>
       </div>
     </section>

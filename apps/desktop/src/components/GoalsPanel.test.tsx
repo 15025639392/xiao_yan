@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 
-const { fetchMemorySummary, fetchGoalAdmissionStats, fetchGoalAdmissionCandidates } = vi.hoisted(() => ({
+const { fetchMemorySummary, fetchGoalAdmissionStats, fetchGoalAdmissionCandidates, updateGoalAdmissionConfig } = vi.hoisted(() => ({
   fetchMemorySummary: vi.fn(),
   fetchGoalAdmissionStats: vi.fn(),
   fetchGoalAdmissionCandidates: vi.fn(),
+  updateGoalAdmissionConfig: vi.fn(),
 }));
 
 const { subscribeAppRealtime } = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ vi.mock("../lib/api", async () => {
     fetchMemorySummary,
     fetchGoalAdmissionStats,
     fetchGoalAdmissionCandidates,
+    updateGoalAdmissionConfig,
   };
 });
 
@@ -31,10 +33,15 @@ beforeEach(() => {
   fetchMemorySummary.mockReset();
   fetchGoalAdmissionStats.mockReset();
   fetchGoalAdmissionCandidates.mockReset();
+  updateGoalAdmissionConfig.mockReset();
   subscribeAppRealtime.mockReset();
   fetchMemorySummary.mockReturnValue(new Promise(() => {}));
   fetchGoalAdmissionStats.mockReturnValue(new Promise(() => {}));
   fetchGoalAdmissionCandidates.mockReturnValue(new Promise(() => {}));
+  updateGoalAdmissionConfig.mockResolvedValue({
+    stability_warning_rate: 0.6,
+    stability_danger_rate: 0.35,
+  });
   subscribeAppRealtime.mockReturnValue(() => {});
 });
 
@@ -498,6 +505,100 @@ test("renders goal admission overview when admission stats are available", async
   expect(
     screen.getByText("⚠ 24h 稳定率低于健康线（当前 62.5%，告警线 35.0%，健康线 60.0%）。"),
   ).toBeInTheDocument();
+});
+
+test("updates stability thresholds and refreshes admission stats", async () => {
+  fetchGoalAdmissionStats
+    .mockResolvedValueOnce({
+      mode: "shadow",
+      today: {
+        admit: 8,
+        defer: 3,
+        drop: 2,
+        wip_blocked: 1,
+      },
+      admitted_stability_24h: {
+        stable: 5,
+        re_deferred: 2,
+        dropped: 1,
+      },
+      admitted_stability_24h_rate: 0.625,
+      admitted_stability_alert: {
+        level: "warning",
+        warning_rate: 0.6,
+        danger_rate: 0.35,
+      },
+      deferred_queue_size: 2,
+      wip_limit: 2,
+      thresholds: {
+        user_topic: { min_score: 0.68, defer_score: 0.45 },
+        world_event: { min_score: 0.75, defer_score: 0.52 },
+        chain_next: { min_score: 0.62, defer_score: 0.45 },
+      },
+    })
+    .mockResolvedValueOnce({
+      mode: "shadow",
+      today: {
+        admit: 8,
+        defer: 3,
+        drop: 2,
+        wip_blocked: 1,
+      },
+      admitted_stability_24h: {
+        stable: 5,
+        re_deferred: 2,
+        dropped: 1,
+      },
+      admitted_stability_24h_rate: 0.625,
+      admitted_stability_alert: {
+        level: "warning",
+        warning_rate: 0.7,
+        danger_rate: 0.4,
+      },
+      deferred_queue_size: 2,
+      wip_limit: 2,
+      thresholds: {
+        user_topic: { min_score: 0.68, defer_score: 0.45 },
+        world_event: { min_score: 0.75, defer_score: 0.52 },
+        chain_next: { min_score: 0.62, defer_score: 0.45 },
+      },
+    });
+  updateGoalAdmissionConfig.mockResolvedValue({
+    stability_warning_rate: 0.7,
+    stability_danger_rate: 0.4,
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "先比较方案并整理利弊分析",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText("目标准入守门")).toBeInTheDocument();
+  });
+  fireEvent.change(screen.getByLabelText("健康线(%)"), { target: { value: "70" } });
+  fireEvent.change(screen.getByLabelText("告警线(%)"), { target: { value: "40" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存阈值" }));
+
+  await waitFor(() => {
+    expect(updateGoalAdmissionConfig).toHaveBeenCalledWith({
+      stability_warning_rate: 0.7,
+      stability_danger_rate: 0.4,
+    });
+  });
+  await waitFor(() => {
+    expect(screen.getByText("阈值已保存")).toBeInTheDocument();
+  });
+  expect(fetchGoalAdmissionStats).toHaveBeenCalledTimes(2);
 });
 
 test("shows danger signal when 24h stability rate is too low", async () => {

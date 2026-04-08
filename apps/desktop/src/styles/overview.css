@@ -227,6 +227,31 @@
   color: var(--danger);
 }
 
+.goals-admission__threshold-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: flex-end;
+  margin-top: var(--space-2);
+}
+
+.goals-admission__threshold-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.goals-admission__threshold-field input {
+  width: 92px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 .goals-guidance {
   display: flex;
   flex-direction: column;

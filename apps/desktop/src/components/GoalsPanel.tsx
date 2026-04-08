@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
-import type { Goal, GoalAdmissionCandidateSnapshot, GoalAdmissionStats, RelationshipSummary } from "../lib/api";
-import { fetchGoalAdmissionCandidates, fetchGoalAdmissionStats, fetchMemorySummary } from "../lib/api";
+import type {
+  Goal,
+  GoalAdmissionCandidateSnapshot,
+  GoalAdmissionRuntimeConfig,
+  GoalAdmissionStats,
+  RelationshipSummary,
+} from "../lib/api";
+import {
+  fetchGoalAdmissionCandidates,
+  fetchGoalAdmissionStats,
+  fetchMemorySummary,
+  updateGoalAdmissionConfig,
+} from "../lib/api";
 import { subscribeAppRealtime } from "../lib/realtime";
 import { GoalsAdmissionCandidates } from "./goals/GoalsAdmissionCandidates";
 import { GoalsAdmissionOverview } from "./goals/GoalsAdmissionOverview";
@@ -81,6 +92,12 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     return () => unsubscribe();
   }, []);
 
+  async function handleUpdateAdmissionThresholds(patch: Partial<GoalAdmissionRuntimeConfig>): Promise<void> {
+    await updateGoalAdmissionConfig(patch);
+    const latest = await fetchGoalAdmissionStats();
+    setAdmissionStats(latest);
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -131,7 +148,10 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
       ) : null}
 
       <GoalsRelationshipGuidance relationship={relationship} />
-      <GoalsAdmissionOverview stats={admissionStats} />
+      <GoalsAdmissionOverview
+        stats={admissionStats}
+        onUpdateStabilityThresholds={handleUpdateAdmissionThresholds}
+      />
       <GoalsAdmissionCandidates snapshot={admissionCandidates} />
 
       {goals.length === 0 ? (
