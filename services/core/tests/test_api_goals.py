@@ -220,6 +220,7 @@ def test_get_goal_admission_stats_returns_current_snapshot():
             "re_deferred": 0,
             "dropped": 0,
         }
+        assert body["admitted_stability_24h_rate"] is None
     finally:
         app.dependency_overrides.clear()
 

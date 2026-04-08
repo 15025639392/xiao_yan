@@ -399,10 +399,15 @@ class GoalAdmissionService:
         moment = now or datetime.now(timezone.utc)
         day = moment.astimezone(timezone.utc).date().isoformat()
         admitted_stability = self._build_admitted_stability_breakdown(self._normalize_datetime(moment))
+        admitted_total = sum(admitted_stability.values())
+        admitted_stability_rate = (
+            round(admitted_stability["stable"] / admitted_total, 4) if admitted_total > 0 else None
+        )
         return {
             "mode": self.mode,
             "today": self.store.get_stats(day),
             "admitted_stability_24h": admitted_stability,
+            "admitted_stability_24h_rate": admitted_stability_rate,
             "deferred_queue_size": self.store.deferred_queue_size(),
             "wip_limit": self.wip_limit,
             "thresholds": {

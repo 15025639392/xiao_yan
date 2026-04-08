@@ -24,6 +24,10 @@ export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
     return null;
   }
   const stability = stats.admitted_stability_24h;
+  const stabilityRateText =
+    stats.admitted_stability_24h_rate === null
+      ? "24h 稳定率暂无样本。"
+      : `24h 稳定率 ${(stats.admitted_stability_24h_rate * 100).toFixed(1)}%。`;
 
   return (
     <section className="goals-admission" aria-label="目标准入守门">
@@ -67,6 +71,7 @@ export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
           <div className="goals-admission__detail-text">
             {`稳定 ${stability.stable}，再次延后 ${stability.re_deferred}，再次拦截 ${stability.dropped}。`}
           </div>
+          <div className="goals-admission__detail-text">{stabilityRateText}</div>
         </SurfaceCard>
       </div>
     </section>

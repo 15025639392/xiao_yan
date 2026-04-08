@@ -453,6 +453,7 @@ test("renders goal admission overview when admission stats are available", async
       re_deferred: 2,
       dropped: 1,
     },
+    admitted_stability_24h_rate: 0.625,
     deferred_queue_size: 2,
     wip_limit: 2,
     thresholds: {
@@ -488,6 +489,7 @@ test("renders goal admission overview when admission stats are available", async
   expect(screen.getByText("用户话题 ≥ 0.68 直接通过，≥ 0.45 进入延后观察。")).toBeInTheDocument();
   expect(screen.getByText("当前并行上限 2 个目标，今天已有 1 次因 WIP 满载被延后。")).toBeInTheDocument();
   expect(screen.getByText("稳定 5，再次延后 2，再次拦截 1。")).toBeInTheDocument();
+  expect(screen.getByText("24h 稳定率 62.5%。")).toBeInTheDocument();
 });
 
 test("renders candidate pool with deferred and blocked admission candidates", async () => {
@@ -624,6 +626,7 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
               re_deferred: 1,
               dropped: 0,
             },
+            admitted_stability_24h_rate: 0.5,
             deferred_queue_size: 1,
             wip_limit: 2,
             thresholds: {

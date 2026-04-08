@@ -249,6 +249,7 @@ export type GoalAdmissionStats = {
     re_deferred: number;
     dropped: number;
   };
+  admitted_stability_24h_rate: number | null;
   deferred_queue_size: number;
   wip_limit: number;
   thresholds: GoalAdmissionThresholds;

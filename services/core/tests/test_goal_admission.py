@@ -498,3 +498,4 @@ def test_goal_admission_stats_include_24h_stability_breakdown():
         "re_deferred": 1,
         "dropped": 1,
     }
+    assert stats["admitted_stability_24h_rate"] == 0.3333
