@@ -126,6 +126,63 @@ def test_gateway_streams_responses_api_events():
     ]
 
 
+def test_gateway_responses_create_response_falls_back_to_stream_when_output_missing():
+    class StubStreamResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self):
+            return iter(
+                [
+                    'event: response.created',
+                    'data: {"response":{"id":"resp_stream_1"}}',
+                    "",
+                    'event: response.output_text.delta',
+                    'data: {"delta":"hello"}',
+                    "",
+                    'event: response.output_text.delta',
+                    'data: {"delta":" world"}',
+                    "",
+                    'event: response.completed',
+                    'data: {"response":{"id":"resp_stream_1"}}',
+                    "",
+                ]
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class StubClient:
+        def post(self, url: str, headers: dict, json: dict):
+            assert url == "http://example.test/v1/responses"
+            request = httpx.Request("POST", url, headers=headers, json=json)
+            return httpx.Response(200, json={"id": "resp_empty_1", "output": []}, request=request)
+
+        def stream(self, method: str, url: str, headers: dict, json: dict):
+            assert method == "POST"
+            assert url == "http://example.test/v1/responses"
+            assert json["stream"] is True
+            return StubStreamResponse()
+
+        def close(self) -> None:
+            return None
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="gpt-5.4",
+        base_url="http://example.test/v1",
+        wire_api="responses",
+        http_client=StubClient(),
+    )
+
+    result = gateway.create_response([ChatMessage(role="user", content="hi")])
+    assert result.response_id == "resp_stream_1"
+    assert result.output_text == "hello world"
+
+
 def test_gateway_posts_to_chat_completions_api_when_wire_api_chat():
     captured: dict[str, object] = {}
 
@@ -171,6 +228,73 @@ def test_gateway_posts_to_chat_completions_api_when_wire_api_chat():
     }
     assert result.response_id == "chatcmpl_123"
     assert result.output_text == "hello from chat gateway"
+
+
+def test_gateway_chat_create_response_falls_back_to_stream_when_message_content_is_empty():
+    class StubStreamResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self):
+            return iter(
+                [
+                    'data: {"id":"chatcmpl_stream_1","choices":[{"delta":{"role":"assistant"}}]}',
+                    "",
+                    'data: {"id":"chatcmpl_stream_1","choices":[{"delta":{"content":"hello "}}]}',
+                    "",
+                    'data: {"id":"chatcmpl_stream_1","choices":[{"delta":{"content":"world"}}]}',
+                    "",
+                    "data: [DONE]",
+                    "",
+                ]
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class StubClient:
+        def post(self, url: str, headers: dict, json: dict):
+            assert url == "http://example.test/v1/chat/completions"
+            request = httpx.Request("POST", url, headers=headers, json=json)
+            return httpx.Response(
+                200,
+                json={
+                    "id": "chatcmpl_empty_1",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                            }
+                        }
+                    ],
+                },
+                request=request,
+            )
+
+        def stream(self, method: str, url: str, headers: dict, json: dict):
+            assert method == "POST"
+            assert url == "http://example.test/v1/chat/completions"
+            assert json["stream"] is True
+            return StubStreamResponse()
+
+        def close(self) -> None:
+            return None
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="gpt-5.4",
+        base_url="http://example.test/v1",
+        wire_api="chat",
+        http_client=StubClient(),
+    )
+
+    result = gateway.create_response([ChatMessage(role="user", content="hi")])
+    assert result.response_id == "chatcmpl_stream_1"
+    assert result.output_text == "hello world"
 
 
 def test_gateway_streams_chat_completions_events_when_wire_api_chat():
@@ -371,20 +495,57 @@ def test_gateway_from_env_supports_minimax_key_and_chat_default():
         "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL"),
         "OPENAI_WIRE_API": os.getenv("OPENAI_WIRE_API"),
         "OPENAI_MODEL": os.getenv("OPENAI_MODEL"),
+        "NVIDIA_API_KEY": os.getenv("NVIDIA_API_KEY"),
+        "CHAT_PROVIDER": os.getenv("CHAT_PROVIDER"),
     }
 
     try:
-        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ["OPENAI_API_KEY"] = ""
         os.environ["MINIMAX_API_KEY"] = "minimax-key"
         os.environ["MINIMAX_MODEL"] = "MiniMax-M2.7"
         os.environ["OPENAI_BASE_URL"] = "https://api.minimaxi.com/v1"
         os.environ.pop("OPENAI_WIRE_API", None)
         os.environ["OPENAI_MODEL"] = "MiniMax-M2.7"
+        os.environ["NVIDIA_API_KEY"] = ""
+        os.environ.pop("CHAT_PROVIDER", None)
 
         gateway = ChatGateway.from_env()
         assert gateway.api_key == "minimax-key"
         assert gateway.wire_api == "chat"
         assert gateway.model == "MiniMax-M2.7"
+    finally:
+        for key, value in env_backup.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def test_gateway_from_env_supports_nvidia_key_and_chat_default():
+    env_backup = {
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+        "MINIMAX_API_KEY": os.getenv("MINIMAX_API_KEY"),
+        "NVIDIA_API_KEY": os.getenv("NVIDIA_API_KEY"),
+        "NVIDIA_MODEL": os.getenv("NVIDIA_MODEL"),
+        "NVIDIA_BASE_URL": os.getenv("NVIDIA_BASE_URL"),
+        "NVIDIA_WIRE_API": os.getenv("NVIDIA_WIRE_API"),
+        "CHAT_PROVIDER": os.getenv("CHAT_PROVIDER"),
+    }
+
+    try:
+        os.environ["OPENAI_API_KEY"] = ""
+        os.environ["MINIMAX_API_KEY"] = ""
+        os.environ["NVIDIA_API_KEY"] = "nvidia-key"
+        os.environ["NVIDIA_MODEL"] = "meta/llama-3.1-70b-instruct"
+        os.environ["NVIDIA_BASE_URL"] = "https://integrate.api.nvidia.com/v1"
+        os.environ.pop("NVIDIA_WIRE_API", None)
+        os.environ["CHAT_PROVIDER"] = "nvidia"
+
+        gateway = ChatGateway.from_env()
+        assert gateway.api_key == "nvidia-key"
+        assert gateway.wire_api == "chat"
+        assert gateway.model == "meta/llama-3.1-70b-instruct"
+        assert gateway.base_url == "https://integrate.api.nvidia.com/v1"
     finally:
         for key, value in env_backup.items():
             if value is None:

@@ -5,6 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_goal_admission_service
+from app.capabilities.file_policy import (
+    FILE_MAX_LIST_ENTRIES_BOUNDS,
+    FILE_MAX_READ_BYTES_BOUNDS,
+    FILE_MAX_SEARCH_RESULTS_BOUNDS,
+    FILE_MAX_WRITE_BYTES_BOUNDS,
+)
 from app.config import LLMProviderConfig, get_llm_provider_configs
 from app.goals.admission import GoalAdmissionService
 from app.llm.gateway import ChatGateway
@@ -23,7 +29,7 @@ MINIMAX_FALLBACK_MODELS = [
 
 class ConfigUpdateRequest(BaseModel):
     chat_context_limit: int | None = Field(default=None, ge=1, le=20, description="聊天上下文相关事件数量限制（1-20）")
-    chat_provider: str | None = Field(default=None, min_length=1, description="聊天服务商标识，例如 openai/minimaxi")
+    chat_provider: str | None = Field(default=None, min_length=1, description="聊天服务商标识，例如 openai/minimaxi/nvidia")
     chat_model: str | None = Field(default=None, min_length=1, description="聊天模型名称，例如 gpt-5.4")
     chat_read_timeout_seconds: int | None = Field(default=None, ge=10, le=600, description="聊天 read 超时（秒），默认 180")
 
@@ -91,6 +97,70 @@ class GoalAdmissionConfigRollbackResponse(GoalAdmissionConfigResponse):
     rolled_back_from_revision: int
 
 
+class CapabilityShellPolicyUpdateRequest(BaseModel):
+    allowed_executables: list[str] | None = Field(default=None)
+    allowed_git_subcommands: list[str] | None = Field(default=None)
+
+
+class CapabilityShellPolicyResponse(BaseModel):
+    version: str
+    revision: int
+    allowed_executables: list[str]
+    allowed_git_subcommands: list[str]
+
+
+class CapabilityShellPolicyHistoryItem(CapabilityShellPolicyResponse):
+    source: str
+    created_at: str
+
+
+class CapabilityShellPolicyHistoryResponse(BaseModel):
+    items: list[CapabilityShellPolicyHistoryItem]
+
+
+class CapabilityFilePolicyUpdateRequest(BaseModel):
+    max_read_bytes: int | None = Field(
+        default=None,
+        ge=FILE_MAX_READ_BYTES_BOUNDS[0],
+        le=FILE_MAX_READ_BYTES_BOUNDS[1],
+    )
+    max_write_bytes: int | None = Field(
+        default=None,
+        ge=FILE_MAX_WRITE_BYTES_BOUNDS[0],
+        le=FILE_MAX_WRITE_BYTES_BOUNDS[1],
+    )
+    max_search_results: int | None = Field(
+        default=None,
+        ge=FILE_MAX_SEARCH_RESULTS_BOUNDS[0],
+        le=FILE_MAX_SEARCH_RESULTS_BOUNDS[1],
+    )
+    max_list_entries: int | None = Field(
+        default=None,
+        ge=FILE_MAX_LIST_ENTRIES_BOUNDS[0],
+        le=FILE_MAX_LIST_ENTRIES_BOUNDS[1],
+    )
+    allowed_search_file_patterns: list[str] | None = Field(default=None)
+
+
+class CapabilityFilePolicyResponse(BaseModel):
+    version: str
+    revision: int
+    max_read_bytes: int
+    max_write_bytes: int
+    max_search_results: int
+    max_list_entries: int
+    allowed_search_file_patterns: list[str]
+
+
+class CapabilityFilePolicyHistoryItem(CapabilityFilePolicyResponse):
+    source: str
+    created_at: str
+
+
+class CapabilityFilePolicyHistoryResponse(BaseModel):
+    items: list[CapabilityFilePolicyHistoryItem]
+
+
 class ChatModelProviderItem(BaseModel):
     provider_id: str
     provider_name: str
@@ -131,6 +201,12 @@ def build_config_router() -> APIRouter:
         service.world_defer_score = float(payload["world_event_defer_score"])
         service.chain_min_score = float(payload["chain_next_min_score"])
         service.chain_defer_score = float(payload["chain_next_defer_score"])
+
+    def _capability_shell_policy_response(payload: dict) -> CapabilityShellPolicyResponse:
+        return CapabilityShellPolicyResponse.model_validate(payload)
+
+    def _capability_file_policy_response(payload: dict) -> CapabilityFilePolicyResponse:
+        return CapabilityFilePolicyResponse.model_validate(payload)
 
     @router.get("/config")
     def get_config() -> ConfigResponse:
@@ -291,6 +367,79 @@ def build_config_router() -> APIRouter:
             chain_next_defer_score=float(rolled_back["chain_next_defer_score"]),
             revision=int(rolled_back["revision"]),
             rolled_back_from_revision=int(rolled_back["rolled_back_from_revision"]),
+        )
+
+    @router.get("/config/capabilities/shell-policy")
+    def get_capability_shell_policy_config() -> CapabilityShellPolicyResponse:
+        config = get_runtime_config()
+        return _capability_shell_policy_response(config.get_capability_shell_policy())
+
+    @router.put("/config/capabilities/shell-policy")
+    def update_capability_shell_policy_config(
+        request: CapabilityShellPolicyUpdateRequest,
+    ) -> CapabilityShellPolicyResponse:
+        if request.allowed_executables is None and request.allowed_git_subcommands is None:
+            raise HTTPException(status_code=400, detail="at least one shell-policy field is required")
+        config = get_runtime_config()
+        try:
+            updated = config.update_capability_shell_policy(
+                allowed_executables=request.allowed_executables,
+                allowed_git_subcommands=request.allowed_git_subcommands,
+                source="api_update",
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _capability_shell_policy_response(updated)
+
+    @router.get("/config/capabilities/shell-policy/history")
+    def get_capability_shell_policy_history(
+        limit: int = Query(default=10, ge=1, le=50),
+    ) -> CapabilityShellPolicyHistoryResponse:
+        config = get_runtime_config()
+        items = config.list_capability_shell_policy_history(limit=limit)
+        return CapabilityShellPolicyHistoryResponse(
+            items=[CapabilityShellPolicyHistoryItem.model_validate(item) for item in items],
+        )
+
+    @router.get("/config/capabilities/file-policy")
+    def get_capability_file_policy_config() -> CapabilityFilePolicyResponse:
+        config = get_runtime_config()
+        return _capability_file_policy_response(config.get_capability_file_policy())
+
+    @router.put("/config/capabilities/file-policy")
+    def update_capability_file_policy_config(
+        request: CapabilityFilePolicyUpdateRequest,
+    ) -> CapabilityFilePolicyResponse:
+        if (
+            request.max_read_bytes is None
+            and request.max_write_bytes is None
+            and request.max_search_results is None
+            and request.max_list_entries is None
+            and request.allowed_search_file_patterns is None
+        ):
+            raise HTTPException(status_code=400, detail="at least one file-policy field is required")
+        config = get_runtime_config()
+        try:
+            updated = config.update_capability_file_policy(
+                max_read_bytes=request.max_read_bytes,
+                max_write_bytes=request.max_write_bytes,
+                max_search_results=request.max_search_results,
+                max_list_entries=request.max_list_entries,
+                allowed_search_file_patterns=request.allowed_search_file_patterns,
+                source="api_update",
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _capability_file_policy_response(updated)
+
+    @router.get("/config/capabilities/file-policy/history")
+    def get_capability_file_policy_history(
+        limit: int = Query(default=10, ge=1, le=50),
+    ) -> CapabilityFilePolicyHistoryResponse:
+        config = get_runtime_config()
+        items = config.list_capability_file_policy_history(limit=limit)
+        return CapabilityFilePolicyHistoryResponse(
+            items=[CapabilityFilePolicyHistoryItem.model_validate(item) for item in items],
         )
 
     @router.get("/config/chat-models")

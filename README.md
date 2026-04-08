@@ -144,6 +144,13 @@ PERSONA_STORAGE_PATH=/path/to/persona.json
 
 # 晨间计划 LLM 功能开关（可选）
 MORNING_PLAN_LLM_ENABLED=true
+
+# NVIDIA NIM（可选：接入英伟达服务商）
+NVIDIA_API_KEY=nvapi-xxxxx
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_MODEL=meta/llama-3.1-70b-instruct
+NVIDIA_WIRE_API=chat
+CHAT_PROVIDER=nvidia
 ```
 
 #### 4. 安装前端依赖

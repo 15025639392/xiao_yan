@@ -2,9 +2,12 @@
 
 use tauri::{Emitter, Manager};
 use std::{
+  collections::HashSet,
   fs,
   path::{Component, Path, PathBuf},
+  process::{Command, Stdio},
   sync::Mutex,
+  time::{Duration, Instant},
 };
 
 #[derive(Default)]
@@ -18,6 +21,141 @@ type SharedFsAccessState = Mutex<FsAccessState>;
 #[derive(serde::Serialize)]
 struct AllowedDirResponse {
   allowed_dir: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct ShellRunResponse {
+  stdout: String,
+  stderr: String,
+  exit_code: i32,
+  success: bool,
+  timed_out: bool,
+  truncated: bool,
+  duration_ms: u64,
+}
+
+const SHELL_MAX_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
+const SHELL_DEFAULT_TIMEOUT_SECONDS: u64 = 30;
+const SHELL_MAX_TIMEOUT_SECONDS: u64 = 120;
+
+fn split_command(input: &str) -> Result<Vec<String>, String> {
+  let mut tokens: Vec<String> = Vec::new();
+  let mut current = String::new();
+  let mut chars = input.chars().peekable();
+  let mut in_quote: Option<char> = None;
+
+  while let Some(ch) = chars.next() {
+    match in_quote {
+      Some(q) => {
+        if ch == q {
+          in_quote = None;
+        } else if ch == '\\' && q == '"' {
+          if let Some(next) = chars.next() {
+            current.push(next);
+          } else {
+            current.push('\\');
+          }
+        } else {
+          current.push(ch);
+        }
+      }
+      None => {
+        if ch == '"' || ch == '\'' {
+          in_quote = Some(ch);
+        } else if ch.is_whitespace() {
+          if !current.is_empty() {
+            tokens.push(std::mem::take(&mut current));
+          }
+        } else if ch == '\\' {
+          if let Some(next) = chars.next() {
+            current.push(next);
+          }
+        } else {
+          current.push(ch);
+        }
+      }
+    }
+  }
+
+  if in_quote.is_some() {
+    return Err("unterminated quote in command".to_string());
+  }
+  if !current.is_empty() {
+    tokens.push(current);
+  }
+  if tokens.is_empty() {
+    return Err("empty command".to_string());
+  }
+  Ok(tokens)
+}
+
+fn contains_shell_meta(command: &str) -> bool {
+  command
+    .chars()
+    .any(|c| matches!(c, ';' | '|' | '&' | '`' | '$' | '>' | '<' | '\n' | '\r'))
+}
+
+fn static_allowed_executables() -> HashSet<&'static str> {
+  HashSet::from([
+    "pwd",
+    "date",
+    "echo",
+    "whoami",
+    "hostname",
+    "uname",
+    "uptime",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "diff",
+    "tree",
+    "file",
+    "du",
+    "df",
+    "stat",
+    "readlink",
+    "basename",
+    "dirname",
+    "realpath",
+    "find",
+    "grep",
+    "git",
+  ])
+}
+
+fn static_allowed_git_subcommands() -> HashSet<&'static str> {
+  HashSet::from(["status", "log", "diff", "show", "branch", "rev-parse", "remote", "describe"])
+}
+
+fn build_effective_allowlist(
+  static_set: &HashSet<&'static str>,
+  provided: Option<Vec<String>>,
+) -> HashSet<String> {
+  match provided {
+    Some(values) if !values.is_empty() => {
+      let mut effective = HashSet::new();
+      for value in values {
+        let normalized = value.trim();
+        if !normalized.is_empty() && static_set.contains(normalized) {
+          effective.insert(normalized.to_string());
+        }
+      }
+      effective
+    }
+    _ => static_set.iter().map(|item| (*item).to_string()).collect(),
+  }
+}
+
+fn decode_and_truncate(bytes: &[u8], max_bytes: usize) -> (String, bool) {
+  if bytes.len() <= max_bytes {
+    return (String::from_utf8_lossy(bytes).to_string(), false);
+  }
+
+  let mut text = String::from_utf8_lossy(&bytes[..max_bytes]).to_string();
+  text.push_str(&format!("\n... [truncated at {max_bytes}B]"));
+  (text, true)
 }
 
 fn normalize_relative_path(rel: &str) -> Result<PathBuf, String> {
@@ -128,6 +266,92 @@ fn fs_list_dir(state: tauri::State<SharedFsAccessState>, rel_path: String) -> Re
   }
   names.sort();
   Ok(names)
+}
+
+#[tauri::command]
+fn shell_run(
+  command: String,
+  timeout_seconds: Option<u64>,
+  allowed_executables: Option<Vec<String>>,
+  allowed_git_subcommands: Option<Vec<String>>,
+) -> Result<ShellRunResponse, String> {
+  let trimmed = command.trim();
+  if trimmed.is_empty() {
+    return Err("not_supported: empty command".to_string());
+  }
+  if contains_shell_meta(trimmed) {
+    return Err("not_supported: shell metacharacters are not allowed".to_string());
+  }
+
+  let tokens = split_command(trimmed)?;
+  let executable = tokens
+    .first()
+    .ok_or_else(|| "not_supported: empty command".to_string())?;
+
+  if executable.contains('/') || executable.contains('\\') {
+    return Err("not_supported: executable path is not allowed".to_string());
+  }
+
+  let static_execs = static_allowed_executables();
+  let effective_execs = build_effective_allowlist(&static_execs, allowed_executables);
+  if !effective_execs.contains(executable.as_str()) {
+    return Err(format!("not_supported: unsupported command: {executable}"));
+  }
+
+  if executable == "git" {
+    let sub = tokens.get(1).map(|s| s.as_str()).unwrap_or("");
+    let static_git = static_allowed_git_subcommands();
+    let effective_git = build_effective_allowlist(&static_git, allowed_git_subcommands);
+    if !effective_git.contains(sub) {
+      return Err(format!("not_supported: unsupported git subcommand: {sub}"));
+    }
+  }
+
+  let timeout = timeout_seconds
+    .unwrap_or(SHELL_DEFAULT_TIMEOUT_SECONDS)
+    .max(1)
+    .min(SHELL_MAX_TIMEOUT_SECONDS);
+
+  let start = Instant::now();
+  let mut child = Command::new(executable)
+    .args(tokens.iter().skip(1))
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .map_err(|e| format!("spawn failed: {e}"))?;
+
+  let mut timed_out = false;
+  loop {
+    match child.try_wait() {
+      Ok(Some(_)) => break,
+      Ok(None) => {
+        if start.elapsed() >= Duration::from_secs(timeout) {
+          timed_out = true;
+          let _ = child.kill();
+          break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+      }
+      Err(e) => return Err(format!("process wait failed: {e}")),
+    }
+  }
+
+  let output = child
+    .wait_with_output()
+    .map_err(|e| format!("process output failed: {e}"))?;
+  let (stdout, stdout_truncated) = decode_and_truncate(&output.stdout, SHELL_MAX_OUTPUT_BYTES);
+  let (stderr, stderr_truncated) = decode_and_truncate(&output.stderr, SHELL_MAX_OUTPUT_BYTES);
+  let exit_code = output.status.code().unwrap_or(if timed_out { -1 } else { 1 });
+
+  Ok(ShellRunResponse {
+    stdout,
+    stderr,
+    exit_code,
+    success: exit_code == 0 && !timed_out,
+    timed_out,
+    truncated: stdout_truncated || stderr_truncated,
+    duration_ms: start.elapsed().as_millis() as u64,
+  })
 }
 
 // ===== Pet (Desktop Pet) Commands =====
@@ -262,6 +486,7 @@ fn main() {
       fs_read_text_file,
       fs_write_text_file,
       fs_list_dir,
+      shell_run,
       // Pet commands
       pet_show,
       pet_hide,

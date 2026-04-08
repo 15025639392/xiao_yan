@@ -5,6 +5,23 @@ from threading import Lock
 from typing import Any
 from typing import ClassVar, Literal
 
+from app.capabilities.file_policy import (
+    DEFAULT_ALLOWED_SEARCH_FILE_PATTERNS,
+    DEFAULT_MAX_LIST_ENTRIES,
+    DEFAULT_MAX_READ_BYTES,
+    DEFAULT_MAX_SEARCH_RESULTS,
+    DEFAULT_MAX_WRITE_BYTES,
+    FILE_POLICY_VERSION,
+    build_file_policy_payload,
+    normalize_file_policy_values,
+)
+from app.capabilities.shell_policy import (
+    DEFAULT_ALLOWED_EXECUTABLES,
+    DEFAULT_ALLOWED_GIT_SUBCOMMANDS,
+    SHELL_POLICY_VERSION,
+    build_shell_policy_payload,
+    normalize_shell_policy_values,
+)
 from app.config import (
     get_chat_context_limit,
     get_chat_model,
@@ -20,6 +37,7 @@ from app.config import (
 
 FolderAccessLevel = Literal["read_only", "full_access"]
 GOAL_ADMISSION_HISTORY_MAX_ENTRIES = 50
+CAPABILITY_POLICY_HISTORY_MAX_ENTRIES = 50
 
 
 class RuntimeConfig:
@@ -49,6 +67,19 @@ class RuntimeConfig:
         instance._goal_admission_config_revision = 0
         instance._goal_admission_config_history = []
         instance._append_goal_admission_history_locked(source="bootstrap")
+        instance._capability_shell_policy_revision = 0
+        instance._capability_shell_policy_allowed_executables = list(DEFAULT_ALLOWED_EXECUTABLES)
+        instance._capability_shell_policy_allowed_git_subcommands = list(DEFAULT_ALLOWED_GIT_SUBCOMMANDS)
+        instance._capability_shell_policy_history = []
+        instance._append_capability_shell_policy_history_locked(source="bootstrap")
+        instance._capability_file_policy_revision = 0
+        instance._capability_file_policy_max_read_bytes = DEFAULT_MAX_READ_BYTES
+        instance._capability_file_policy_max_write_bytes = DEFAULT_MAX_WRITE_BYTES
+        instance._capability_file_policy_max_search_results = DEFAULT_MAX_SEARCH_RESULTS
+        instance._capability_file_policy_max_list_entries = DEFAULT_MAX_LIST_ENTRIES
+        instance._capability_file_policy_allowed_search_file_patterns = list(DEFAULT_ALLOWED_SEARCH_FILE_PATTERNS)
+        instance._capability_file_policy_history = []
+        instance._append_capability_file_policy_history_locked(source="bootstrap")
         instance._folder_permissions = {}
         return instance
 
@@ -94,6 +125,48 @@ class RuntimeConfig:
                 instance._goal_admission_config_history = []
             if not instance._goal_admission_config_history:
                 instance._append_goal_admission_history_locked(source="bootstrap")
+            if not hasattr(instance, "_capability_shell_policy_revision"):
+                instance._capability_shell_policy_revision = 0
+            if not hasattr(instance, "_capability_shell_policy_allowed_executables") or not isinstance(
+                instance._capability_shell_policy_allowed_executables,
+                list,
+            ):
+                instance._capability_shell_policy_allowed_executables = list(DEFAULT_ALLOWED_EXECUTABLES)
+            if not hasattr(instance, "_capability_shell_policy_allowed_git_subcommands") or not isinstance(
+                instance._capability_shell_policy_allowed_git_subcommands,
+                list,
+            ):
+                instance._capability_shell_policy_allowed_git_subcommands = list(DEFAULT_ALLOWED_GIT_SUBCOMMANDS)
+            if not hasattr(instance, "_capability_shell_policy_history") or not isinstance(
+                instance._capability_shell_policy_history,
+                list,
+            ):
+                instance._capability_shell_policy_history = []
+            if not instance._capability_shell_policy_history:
+                instance._append_capability_shell_policy_history_locked(source="bootstrap")
+
+            if not hasattr(instance, "_capability_file_policy_revision"):
+                instance._capability_file_policy_revision = 0
+            if not hasattr(instance, "_capability_file_policy_max_read_bytes"):
+                instance._capability_file_policy_max_read_bytes = DEFAULT_MAX_READ_BYTES
+            if not hasattr(instance, "_capability_file_policy_max_write_bytes"):
+                instance._capability_file_policy_max_write_bytes = DEFAULT_MAX_WRITE_BYTES
+            if not hasattr(instance, "_capability_file_policy_max_search_results"):
+                instance._capability_file_policy_max_search_results = DEFAULT_MAX_SEARCH_RESULTS
+            if not hasattr(instance, "_capability_file_policy_max_list_entries"):
+                instance._capability_file_policy_max_list_entries = DEFAULT_MAX_LIST_ENTRIES
+            if not hasattr(instance, "_capability_file_policy_allowed_search_file_patterns") or not isinstance(
+                instance._capability_file_policy_allowed_search_file_patterns,
+                list,
+            ):
+                instance._capability_file_policy_allowed_search_file_patterns = list(DEFAULT_ALLOWED_SEARCH_FILE_PATTERNS)
+            if not hasattr(instance, "_capability_file_policy_history") or not isinstance(
+                instance._capability_file_policy_history,
+                list,
+            ):
+                instance._capability_file_policy_history = []
+            if not instance._capability_file_policy_history:
+                instance._append_capability_file_policy_history_locked(source="bootstrap")
             if not hasattr(instance, "_folder_permissions") or not isinstance(instance._folder_permissions, dict):
                 instance._folder_permissions = {}
 
@@ -250,6 +323,183 @@ class RuntimeConfig:
     def goal_admission_chain_next_defer_score(self, value: float) -> None:
         with self._lock:
             self._goal_admission_chain_next_defer_score = max(0.0, min(1.0, float(value)))
+
+    @property
+    def capability_shell_policy_revision(self) -> int:
+        with self._lock:
+            return int(self._capability_shell_policy_revision)
+
+    @property
+    def capability_file_policy_revision(self) -> int:
+        with self._lock:
+            return int(self._capability_file_policy_revision)
+
+    def _append_capability_shell_policy_history_locked(self, *, source: str) -> dict[str, Any]:
+        self._capability_shell_policy_revision += 1
+        entry: dict[str, Any] = {
+            "revision": self._capability_shell_policy_revision,
+            "source": source,
+            "version": SHELL_POLICY_VERSION,
+            "allowed_executables": list(self._capability_shell_policy_allowed_executables),
+            "allowed_git_subcommands": list(self._capability_shell_policy_allowed_git_subcommands),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._capability_shell_policy_history.append(entry)
+        if len(self._capability_shell_policy_history) > CAPABILITY_POLICY_HISTORY_MAX_ENTRIES:
+            self._capability_shell_policy_history = self._capability_shell_policy_history[
+                -CAPABILITY_POLICY_HISTORY_MAX_ENTRIES:
+            ]
+        return dict(entry)
+
+    def list_capability_shell_policy_history(self, limit: int = 10) -> list[dict[str, Any]]:
+        requested = max(1, min(CAPABILITY_POLICY_HISTORY_MAX_ENTRIES, int(limit)))
+        with self._lock:
+            snapshot = [dict(item) for item in self._capability_shell_policy_history[-requested:]]
+        return list(reversed(snapshot))
+
+    def get_capability_shell_policy(self) -> dict[str, Any]:
+        with self._lock:
+            return build_shell_policy_payload(
+                allowed_executables=list(self._capability_shell_policy_allowed_executables),
+                allowed_git_subcommands=list(self._capability_shell_policy_allowed_git_subcommands),
+                revision=int(self._capability_shell_policy_revision),
+            )
+
+    def update_capability_shell_policy(
+        self,
+        *,
+        allowed_executables: list[str] | None = None,
+        allowed_git_subcommands: list[str] | None = None,
+        source: str = "manual_update",
+    ) -> dict[str, Any]:
+        with self._lock:
+            next_executables, next_git_subcommands = normalize_shell_policy_values(
+                allowed_executables=(
+                    list(self._capability_shell_policy_allowed_executables)
+                    if allowed_executables is None
+                    else allowed_executables
+                ),
+                allowed_git_subcommands=(
+                    list(self._capability_shell_policy_allowed_git_subcommands)
+                    if allowed_git_subcommands is None
+                    else allowed_git_subcommands
+                ),
+            )
+            changed = (
+                next_executables != self._capability_shell_policy_allowed_executables
+                or next_git_subcommands != self._capability_shell_policy_allowed_git_subcommands
+            )
+            self._capability_shell_policy_allowed_executables = next_executables
+            self._capability_shell_policy_allowed_git_subcommands = next_git_subcommands
+            revision = (
+                int(self._append_capability_shell_policy_history_locked(source=source)["revision"])
+                if changed
+                else int(self._capability_shell_policy_revision)
+            )
+            return build_shell_policy_payload(
+                allowed_executables=list(self._capability_shell_policy_allowed_executables),
+                allowed_git_subcommands=list(self._capability_shell_policy_allowed_git_subcommands),
+                revision=revision,
+            )
+
+    def _append_capability_file_policy_history_locked(self, *, source: str) -> dict[str, Any]:
+        self._capability_file_policy_revision += 1
+        entry: dict[str, Any] = {
+            "revision": self._capability_file_policy_revision,
+            "source": source,
+            "version": FILE_POLICY_VERSION,
+            "max_read_bytes": self._capability_file_policy_max_read_bytes,
+            "max_write_bytes": self._capability_file_policy_max_write_bytes,
+            "max_search_results": self._capability_file_policy_max_search_results,
+            "max_list_entries": self._capability_file_policy_max_list_entries,
+            "allowed_search_file_patterns": list(self._capability_file_policy_allowed_search_file_patterns),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._capability_file_policy_history.append(entry)
+        if len(self._capability_file_policy_history) > CAPABILITY_POLICY_HISTORY_MAX_ENTRIES:
+            self._capability_file_policy_history = self._capability_file_policy_history[-CAPABILITY_POLICY_HISTORY_MAX_ENTRIES:]
+        return dict(entry)
+
+    def list_capability_file_policy_history(self, limit: int = 10) -> list[dict[str, Any]]:
+        requested = max(1, min(CAPABILITY_POLICY_HISTORY_MAX_ENTRIES, int(limit)))
+        with self._lock:
+            snapshot = [dict(item) for item in self._capability_file_policy_history[-requested:]]
+        return list(reversed(snapshot))
+
+    def get_capability_file_policy(self) -> dict[str, Any]:
+        with self._lock:
+            return build_file_policy_payload(
+                max_read_bytes=int(self._capability_file_policy_max_read_bytes),
+                max_write_bytes=int(self._capability_file_policy_max_write_bytes),
+                max_search_results=int(self._capability_file_policy_max_search_results),
+                max_list_entries=int(self._capability_file_policy_max_list_entries),
+                allowed_search_file_patterns=list(self._capability_file_policy_allowed_search_file_patterns),
+                revision=int(self._capability_file_policy_revision),
+            )
+
+    def update_capability_file_policy(
+        self,
+        *,
+        max_read_bytes: int | None = None,
+        max_write_bytes: int | None = None,
+        max_search_results: int | None = None,
+        max_list_entries: int | None = None,
+        allowed_search_file_patterns: list[str] | None = None,
+        source: str = "manual_update",
+    ) -> dict[str, Any]:
+        with self._lock:
+            (
+                next_max_read_bytes,
+                next_max_write_bytes,
+                next_max_search_results,
+                next_max_list_entries,
+                next_allowed_patterns,
+            ) = normalize_file_policy_values(
+                max_read_bytes=(
+                    int(self._capability_file_policy_max_read_bytes) if max_read_bytes is None else max_read_bytes
+                ),
+                max_write_bytes=(
+                    int(self._capability_file_policy_max_write_bytes) if max_write_bytes is None else max_write_bytes
+                ),
+                max_search_results=(
+                    int(self._capability_file_policy_max_search_results)
+                    if max_search_results is None
+                    else max_search_results
+                ),
+                max_list_entries=(
+                    int(self._capability_file_policy_max_list_entries) if max_list_entries is None else max_list_entries
+                ),
+                allowed_search_file_patterns=(
+                    list(self._capability_file_policy_allowed_search_file_patterns)
+                    if allowed_search_file_patterns is None
+                    else allowed_search_file_patterns
+                ),
+            )
+            changed = (
+                next_max_read_bytes != self._capability_file_policy_max_read_bytes
+                or next_max_write_bytes != self._capability_file_policy_max_write_bytes
+                or next_max_search_results != self._capability_file_policy_max_search_results
+                or next_max_list_entries != self._capability_file_policy_max_list_entries
+                or next_allowed_patterns != self._capability_file_policy_allowed_search_file_patterns
+            )
+            self._capability_file_policy_max_read_bytes = next_max_read_bytes
+            self._capability_file_policy_max_write_bytes = next_max_write_bytes
+            self._capability_file_policy_max_search_results = next_max_search_results
+            self._capability_file_policy_max_list_entries = next_max_list_entries
+            self._capability_file_policy_allowed_search_file_patterns = next_allowed_patterns
+            revision = (
+                int(self._append_capability_file_policy_history_locked(source=source)["revision"])
+                if changed
+                else int(self._capability_file_policy_revision)
+            )
+            return build_file_policy_payload(
+                max_read_bytes=int(self._capability_file_policy_max_read_bytes),
+                max_write_bytes=int(self._capability_file_policy_max_write_bytes),
+                max_search_results=int(self._capability_file_policy_max_search_results),
+                max_list_entries=int(self._capability_file_policy_max_list_entries),
+                allowed_search_file_patterns=list(self._capability_file_policy_allowed_search_file_patterns),
+                revision=revision,
+            )
 
     def _append_goal_admission_history_locked(
         self,

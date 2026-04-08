@@ -16,6 +16,8 @@ from app.api.deps import (
     get_state_store,
 )
 from app.goals.repository import GoalRepository
+from app.capabilities.models import CapabilityDispatchRequest, RiskLevel
+from app.capabilities.runtime import dispatch_and_wait, has_recent_capability_executor
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import (
     ChatMessage,
@@ -165,6 +167,10 @@ def build_chat_router() -> APIRouter:
         ]
         return FolderPermissionListResponse(permissions=entries)
 
+    def _file_policy_args() -> dict:
+        config = get_runtime_config()
+        return {"file_policy": config.get_capability_file_policy()}
+
     def _run_chat_submission(
         *,
         request: Request,
@@ -257,10 +263,136 @@ def build_chat_router() -> APIRouter:
         )
 
     def _execute_file_tool_call(file_tools, tool_name: str, arguments: dict) -> str:
+        def _try_dispatch(tool: str, args: dict) -> str | None:
+            if not has_recent_capability_executor("desktop", max_age_seconds=10):
+                return None
+
+            capability_map = {
+                "read_file": ("fs.read", RiskLevel.SAFE, False),
+                "list_directory": ("fs.list", RiskLevel.SAFE, False),
+                "search_files": ("fs.search", RiskLevel.RESTRICTED, False),
+                "write_file": ("fs.write", RiskLevel.RESTRICTED, True),
+            }
+            mapping = capability_map.get(tool)
+            if mapping is None:
+                return None
+
+            capability, risk_level, requires_approval = mapping
+            result = dispatch_and_wait(
+                CapabilityDispatchRequest(
+                    capability=capability,
+                    args={**args, **_file_policy_args()},
+                    risk_level=risk_level,
+                    requires_approval=requires_approval,
+                ),
+                timeout_seconds=0.8,
+                poll_interval_seconds=0.05,
+            )
+
+            # timeout: fallback to existing core-local execution
+            if result is None:
+                return None
+
+            if not result.ok:
+                if result.error_code == "not_supported":
+                    return None
+                return json.dumps(
+                    {
+                        "error": result.error_message or result.error_code or "capability execution failed",
+                        "capability_request_id": result.request_id,
+                    },
+                    ensure_ascii=False,
+                )
+
+            output = result.output if isinstance(result.output, dict) else {}
+            if tool == "read_file":
+                content = output.get("content")
+                if not isinstance(content, str):
+                    return json.dumps(
+                        {"error": "invalid capability output for read_file", "capability_request_id": result.request_id},
+                        ensure_ascii=False,
+                    )
+                path_value = output.get("path", str(args.get("path", "")))
+                if not isinstance(path_value, str):
+                    path_value = str(args.get("path", ""))
+                size_bytes = output.get("size_bytes")
+                if not isinstance(size_bytes, int):
+                    size_bytes = len(content.encode("utf-8"))
+                line_count = output.get("line_count")
+                if not isinstance(line_count, int):
+                    line_count = content.count("\n") + 1 if content else 1
+                payload = {
+                    "path": path_value,
+                    "content": content,
+                    "size_bytes": size_bytes,
+                    "encoding": "utf-8",
+                    "line_count": line_count,
+                    "truncated": bool(output.get("truncated", False)),
+                    "capability_request_id": result.request_id,
+                }
+                return json.dumps(payload, ensure_ascii=False)
+
+            if tool == "list_directory":
+                path_value = output.get("path", str(args.get("path", ".")))
+                if not isinstance(path_value, str):
+                    path_value = str(args.get("path", "."))
+                raw_entries = output.get("entries")
+                entries = []
+                if isinstance(raw_entries, list):
+                    for item in raw_entries:
+                        if isinstance(item, str):
+                            entries.append(
+                                {
+                                    "name": item,
+                                    "path": item,
+                                    "type": "other",
+                                    "size_bytes": 0,
+                                    "modified_at": None,
+                                }
+                            )
+                        elif isinstance(item, dict):
+                            entries.append(item)
+                payload = {
+                    "path": path_value,
+                    "entries": entries,
+                    "total_files": 0,
+                    "total_dirs": 0,
+                    "truncated": bool(output.get("truncated", False)),
+                    "capability_request_id": result.request_id,
+                }
+                return json.dumps(payload, ensure_ascii=False)
+
+            if tool == "write_file":
+                path_value = output.get("path", str(args.get("path", "")))
+                if not isinstance(path_value, str):
+                    path_value = str(args.get("path", ""))
+                payload = {
+                    "path": path_value,
+                    "success": True,
+                    "bytes_written": output.get("bytes_written"),
+                    "capability_request_id": result.request_id,
+                }
+                return json.dumps(payload, ensure_ascii=False)
+
+            if tool == "search_files":
+                payload = {
+                    "query": output.get("query", str(args.get("query", ""))),
+                    "matches": output.get("matches", []),
+                    "total_matches": output.get("total_matches", 0),
+                    "search_duration_seconds": output.get("search_duration_seconds", 0),
+                    "capability_request_id": result.request_id,
+                }
+                return json.dumps(payload, ensure_ascii=False)
+
+            return None
+
         try:
             if tool_name == "read_file":
                 path = str(arguments.get("path", ""))
                 max_bytes = int(arguments.get("max_bytes", 512 * 1024))
+                dispatched = _try_dispatch("read_file", {"path": path, "max_bytes": max_bytes})
+                if dispatched is not None:
+                    return dispatched
                 result = file_tools.read_file(path, max_bytes=max_bytes)
                 payload = result.to_dict()
                 payload["content"] = result.content
@@ -271,6 +403,12 @@ def build_chat_router() -> APIRouter:
                 recursive = bool(arguments.get("recursive", False))
                 pattern = arguments.get("pattern")
                 pattern_value = None if pattern is None else str(pattern)
+                dispatched = _try_dispatch(
+                    "list_directory",
+                    {"path": path, "recursive": recursive, "pattern": pattern_value},
+                )
+                if dispatched is not None:
+                    return dispatched
                 result = file_tools.list_directory(path, recursive=recursive, pattern=pattern_value)
                 return json.dumps(result.to_dict(), ensure_ascii=False)
 
@@ -281,6 +419,17 @@ def build_chat_router() -> APIRouter:
                 search_path = str(arguments.get("search_path", "."))
                 file_pattern = str(arguments.get("file_pattern", "*.py"))
                 max_results = int(arguments.get("max_results", 20))
+                dispatched = _try_dispatch(
+                    "search_files",
+                    {
+                        "query": query,
+                        "search_path": search_path,
+                        "file_pattern": file_pattern,
+                        "max_results": max_results,
+                    },
+                )
+                if dispatched is not None:
+                    return dispatched
                 result = file_tools.search_content(
                     query,
                     search_path,
@@ -293,6 +442,12 @@ def build_chat_router() -> APIRouter:
                 path = str(arguments.get("path", ""))
                 content = str(arguments.get("content", ""))
                 create_dirs = bool(arguments.get("create_dirs", True))
+                dispatched = _try_dispatch(
+                    "write_file",
+                    {"path": path, "content": content, "create_dirs": create_dirs},
+                )
+                if dispatched is not None:
+                    return dispatched
                 result = file_tools.write_file(path, content, create_dirs=create_dirs)
                 return json.dumps(result.to_dict(), ensure_ascii=False)
 
@@ -417,15 +572,35 @@ def build_chat_router() -> APIRouter:
                 if isinstance(current_response_id, str):
                     response_id = current_response_id
 
-                if hub is not None and not started:
-                    hub.publish_chat_started(assistant_message_id, response_id=response_id)
-                    started = True
-
                 function_calls = _extract_function_calls(response_payload)
                 if not function_calls:
                     output_text = _extract_output_text(response_payload)
                     if initial_output_text:
                         output_text = _merge_chat_stream_content(initial_output_text, output_text)
+
+                    # Some providers may return an empty non-stream tool response even when normal
+                    # streaming works. On the first turn, degrade to plain streaming to avoid
+                    # returning an empty assistant reply.
+                    if (
+                        not output_text
+                        and not started
+                        and len(accumulated_input) == len(chat_messages)
+                    ):
+                        return _run_chat_submission(
+                            request=request,
+                            gateway=gateway,
+                            chat_messages=chat_messages,
+                            instructions=instructions,
+                            assistant_message_id=assistant_message_id,
+                            initial_output_text=initial_output_text,
+                        )
+
+                    if not output_text:
+                        raise HTTPException(status_code=502, detail="empty gateway response payload")
+
+                    if hub is not None and not started:
+                        hub.publish_chat_started(assistant_message_id, response_id=response_id)
+                        started = True
 
                     if hub is not None and output_text:
                         hub.publish_chat_delta(assistant_message_id, output_text)
@@ -439,6 +614,10 @@ def build_chat_router() -> APIRouter:
                         ),
                         output_text,
                     )
+
+                if hub is not None and not started:
+                    hub.publish_chat_started(assistant_message_id, response_id=response_id)
+                    started = True
 
                 tool_outputs: list[dict[str, str]] = []
                 for call_id, tool_name, arguments in function_calls:

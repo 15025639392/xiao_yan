@@ -38,6 +38,11 @@ def _is_minimax_like_base_url(base_url: str) -> bool:
     return "minimaxi.com" in normalized or "minimax.chat" in normalized or "minimax" in normalized
 
 
+def _is_nvidia_like_base_url(base_url: str) -> bool:
+    normalized = base_url.lower()
+    return "integrate.api.nvidia.com" in normalized or "api.nvidia.com" in normalized
+
+
 def _normalize_provider_id(provider_id: str) -> str:
     normalized = provider_id.strip().lower()
     normalized = re.sub(r"[^a-z0-9_-]+", "-", normalized)
@@ -48,7 +53,7 @@ def _normalize_provider_id(provider_id: str) -> str:
 def _infer_wire_api(base_url: str, configured: str | None) -> str:
     if configured and configured.strip():
         return configured.strip()
-    if _is_minimax_like_base_url(base_url):
+    if _is_minimax_like_base_url(base_url) or _is_nvidia_like_base_url(base_url):
         return "chat"
     return "responses"
 
@@ -128,6 +133,22 @@ def get_llm_provider_configs() -> list[LLMProviderConfig]:
             base_url=minimax_base_url,
             wire_api=_infer_wire_api(minimax_base_url, minimax_wire_api_env),
             default_model=minimax_model,
+        )
+
+    nvidia_api_key = os.getenv("NVIDIA_API_KEY", "").strip()
+    nvidia_base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip()
+    nvidia_model = os.getenv("NVIDIA_MODEL", "meta/llama-3.1-70b-instruct").strip() or "meta/llama-3.1-70b-instruct"
+    nvidia_wire_api = os.getenv("NVIDIA_WIRE_API")
+    if nvidia_wire_api is None:
+        nvidia_wire_api = "chat"
+    if nvidia_api_key:
+        register_provider(
+            provider_id="nvidia",
+            provider_name="NVIDIA",
+            api_key=nvidia_api_key,
+            base_url=nvidia_base_url or "https://integrate.api.nvidia.com/v1",
+            wire_api=_infer_wire_api(nvidia_base_url or "https://integrate.api.nvidia.com/v1", nvidia_wire_api),
+            default_model=nvidia_model,
         )
 
     custom_provider_ids = os.getenv("LLM_PROVIDER_IDS", "")
@@ -226,6 +247,14 @@ def get_goal_admission_storage_path() -> Path:
     if configured:
         return Path(configured).expanduser()
     return get_service_root() / ".data" / "goal_admission.json"
+
+
+def get_capability_queue_storage_path() -> Path:
+    load_local_env()
+    configured = os.getenv("CAPABILITY_QUEUE_STORAGE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    return get_service_root() / ".data" / "capability_queue.json"
 
 
 def get_goal_admission_mode() -> str:

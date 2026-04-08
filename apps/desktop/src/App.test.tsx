@@ -108,6 +108,151 @@ test("renders wake and sleep controls", () => {
   expect(container.querySelector(".inspector-grid")).toBeTruthy();
 });
 
+test("renders capability hub when route is capabilities", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "night",
+          energy: "low",
+          mood: "tired",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/goals/admission/stats")) {
+      return new Response(
+        JSON.stringify({
+          mode: "off",
+          today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
+          admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
+          admitted_stability_24h_rate: null,
+          deferred_queue_size: 0,
+          wip_limit: 3,
+          thresholds: {
+            user_topic: { min_score: 0.6, defer_score: 0.4 },
+            world_event: { min_score: 0.6, defer_score: 0.4 },
+            chain_next: { min_score: 0.6, defer_score: 0.4 },
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    if (url.endsWith("/goals/admission/candidates")) {
+      return new Response(JSON.stringify({ deferred: [], recent: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/config/goal-admission/history")) {
+      return new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/capabilities/contract")) {
+      return new Response(
+        JSON.stringify({
+          version: "v0",
+          descriptors: [
+            {
+              name: "fs.read",
+              default_risk_level: "safe",
+              default_requires_approval: false,
+              description: "Read text content from an allowed path.",
+              current_binding: "chat file tool",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    if (url.endsWith("/capabilities/queue/status")) {
+      return new Response(
+        JSON.stringify({
+          pending: 1,
+          pending_approval: 0,
+          in_progress: 1,
+          completed: 12,
+          dead_letter: 0,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    if (url.includes("/capabilities/jobs")) {
+      return new Response(JSON.stringify({ items: [], next_cursor: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/capabilities/approvals/pending")) {
+      return new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/capabilities/approvals/history")) {
+      return new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(
+      JSON.stringify({
+        mode: "awake",
+        current_thought: null,
+        active_goal_ids: [],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  window.location.hash = "#/capabilities";
+
+  render(<App />);
+
+  await waitFor(() => {
+    expect(screen.getByRole("heading", { name: "能力中枢" })).toBeInTheDocument();
+  });
+});
+
 test("streams assistant reply over realtime chat events", async () => {
   let resolveChatRequest: ((response: Response) => void) | null = null;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

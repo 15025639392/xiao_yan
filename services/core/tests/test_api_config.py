@@ -48,6 +48,33 @@ def _restore_goal_admission_snapshot(snapshot: dict[str, float]) -> None:
         service.chain_defer_score = snapshot["chain_next_defer_score"]
 
 
+def _capability_policy_snapshot() -> dict[str, dict]:
+    config = get_runtime_config()
+    return {
+        "shell": config.get_capability_shell_policy(),
+        "file": config.get_capability_file_policy(),
+    }
+
+
+def _restore_capability_policy_snapshot(snapshot: dict[str, dict]) -> None:
+    config = get_runtime_config()
+    shell = snapshot["shell"]
+    file_policy = snapshot["file"]
+    config.update_capability_shell_policy(
+        allowed_executables=list(shell["allowed_executables"]),
+        allowed_git_subcommands=list(shell["allowed_git_subcommands"]),
+        source="test_restore",
+    )
+    config.update_capability_file_policy(
+        max_read_bytes=int(file_policy["max_read_bytes"]),
+        max_write_bytes=int(file_policy["max_write_bytes"]),
+        max_search_results=int(file_policy["max_search_results"]),
+        max_list_entries=int(file_policy["max_list_entries"]),
+        allowed_search_file_patterns=list(file_policy["allowed_search_file_patterns"]),
+        source="test_restore",
+    )
+
+
 def _provider_catalog() -> list[LLMProviderConfig]:
     return [
         LLMProviderConfig(
@@ -503,3 +530,98 @@ def test_rollback_goal_admission_config_returns_previous_revision():
         }
     finally:
         _restore_goal_admission_snapshot(snapshot)
+
+
+def test_get_and_update_capability_shell_policy_config_with_history():
+    snapshot = _capability_policy_snapshot()
+    client = TestClient(app)
+    try:
+        response = client.get("/config/capabilities/shell-policy")
+        assert response.status_code == 200
+        baseline = response.json()
+        assert isinstance(baseline["version"], str)
+        assert baseline["revision"] >= 1
+
+        update = client.put(
+            "/config/capabilities/shell-policy",
+            json={
+                "allowed_executables": ["echo", "git"],
+                "allowed_git_subcommands": ["status"],
+            },
+        )
+        assert update.status_code == 200
+        updated = update.json()
+        assert updated["allowed_executables"] == ["echo", "git"]
+        assert updated["allowed_git_subcommands"] == ["status"]
+        assert updated["revision"] >= baseline["revision"]
+
+        history = client.get("/config/capabilities/shell-policy/history?limit=2")
+        assert history.status_code == 200
+        payload = history.json()
+        assert len(payload["items"]) >= 1
+        latest = payload["items"][0]
+        assert latest["source"] == "api_update"
+        assert latest["allowed_executables"] == ["echo", "git"]
+        assert latest["allowed_git_subcommands"] == ["status"]
+    finally:
+        _restore_capability_policy_snapshot(snapshot)
+
+
+def test_update_capability_shell_policy_rejects_unsupported_executable():
+    client = TestClient(app)
+    response = client.put(
+        "/config/capabilities/shell-policy",
+        json={
+            "allowed_executables": ["echo", "curl"],
+            "allowed_git_subcommands": ["status"],
+        },
+    )
+    assert response.status_code == 400
+    assert "unsupported value" in response.json()["detail"]
+
+
+def test_get_and_update_capability_file_policy_config_with_history():
+    snapshot = _capability_policy_snapshot()
+    client = TestClient(app)
+    try:
+        baseline = client.get("/config/capabilities/file-policy")
+        assert baseline.status_code == 200
+        baseline_payload = baseline.json()
+        assert baseline_payload["revision"] >= 1
+
+        next_max_read = 4096 if baseline_payload["max_read_bytes"] != 4096 else 8192
+        update = client.put(
+            "/config/capabilities/file-policy",
+            json={
+                "max_read_bytes": next_max_read,
+                "max_write_bytes": 4096,
+                "max_search_results": 10,
+                "max_list_entries": 20,
+                "allowed_search_file_patterns": ["*.py", "*.md"],
+            },
+        )
+        assert update.status_code == 200
+        updated = update.json()
+        assert updated["max_read_bytes"] == next_max_read
+        assert updated["max_write_bytes"] == 4096
+        assert updated["max_search_results"] == 10
+        assert updated["max_list_entries"] == 20
+        assert updated["allowed_search_file_patterns"] == ["*.py", "*.md"]
+
+        history = client.get("/config/capabilities/file-policy/history?limit=2")
+        assert history.status_code == 200
+        payload = history.json()
+        assert len(payload["items"]) >= 1
+        latest = payload["items"][0]
+        assert latest["source"] == "api_update"
+        assert latest["max_read_bytes"] == next_max_read
+        assert latest["allowed_search_file_patterns"] == ["*.py", "*.md"]
+    finally:
+        _restore_capability_policy_snapshot(snapshot)
+
+
+def test_update_capability_file_policy_rejects_empty_patch():
+    client = TestClient(app)
+    response = client.put("/config/capabilities/file-policy", json={})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "at least one file-policy field is required"

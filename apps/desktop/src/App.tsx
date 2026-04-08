@@ -20,6 +20,7 @@ import {
   wake,
 } from "./lib/api";
 import { subscribeAppRealtime } from "./lib/realtime";
+import { startCapabilityWorker } from "./lib/capabilities/worker";
 import {
   appendAssistantDelta,
   finalizeAssistantMessage,
@@ -31,8 +32,9 @@ import {
 import { OverviewPanel } from "./pages/OverviewPage";
 import { MemoryPage } from "./pages/MemoryPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { CapabilitiesPage } from "./pages/CapabilitiesPage";
 
-type AppRoute = "overview" | "chat" | "persona" | "memory" | "history" | "tools";
+type AppRoute = "overview" | "chat" | "persona" | "memory" | "history" | "tools" | "capabilities";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -238,6 +240,14 @@ export default function App() {
         // ignore
       });
   }, [persona?.features?.avatar_enabled]);
+
+  // Desktop capability worker: pull pending capability requests from core and execute locally.
+  useEffect(() => {
+    const stop = startCapabilityWorker();
+    return () => {
+      stop();
+    };
+  }, []);
 
   async function handleWake() {
     try {
@@ -490,6 +500,19 @@ export default function App() {
             </svg>
             <span>工具箱</span>
           </button>
+          <button
+            className={`app-sidebar__nav-item ${route === "capabilities" ? "app-sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNavigate("capabilities")}
+            type="button"
+          >
+            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="4" y="4" width="7" height="7" rx="1" />
+              <rect x="13" y="4" width="7" height="7" rx="1" />
+              <rect x="4" y="13" width="7" height="7" rx="1" />
+              <path d="M13 16h7M16.5 13v7" />
+            </svg>
+            <span>能力中枢</span>
+          </button>
         </nav>
 
         <div className="app-sidebar__section">
@@ -567,6 +590,8 @@ export default function App() {
           <HistoryPage onSelectRollback={handleRollback} />
         ) : route === "tools" ? (
           <ToolPanel />
+        ) : route === "capabilities" ? (
+          <CapabilitiesPage />
         ) : (
           <OverviewPanel
             focusGoalTitle={focusGoalTitle}
@@ -631,6 +656,7 @@ function resolveRoute(hash: string): AppRoute {
   if (hash === "#/memory") return "memory";
   if (hash === "#/history") return "history";
   if (hash === "#/tools") return "tools";
+  if (hash === "#/capabilities") return "capabilities";
   return "overview";
 }
 
@@ -640,6 +666,7 @@ function routeToHash(route: AppRoute): string {
   if (route === "memory") return "#/memory";
   if (route === "history") return "#/history";
   if (route === "tools") return "#/tools";
+  if (route === "capabilities") return "#/capabilities";
   return "#/";
 }
 

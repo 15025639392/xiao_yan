@@ -4,6 +4,22 @@ export type AllowedDirResponse = {
   allowed_dir: string | null;
 };
 
+export type ShellRunResult = {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  success: boolean;
+  timed_out: boolean;
+  truncated: boolean;
+  duration_ms: number;
+};
+
+export type ShellRunOptions = {
+  timeoutSeconds?: number;
+  allowedExecutables?: string[];
+  allowedGitSubcommands?: string[];
+};
+
 export function isTauriRuntime(): boolean {
   if (typeof window === "undefined") return false;
   const w = window as unknown as { __TAURI__?: unknown };
@@ -82,6 +98,30 @@ export async function fsListDir(relPath: string): Promise<string[]> {
   ensureTauri();
   try {
     return await invoke<string[]>("fs_list_dir", { relPath });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export async function shellRunCommand(command: string, options?: ShellRunOptions): Promise<ShellRunResult> {
+  ensureTauri();
+  try {
+    const payload: {
+      command: string;
+      timeoutSeconds?: number;
+      allowedExecutables?: string[];
+      allowedGitSubcommands?: string[];
+    } = { command };
+    if (typeof options?.timeoutSeconds === "number" && Number.isFinite(options.timeoutSeconds)) {
+      payload.timeoutSeconds = options.timeoutSeconds;
+    }
+    if (Array.isArray(options?.allowedExecutables) && options.allowedExecutables.length > 0) {
+      payload.allowedExecutables = options.allowedExecutables;
+    }
+    if (Array.isArray(options?.allowedGitSubcommands) && options.allowedGitSubcommands.length > 0) {
+      payload.allowedGitSubcommands = options.allowedGitSubcommands;
+    }
+    return await invoke<ShellRunResult>("shell_run", payload);
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));
   }

@@ -374,6 +374,44 @@ class ChatGateway:
             payload["instructions"] = instructions
         return payload
 
+    def _create_response_from_stream_fallback(
+        self,
+        messages: list[ChatMessage],
+        instructions: str | None = None,
+    ) -> ChatResult:
+        response_id: str | None = None
+        output_fragments: list[str] = []
+
+        for event in self.stream_response(messages, instructions=instructions):
+            event_type = event.get("type")
+            if event_type == "response_started":
+                started_response_id = event.get("response_id")
+                if isinstance(started_response_id, str) and started_response_id:
+                    response_id = started_response_id
+                continue
+
+            if event_type == "text_delta":
+                delta = event.get("delta")
+                if isinstance(delta, str) and delta:
+                    output_fragments.append(delta)
+                continue
+
+            if event_type == "response_failed":
+                error_message = event.get("error")
+                if isinstance(error_message, str) and error_message:
+                    raise RuntimeError(error_message)
+                raise RuntimeError("streaming fallback failed")
+
+            if event_type == "response_completed":
+                completed_response_id = event.get("response_id")
+                if isinstance(completed_response_id, str) and completed_response_id:
+                    response_id = completed_response_id
+                completed_output = event.get("output_text")
+                if isinstance(completed_output, str) and completed_output:
+                    return ChatResult(response_id=response_id, output_text=completed_output)
+
+        return ChatResult(response_id=response_id, output_text="".join(output_fragments))
+
     def create_response(
         self,
         messages: list[ChatMessage],
@@ -387,9 +425,13 @@ class ChatGateway:
             )
             response.raise_for_status()
             data = response.json()
+            try:
+                output_text = _extract_output_text(data)
+            except ValueError:
+                return self._create_response_from_stream_fallback(messages, instructions=instructions)
             return ChatResult(
                 response_id=data.get("id"),
-                output_text=_extract_output_text(data),
+                output_text=output_text,
             )
 
         if self.wire_api == "chat":
@@ -403,9 +445,14 @@ class ChatGateway:
             )
             response.raise_for_status()
             data = response.json()
+            output_text = self._extract_chat_text_from_response(data)
+            if not output_text:
+                fallback_result = self._create_response_from_stream_fallback(messages, instructions=instructions)
+                if fallback_result.output_text:
+                    return fallback_result
             return ChatResult(
                 response_id=data.get("id"),
-                output_text=self._extract_chat_text_from_response(data),
+                output_text=output_text,
             )
 
         raise ValueError(f"unsupported wire_api: {self.wire_api}")

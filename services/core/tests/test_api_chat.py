@@ -275,6 +275,42 @@ class ToolFallbackResumeStubGateway(StubGateway):
         }
 
 
+class EmptyToolOutputFallbackGateway(StubGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.create_call_count = 0
+        self.stream_call_count = 0
+
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        self.create_call_count += 1
+        return {"id": "resp_empty_tool", "output": []}
+
+    def stream_response(self, messages, instructions=None):
+        self.stream_call_count += 1
+        self.last_messages = list(messages)
+        self.last_instructions = instructions
+        yield {
+            "type": "response_started",
+            "response_id": "resp_stream_fallback",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "stream-fallback-ok",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_stream_fallback",
+            "output_text": "stream-fallback-ok",
+        }
+
+
 def test_post_chat_returns_submission_confirmation():
     memory_repository = InMemoryMemoryRepository()
     memory_service = MemoryService(repository=memory_repository)
@@ -581,6 +617,44 @@ def test_post_chat_resume_falls_back_to_plain_stream_when_tools_request_is_rejec
         }
         assert gateway.create_call_count == 1
         assert gateway.stream_call_count == 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_falls_back_to_plain_stream_when_tools_response_has_empty_output():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    gateway = EmptyToolOutputFallbackGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_memory_service():
+        return memory_service
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "hello"})
+        assert response.status_code == 200
+        assert response.json() == {
+            "response_id": "resp_stream_fallback",
+            "assistant_message_id": response.json()["assistant_message_id"],
+        }
+        assert gateway.create_call_count == 1
+        assert gateway.stream_call_count == 1
+        recent = list(reversed(memory_repository.list_recent(limit=5)))
+        assert [event.role for event in recent] == ["user", "assistant"]
+        assert recent[-1].content == "stream-fallback-ok"
     finally:
         app.dependency_overrides.clear()
 
