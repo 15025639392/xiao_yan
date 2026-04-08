@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import type {
   Goal,
+  GoalAdmissionConfigHistoryEntry,
   GoalAdmissionCandidateSnapshot,
   GoalAdmissionRuntimeConfig,
   GoalAdmissionStats,
   RelationshipSummary,
 } from "../lib/api";
 import {
+  fetchGoalAdmissionConfigHistory,
   fetchGoalAdmissionCandidates,
   fetchGoalAdmissionStats,
   fetchMemorySummary,
+  rollbackGoalAdmissionConfig,
   updateGoalAdmissionConfig,
 } from "../lib/api";
 import { subscribeAppRealtime } from "../lib/realtime";
@@ -34,6 +37,7 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
   const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const [admissionStats, setAdmissionStats] = useState<GoalAdmissionStats | null>(null);
   const [admissionCandidates, setAdmissionCandidates] = useState<GoalAdmissionCandidateSnapshot | null>(null);
+  const [admissionConfigHistory, setAdmissionConfigHistory] = useState<GoalAdmissionConfigHistoryEntry[]>([]);
   const {
     chainedGroups,
     columns,
@@ -94,8 +98,22 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
 
   async function handleUpdateAdmissionThresholds(patch: Partial<GoalAdmissionRuntimeConfig>): Promise<void> {
     await updateGoalAdmissionConfig(patch);
-    const latest = await fetchGoalAdmissionStats();
+    const [latest, history] = await Promise.all([
+      fetchGoalAdmissionStats(),
+      fetchGoalAdmissionConfigHistory(10),
+    ]);
     setAdmissionStats(latest);
+    setAdmissionConfigHistory(history.items);
+  }
+
+  async function handleRollbackAdmissionThresholds(): Promise<void> {
+    await rollbackGoalAdmissionConfig();
+    const [latest, history] = await Promise.all([
+      fetchGoalAdmissionStats(),
+      fetchGoalAdmissionConfigHistory(10),
+    ]);
+    setAdmissionStats(latest);
+    setAdmissionConfigHistory(history.items);
   }
 
   useEffect(() => {
@@ -125,6 +143,18 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
         }
       });
 
+    fetchGoalAdmissionConfigHistory(10)
+      .then((history) => {
+        if (!cancelled) {
+          setAdmissionConfigHistory(history.items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAdmissionConfigHistory([]);
+        }
+      });
+
     return () => {
       cancelled = true;
     };
@@ -150,7 +180,9 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
       <GoalsRelationshipGuidance relationship={relationship} />
       <GoalsAdmissionOverview
         stats={admissionStats}
+        history={admissionConfigHistory}
         onUpdateStabilityThresholds={handleUpdateAdmissionThresholds}
+        onRollbackStabilityThresholds={handleRollbackAdmissionThresholds}
       />
       <GoalsAdmissionCandidates snapshot={admissionCandidates} />
 

@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import type { GoalAdmissionRuntimeConfig, GoalAdmissionStats } from "../../lib/api";
+import type {
+  GoalAdmissionConfigHistoryEntry,
+  GoalAdmissionRuntimeConfig,
+  GoalAdmissionStats,
+} from "../../lib/api";
 import { MetricCard, SurfaceCard } from "../ui";
 
 type GoalsAdmissionOverviewProps = {
   stats: GoalAdmissionStats | null;
+  history?: GoalAdmissionConfigHistoryEntry[];
   onUpdateStabilityThresholds?: (patch: Partial<GoalAdmissionRuntimeConfig>) => Promise<void>;
+  onRollbackStabilityThresholds?: () => Promise<void>;
 };
 
 const DEFAULT_WARNING_RATE = 0.6;
@@ -83,10 +89,37 @@ function buildStabilityAlert(
   };
 }
 
-export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: GoalsAdmissionOverviewProps) {
+function describeHistorySource(source: GoalAdmissionConfigHistoryEntry["source"]): string {
+  if (source === "rollback") {
+    return "回滚";
+  }
+  if (source === "api_update") {
+    return "更新";
+  }
+  if (source === "bootstrap") {
+    return "初始化";
+  }
+  return source;
+}
+
+function formatHistoryTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString("zh-CN", { hour12: false });
+}
+
+export function GoalsAdmissionOverview({
+  stats,
+  history = [],
+  onUpdateStabilityThresholds,
+  onRollbackStabilityThresholds,
+}: GoalsAdmissionOverviewProps) {
   const [warningDraft, setWarningDraft] = useState<number>(Math.round(DEFAULT_WARNING_RATE * 100));
   const [dangerDraft, setDangerDraft] = useState<number>(Math.round(DEFAULT_DANGER_RATE * 100));
   const [savingThresholds, setSavingThresholds] = useState(false);
+  const [rollingBackThresholds, setRollingBackThresholds] = useState(false);
   const [thresholdError, setThresholdError] = useState<string | null>(null);
   const [thresholdOk, setThresholdOk] = useState<string | null>(null);
   const [pendingThresholdChange, setPendingThresholdChange] = useState<{
@@ -141,6 +174,7 @@ export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: G
     warningRate: effectiveWarningRate,
     dangerRate: effectiveDangerRate,
   });
+  const canRollback = history.length >= 2;
 
   async function saveThresholds() {
     if (!onUpdateStabilityThresholds || savingThresholds || pendingThresholdChange) {
@@ -209,6 +243,23 @@ export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: G
     setPendingThresholdChange(null);
     setThresholdError(null);
     setThresholdOk("已撤销阈值变更");
+  }
+
+  async function rollbackThresholds() {
+    if (!onRollbackStabilityThresholds || savingThresholds || rollingBackThresholds || pendingThresholdChange) {
+      return;
+    }
+    setThresholdError(null);
+    setThresholdOk(null);
+    setRollingBackThresholds(true);
+    try {
+      await onRollbackStabilityThresholds();
+      setThresholdOk("已回滚到上一版阈值");
+    } catch (error) {
+      setThresholdError(error instanceof Error ? error.message : "阈值回滚失败");
+    } finally {
+      setRollingBackThresholds(false);
+    }
   }
 
   return (
@@ -300,10 +351,37 @@ export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: G
             >
               保存阈值
             </button>
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              onClick={rollbackThresholds}
+              disabled={
+                savingThresholds
+                || rollingBackThresholds
+                || pendingThresholdChange !== null
+                || !onRollbackStabilityThresholds
+                || !canRollback
+              }
+            >
+              回滚上一版
+            </button>
           </div>
           {thresholdOk ? <div className="goals-admission__detail-text goals-admission__detail-text--success">{thresholdOk}</div> : null}
           {thresholdError ? (
             <div className="goals-admission__detail-text goals-admission__detail-text--danger">{thresholdError}</div>
+          ) : null}
+          {history.length > 0 ? (
+            <div className="goals-admission__history">
+              <div className="goals-admission__detail-title">阈值变更记录</div>
+              {history.slice(0, 3).map((entry) => (
+                <div
+                  key={`${entry.revision}-${entry.created_at}`}
+                  className="goals-admission__detail-text goals-admission__detail-text--muted"
+                >
+                  {`r${entry.revision} · ${describeHistorySource(entry.source)} · 健康 ${(entry.stability_warning_rate * 100).toFixed(0)}% / 告警 ${(entry.stability_danger_rate * 100).toFixed(0)}% · ${formatHistoryTime(entry.created_at)}${entry.rolled_back_from_revision ? `（回滚自 r${entry.rolled_back_from_revision}）` : ""}`}
+                </div>
+              ))}
+            </div>
           ) : null}
         </SurfaceCard>
       </div>

@@ -1,11 +1,20 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 
-const { fetchMemorySummary, fetchGoalAdmissionStats, fetchGoalAdmissionCandidates, updateGoalAdmissionConfig } = vi.hoisted(() => ({
+const {
+  fetchMemorySummary,
+  fetchGoalAdmissionStats,
+  fetchGoalAdmissionCandidates,
+  fetchGoalAdmissionConfigHistory,
+  updateGoalAdmissionConfig,
+  rollbackGoalAdmissionConfig,
+} = vi.hoisted(() => ({
   fetchMemorySummary: vi.fn(),
   fetchGoalAdmissionStats: vi.fn(),
   fetchGoalAdmissionCandidates: vi.fn(),
+  fetchGoalAdmissionConfigHistory: vi.fn(),
   updateGoalAdmissionConfig: vi.fn(),
+  rollbackGoalAdmissionConfig: vi.fn(),
 }));
 
 const { subscribeAppRealtime } = vi.hoisted(() => ({
@@ -19,7 +28,9 @@ vi.mock("../lib/api", async () => {
     fetchMemorySummary,
     fetchGoalAdmissionStats,
     fetchGoalAdmissionCandidates,
+    fetchGoalAdmissionConfigHistory,
     updateGoalAdmissionConfig,
+    rollbackGoalAdmissionConfig,
   };
 });
 
@@ -33,14 +44,23 @@ beforeEach(() => {
   fetchMemorySummary.mockReset();
   fetchGoalAdmissionStats.mockReset();
   fetchGoalAdmissionCandidates.mockReset();
+  fetchGoalAdmissionConfigHistory.mockReset();
   updateGoalAdmissionConfig.mockReset();
+  rollbackGoalAdmissionConfig.mockReset();
   subscribeAppRealtime.mockReset();
   fetchMemorySummary.mockReturnValue(new Promise(() => {}));
   fetchGoalAdmissionStats.mockReturnValue(new Promise(() => {}));
   fetchGoalAdmissionCandidates.mockReturnValue(new Promise(() => {}));
+  fetchGoalAdmissionConfigHistory.mockReturnValue(new Promise(() => {}));
   updateGoalAdmissionConfig.mockResolvedValue({
     stability_warning_rate: 0.6,
     stability_danger_rate: 0.35,
+  });
+  rollbackGoalAdmissionConfig.mockResolvedValue({
+    stability_warning_rate: 0.6,
+    stability_danger_rate: 0.35,
+    revision: 2,
+    rolled_back_from_revision: 1,
   });
   subscribeAppRealtime.mockReturnValue(() => {});
 });
@@ -569,6 +589,31 @@ test("updates stability thresholds and refreshes admission stats", async () => {
     stability_warning_rate: 0.7,
     stability_danger_rate: 0.4,
   });
+  fetchGoalAdmissionConfigHistory
+    .mockResolvedValueOnce({
+      items: [
+        {
+          revision: 10,
+          source: "api_update",
+          stability_warning_rate: 0.6,
+          stability_danger_rate: 0.35,
+          created_at: "2026-04-08T09:00:00+00:00",
+          rolled_back_from_revision: null,
+        },
+      ],
+    })
+    .mockResolvedValueOnce({
+      items: [
+        {
+          revision: 11,
+          source: "api_update",
+          stability_warning_rate: 0.7,
+          stability_danger_rate: 0.4,
+          created_at: "2026-04-08T09:05:00+00:00",
+          rolled_back_from_revision: null,
+        },
+      ],
+    });
 
   render(
     <GoalsPanel
@@ -665,6 +710,138 @@ test("can undo threshold update before delayed commit", async () => {
 
   expect(updateGoalAdmissionConfig).not.toHaveBeenCalled();
   expect(screen.getByText("已撤销阈值变更")).toBeInTheDocument();
+  expect((screen.getByLabelText("健康线(%)") as HTMLInputElement).value).toBe("60");
+  expect((screen.getByLabelText("告警线(%)") as HTMLInputElement).value).toBe("35");
+});
+
+test("can rollback thresholds to previous revision", async () => {
+  fetchGoalAdmissionStats
+    .mockResolvedValueOnce({
+      mode: "shadow",
+      today: {
+        admit: 8,
+        defer: 3,
+        drop: 2,
+        wip_blocked: 1,
+      },
+      admitted_stability_24h: {
+        stable: 5,
+        re_deferred: 2,
+        dropped: 1,
+      },
+      admitted_stability_24h_rate: 0.625,
+      admitted_stability_alert: {
+        level: "warning",
+        warning_rate: 0.7,
+        danger_rate: 0.4,
+      },
+      deferred_queue_size: 2,
+      wip_limit: 2,
+      thresholds: {
+        user_topic: { min_score: 0.68, defer_score: 0.45 },
+        world_event: { min_score: 0.75, defer_score: 0.52 },
+        chain_next: { min_score: 0.62, defer_score: 0.45 },
+      },
+    })
+    .mockResolvedValueOnce({
+      mode: "shadow",
+      today: {
+        admit: 8,
+        defer: 3,
+        drop: 2,
+        wip_blocked: 1,
+      },
+      admitted_stability_24h: {
+        stable: 5,
+        re_deferred: 2,
+        dropped: 1,
+      },
+      admitted_stability_24h_rate: 0.625,
+      admitted_stability_alert: {
+        level: "warning",
+        warning_rate: 0.6,
+        danger_rate: 0.35,
+      },
+      deferred_queue_size: 2,
+      wip_limit: 2,
+      thresholds: {
+        user_topic: { min_score: 0.68, defer_score: 0.45 },
+        world_event: { min_score: 0.75, defer_score: 0.52 },
+        chain_next: { min_score: 0.62, defer_score: 0.45 },
+      },
+    });
+  fetchGoalAdmissionConfigHistory
+    .mockResolvedValueOnce({
+      items: [
+        {
+          revision: 12,
+          source: "api_update",
+          stability_warning_rate: 0.7,
+          stability_danger_rate: 0.4,
+          created_at: "2026-04-08T10:00:00+00:00",
+          rolled_back_from_revision: null,
+        },
+        {
+          revision: 11,
+          source: "api_update",
+          stability_warning_rate: 0.6,
+          stability_danger_rate: 0.35,
+          created_at: "2026-04-08T09:00:00+00:00",
+          rolled_back_from_revision: null,
+        },
+      ],
+    })
+    .mockResolvedValueOnce({
+      items: [
+        {
+          revision: 13,
+          source: "rollback",
+          stability_warning_rate: 0.6,
+          stability_danger_rate: 0.35,
+          created_at: "2026-04-08T10:05:00+00:00",
+          rolled_back_from_revision: 12,
+        },
+        {
+          revision: 12,
+          source: "api_update",
+          stability_warning_rate: 0.7,
+          stability_danger_rate: 0.4,
+          created_at: "2026-04-08T10:00:00+00:00",
+          rolled_back_from_revision: null,
+        },
+      ],
+    });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "先比较方案并整理利弊分析",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText("目标准入守门")).toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "回滚上一版" })).toBeEnabled();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "回滚上一版" }));
+
+  await waitFor(() => {
+    expect(rollbackGoalAdmissionConfig).toHaveBeenCalledTimes(1);
+  });
+  await waitFor(() => {
+    expect(screen.getByText("已回滚到上一版阈值")).toBeInTheDocument();
+  });
+  expect(fetchGoalAdmissionStats).toHaveBeenCalledTimes(2);
+  expect(fetchGoalAdmissionConfigHistory).toHaveBeenCalledTimes(2);
   expect((screen.getByLabelText("健康线(%)") as HTMLInputElement).value).toBe("60");
   expect((screen.getByLabelText("告警线(%)") as HTMLInputElement).value).toBe("35");
 });

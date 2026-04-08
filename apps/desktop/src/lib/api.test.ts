@@ -3,9 +3,11 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   fetchConfig,
   fetchGoalAdmissionConfig,
+  fetchGoalAdmissionConfigHistory,
   fetchChatModels,
   fetchChatFolderPermissions,
   removeChatFolderPermission,
+  rollbackGoalAdmissionConfig,
   resetPersona,
   updateConfig,
   updateGoalAdmissionConfig,
@@ -162,6 +164,8 @@ describe("persona api methods", () => {
 
     await fetchGoalAdmissionConfig();
     await updateGoalAdmissionConfig({ stability_warning_rate: 0.7 });
+    await fetchGoalAdmissionConfigHistory(5);
+    await rollbackGoalAdmissionConfig();
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:8000/config/goal-admission");
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -172,6 +176,17 @@ describe("persona api methods", () => {
         body: JSON.stringify({
           stability_warning_rate: 0.7,
         }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://127.0.0.1:8000/config/goal-admission/history?limit=5",
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://127.0.0.1:8000/config/goal-admission/rollback",
+      expect.objectContaining({
+        method: "POST",
       }),
     );
   });

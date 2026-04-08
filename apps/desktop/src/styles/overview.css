@@ -261,6 +261,13 @@
   color: var(--text-primary);
 }
 
+.goals-admission__history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--space-2);
+}
+
 .goals-guidance {
   display: flex;
   flex-direction: column;

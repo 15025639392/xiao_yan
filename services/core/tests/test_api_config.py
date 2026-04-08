@@ -336,3 +336,75 @@ def test_update_goal_admission_config_rejects_empty_patch():
     response = client.put("/config/goal-admission", json={})
     assert response.status_code == 400
     assert response.json()["detail"] == "at least one goal-admission config field is required"
+
+
+def test_goal_admission_config_history_returns_recent_entries():
+    config = get_runtime_config()
+    original_warning = config.goal_admission_stability_warning_rate
+    original_danger = config.goal_admission_stability_danger_rate
+    try:
+        client = TestClient(app)
+        update_response = client.put(
+            "/config/goal-admission",
+            json={
+                "stability_warning_rate": 0.72,
+                "stability_danger_rate": 0.41,
+            },
+        )
+        assert update_response.status_code == 200
+
+        history_response = client.get("/config/goal-admission/history?limit=2")
+        assert history_response.status_code == 200
+        payload = history_response.json()
+        assert len(payload["items"]) >= 1
+        latest = payload["items"][0]
+        assert latest["source"] == "api_update"
+        assert latest["stability_warning_rate"] == 0.72
+        assert latest["stability_danger_rate"] == 0.41
+        assert latest["revision"] >= 1
+    finally:
+        config.goal_admission_stability_warning_rate = original_warning
+        config.goal_admission_stability_danger_rate = original_danger
+
+
+def test_rollback_goal_admission_config_returns_previous_revision():
+    config = get_runtime_config()
+    original_warning = config.goal_admission_stability_warning_rate
+    original_danger = config.goal_admission_stability_danger_rate
+    try:
+        client = TestClient(app)
+        baseline = client.put(
+            "/config/goal-admission",
+            json={
+                "stability_warning_rate": 0.66,
+                "stability_danger_rate": 0.33,
+            },
+        )
+        assert baseline.status_code == 200
+
+        changed = client.put(
+            "/config/goal-admission",
+            json={
+                "stability_warning_rate": 0.74,
+                "stability_danger_rate": 0.4,
+            },
+        )
+        assert changed.status_code == 200
+
+        rollback = client.post("/config/goal-admission/rollback")
+        assert rollback.status_code == 200
+        rollback_payload = rollback.json()
+        assert rollback_payload["stability_warning_rate"] == 0.66
+        assert rollback_payload["stability_danger_rate"] == 0.33
+        assert rollback_payload["rolled_back_from_revision"] >= 1
+        assert rollback_payload["revision"] > rollback_payload["rolled_back_from_revision"]
+
+        config_response = client.get("/config/goal-admission")
+        assert config_response.status_code == 200
+        assert config_response.json() == {
+            "stability_warning_rate": 0.66,
+            "stability_danger_rate": 0.33,
+        }
+    finally:
+        config.goal_admission_stability_warning_rate = original_warning
+        config.goal_admission_stability_danger_rate = original_danger

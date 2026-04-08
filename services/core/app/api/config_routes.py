@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.config import LLMProviderConfig, get_llm_provider_configs
@@ -51,6 +51,24 @@ class GoalAdmissionConfigUpdateRequest(BaseModel):
 class GoalAdmissionConfigResponse(BaseModel):
     stability_warning_rate: float
     stability_danger_rate: float
+
+
+class GoalAdmissionConfigHistoryItem(BaseModel):
+    revision: int
+    source: str
+    stability_warning_rate: float
+    stability_danger_rate: float
+    created_at: str
+    rolled_back_from_revision: int | None = None
+
+
+class GoalAdmissionConfigHistoryResponse(BaseModel):
+    items: list[GoalAdmissionConfigHistoryItem]
+
+
+class GoalAdmissionConfigRollbackResponse(GoalAdmissionConfigResponse):
+    revision: int
+    rolled_back_from_revision: int
 
 
 class ChatModelProviderItem(BaseModel):
@@ -177,30 +195,42 @@ def build_config_router() -> APIRouter:
             )
 
         config = get_runtime_config()
-        next_warning = (
-            config.goal_admission_stability_warning_rate
-            if request.stability_warning_rate is None
-            else float(request.stability_warning_rate)
-        )
-        next_danger = (
-            config.goal_admission_stability_danger_rate
-            if request.stability_danger_rate is None
-            else float(request.stability_danger_rate)
-        )
-        if next_danger > next_warning:
-            raise HTTPException(
-                status_code=400,
-                detail="stability_danger_rate must be <= stability_warning_rate",
+        try:
+            updated = config.update_goal_admission_thresholds(
+                stability_warning_rate=request.stability_warning_rate,
+                stability_danger_rate=request.stability_danger_rate,
+                source="api_update",
             )
-
-        if request.stability_warning_rate is not None:
-            config.goal_admission_stability_warning_rate = request.stability_warning_rate
-        if request.stability_danger_rate is not None:
-            config.goal_admission_stability_danger_rate = request.stability_danger_rate
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
         return GoalAdmissionConfigResponse(
-            stability_warning_rate=config.goal_admission_stability_warning_rate,
-            stability_danger_rate=config.goal_admission_stability_danger_rate,
+            stability_warning_rate=float(updated["stability_warning_rate"]),
+            stability_danger_rate=float(updated["stability_danger_rate"]),
+        )
+
+    @router.get("/config/goal-admission/history")
+    def get_goal_admission_config_history(
+        limit: int = Query(default=10, ge=1, le=50),
+    ) -> GoalAdmissionConfigHistoryResponse:
+        config = get_runtime_config()
+        items = config.list_goal_admission_config_history(limit=limit)
+        return GoalAdmissionConfigHistoryResponse(
+            items=[GoalAdmissionConfigHistoryItem.model_validate(item) for item in items],
+        )
+
+    @router.post("/config/goal-admission/rollback")
+    def rollback_goal_admission_config() -> GoalAdmissionConfigRollbackResponse:
+        config = get_runtime_config()
+        try:
+            rolled_back = config.rollback_goal_admission_thresholds()
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return GoalAdmissionConfigRollbackResponse(
+            stability_warning_rate=float(rolled_back["stability_warning_rate"]),
+            stability_danger_rate=float(rolled_back["stability_danger_rate"]),
+            revision=int(rolled_back["revision"]),
+            rolled_back_from_revision=int(rolled_back["rolled_back_from_revision"]),
         )
 
     @router.get("/config/chat-models")
