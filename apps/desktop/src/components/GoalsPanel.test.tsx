@@ -542,6 +542,123 @@ test("renders candidate pool with deferred and blocked admission candidates", as
   expect(within(candidateSection).getByText("因为关系边界冲突被拦下")).toBeInTheDocument();
 });
 
+test("updates candidate pool from realtime runtime snapshot", async () => {
+  let listener: ((event: any) => void) | null = null;
+  subscribeAppRealtime.mockImplementation((callback) => {
+    listener = callback;
+    return () => {};
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "先比较方案并整理利弊分析",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(subscribeAppRealtime).toHaveBeenCalled();
+  });
+
+  await act(async () => {
+    listener?.({
+      type: "snapshot",
+      payload: {
+        runtime: {
+          state: {
+            mode: "awake",
+            focus_mode: "autonomy",
+            current_thought: null,
+            active_goal_ids: [],
+            today_plan: null,
+            last_action: null,
+            self_programming_job: null,
+          },
+          messages: [],
+          goals: [],
+          world: null,
+          autobio: [],
+          goal_admission_stats: {
+            mode: "enforce",
+            today: {
+              admit: 2,
+              defer: 1,
+              drop: 1,
+              wip_blocked: 0,
+            },
+            deferred_queue_size: 1,
+            wip_limit: 2,
+            thresholds: {
+              user_topic: { min_score: 0.68, defer_score: 0.45 },
+              world_event: { min_score: 0.75, defer_score: 0.52 },
+              chain_next: { min_score: 0.62, defer_score: 0.45 },
+            },
+          },
+          goal_admission_candidates: {
+            deferred: [
+              {
+                candidate: {
+                  title: "持续理解用户最近在意的话题：嗯",
+                  source_type: "user_topic",
+                  source_content: "嗯",
+                  retry_count: 1,
+                },
+                next_retry_at: "2026-04-07T08:05:00+00:00",
+                last_reason: "user_score",
+              },
+            ],
+            recent: [
+              {
+                candidate: {
+                  title: "继续推进：催用户现在就做决定",
+                  source_type: "user_topic",
+                  source_content: "我应该催用户现在就选，不再给他自己想的空间",
+                  retry_count: 0,
+                },
+                decision: "drop",
+                reason: "relationship_boundary:你别催我，我希望先自己想一想再决定",
+                score: 0,
+                created_at: "2026-04-07T08:01:00+00:00",
+                retry_at: null,
+              },
+            ],
+          },
+        },
+        memory: {
+          total_estimated: 0,
+          by_kind: {},
+          recent_count: 0,
+          strong_memories: 0,
+          relationship: {
+            available: false,
+            boundaries: [],
+            commitments: [],
+            preferences: [],
+          },
+          available: true,
+        },
+        persona: {
+          profile: {},
+          emotion: {},
+        },
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("候选目标池")).toBeInTheDocument();
+  });
+  expect(screen.getByText("下次重试 08:05")).toBeInTheDocument();
+  expect(screen.getByText("关系边界：你别催我，我希望先自己想一想再决定")).toBeInTheDocument();
+});
+
 test("renders per-goal source explanations for user topic, world event, and chain continuation", () => {
   render(
     <GoalsPanel

@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage, ChatMessage
 from app.memory.repository import MemoryRepository
@@ -138,6 +139,7 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
     state_store: StateStore = target_app.state.state_store
     memory_repository: MemoryRepository = target_app.state.memory_repository
     goal_repository: GoalRepository = target_app.state.goal_repository
+    goal_admission_service: GoalAdmissionService | None = getattr(target_app.state, "goal_admission_service", None)
 
     messages = [
         ChatHistoryMessage(
@@ -165,6 +167,10 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
         "state": state_store.get().model_dump(mode="json"),
         "messages": messages,
         "goals": [goal.model_dump(mode="json") for goal in goal_repository.list_goals()],
+        "goal_admission_stats": None if goal_admission_service is None else goal_admission_service.get_stats(),
+        "goal_admission_candidates": (
+            None if goal_admission_service is None else goal_admission_service.get_candidate_snapshot()
+        ),
         "world": world_state.model_dump(mode="json"),
         "autobio": deduplicate_entries(autobio_entries),
     }

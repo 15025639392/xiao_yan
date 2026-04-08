@@ -359,6 +359,13 @@
   color: var(--text-secondary);
 }
 
+.goals-candidate-pool__item-meta {
+  margin-top: var(--space-2);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .goal-board__row {
   display: grid;
   grid-template-columns: 2fr 1fr;

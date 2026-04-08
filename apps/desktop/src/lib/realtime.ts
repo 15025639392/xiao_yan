@@ -4,6 +4,8 @@ import type {
   ChatHistoryMessage,
   EmotionState,
   Goal,
+  GoalAdmissionCandidateSnapshot,
+  GoalAdmissionStats,
   InnerWorldState,
   MemoryEntryDisplay,
   MemorySummary,
@@ -15,6 +17,8 @@ export type AppRuntimeRealtimePayload = {
   state: BeingState;
   messages: ChatHistoryMessage[];
   goals: Goal[];
+  goal_admission_stats?: GoalAdmissionStats | null;
+  goal_admission_candidates?: GoalAdmissionCandidateSnapshot | null;
   world: InnerWorldState | null;
   autobio: string[];
 };

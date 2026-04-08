@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from app.domain.models import BeingState, FocusMode, WakeMode
+from app.goals.admission import GoalAdmissionService, GoalAdmissionStore, GoalCandidate, GoalCandidateSource
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import InMemoryGoalRepository
 from app.main import app
@@ -27,6 +30,10 @@ def _install_runtime_for_realtime_test():
         BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY),
         memory_repository=memory_repository,
     )
+    goal_admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+    )
 
     app.state.memory_repository = memory_repository
     app.state.goal_repository = goal_repository
@@ -34,12 +41,13 @@ def _install_runtime_for_realtime_test():
     app.state.persona_service = persona_service
     app.state.memory_service = memory_service
     app.state.state_store = state_store
+    app.state.goal_admission_service = goal_admission_service
 
-    return state_store, memory_repository, goal_repository, world_repository, persona_service
+    return state_store, memory_repository, goal_repository, world_repository, persona_service, goal_admission_service
 
 
 def test_realtime_socket_sends_initial_snapshot():
-    state_store, memory_repository, goal_repository, world_repository, persona_service = _install_runtime_for_realtime_test()
+    state_store, memory_repository, goal_repository, world_repository, persona_service, goal_admission_service = _install_runtime_for_realtime_test()
     goal_repository.save_goal(
         Goal(
             title="整理今天的记忆",
@@ -65,6 +73,17 @@ def test_realtime_socket_sends_initial_snapshot():
             source_context="value_signal:boundary",
         )
     )
+    goal_admission_service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="持续理解用户最近在意的话题：嗯",
+            source_content="嗯",
+        ),
+        now=datetime(2026, 4, 7, 8, 0, tzinfo=timezone.utc),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[MemoryEvent(kind="chat", role="user", content="嗯")],
+    )
 
     client = TestClient(app)
     with client.websocket_connect("/ws/app") as websocket:
@@ -79,13 +98,15 @@ def test_realtime_socket_sends_initial_snapshot():
         item["content"] == "我刚整理过记忆。"
         for item in message["payload"]["memory"]["timeline"]
     )
+    assert message["payload"]["runtime"]["goal_admission_stats"]["mode"] == "enforce"
+    assert message["payload"]["runtime"]["goal_admission_candidates"]["deferred"][0]["candidate"]["title"] == "持续理解用户最近在意的话题：嗯"
     assert message["payload"]["memory"]["relationship"]["available"] is True
     assert any("别催我" in item for item in message["payload"]["memory"]["relationship"]["boundaries"])
     assert message["payload"]["persona"]["profile"]["name"] == persona_service.profile.name
 
 
 def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
-    state_store, memory_repository, goal_repository, world_repository, persona_service = _install_runtime_for_realtime_test()
+    state_store, memory_repository, goal_repository, world_repository, persona_service, goal_admission_service = _install_runtime_for_realtime_test()
     world_repository.save_world_state(
         WorldState(
             time_of_day="morning",
@@ -109,6 +130,25 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
         )
         runtime_event = websocket.receive_json()
 
+        goal_admission_service.evaluate_candidate(
+            GoalCandidate(
+                source_type=GoalCandidateSource.USER_TOPIC,
+                title="继续推进：催用户现在就做决定",
+                source_content="我应该催用户现在就选，不再给他自己想的空间",
+            ),
+            now=datetime(2026, 4, 7, 8, 1, tzinfo=timezone.utc),
+            active_goals=[],
+            all_goals=[],
+            recent_events=[
+                MemoryEvent(
+                    kind="fact",
+                    content="用户边界：你别催我，我希望先自己想一想再决定",
+                    source_context="value_signal:boundary",
+                )
+            ],
+        )
+        runtime_event_after_admission = websocket.receive_json()
+
         memory_repository.save_event(MemoryEvent(kind="chat", role="user", content="新的记忆"))
         runtime_event_after_memory = websocket.receive_json()
         memory_event = websocket.receive_json()
@@ -128,6 +168,10 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
 
     assert runtime_event["type"] == "runtime_updated"
     assert runtime_event["payload"]["state"]["focus_mode"] == "morning_plan"
+    assert runtime_event_after_admission["type"] == "runtime_updated"
+    assert runtime_event_after_admission["payload"]["goal_admission_candidates"]["recent"][0]["reason"].startswith(
+        "relationship_boundary:"
+    )
     assert runtime_event_after_memory["type"] == "runtime_updated"
     assert runtime_event_after_memory["payload"]["messages"][0]["content"] == "新的记忆"
     assert memory_event["type"] == "memory_updated"

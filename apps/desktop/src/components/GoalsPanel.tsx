@@ -40,6 +40,18 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     toggleExecutionPanel,
   } = useGoalsPanelState({ goals, onUpdateGoalStatus });
 
+  function syncAdmissionFromRuntime(runtimePayload: {
+    goal_admission_stats?: GoalAdmissionStats | null;
+    goal_admission_candidates?: GoalAdmissionCandidateSnapshot | null;
+  }) {
+    if (runtimePayload.goal_admission_stats !== undefined) {
+      setAdmissionStats(runtimePayload.goal_admission_stats ?? null);
+    }
+    if (runtimePayload.goal_admission_candidates !== undefined) {
+      setAdmissionCandidates(runtimePayload.goal_admission_candidates ?? null);
+    }
+  }
+
   useEffect(() => {
     fetchMemorySummary()
       .then((summary) => setRelationship(summary.relationship))
@@ -49,24 +61,57 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
       const memoryPayload =
         event.type === "snapshot" ? event.payload.memory : event.type === "memory_updated" ? event.payload : null;
       if (!memoryPayload) {
+        const runtimePayload =
+          event.type === "snapshot" ? event.payload.runtime : event.type === "runtime_updated" ? event.payload : null;
+        if (runtimePayload) {
+          syncAdmissionFromRuntime(runtimePayload);
+        }
         return;
       }
 
       setRelationship(memoryPayload.relationship ?? memoryPayload.summary.relationship ?? null);
+
+      const runtimePayload =
+        event.type === "snapshot" ? event.payload.runtime : event.type === "runtime_updated" ? event.payload : null;
+      if (runtimePayload) {
+        syncAdmissionFromRuntime(runtimePayload);
+      }
     });
 
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     fetchGoalAdmissionStats()
-      .then(setAdmissionStats)
-      .catch(() => setAdmissionStats(null));
+      .then((stats) => {
+        if (!cancelled) {
+          setAdmissionStats(stats);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAdmissionStats(null);
+        }
+      });
 
     fetchGoalAdmissionCandidates()
-      .then(setAdmissionCandidates)
-      .catch(() => setAdmissionCandidates(null));
-  }, [goals]);
+      .then((snapshot) => {
+        if (!cancelled) {
+          setAdmissionCandidates(snapshot);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAdmissionCandidates(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <Panel

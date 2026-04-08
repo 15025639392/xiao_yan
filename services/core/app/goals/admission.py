@@ -8,7 +8,7 @@ from difflib import SequenceMatcher
 from enum import Enum
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 
@@ -267,6 +267,7 @@ class GoalAdmissionService:
         "继续推进：",
     )
     RETRY_BACKOFF_MINUTES = (5, 15, 30, 60)
+
     def __init__(
         self,
         store: GoalAdmissionStore,
@@ -283,6 +284,7 @@ class GoalAdmissionService:
         max_retries: int = 6,
     ) -> None:
         self.store = store
+        self._on_change: Callable[[], None] | None = None
         self.mode: GoalAdmissionMode = mode
         self.min_score = min_score
         self.defer_score = defer_score
@@ -293,6 +295,9 @@ class GoalAdmissionService:
         self.wip_limit = wip_limit
         self.world_enabled = world_enabled
         self.max_retries = max_retries
+
+    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_change = callback
 
     def canonical_topic(self, text: str) -> str:
         normalized = text.strip()
@@ -362,6 +367,7 @@ class GoalAdmissionService:
                     retry_at=retry_at,
                 )
             )
+        self._notify_changed()
 
         return AdmissionResult(
             score=round(score, 4),
@@ -373,7 +379,10 @@ class GoalAdmissionService:
         )
 
     def pop_due_candidate(self, now: datetime) -> GoalCandidate | None:
-        return self.store.pop_due_candidate(now)
+        candidate = self.store.pop_due_candidate(now)
+        if candidate is not None:
+            self._notify_changed()
+        return candidate
 
     def get_stats(self, now: datetime | None = None) -> dict:
         moment = now or datetime.now(timezone.utc)
@@ -635,3 +644,7 @@ class GoalAdmissionService:
     def _retry_backoff_minutes(self, retry_count: int) -> int:
         index = min(max(retry_count, 0), len(self.RETRY_BACKOFF_MINUTES) - 1)
         return self.RETRY_BACKOFF_MINUTES[index]
+
+    def _notify_changed(self) -> None:
+        if self._on_change is not None:
+            self._on_change()

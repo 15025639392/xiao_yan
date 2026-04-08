@@ -35,6 +35,21 @@ function describeRecentDecision(item: RecentGoalAdmissionDecision): string {
   return `因为 ${item.reason} 被拦下`;
 }
 
+function describeReasonDetail(reason: string): string | null {
+  if (reason.startsWith("relationship_boundary:")) {
+    return `关系边界：${reason.replace("relationship_boundary:", "")}`;
+  }
+  if (reason.startsWith("value_boundary:")) {
+    return `价值边界：${reason.replace("value_boundary:", "")}`;
+  }
+  return null;
+}
+
+function formatRetryAt(nextRetryAt: string): string {
+  const matched = nextRetryAt.match(/T(\d{2}:\d{2})/);
+  return matched ? matched[1] : nextRetryAt;
+}
+
 function sourceLabel(sourceType: DeferredGoalAdmissionCandidate["candidate"]["source_type"]): string {
   if (sourceType === "world_event") {
     return "世界事件";
@@ -53,6 +68,7 @@ function renderDeferredItem(item: DeferredGoalAdmissionCandidate) {
         <span className="goals-candidate-pool__item-chip">{sourceLabel(item.candidate.source_type)}</span>
       </div>
       <div className="goals-candidate-pool__item-text">{describeDeferredReason(item.last_reason)}</div>
+      <div className="goals-candidate-pool__item-meta">{`下次重试 ${formatRetryAt(item.next_retry_at)}`}</div>
     </SurfaceCard>
   );
 }
@@ -67,6 +83,9 @@ function renderRecentItem(item: RecentGoalAdmissionDecision) {
         </span>
       </div>
       <div className="goals-candidate-pool__item-text">{describeRecentDecision(item)}</div>
+      {describeReasonDetail(item.reason) ? (
+        <div className="goals-candidate-pool__item-meta">{describeReasonDetail(item.reason)}</div>
+      ) : null}
     </SurfaceCard>
   );
 }

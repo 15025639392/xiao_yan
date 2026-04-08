@@ -145,6 +145,7 @@ def ensure_realtime_hub_initialized(target_app: FastAPI) -> None:
     memory_repository = target_app.state.memory_repository
     goal_repository = target_app.state.goal_repository
     persona_service = target_app.state.persona_service
+    goal_admission_service = target_app.state.goal_admission_service
 
     if hasattr(state_store, "set_on_change_callback"):
         state_store.set_on_change_callback(hub.publish_runtime)
@@ -152,5 +153,7 @@ def ensure_realtime_hub_initialized(target_app: FastAPI) -> None:
         memory_repository.set_on_change_callback(lambda: (hub.publish_runtime(), hub.publish_memory()))
     if hasattr(goal_repository, "set_on_change_callback"):
         goal_repository.set_on_change_callback(hub.publish_runtime)
+    if hasattr(goal_admission_service, "set_on_change_callback"):
+        goal_admission_service.set_on_change_callback(hub.publish_runtime)
     if hasattr(persona_service, "set_on_change_callback"):
         persona_service.set_on_change_callback(hub.publish_persona)
