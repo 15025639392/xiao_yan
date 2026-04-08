@@ -367,6 +367,17 @@ class GoalAdmissionService:
                     retry_at=retry_at,
                 )
             )
+        elif recommended == AdmissionDecision.ADMIT and prepared.retry_count > 0:
+            self.store.record_recent_decision(
+                RecentAdmissionDecision(
+                    candidate=prepared,
+                    decision=AdmissionDecision.ADMIT,
+                    reason=reason,
+                    score=round(score, 4),
+                    created_at=now,
+                    retry_at=retry_at,
+                )
+            )
         self._notify_changed()
 
         return AdmissionResult(
@@ -400,9 +411,13 @@ class GoalAdmissionService:
         }
 
     def get_candidate_snapshot(self) -> dict[str, list[dict]]:
+        records = self.store.list_recent_decisions()
+        recent = [item for item in records if item.get("decision") in {"defer", "drop"}]
+        admitted = [item for item in records if item.get("decision") == "admit"]
         return {
             "deferred": self.store.list_deferred_candidates(),
-            "recent": self.store.list_recent_decisions(),
+            "recent": recent,
+            "admitted": admitted,
         }
 
     def _prepare_candidate(self, candidate: GoalCandidate) -> GoalCandidate:

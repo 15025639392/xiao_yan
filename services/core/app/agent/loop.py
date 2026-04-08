@@ -55,12 +55,13 @@ from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
 from app.world.service import WorldStateService
 
 
-def _goal_admission_meta(admission) -> GoalAdmissionMeta:
+def _goal_admission_meta(admission, candidate: GoalCandidate | None = None) -> GoalAdmissionMeta:
     return GoalAdmissionMeta(
         score=round(admission.score, 4),
         recommended_decision=admission.recommended_decision.value,
         applied_decision=admission.applied_decision.value,
         reason=admission.reason,
+        deferred_retries=0 if candidate is None else max(candidate.retry_count, 0),
     )
 
 
@@ -315,7 +316,7 @@ class AutonomyLoop:
             Goal(
                 title=candidate.title,
                 source=latest_user_event.content,
-                admission=_goal_admission_meta(admission),
+                admission=_goal_admission_meta(admission, candidate),
             )
         )
         proactive_message = _build_proactive_message(
@@ -367,7 +368,7 @@ class AutonomyLoop:
                 title=candidate.title,
                 source=latest_world_event.content,
                 chain_id=candidate.chain_id,
-                admission=_goal_admission_meta(admission),
+                admission=_goal_admission_meta(admission, candidate),
             )
         )
         proactive_thought = _build_world_goal_start(
@@ -419,7 +420,7 @@ class AutonomyLoop:
                 Goal(
                     title=deferred.title,
                     source=deferred.source_content,
-                    admission=_goal_admission_meta(admission),
+                    admission=_goal_admission_meta(admission, deferred),
                 )
             )
             proactive_message = _build_proactive_message(deferred.source_content or deferred.title, now, goal_world_state)
@@ -446,7 +447,7 @@ class AutonomyLoop:
                     title=deferred.title,
                     source=deferred.source_content,
                     chain_id=deferred.chain_id or uuid4().hex,
-                    admission=_goal_admission_meta(admission),
+                    admission=_goal_admission_meta(admission, deferred),
                 )
             )
             world_state = self._world_state_for(state, now)
@@ -470,7 +471,7 @@ class AutonomyLoop:
                     chain_id=deferred.chain_id,
                     parent_goal_id=deferred.parent_goal_id,
                     generation=deferred.generation,
-                    admission=_goal_admission_meta(admission),
+                    admission=_goal_admission_meta(admission, deferred),
                 )
             )
             world_state = self._world_state_for(state, now)
@@ -533,7 +534,7 @@ class AutonomyLoop:
                                 chain_id=goal.chain_id,
                                 parent_goal_id=goal.id,
                                 generation=goal.generation + 1,
-                                admission=_goal_admission_meta(admission),
+                                admission=_goal_admission_meta(admission, candidate),
                             )
                         )
                 chain_progress = (

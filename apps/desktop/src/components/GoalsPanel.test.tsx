@@ -513,6 +513,21 @@ test("renders candidate pool with deferred and blocked admission candidates", as
         retry_at: null,
       },
     ],
+    admitted: [
+      {
+        candidate: {
+          title: "继续推进：提醒用户明天复盘",
+          source_type: "user_topic",
+          source_content: "提醒用户明天复盘",
+          retry_count: 1,
+        },
+        decision: "admit",
+        reason: "user_score",
+        score: 1,
+        created_at: "2026-04-07T08:06:00+00:00",
+        retry_at: null,
+      },
+    ],
   });
 
   render(
@@ -536,10 +551,13 @@ test("renders candidate pool with deferred and blocked admission candidates", as
   const candidateSection = screen.getByLabelText("候选目标池");
   expect(within(candidateSection).getByText("延后观察")).toBeInTheDocument();
   expect(within(candidateSection).getByText("最近拦截")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("最近转正")).toBeInTheDocument();
   expect(within(candidateSection).getByText("持续理解用户最近在意的话题：嗯")).toBeInTheDocument();
   expect(within(candidateSection).getByText("因为分数不足进入延后观察")).toBeInTheDocument();
   expect(within(candidateSection).getByText("继续推进：催用户现在就做决定")).toBeInTheDocument();
   expect(within(candidateSection).getByText("因为关系边界冲突被拦下")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("继续推进：提醒用户明天复盘")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("延后 1 次后转正")).toBeInTheDocument();
 });
 
 test("updates candidate pool from realtime runtime snapshot", async () => {
@@ -629,6 +647,21 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
                 retry_at: null,
               },
             ],
+            admitted: [
+              {
+                candidate: {
+                  title: "继续推进：提醒用户明天复盘",
+                  source_type: "user_topic",
+                  source_content: "提醒用户明天复盘",
+                  retry_count: 1,
+                },
+                decision: "admit",
+                reason: "user_score",
+                score: 1,
+                created_at: "2026-04-07T08:06:00+00:00",
+                retry_at: null,
+              },
+            ],
           },
         },
         memory: {
@@ -657,6 +690,7 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
   });
   expect(screen.getByText("下次重试 08:05")).toBeInTheDocument();
   expect(screen.getByText("关系边界：你别催我，我希望先自己想一想再决定")).toBeInTheDocument();
+  expect(screen.getByText("延后 1 次后转正")).toBeInTheDocument();
 });
 
 test("renders per-goal source explanations for user topic, world event, and chain continuation", () => {
@@ -722,6 +756,7 @@ test("renders per-goal admission badge and explanation when metadata is availabl
             recommended_decision: "admit",
             applied_decision: "admit",
             reason: "user_score",
+            deferred_retries: 1,
           },
         },
       ]}
@@ -734,4 +769,5 @@ test("renders per-goal admission badge and explanation when metadata is availabl
   expect(within(goalCard as HTMLElement).getByText("准入通过")).toBeInTheDocument();
   expect(within(goalCard as HTMLElement).getByText("符合用户话题准入阈值，已允许进入目标看板。")).toBeInTheDocument();
   expect(within(goalCard as HTMLElement).getByText("评分 0.82")).toBeInTheDocument();
+  expect(within(goalCard as HTMLElement).getByText("延后 1 次后转正")).toBeInTheDocument();
 });

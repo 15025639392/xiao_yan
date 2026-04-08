@@ -17,6 +17,7 @@ class GoalAdmissionMeta(BaseModel):
     recommended_decision: str
     applied_decision: str
     reason: str
+    deferred_retries: int = 0
 
 
 class Goal(BaseModel):

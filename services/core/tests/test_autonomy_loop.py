@@ -2,7 +2,13 @@ from datetime import datetime, timedelta, timezone
 
 from app.agent.loop import AutonomyLoop
 from app.domain.models import BeingState, FocusMode, SelfProgrammingStatus, WakeMode
-from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
+from app.goals.admission import (
+    DeferredGoalCandidate,
+    GoalAdmissionService,
+    GoalAdmissionStore,
+    GoalCandidate,
+    GoalCandidateSource,
+)
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import InMemoryGoalRepository
 from app.memory.models import MemoryEvent
@@ -836,3 +842,52 @@ def test_tick_once_enforce_mode_can_stop_chain_next_generation_when_not_admitted
 
     assert child_goals == []
     assert state.active_goal_ids == []
+
+
+def test_tick_once_promotes_deferred_candidate_and_marks_retries_in_goal_admission():
+    now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(
+        MemoryEvent(
+            kind="fact",
+            content="承诺/计划：提醒用户明天复盘",
+            source_context="value_signal:commitment",
+        )
+    )
+    goals = InMemoryGoalRepository()
+    admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+        min_score=0.9,
+        defer_score=0.4,
+    )
+    admission_service.store.upsert_deferred_candidate(
+        DeferredGoalCandidate(
+            candidate=GoalCandidate(
+                source_type=GoalCandidateSource.USER_TOPIC,
+                title="继续推进：提醒用户明天复盘",
+                source_content="提醒用户明天复盘",
+                retry_count=1,
+                fingerprint="deferred-reminder",
+            ),
+            next_retry_at=now - timedelta(minutes=1),
+            last_reason="user_score",
+        )
+    )
+    loop = AutonomyLoop(
+        store,
+        repo,
+        goals,
+        now_provider=lambda: now,
+        goal_admission_service=admission_service,
+    )
+
+    state = loop.tick_once()
+    active_goals = goals.list_active_goals()
+
+    assert len(active_goals) == 1
+    assert state.active_goal_ids == [active_goals[0].id]
+    assert active_goals[0].admission is not None
+    assert active_goals[0].admission.applied_decision == "admit"
+    assert active_goals[0].admission.deferred_retries == 1

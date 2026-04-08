@@ -4,6 +4,7 @@ export type GoalAdmissionDisplay = {
   badge: string;
   summary: string;
   scoreText: string;
+  trajectoryText: string | null;
   tone: "admit" | "defer" | "drop";
 };
 
@@ -34,11 +35,13 @@ export function getGoalAdmissionDisplay(goal: Goal): GoalAdmissionDisplay | null
 
   const tone = goal.admission.applied_decision;
   const badge = tone === "admit" ? "准入通过" : tone === "defer" ? "延后观察" : "边界拦截";
+  const retries = Math.max(goal.admission.deferred_retries ?? 0, 0);
 
   return {
     badge,
     summary: explainReason(goal),
     scoreText: `评分 ${goal.admission.score.toFixed(2)}`,
+    trajectoryText: tone === "admit" && retries > 0 ? `延后 ${retries} 次后转正` : null,
     tone,
   };
 }

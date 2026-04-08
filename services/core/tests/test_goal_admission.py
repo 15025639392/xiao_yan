@@ -266,3 +266,49 @@ def test_goal_admission_exposes_deferred_and_recent_blocked_candidates():
     assert snapshot["deferred"][0]["last_reason"] == "user_score"
     assert snapshot["recent"][0]["decision"] == "drop"
     assert snapshot["recent"][0]["reason"].startswith("relationship_boundary:")
+
+
+def test_goal_admission_exposes_recent_admitted_candidates_after_defer():
+    service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+        min_score=0.9,
+        defer_score=0.4,
+    )
+    now = _now()
+    candidate = GoalCandidate(
+        source_type=GoalCandidateSource.USER_TOPIC,
+        title="继续推进：提醒用户明天复盘",
+        source_content="提醒用户明天复盘",
+    )
+
+    first = service.evaluate_candidate(
+        candidate,
+        now=now,
+        active_goals=[],
+        all_goals=[],
+        recent_events=[],
+    )
+    due = service.pop_due_candidate(now + timedelta(minutes=6))
+    assert due is not None
+    second = service.evaluate_candidate(
+        due,
+        now=now + timedelta(minutes=6),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="承诺/计划：提醒用户明天复盘",
+                source_context="value_signal:commitment",
+            )
+        ],
+    )
+
+    snapshot = service.get_candidate_snapshot()
+
+    assert first.applied_decision == AdmissionDecision.DEFER
+    assert second.applied_decision == AdmissionDecision.ADMIT
+    assert snapshot["admitted"][0]["decision"] == "admit"
+    assert snapshot["admitted"][0]["candidate"]["retry_count"] == 1
+    assert snapshot["admitted"][0]["reason"] == "user_score"

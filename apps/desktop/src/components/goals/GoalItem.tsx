@@ -63,6 +63,9 @@ export function GoalItem({
             <span className="goal-card__admission-score">{admissionDisplay.scoreText}</span>
           </div>
           <div className="goal-card__admission-summary">{admissionDisplay.summary}</div>
+          {admissionDisplay.trajectoryText ? (
+            <div className="goal-card__admission-trajectory">{admissionDisplay.trajectoryText}</div>
+          ) : null}
         </section>
       ) : null}
 

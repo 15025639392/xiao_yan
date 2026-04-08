@@ -91,7 +91,8 @@ function renderRecentItem(item: RecentGoalAdmissionDecision) {
 }
 
 export function GoalsAdmissionCandidates({ snapshot }: GoalsAdmissionCandidatesProps) {
-  if (!snapshot || (snapshot.deferred.length === 0 && snapshot.recent.length === 0)) {
+  const admitted = snapshot?.admitted ?? [];
+  if (!snapshot || (snapshot.deferred.length === 0 && snapshot.recent.length === 0 && admitted.length === 0)) {
     return null;
   }
 
@@ -121,6 +122,31 @@ export function GoalsAdmissionCandidates({ snapshot }: GoalsAdmissionCandidatesP
               snapshot.recent.map(renderRecentItem)
             ) : (
               <div className="goals-candidate-pool__empty">最近没有被拦下的候选。</div>
+            )}
+          </div>
+        </div>
+
+        <div className="goals-candidate-pool__group">
+          <div className="goals-candidate-pool__group-title">最近转正</div>
+          <div className="goals-candidate-pool__items">
+            {admitted.length > 0 ? (
+              admitted.map((item) => (
+                <SurfaceCard key={`${item.candidate.fingerprint ?? item.candidate.title}-${item.created_at}-admit`}>
+                  <div className="goals-candidate-pool__item-head">
+                    <span className="goals-candidate-pool__item-title">{item.candidate.title}</span>
+                    <span className="goals-candidate-pool__item-chip goals-candidate-pool__item-chip--admit">
+                      已转正
+                    </span>
+                  </div>
+                  <div className="goals-candidate-pool__item-text">
+                    {item.candidate.retry_count > 0
+                      ? `延后 ${item.candidate.retry_count} 次后转正`
+                      : "已通过准入进入目标看板"}
+                  </div>
+                </SurfaceCard>
+              ))
+            ) : (
+              <div className="goals-candidate-pool__empty">最近没有转正候选。</div>
             )}
           </div>
         </div>

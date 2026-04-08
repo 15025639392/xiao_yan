@@ -181,6 +181,7 @@ export type Goal = {
     recommended_decision: "admit" | "defer" | "drop";
     applied_decision: "admit" | "defer" | "drop";
     reason: string;
+    deferred_retries?: number;
   } | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -267,7 +268,7 @@ export type DeferredGoalAdmissionCandidate = {
 
 export type RecentGoalAdmissionDecision = {
   candidate: GoalAdmissionCandidate;
-  decision: "defer" | "drop";
+  decision: "admit" | "defer" | "drop";
   reason: string;
   score: number;
   created_at: string;
@@ -277,6 +278,7 @@ export type RecentGoalAdmissionDecision = {
 export type GoalAdmissionCandidateSnapshot = {
   deferred: DeferredGoalAdmissionCandidate[];
   recent: RecentGoalAdmissionDecision[];
+  admitted?: RecentGoalAdmissionDecision[];
 };
 
 export type AutobioResponse = {

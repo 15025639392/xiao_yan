@@ -224,18 +224,20 @@ def test_get_goal_admission_candidates_returns_deferred_and_recent_snapshot():
     admission_service = GoalAdmissionService(
         store=GoalAdmissionStore.in_memory(),
         mode="enforce",
+        min_score=0.9,
+        defer_score=0.4,
     )
     now = datetime(2026, 4, 7, 8, 0, tzinfo=timezone.utc)
     admission_service.evaluate_candidate(
         GoalCandidate(
             source_type=GoalCandidateSource.USER_TOPIC,
-            title="持续理解用户最近在意的话题：嗯",
-            source_content="嗯",
+            title="继续推进：提醒用户明天复盘",
+            source_content="提醒用户明天复盘",
         ),
         now=now,
         active_goals=[],
         all_goals=[],
-        recent_events=[MemoryEvent(kind="chat", role="user", content="嗯")],
+        recent_events=[],
     )
     admission_service.evaluate_candidate(
         GoalCandidate(
@@ -254,6 +256,32 @@ def test_get_goal_admission_candidates_returns_deferred_and_recent_snapshot():
             )
         ],
     )
+    due = admission_service.pop_due_candidate(now + timedelta(minutes=6))
+    assert due is not None
+    admission_service.evaluate_candidate(
+        due,
+        now=now + timedelta(minutes=6),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="承诺/计划：提醒用户明天复盘",
+                source_context="value_signal:commitment",
+            )
+        ],
+    )
+    admission_service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="持续理解用户最近在意的话题：嗯",
+            source_content="嗯",
+        ),
+        now=now + timedelta(minutes=7),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[MemoryEvent(kind="chat", role="user", content="嗯")],
+    )
 
     def override_goal_repository():
         return repository
@@ -271,7 +299,9 @@ def test_get_goal_admission_candidates_returns_deferred_and_recent_snapshot():
         body = response.json()
         assert body["deferred"][0]["candidate"]["title"] == "持续理解用户最近在意的话题：嗯"
         assert body["deferred"][0]["last_reason"] == "user_score"
-        assert body["recent"][0]["decision"] == "drop"
-        assert body["recent"][0]["reason"].startswith("relationship_boundary:")
+        assert any(item["decision"] == "drop" for item in body["recent"])
+        assert any(item["reason"].startswith("relationship_boundary:") for item in body["recent"])
+        assert body["admitted"][0]["decision"] == "admit"
+        assert body["admitted"][0]["candidate"]["retry_count"] == 1
     finally:
         app.dependency_overrides.clear()
