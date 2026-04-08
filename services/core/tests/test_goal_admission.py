@@ -367,3 +367,134 @@ def test_goal_admission_marks_admitted_candidate_unstable_when_redeferred_within
 
     assert snapshot["admitted"][0]["decision"] == "admit"
     assert snapshot["admitted"][0]["stability"] == "re_deferred"
+
+
+def test_goal_admission_stats_include_24h_stability_breakdown():
+    service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+        min_score=0.9,
+        defer_score=0.4,
+    )
+    now = _now()
+
+    # A: defer -> admit
+    service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：提醒用户明天复盘",
+            source_content="提醒用户明天复盘",
+        ),
+        now=now,
+        active_goals=[],
+        all_goals=[],
+        recent_events=[],
+    )
+    due_a = service.pop_due_candidate(now + timedelta(minutes=6))
+    assert due_a is not None
+    service.evaluate_candidate(
+        due_a,
+        now=now + timedelta(minutes=6),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="承诺/计划：提醒用户明天复盘",
+                source_context="value_signal:commitment",
+            )
+        ],
+    )
+    # B: defer -> admit -> stable
+    service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：提醒用户本周回看笔记",
+            source_content="提醒用户本周回看笔记",
+        ),
+        now=now + timedelta(minutes=7),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[],
+    )
+    due_b = service.pop_due_candidate(now + timedelta(minutes=13))
+    assert due_b is not None
+    service.evaluate_candidate(
+        due_b,
+        now=now + timedelta(minutes=13),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="承诺/计划：提醒用户本周回看笔记",
+                source_context="value_signal:commitment",
+            )
+        ],
+    )
+
+    # C: defer -> admit -> dropped
+    service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：提醒用户慢慢想清楚再决定",
+            source_content="提醒用户慢慢想清楚再决定",
+        ),
+        now=now + timedelta(minutes=14),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[],
+    )
+    due_c = service.pop_due_candidate(now + timedelta(minutes=20))
+    assert due_c is not None
+    service.evaluate_candidate(
+        due_c,
+        now=now + timedelta(minutes=20),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="承诺/计划：提醒用户慢慢想清楚再决定",
+                source_context="value_signal:commitment",
+            )
+        ],
+    )
+    service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：催用户立刻做决定",
+            source_content="提醒用户慢慢想清楚再决定",
+        ),
+        now=now + timedelta(minutes=21),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="用户边界：你别催我，我希望先自己想一想再决定",
+                source_context="value_signal:boundary",
+            )
+        ],
+    )
+
+    # A: re_deferred after admit
+    service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：提醒用户明天复盘",
+            source_content="提醒用户明天复盘",
+        ),
+        now=now + timedelta(minutes=22),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[],
+    )
+
+    stats = service.get_stats(now=now + timedelta(minutes=22))
+
+    assert stats["admitted_stability_24h"] == {
+        "stable": 1,
+        "re_deferred": 1,
+        "dropped": 1,
+    }

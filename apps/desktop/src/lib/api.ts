@@ -244,6 +244,11 @@ export type GoalAdmissionStats = {
     drop: number;
     wip_blocked: number;
   };
+  admitted_stability_24h: {
+    stable: number;
+    re_deferred: number;
+    dropped: number;
+  };
   deferred_queue_size: number;
   wip_limit: number;
   thresholds: GoalAdmissionThresholds;

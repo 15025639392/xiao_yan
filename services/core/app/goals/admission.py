@@ -398,9 +398,11 @@ class GoalAdmissionService:
     def get_stats(self, now: datetime | None = None) -> dict:
         moment = now or datetime.now(timezone.utc)
         day = moment.astimezone(timezone.utc).date().isoformat()
+        admitted_stability = self._build_admitted_stability_breakdown(self._normalize_datetime(moment))
         return {
             "mode": self.mode,
             "today": self.store.get_stats(day),
+            "admitted_stability_24h": admitted_stability,
             "deferred_queue_size": self.store.deferred_queue_size(),
             "wip_limit": self.wip_limit,
             "thresholds": {
@@ -420,6 +422,16 @@ class GoalAdmissionService:
             "recent": recent,
             "admitted": admitted,
         }
+
+    def _build_admitted_stability_breakdown(self, now: datetime) -> dict[str, int]:
+        records = self.store.list_recent_decisions(limit=20)
+        admitted = self._attach_admitted_stability(records, now=now)
+        summary = {"stable": 0, "re_deferred": 0, "dropped": 0}
+        for item in admitted:
+            stability = item.get("stability")
+            if stability in summary:
+                summary[stability] += 1
+        return summary
 
     def _attach_admitted_stability(self, records: list[dict], *, now: datetime) -> list[dict]:
         admitted = [item for item in records if item.get("decision") == "admit"]

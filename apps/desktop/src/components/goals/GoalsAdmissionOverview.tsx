@@ -23,6 +23,7 @@ export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
   if (!stats) {
     return null;
   }
+  const stability = stats.admitted_stability_24h;
 
   return (
     <section className="goals-admission" aria-label="目标准入守门">
@@ -58,6 +59,13 @@ export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
             <div className="goals-admission__detail-text">
               {formatThreshold("链式续推", stats.thresholds.chain_next.min_score, stats.thresholds.chain_next.defer_score)}
             </div>
+          </div>
+        </SurfaceCard>
+
+        <SurfaceCard>
+          <div className="goals-admission__detail-title">转正后 24h 稳定性</div>
+          <div className="goals-admission__detail-text">
+            {`稳定 ${stability.stable}，再次延后 ${stability.re_deferred}，再次拦截 ${stability.dropped}。`}
           </div>
         </SurfaceCard>
       </div>

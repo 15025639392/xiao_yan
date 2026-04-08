@@ -215,6 +215,11 @@ def test_get_goal_admission_stats_returns_current_snapshot():
         assert body["mode"] == "shadow"
         assert "today" in body
         assert "deferred_queue_size" in body
+        assert body["admitted_stability_24h"] == {
+            "stable": 0,
+            "re_deferred": 0,
+            "dropped": 0,
+        }
     finally:
         app.dependency_overrides.clear()
 
