@@ -322,18 +322,25 @@ A: 目前支持 macOS、Linux 和 Windows（通过 WSL）。
 
 ## 未来规划（TODO）
 
-### 目标准入降噪路线图
+### Now（当前只抓这一件，2026-04-08 起）
+
+目标准入 Phase 3 从“可用规则”推进到“可运营系统”（抓大放小，不并行开新主线）。
 
 参考文档：
 - `docs/goal-admission-roadmap.md`
 - `docs/goal-generation-flow.md`
+- `docs/plans/2026-04-08-focus-execution.md`
+- `docs/runbooks/goal-admission-phase3-canary.md`
 
 - [x] Phase 1: Shadow Baseline（打分不拦截，建立基线）
 - [x] Phase 2: Enforce Gate（规则准入 + WIP 限制）
-- [ ] Phase 3: Calibrated Enforce（分来源/分场景调参）
+- [ ] Phase 3: Calibrated Enforce（参数可配置 + 回放评估 + 小流量上线，工程能力已就绪，待线上验证闭环）
+
+### Next（主线完成后再开）
+
 - [ ] Phase 4: Hybrid Intelligence（规则护栏 + LLM 评审 + 数据闭环）
 
-### 通用能力演进
+### Later（先收住，不阻塞主线）
 
 - [ ] 增强人格系统的多样性和真实感
 - [ ] 优化长期记忆的检索和管理

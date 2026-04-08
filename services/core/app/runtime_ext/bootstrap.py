@@ -8,11 +8,15 @@ from fastapi import FastAPI
 
 from app.agent.loop import AutonomyLoop
 from app.config import (
+    get_goal_admission_chain_defer_score,
+    get_goal_admission_chain_min_score,
     get_goal_storage_path,
     get_goal_admission_defer_score,
     get_goal_admission_max_retries,
     get_goal_admission_min_score,
     get_goal_admission_mode,
+    get_goal_admission_world_defer_score,
+    get_goal_admission_world_min_score,
     get_goal_admission_storage_path,
     get_goal_wip_limit,
     is_goal_admission_world_enabled,
@@ -61,6 +65,10 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
         mode=get_goal_admission_mode(),
         min_score=get_goal_admission_min_score(),
         defer_score=get_goal_admission_defer_score(),
+        world_min_score=get_goal_admission_world_min_score(),
+        world_defer_score=get_goal_admission_world_defer_score(),
+        chain_min_score=get_goal_admission_chain_min_score(),
+        chain_defer_score=get_goal_admission_chain_defer_score(),
         wip_limit=get_goal_wip_limit(),
         world_enabled=is_goal_admission_world_enabled(),
         max_retries=get_goal_admission_max_retries(),

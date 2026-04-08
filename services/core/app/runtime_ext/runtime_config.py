@@ -5,7 +5,18 @@ from threading import Lock
 from typing import Any
 from typing import ClassVar, Literal
 
-from app.config import get_chat_context_limit, get_chat_model, get_chat_provider, get_chat_read_timeout_seconds
+from app.config import (
+    get_chat_context_limit,
+    get_chat_model,
+    get_chat_provider,
+    get_chat_read_timeout_seconds,
+    get_goal_admission_chain_defer_score,
+    get_goal_admission_chain_min_score,
+    get_goal_admission_defer_score,
+    get_goal_admission_min_score,
+    get_goal_admission_world_defer_score,
+    get_goal_admission_world_min_score,
+)
 
 FolderAccessLevel = Literal["read_only", "full_access"]
 GOAL_ADMISSION_HISTORY_MAX_ENTRIES = 50
@@ -29,6 +40,12 @@ class RuntimeConfig:
         instance._self_programming_proactive_cooldown_minutes = 720
         instance._goal_admission_stability_warning_rate = 0.6
         instance._goal_admission_stability_danger_rate = 0.35
+        instance._goal_admission_user_topic_min_score = get_goal_admission_min_score()
+        instance._goal_admission_user_topic_defer_score = get_goal_admission_defer_score()
+        instance._goal_admission_world_event_min_score = get_goal_admission_world_min_score()
+        instance._goal_admission_world_event_defer_score = get_goal_admission_world_defer_score()
+        instance._goal_admission_chain_next_min_score = get_goal_admission_chain_min_score()
+        instance._goal_admission_chain_next_defer_score = get_goal_admission_chain_defer_score()
         instance._goal_admission_config_revision = 0
         instance._goal_admission_config_history = []
         instance._append_goal_admission_history_locked(source="bootstrap")
@@ -56,6 +73,18 @@ class RuntimeConfig:
                 instance._goal_admission_stability_warning_rate = 0.6
             if not hasattr(instance, "_goal_admission_stability_danger_rate"):
                 instance._goal_admission_stability_danger_rate = 0.35
+            if not hasattr(instance, "_goal_admission_user_topic_min_score"):
+                instance._goal_admission_user_topic_min_score = get_goal_admission_min_score()
+            if not hasattr(instance, "_goal_admission_user_topic_defer_score"):
+                instance._goal_admission_user_topic_defer_score = get_goal_admission_defer_score()
+            if not hasattr(instance, "_goal_admission_world_event_min_score"):
+                instance._goal_admission_world_event_min_score = get_goal_admission_world_min_score()
+            if not hasattr(instance, "_goal_admission_world_event_defer_score"):
+                instance._goal_admission_world_event_defer_score = get_goal_admission_world_defer_score()
+            if not hasattr(instance, "_goal_admission_chain_next_min_score"):
+                instance._goal_admission_chain_next_min_score = get_goal_admission_chain_min_score()
+            if not hasattr(instance, "_goal_admission_chain_next_defer_score"):
+                instance._goal_admission_chain_next_defer_score = get_goal_admission_chain_defer_score()
             if not hasattr(instance, "_goal_admission_config_revision"):
                 instance._goal_admission_config_revision = 0
             if not hasattr(instance, "_goal_admission_config_history") or not isinstance(
@@ -162,6 +191,66 @@ class RuntimeConfig:
         with self._lock:
             self._goal_admission_stability_danger_rate = max(0.0, min(1.0, float(value)))
 
+    @property
+    def goal_admission_user_topic_min_score(self) -> float:
+        with self._lock:
+            return self._goal_admission_user_topic_min_score
+
+    @goal_admission_user_topic_min_score.setter
+    def goal_admission_user_topic_min_score(self, value: float) -> None:
+        with self._lock:
+            self._goal_admission_user_topic_min_score = max(0.0, min(1.0, float(value)))
+
+    @property
+    def goal_admission_user_topic_defer_score(self) -> float:
+        with self._lock:
+            return self._goal_admission_user_topic_defer_score
+
+    @goal_admission_user_topic_defer_score.setter
+    def goal_admission_user_topic_defer_score(self, value: float) -> None:
+        with self._lock:
+            self._goal_admission_user_topic_defer_score = max(0.0, min(1.0, float(value)))
+
+    @property
+    def goal_admission_world_event_min_score(self) -> float:
+        with self._lock:
+            return self._goal_admission_world_event_min_score
+
+    @goal_admission_world_event_min_score.setter
+    def goal_admission_world_event_min_score(self, value: float) -> None:
+        with self._lock:
+            self._goal_admission_world_event_min_score = max(0.0, min(1.0, float(value)))
+
+    @property
+    def goal_admission_world_event_defer_score(self) -> float:
+        with self._lock:
+            return self._goal_admission_world_event_defer_score
+
+    @goal_admission_world_event_defer_score.setter
+    def goal_admission_world_event_defer_score(self, value: float) -> None:
+        with self._lock:
+            self._goal_admission_world_event_defer_score = max(0.0, min(1.0, float(value)))
+
+    @property
+    def goal_admission_chain_next_min_score(self) -> float:
+        with self._lock:
+            return self._goal_admission_chain_next_min_score
+
+    @goal_admission_chain_next_min_score.setter
+    def goal_admission_chain_next_min_score(self, value: float) -> None:
+        with self._lock:
+            self._goal_admission_chain_next_min_score = max(0.0, min(1.0, float(value)))
+
+    @property
+    def goal_admission_chain_next_defer_score(self) -> float:
+        with self._lock:
+            return self._goal_admission_chain_next_defer_score
+
+    @goal_admission_chain_next_defer_score.setter
+    def goal_admission_chain_next_defer_score(self, value: float) -> None:
+        with self._lock:
+            self._goal_admission_chain_next_defer_score = max(0.0, min(1.0, float(value)))
+
     def _append_goal_admission_history_locked(
         self,
         *,
@@ -174,6 +263,12 @@ class RuntimeConfig:
             "source": source,
             "stability_warning_rate": self._goal_admission_stability_warning_rate,
             "stability_danger_rate": self._goal_admission_stability_danger_rate,
+            "user_topic_min_score": self._goal_admission_user_topic_min_score,
+            "user_topic_defer_score": self._goal_admission_user_topic_defer_score,
+            "world_event_min_score": self._goal_admission_world_event_min_score,
+            "world_event_defer_score": self._goal_admission_world_event_defer_score,
+            "chain_next_min_score": self._goal_admission_chain_next_min_score,
+            "chain_next_defer_score": self._goal_admission_chain_next_defer_score,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "rolled_back_from_revision": rolled_back_from_revision,
         }
@@ -193,6 +288,12 @@ class RuntimeConfig:
         *,
         stability_warning_rate: float | None = None,
         stability_danger_rate: float | None = None,
+        user_topic_min_score: float | None = None,
+        user_topic_defer_score: float | None = None,
+        world_event_min_score: float | None = None,
+        world_event_defer_score: float | None = None,
+        chain_next_min_score: float | None = None,
+        chain_next_defer_score: float | None = None,
         source: str = "manual_update",
     ) -> dict[str, float | int]:
         with self._lock:
@@ -206,14 +307,62 @@ class RuntimeConfig:
                 if stability_danger_rate is None
                 else max(0.0, min(1.0, float(stability_danger_rate)))
             )
+            next_user_min = (
+                self._goal_admission_user_topic_min_score
+                if user_topic_min_score is None
+                else max(0.0, min(1.0, float(user_topic_min_score)))
+            )
+            next_user_defer = (
+                self._goal_admission_user_topic_defer_score
+                if user_topic_defer_score is None
+                else max(0.0, min(1.0, float(user_topic_defer_score)))
+            )
+            next_world_min = (
+                self._goal_admission_world_event_min_score
+                if world_event_min_score is None
+                else max(0.0, min(1.0, float(world_event_min_score)))
+            )
+            next_world_defer = (
+                self._goal_admission_world_event_defer_score
+                if world_event_defer_score is None
+                else max(0.0, min(1.0, float(world_event_defer_score)))
+            )
+            next_chain_min = (
+                self._goal_admission_chain_next_min_score
+                if chain_next_min_score is None
+                else max(0.0, min(1.0, float(chain_next_min_score)))
+            )
+            next_chain_defer = (
+                self._goal_admission_chain_next_defer_score
+                if chain_next_defer_score is None
+                else max(0.0, min(1.0, float(chain_next_defer_score)))
+            )
             if next_danger > next_warning:
                 raise ValueError("stability_danger_rate must be <= stability_warning_rate")
+            if next_user_defer > next_user_min:
+                raise ValueError("user_topic_defer_score must be <= user_topic_min_score")
+            if next_world_defer > next_world_min:
+                raise ValueError("world_event_defer_score must be <= world_event_min_score")
+            if next_chain_defer > next_chain_min:
+                raise ValueError("chain_next_defer_score must be <= chain_next_min_score")
             changed = (
                 next_warning != self._goal_admission_stability_warning_rate
                 or next_danger != self._goal_admission_stability_danger_rate
+                or next_user_min != self._goal_admission_user_topic_min_score
+                or next_user_defer != self._goal_admission_user_topic_defer_score
+                or next_world_min != self._goal_admission_world_event_min_score
+                or next_world_defer != self._goal_admission_world_event_defer_score
+                or next_chain_min != self._goal_admission_chain_next_min_score
+                or next_chain_defer != self._goal_admission_chain_next_defer_score
             )
             self._goal_admission_stability_warning_rate = next_warning
             self._goal_admission_stability_danger_rate = next_danger
+            self._goal_admission_user_topic_min_score = next_user_min
+            self._goal_admission_user_topic_defer_score = next_user_defer
+            self._goal_admission_world_event_min_score = next_world_min
+            self._goal_admission_world_event_defer_score = next_world_defer
+            self._goal_admission_chain_next_min_score = next_chain_min
+            self._goal_admission_chain_next_defer_score = next_chain_defer
             if changed:
                 revision = int(self._append_goal_admission_history_locked(source=source)["revision"])
             else:
@@ -221,6 +370,12 @@ class RuntimeConfig:
             return {
                 "stability_warning_rate": self._goal_admission_stability_warning_rate,
                 "stability_danger_rate": self._goal_admission_stability_danger_rate,
+                "user_topic_min_score": self._goal_admission_user_topic_min_score,
+                "user_topic_defer_score": self._goal_admission_user_topic_defer_score,
+                "world_event_min_score": self._goal_admission_world_event_min_score,
+                "world_event_defer_score": self._goal_admission_world_event_defer_score,
+                "chain_next_min_score": self._goal_admission_chain_next_min_score,
+                "chain_next_defer_score": self._goal_admission_chain_next_defer_score,
                 "revision": revision,
             }
 
@@ -232,6 +387,12 @@ class RuntimeConfig:
             rolled_back_from_revision = int(self._goal_admission_config_history[-1]["revision"])
             self._goal_admission_stability_warning_rate = float(previous_entry["stability_warning_rate"])
             self._goal_admission_stability_danger_rate = float(previous_entry["stability_danger_rate"])
+            self._goal_admission_user_topic_min_score = float(previous_entry["user_topic_min_score"])
+            self._goal_admission_user_topic_defer_score = float(previous_entry["user_topic_defer_score"])
+            self._goal_admission_world_event_min_score = float(previous_entry["world_event_min_score"])
+            self._goal_admission_world_event_defer_score = float(previous_entry["world_event_defer_score"])
+            self._goal_admission_chain_next_min_score = float(previous_entry["chain_next_min_score"])
+            self._goal_admission_chain_next_defer_score = float(previous_entry["chain_next_defer_score"])
             history_entry = self._append_goal_admission_history_locked(
                 source="rollback",
                 rolled_back_from_revision=rolled_back_from_revision,
@@ -239,6 +400,12 @@ class RuntimeConfig:
             return {
                 "stability_warning_rate": self._goal_admission_stability_warning_rate,
                 "stability_danger_rate": self._goal_admission_stability_danger_rate,
+                "user_topic_min_score": self._goal_admission_user_topic_min_score,
+                "user_topic_defer_score": self._goal_admission_user_topic_defer_score,
+                "world_event_min_score": self._goal_admission_world_event_min_score,
+                "world_event_defer_score": self._goal_admission_world_event_defer_score,
+                "chain_next_min_score": self._goal_admission_chain_next_min_score,
+                "chain_next_defer_score": self._goal_admission_chain_next_defer_score,
                 "rolled_back_from_revision": rolled_back_from_revision,
                 "revision": int(history_entry["revision"]),
             }

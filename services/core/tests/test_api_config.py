@@ -7,6 +7,47 @@ from app.main import app
 from app.runtime_ext.runtime_config import get_runtime_config
 
 
+def _goal_admission_snapshot() -> dict[str, float]:
+    config = get_runtime_config()
+    return {
+        "stability_warning_rate": config.goal_admission_stability_warning_rate,
+        "stability_danger_rate": config.goal_admission_stability_danger_rate,
+        "user_topic_min_score": float(getattr(config, "goal_admission_user_topic_min_score", 0.68)),
+        "user_topic_defer_score": float(getattr(config, "goal_admission_user_topic_defer_score", 0.45)),
+        "world_event_min_score": float(getattr(config, "goal_admission_world_event_min_score", 0.75)),
+        "world_event_defer_score": float(getattr(config, "goal_admission_world_event_defer_score", 0.52)),
+        "chain_next_min_score": float(getattr(config, "goal_admission_chain_next_min_score", 0.62)),
+        "chain_next_defer_score": float(getattr(config, "goal_admission_chain_next_defer_score", 0.45)),
+    }
+
+
+def _restore_goal_admission_snapshot(snapshot: dict[str, float]) -> None:
+    config = get_runtime_config()
+    config.goal_admission_stability_warning_rate = snapshot["stability_warning_rate"]
+    config.goal_admission_stability_danger_rate = snapshot["stability_danger_rate"]
+
+    optional_config_attrs = {
+        "goal_admission_user_topic_min_score": snapshot["user_topic_min_score"],
+        "goal_admission_user_topic_defer_score": snapshot["user_topic_defer_score"],
+        "goal_admission_world_event_min_score": snapshot["world_event_min_score"],
+        "goal_admission_world_event_defer_score": snapshot["world_event_defer_score"],
+        "goal_admission_chain_next_min_score": snapshot["chain_next_min_score"],
+        "goal_admission_chain_next_defer_score": snapshot["chain_next_defer_score"],
+    }
+    for attr, value in optional_config_attrs.items():
+        if hasattr(config, attr):
+            setattr(config, attr, value)
+
+    service = getattr(app.state, "goal_admission_service", None)
+    if service is not None:
+        service.min_score = snapshot["user_topic_min_score"]
+        service.defer_score = snapshot["user_topic_defer_score"]
+        service.world_min_score = snapshot["world_event_min_score"]
+        service.world_defer_score = snapshot["world_event_defer_score"]
+        service.chain_min_score = snapshot["chain_next_min_score"]
+        service.chain_defer_score = snapshot["chain_next_defer_score"]
+
+
 def _provider_catalog() -> list[LLMProviderConfig]:
     return [
         LLMProviderConfig(
@@ -273,49 +314,80 @@ def test_update_self_programming_config_rejects_empty_patch():
     assert response.json()["detail"] == "at least one self-programming config field is required"
 
 
-def test_get_goal_admission_config_returns_defaults():
-    config = get_runtime_config()
-    original_warning = config.goal_admission_stability_warning_rate
-    original_danger = config.goal_admission_stability_danger_rate
+def test_get_goal_admission_config_returns_full_threshold_payload():
+    snapshot = _goal_admission_snapshot()
+    client = TestClient(app)
+    expected = {
+        "stability_warning_rate": 0.61,
+        "stability_danger_rate": 0.34,
+        "user_topic_min_score": 0.69,
+        "user_topic_defer_score": 0.44,
+        "world_event_min_score": 0.76,
+        "world_event_defer_score": 0.51,
+        "chain_next_min_score": 0.63,
+        "chain_next_defer_score": 0.43,
+    }
     try:
-        config.goal_admission_stability_warning_rate = 0.6
-        config.goal_admission_stability_danger_rate = 0.35
-        client = TestClient(app)
+        update = client.put("/config/goal-admission", json=expected)
+        assert update.status_code == 200
         response = client.get("/config/goal-admission")
         assert response.status_code == 200
-        assert response.json() == {
-            "stability_warning_rate": 0.6,
-            "stability_danger_rate": 0.35,
-        }
+        assert response.json() == expected
     finally:
-        config.goal_admission_stability_warning_rate = original_warning
-        config.goal_admission_stability_danger_rate = original_danger
+        _restore_goal_admission_snapshot(snapshot)
 
 
-def test_update_goal_admission_config_supports_patch():
-    config = get_runtime_config()
-    original_warning = config.goal_admission_stability_warning_rate
-    original_danger = config.goal_admission_stability_danger_rate
+def test_update_goal_admission_config_supports_source_threshold_patch_and_applies_to_stats():
+    snapshot = _goal_admission_snapshot()
+    client = TestClient(app)
     try:
-        config.goal_admission_stability_warning_rate = 0.6
-        config.goal_admission_stability_danger_rate = 0.35
+        baseline = client.put(
+            "/config/goal-admission",
+            json={
+                "stability_warning_rate": 0.6,
+                "stability_danger_rate": 0.35,
+                "user_topic_min_score": 0.68,
+                "user_topic_defer_score": 0.45,
+                "world_event_min_score": 0.75,
+                "world_event_defer_score": 0.52,
+                "chain_next_min_score": 0.62,
+                "chain_next_defer_score": 0.45,
+            },
+        )
+        assert baseline.status_code == 200
 
-        client = TestClient(app)
         response = client.put(
             "/config/goal-admission",
             json={
                 "stability_warning_rate": 0.7,
                 "stability_danger_rate": 0.4,
+                "user_topic_min_score": 0.71,
+                "user_topic_defer_score": 0.49,
+                "chain_next_min_score": 0.66,
             },
         )
         assert response.status_code == 200
         assert response.json() == {
             "stability_warning_rate": 0.7,
             "stability_danger_rate": 0.4,
+            "user_topic_min_score": 0.71,
+            "user_topic_defer_score": 0.49,
+            "world_event_min_score": 0.75,
+            "world_event_defer_score": 0.52,
+            "chain_next_min_score": 0.66,
+            "chain_next_defer_score": 0.45,
+        }
+
+        stats_response = client.get("/goals/admission/stats")
+        assert stats_response.status_code == 200
+        stats_payload = stats_response.json()
+        assert stats_payload["thresholds"] == {
+            "user_topic": {"min_score": 0.71, "defer_score": 0.49},
+            "world_event": {"min_score": 0.75, "defer_score": 0.52},
+            "chain_next": {"min_score": 0.66, "defer_score": 0.45},
         }
     finally:
-        config.goal_admission_stability_warning_rate = original_warning
-        config.goal_admission_stability_danger_rate = original_danger
+        _restore_goal_admission_snapshot(snapshot)
 
 
 def test_update_goal_admission_config_rejects_invalid_threshold_order():
@@ -331,6 +403,19 @@ def test_update_goal_admission_config_rejects_invalid_threshold_order():
     assert response.json()["detail"] == "stability_danger_rate must be <= stability_warning_rate"
 
 
+def test_update_goal_admission_config_rejects_invalid_source_threshold_order():
+    client = TestClient(app)
+    response = client.put(
+        "/config/goal-admission",
+        json={
+            "world_event_min_score": 0.5,
+            "world_event_defer_score": 0.7,
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "world_event_defer_score must be <= world_event_min_score"
+
+
 def test_update_goal_admission_config_rejects_empty_patch():
     client = TestClient(app)
     response = client.put("/config/goal-admission", json={})
@@ -339,16 +424,16 @@ def test_update_goal_admission_config_rejects_empty_patch():
 
 
 def test_goal_admission_config_history_returns_recent_entries():
-    config = get_runtime_config()
-    original_warning = config.goal_admission_stability_warning_rate
-    original_danger = config.goal_admission_stability_danger_rate
+    snapshot = _goal_admission_snapshot()
+    client = TestClient(app)
     try:
-        client = TestClient(app)
         update_response = client.put(
             "/config/goal-admission",
             json={
                 "stability_warning_rate": 0.72,
                 "stability_danger_rate": 0.41,
+                "user_topic_min_score": 0.7,
+                "user_topic_defer_score": 0.48,
             },
         )
         assert update_response.status_code == 200
@@ -361,23 +446,24 @@ def test_goal_admission_config_history_returns_recent_entries():
         assert latest["source"] == "api_update"
         assert latest["stability_warning_rate"] == 0.72
         assert latest["stability_danger_rate"] == 0.41
+        assert latest["user_topic_min_score"] == 0.7
+        assert latest["user_topic_defer_score"] == 0.48
         assert latest["revision"] >= 1
     finally:
-        config.goal_admission_stability_warning_rate = original_warning
-        config.goal_admission_stability_danger_rate = original_danger
+        _restore_goal_admission_snapshot(snapshot)
 
 
 def test_rollback_goal_admission_config_returns_previous_revision():
-    config = get_runtime_config()
-    original_warning = config.goal_admission_stability_warning_rate
-    original_danger = config.goal_admission_stability_danger_rate
+    snapshot = _goal_admission_snapshot()
+    client = TestClient(app)
     try:
-        client = TestClient(app)
         baseline = client.put(
             "/config/goal-admission",
             json={
                 "stability_warning_rate": 0.66,
                 "stability_danger_rate": 0.33,
+                "chain_next_min_score": 0.61,
+                "chain_next_defer_score": 0.42,
             },
         )
         assert baseline.status_code == 200
@@ -387,6 +473,8 @@ def test_rollback_goal_admission_config_returns_previous_revision():
             json={
                 "stability_warning_rate": 0.74,
                 "stability_danger_rate": 0.4,
+                "chain_next_min_score": 0.67,
+                "chain_next_defer_score": 0.46,
             },
         )
         assert changed.status_code == 200
@@ -396,6 +484,8 @@ def test_rollback_goal_admission_config_returns_previous_revision():
         rollback_payload = rollback.json()
         assert rollback_payload["stability_warning_rate"] == 0.66
         assert rollback_payload["stability_danger_rate"] == 0.33
+        assert rollback_payload["chain_next_min_score"] == 0.61
+        assert rollback_payload["chain_next_defer_score"] == 0.42
         assert rollback_payload["rolled_back_from_revision"] >= 1
         assert rollback_payload["revision"] > rollback_payload["rolled_back_from_revision"]
 
@@ -404,7 +494,12 @@ def test_rollback_goal_admission_config_returns_previous_revision():
         assert config_response.json() == {
             "stability_warning_rate": 0.66,
             "stability_danger_rate": 0.33,
+            "user_topic_min_score": snapshot["user_topic_min_score"],
+            "user_topic_defer_score": snapshot["user_topic_defer_score"],
+            "world_event_min_score": snapshot["world_event_min_score"],
+            "world_event_defer_score": snapshot["world_event_defer_score"],
+            "chain_next_min_score": 0.61,
+            "chain_next_defer_score": 0.42,
         }
     finally:
-        config.goal_admission_stability_warning_rate = original_warning
-        config.goal_admission_stability_danger_rate = original_danger
+        _restore_goal_admission_snapshot(snapshot)

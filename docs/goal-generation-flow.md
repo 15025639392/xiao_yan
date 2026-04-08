@@ -202,3 +202,50 @@ python scripts/goal_admission_phase3_driver.py --iterations 700
 
 - 默认 `--persist none`，仅内存运行，不修改线上统计文件。
 - 若要驱动真实统计，请显式加 `--persist default`。
+
+---
+
+## 11. 周度回放对比（当前参数 vs 候选参数）
+
+用于在参数变更前生成标准化对比证据，避免“凭感觉调参”：
+
+- 脚本：`services/core/scripts/goal_admission_replay_compare.py`
+
+示例：
+
+```bash
+cd services/core
+python scripts/goal_admission_replay_compare.py \
+  --iterations 700 \
+  --seed 20260408 \
+  --candidate-min-score 0.72 \
+  --candidate-defer-score 0.50 \
+  --candidate-world-min-score 0.78 \
+  --candidate-chain-min-score 0.66 \
+  --output reports/goal-admission/replay-2026-04-08.json
+```
+
+输出至少包含：
+
+- baseline 与 candidate 的 `today.admit/defer/drop/wip_blocked`
+- baseline 与 candidate 的 `deferred_queue_size`
+- `comparison.delta_today`
+- `comparison.delta_deferred_queue_size`
+- `comparison.recommendation`
+
+建议节奏：
+
+1. 每周先跑一次 baseline/candidate 对比回放。
+2. 对比结果随参数评审一并归档。
+3. 只有当回放证据通过，再进入小流量。
+
+---
+
+## 12. 小流量上线与回退 Runbook
+
+- 文档：`docs/runbooks/goal-admission-phase3-canary.md`
+- 用途：定义小流量窗口、放量条件、回滚阈值、值班责任与分钟级回退步骤。
+- 配套脚本：`services/core/scripts/goal_admission_canary_summary.py`（从 canary 采样 JSON 自动生成 promote/hold/rollback 建议）。
+- 配套脚本：`services/core/scripts/goal_admission_release_report.py`（把 replay + canary 结果渲染为发布评审 Markdown）。
+- 配套脚本：`services/core/scripts/goal_admission_canary_pipeline.py`（单命令串联采样、汇总与发布报告）。
+- 配套脚本：`services/core/scripts/goal_admission_mock_samples.py`（生成演练样本，便于离线走通 pipeline）。

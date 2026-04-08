@@ -16,6 +16,7 @@ Usage examples:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import sys
@@ -48,11 +49,16 @@ class DriverConfig:
     wip_limit: int
     min_score: float
     defer_score: float
+    world_min_score: float
+    world_defer_score: float
+    chain_min_score: float
+    chain_defer_score: float
     sample_target: int
     drop_target: int
     defer_target: int
     max_queue_size: int
     world_enabled: bool
+    seed: int
 
 
 class Phase3Driver:
@@ -64,12 +70,17 @@ class Phase3Driver:
             mode=config.mode,  # type: ignore[arg-type]
             min_score=config.min_score,
             defer_score=config.defer_score,
+            world_min_score=config.world_min_score,
+            world_defer_score=config.world_defer_score,
+            chain_min_score=config.chain_min_score,
+            chain_defer_score=config.chain_defer_score,
             wip_limit=config.wip_limit,
             world_enabled=config.world_enabled,
         )
         self.now = datetime(2026, 4, 7, 9, 0, tzinfo=timezone.utc)
         self.recent_events: list[MemoryEvent] = []
         self.last_noise_content = "嗯"
+        self.rng = random.Random(config.seed)
 
     def run(self) -> dict:
         for index in range(self.config.iterations):
@@ -93,10 +104,17 @@ class Phase3Driver:
                 "iterations": self.config.iterations,
                 "mode": self.config.mode,
                 "wip_limit": self.config.wip_limit,
+                "min_score": self.config.min_score,
+                "defer_score": self.config.defer_score,
+                "world_min_score": self.config.world_min_score,
+                "world_defer_score": self.config.world_defer_score,
+                "chain_min_score": self.config.chain_min_score,
+                "chain_defer_score": self.config.chain_defer_score,
                 "sample_target": self.config.sample_target,
                 "drop_target": self.config.drop_target,
                 "defer_target": self.config.defer_target,
                 "max_queue_size": self.config.max_queue_size,
+                "seed": self.config.seed,
             },
             "stats": stats,
             "evidence": {
@@ -157,7 +175,7 @@ class Phase3Driver:
         self._evaluate(candidate)
 
     def _run_high_user_actionable(self) -> None:
-        content = random.choice(
+        content = self.rng.choice(
             [
                 "看看现在在哪个目录",
                 "看看现在几点",
@@ -167,7 +185,7 @@ class Phase3Driver:
         )
         self._append_event("chat", content, role="user")
         # Add persistence signal occasionally.
-        if random.random() > 0.4:
+        if self.rng.random() > 0.4:
             self._append_event("chat", content, role="user")
         candidate = GoalCandidate(
             source_type=GoalCandidateSource.USER_TOPIC,
@@ -177,7 +195,7 @@ class Phase3Driver:
         self._evaluate(candidate, auto_complete=True)
 
     def _run_world_event(self) -> None:
-        content = random.choice(
+        content = self.rng.choice(
             [
                 "清晨很安静，我还惦记着整理今天的对话记忆。",
                 "夜里有点困，正在回看今天推进到哪一步。",
@@ -264,7 +282,7 @@ class Phase3Driver:
 
 
 def index_hash(value: str) -> str:
-    return str(abs(hash(value)) % 10000)
+    return hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
 
 
 def parse_args() -> argparse.Namespace:
@@ -274,10 +292,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wip-limit", type=int, default=2)
     parser.add_argument("--min-score", type=float, default=0.68)
     parser.add_argument("--defer-score", type=float, default=0.45)
+    parser.add_argument("--world-min-score", type=float, default=0.75)
+    parser.add_argument("--world-defer-score", type=float, default=0.52)
+    parser.add_argument("--chain-min-score", type=float, default=0.62)
+    parser.add_argument("--chain-defer-score", type=float, default=0.45)
     parser.add_argument("--sample-target", type=int, default=500)
     parser.add_argument("--drop-target", type=int, default=80)
     parser.add_argument("--defer-target", type=int, default=80)
     parser.add_argument("--max-queue-size", type=int, default=120)
+    parser.add_argument("--seed", type=int, default=20260408)
     parser.add_argument("--world-enabled", dest="world_enabled", action="store_true", default=True)
     parser.add_argument("--no-world-enabled", dest="world_enabled", action="store_false")
     parser.add_argument(
@@ -304,17 +327,36 @@ def build_store(args: argparse.Namespace) -> GoalAdmissionStore:
 
 def main() -> int:
     args = parse_args()
+    min_score = max(0.0, min(1.0, args.min_score))
+    defer_score = max(0.0, min(1.0, args.defer_score))
+    world_min_score = max(0.0, min(1.0, args.world_min_score))
+    world_defer_score = max(0.0, min(1.0, args.world_defer_score))
+    chain_min_score = max(0.0, min(1.0, args.chain_min_score))
+    chain_defer_score = max(0.0, min(1.0, args.chain_defer_score))
+
+    if defer_score > min_score:
+        raise ValueError("--defer-score must be <= --min-score")
+    if world_defer_score > world_min_score:
+        raise ValueError("--world-defer-score must be <= --world-min-score")
+    if chain_defer_score > chain_min_score:
+        raise ValueError("--chain-defer-score must be <= --chain-min-score")
+
     config = DriverConfig(
         iterations=args.iterations,
         mode=args.mode,
         wip_limit=max(1, args.wip_limit),
-        min_score=max(0.0, min(1.0, args.min_score)),
-        defer_score=max(0.0, min(1.0, args.defer_score)),
+        min_score=min_score,
+        defer_score=defer_score,
+        world_min_score=world_min_score,
+        world_defer_score=world_defer_score,
+        chain_min_score=chain_min_score,
+        chain_defer_score=chain_defer_score,
         sample_target=max(1, args.sample_target),
         drop_target=max(0, args.drop_target),
         defer_target=max(0, args.defer_target),
         max_queue_size=max(0, args.max_queue_size),
         world_enabled=bool(args.world_enabled),
+        seed=int(args.seed),
     )
     store = build_store(args)
     driver = Phase3Driver(config, store)
