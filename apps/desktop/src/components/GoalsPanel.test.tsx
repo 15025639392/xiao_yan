@@ -526,6 +526,7 @@ test("renders candidate pool with deferred and blocked admission candidates", as
         score: 1,
         created_at: "2026-04-07T08:06:00+00:00",
         retry_at: null,
+        stability: "stable",
       },
     ],
   });
@@ -558,6 +559,7 @@ test("renders candidate pool with deferred and blocked admission candidates", as
   expect(within(candidateSection).getByText("因为关系边界冲突被拦下")).toBeInTheDocument();
   expect(within(candidateSection).getByText("继续推进：提醒用户明天复盘")).toBeInTheDocument();
   expect(within(candidateSection).getByText("延后 1 次后转正")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("24h 稳定")).toBeInTheDocument();
 });
 
 test("updates candidate pool from realtime runtime snapshot", async () => {
@@ -660,6 +662,7 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
                 score: 1,
                 created_at: "2026-04-07T08:06:00+00:00",
                 retry_at: null,
+                stability: "stable",
               },
             ],
           },
@@ -691,6 +694,7 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
   expect(screen.getByText("下次重试 08:05")).toBeInTheDocument();
   expect(screen.getByText("关系边界：你别催我，我希望先自己想一想再决定")).toBeInTheDocument();
   expect(screen.getByText("延后 1 次后转正")).toBeInTheDocument();
+  expect(screen.getByText("24h 稳定")).toBeInTheDocument();
 });
 
 test("renders per-goal source explanations for user topic, world event, and chain continuation", () => {

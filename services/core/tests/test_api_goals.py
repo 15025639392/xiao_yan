@@ -303,5 +303,6 @@ def test_get_goal_admission_candidates_returns_deferred_and_recent_snapshot():
         assert any(item["reason"].startswith("relationship_boundary:") for item in body["recent"])
         assert body["admitted"][0]["decision"] == "admit"
         assert body["admitted"][0]["candidate"]["retry_count"] == 1
+        assert body["admitted"][0]["stability"] == "stable"
     finally:
         app.dependency_overrides.clear()

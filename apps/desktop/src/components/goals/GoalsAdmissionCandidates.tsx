@@ -45,6 +45,16 @@ function describeReasonDetail(reason: string): string | null {
   return null;
 }
 
+function describeAdmittedStability(stability: RecentGoalAdmissionDecision["stability"]): string {
+  if (stability === "re_deferred") {
+    return "24h 内再次延后";
+  }
+  if (stability === "dropped") {
+    return "24h 内再次拦截";
+  }
+  return "24h 稳定";
+}
+
 function formatRetryAt(nextRetryAt: string): string {
   const matched = nextRetryAt.match(/T(\d{2}:\d{2})/);
   return matched ? matched[1] : nextRetryAt;
@@ -143,6 +153,9 @@ export function GoalsAdmissionCandidates({ snapshot }: GoalsAdmissionCandidatesP
                       ? `延后 ${item.candidate.retry_count} 次后转正`
                       : "已通过准入进入目标看板"}
                   </div>
+                  {item.stability ? (
+                    <div className="goals-candidate-pool__item-meta">{describeAdmittedStability(item.stability)}</div>
+                  ) : null}
                 </SurfaceCard>
               ))
             ) : (

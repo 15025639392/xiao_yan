@@ -312,3 +312,58 @@ def test_goal_admission_exposes_recent_admitted_candidates_after_defer():
     assert snapshot["admitted"][0]["decision"] == "admit"
     assert snapshot["admitted"][0]["candidate"]["retry_count"] == 1
     assert snapshot["admitted"][0]["reason"] == "user_score"
+    assert snapshot["admitted"][0]["stability"] == "stable"
+
+
+def test_goal_admission_marks_admitted_candidate_unstable_when_redeferred_within_24h():
+    service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+        min_score=0.9,
+        defer_score=0.4,
+    )
+    now = _now()
+    candidate = GoalCandidate(
+        source_type=GoalCandidateSource.USER_TOPIC,
+        title="继续推进：提醒用户明天复盘",
+        source_content="提醒用户明天复盘",
+    )
+
+    service.evaluate_candidate(
+        candidate,
+        now=now,
+        active_goals=[],
+        all_goals=[],
+        recent_events=[],
+    )
+    due = service.pop_due_candidate(now + timedelta(minutes=6))
+    assert due is not None
+    service.evaluate_candidate(
+        due,
+        now=now + timedelta(minutes=6),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="承诺/计划：提醒用户明天复盘",
+                source_context="value_signal:commitment",
+            )
+        ],
+    )
+    service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：提醒用户明天复盘",
+            source_content="提醒用户明天复盘",
+        ),
+        now=now + timedelta(minutes=20),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[],
+    )
+
+    snapshot = service.get_candidate_snapshot(now=now + timedelta(minutes=20))
+
+    assert snapshot["admitted"][0]["decision"] == "admit"
+    assert snapshot["admitted"][0]["stability"] == "re_deferred"

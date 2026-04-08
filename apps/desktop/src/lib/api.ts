@@ -273,6 +273,7 @@ export type RecentGoalAdmissionDecision = {
   score: number;
   created_at: string;
   retry_at?: string | null;
+  stability?: "stable" | "re_deferred" | "dropped";
 };
 
 export type GoalAdmissionCandidateSnapshot = {

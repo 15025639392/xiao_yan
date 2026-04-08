@@ -410,15 +410,81 @@ class GoalAdmissionService:
             },
         }
 
-    def get_candidate_snapshot(self) -> dict[str, list[dict]]:
-        records = self.store.list_recent_decisions()
+    def get_candidate_snapshot(self, now: datetime | None = None) -> dict[str, list[dict]]:
+        moment = self._normalize_datetime(now or datetime.now(timezone.utc))
+        records = self.store.list_recent_decisions(limit=20)
         recent = [item for item in records if item.get("decision") in {"defer", "drop"}]
-        admitted = [item for item in records if item.get("decision") == "admit"]
+        admitted = self._attach_admitted_stability(records, now=moment)
         return {
             "deferred": self.store.list_deferred_candidates(),
             "recent": recent,
             "admitted": admitted,
         }
+
+    def _attach_admitted_stability(self, records: list[dict], *, now: datetime) -> list[dict]:
+        admitted = [item for item in records if item.get("decision") == "admit"]
+        if not admitted:
+            return []
+
+        raw_history = self.store.snapshot().get("recent_decisions", [])
+        history: list[tuple[str, AdmissionDecision, datetime]] = []
+        for item in raw_history if isinstance(raw_history, list) else []:
+            if not isinstance(item, dict):
+                continue
+            candidate = item.get("candidate")
+            if not isinstance(candidate, dict):
+                continue
+            fingerprint = candidate.get("fingerprint")
+            if not isinstance(fingerprint, str) or not fingerprint:
+                continue
+            created_at = self._parse_record_time(item.get("created_at"))
+            if created_at is None:
+                continue
+            decision = item.get("decision")
+            if decision == "admit":
+                history.append((fingerprint, AdmissionDecision.ADMIT, created_at))
+            elif decision == "defer":
+                history.append((fingerprint, AdmissionDecision.DEFER, created_at))
+            elif decision == "drop":
+                history.append((fingerprint, AdmissionDecision.DROP, created_at))
+
+        enriched: list[dict] = []
+        for item in admitted:
+            candidate = item.get("candidate") if isinstance(item, dict) else None
+            fingerprint = candidate.get("fingerprint") if isinstance(candidate, dict) else None
+            admitted_at = self._parse_record_time(item.get("created_at") if isinstance(item, dict) else None)
+
+            stability = "stable"
+            if isinstance(fingerprint, str) and fingerprint and admitted_at is not None:
+                upper_bound = min(admitted_at + timedelta(hours=24), now)
+                follow_up = [
+                    decision
+                    for event_fingerprint, decision, created_at in history
+                    if event_fingerprint == fingerprint and admitted_at < created_at <= upper_bound
+                ]
+                if AdmissionDecision.DROP in follow_up:
+                    stability = "dropped"
+                elif AdmissionDecision.DEFER in follow_up:
+                    stability = "re_deferred"
+
+            payload = deepcopy(item)
+            payload["stability"] = stability
+            enriched.append(payload)
+
+        return enriched
+
+    def _parse_record_time(self, raw_value: object) -> datetime | None:
+        if not isinstance(raw_value, str):
+            return None
+        try:
+            return self._normalize_datetime(datetime.fromisoformat(raw_value))
+        except ValueError:
+            return None
+
+    def _normalize_datetime(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
     def _prepare_candidate(self, candidate: GoalCandidate) -> GoalCandidate:
         if candidate.fingerprint is not None:
