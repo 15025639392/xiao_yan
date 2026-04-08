@@ -12,6 +12,14 @@ class GoalStatus(str, Enum):
     ABANDONED = "abandoned"
 
 
+class GoalAdmissionMeta(BaseModel):
+    score: float
+    recommended_decision: str
+    applied_decision: str
+    reason: str
+    deferred_retries: int = 0
+
+
 class Goal(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     title: str
@@ -20,6 +28,7 @@ class Goal(BaseModel):
     parent_goal_id: str | None = None
     generation: int = 0
     status: GoalStatus = GoalStatus.ACTIVE
+    admission: GoalAdmissionMeta | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

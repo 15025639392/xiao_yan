@@ -82,6 +82,8 @@ class TestPersonaTemplateManager:
         assert persona.name == "内向思考者"
         assert persona.personality.extraversion < 50
         assert persona.speaking_style.formal_level == "neutral"
+        assert len(persona.values.core_values) >= 3
+        assert len(persona.values.boundaries) >= 3
     
     def test_create_persona_with_customizations(self):
         """测试从模板创建人格并应用自定义配置"""
@@ -101,6 +103,19 @@ class TestPersonaTemplateManager:
         assert persona.identity == "我是一个自定义的数字伙伴"
         # 基础人格特征应该保持不变
         assert persona.personality.extraversion > 80
+        assert len(persona.values.core_values) >= 3
+
+    def test_all_templates_share_same_value_foundation(self):
+        """测试所有人格模板共享同一套价值底盘"""
+        manager = PersonaTemplateManager()
+
+        introvert = manager.create_persona_from_template("introvert")
+        extrovert = manager.create_persona_from_template("extrovert")
+
+        assert [item.name for item in introvert.values.core_values] == [
+            item.name for item in extrovert.values.core_values
+        ]
+        assert introvert.values.boundaries == extrovert.values.boundaries
     
     def test_compare_personas_similar(self):
         """测试比较相似的人格"""
@@ -266,7 +281,7 @@ class TestPersonaTemplatesStructure:
     
     def test_all_templates_have_required_fields(self):
         """测试所有模板都有必需的字段"""
-        required_fields = ["id", "name", "description", "personality", "speaking_style", "identity", "example_dialogues"]
+        required_fields = ["id", "name", "description", "personality", "speaking_style", "identity", "values", "example_dialogues"]
         
         # 使用实际的有效值列表
         persona_type_list = ["introvert", "extrovert", "professional", "playful"]

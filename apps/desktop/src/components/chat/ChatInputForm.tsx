@@ -1,9 +1,13 @@
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
+import type { RelationshipSummary } from "../../lib/api";
+import { ChatResponseGuidance } from "./ChatResponseGuidance";
+import { ChatRelationshipContext } from "./ChatRelationshipContext";
 import { LoadingSpinner, SendIcon } from "./ChatIcons";
 
 type ChatInputFormProps = {
   draft: string;
   isSending: boolean;
+  relationship: RelationshipSummary | null;
   textareaRef: RefObject<HTMLTextAreaElement>;
   onDraftChange: (value: string) => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
@@ -13,6 +17,7 @@ type ChatInputFormProps = {
 export function ChatInputForm({
   draft,
   isSending,
+  relationship,
   textareaRef,
   onDraftChange,
   onKeyDown,
@@ -20,6 +25,9 @@ export function ChatInputForm({
 }: ChatInputFormProps) {
   return (
     <div className="chat-page__input-area">
+      <ChatRelationshipContext relationship={relationship} />
+      <ChatResponseGuidance relationship={relationship} />
+
       <form
         className="chat-page__input-form"
         onSubmit={(event) => {

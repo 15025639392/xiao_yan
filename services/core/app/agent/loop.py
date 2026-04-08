@@ -39,7 +39,7 @@ from app.goals.admission import (
     GoalCandidate,
     GoalCandidateSource,
 )
-from app.goals.models import Goal, GoalStatus
+from app.goals.models import Goal, GoalAdmissionMeta, GoalStatus
 from app.goals.repository import GoalRepository, InMemoryGoalRepository
 from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
 from app.memory.repository import MemoryRepository
@@ -53,6 +53,16 @@ from app.self_programming.service import SelfProgrammingService
 from app.tools.runner import CommandRunner
 from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
 from app.world.service import WorldStateService
+
+
+def _goal_admission_meta(admission, candidate: GoalCandidate | None = None) -> GoalAdmissionMeta:
+    return GoalAdmissionMeta(
+        score=round(admission.score, 4),
+        recommended_decision=admission.recommended_decision.value,
+        applied_decision=admission.applied_decision.value,
+        reason=admission.reason,
+        deferred_retries=0 if candidate is None else max(candidate.retry_count, 0),
+    )
 
 
 class AutonomyLoop:
@@ -306,6 +316,7 @@ class AutonomyLoop:
             Goal(
                 title=candidate.title,
                 source=latest_user_event.content,
+                admission=_goal_admission_meta(admission, candidate),
             )
         )
         proactive_message = _build_proactive_message(
@@ -357,6 +368,7 @@ class AutonomyLoop:
                 title=candidate.title,
                 source=latest_world_event.content,
                 chain_id=candidate.chain_id,
+                admission=_goal_admission_meta(admission, candidate),
             )
         )
         proactive_thought = _build_world_goal_start(
@@ -404,7 +416,13 @@ class AutonomyLoop:
                 focused_goals=[Goal(title=deferred.title)],
                 now=now,
             )
-            goal = self.goal_repository.save_goal(Goal(title=deferred.title, source=deferred.source_content))
+            goal = self.goal_repository.save_goal(
+                Goal(
+                    title=deferred.title,
+                    source=deferred.source_content,
+                    admission=_goal_admission_meta(admission, deferred),
+                )
+            )
             proactive_message = _build_proactive_message(deferred.source_content or deferred.title, now, goal_world_state)
             entry = MemoryEntry.create(
                 kind=MemoryKind.CHAT_RAW,
@@ -425,7 +443,12 @@ class AutonomyLoop:
 
         if deferred.source_type == GoalCandidateSource.WORLD_EVENT:
             goal = self.goal_repository.save_goal(
-                Goal(title=deferred.title, source=deferred.source_content, chain_id=deferred.chain_id or uuid4().hex)
+                Goal(
+                    title=deferred.title,
+                    source=deferred.source_content,
+                    chain_id=deferred.chain_id or uuid4().hex,
+                    admission=_goal_admission_meta(admission, deferred),
+                )
             )
             world_state = self._world_state_for(state, now)
             proactive_thought = _build_world_goal_start(deferred.source_content or deferred.title, now, world_state)
@@ -448,6 +471,7 @@ class AutonomyLoop:
                     chain_id=deferred.chain_id,
                     parent_goal_id=deferred.parent_goal_id,
                     generation=deferred.generation,
+                    admission=_goal_admission_meta(admission, deferred),
                 )
             )
             world_state = self._world_state_for(state, now)
@@ -510,6 +534,7 @@ class AutonomyLoop:
                                 chain_id=goal.chain_id,
                                 parent_goal_id=goal.id,
                                 generation=goal.generation + 1,
+                                admission=_goal_admission_meta(admission, candidate),
                             )
                         )
                 chain_progress = (

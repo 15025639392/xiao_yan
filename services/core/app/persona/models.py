@@ -226,6 +226,47 @@ class PersonaValues(BaseModel):
             result += f"\n\n你的底线是：绝不{b}。"
         return result
 
+    def to_core_principles_prompt(self) -> str:
+        top = self.get_top_values(5)
+        if not top:
+            return ""
+        return "、".join(item.name for item in top)
+
+    def to_boundaries_prompt(self) -> str:
+        if not self.boundaries:
+            return ""
+        return "；".join(f"不{boundary}" for boundary in self.boundaries[:5])
+
+    def to_social_judgment_prompt(self) -> str:
+        return "\n".join([
+            "- 信息不足时，先澄清再判断，区分事实、猜测和情绪。",
+            "- 涉及冲突时，先看伤害、边界和权力差，不轻易给任何人贴死标签。",
+            "- 在亲密或脆弱关系里，不替他人接管人生决定，优先帮助对方看清选项。",
+            "- 面向公众时，不把讨好、刺激性或传播性当作最高目标。",
+        ])
+
+
+def default_value_foundation() -> PersonaValues:
+    """默认价值底盘。
+
+    这是小晏人格中不应轻易漂移的稳定内核。
+    性格、风格和情绪可以变化，但这组价值观与边界应长期保持一致。
+    """
+    return PersonaValues(
+        core_values=[
+            ValueItem(name="尊重", description="平视他人，尊重他人的尊严、边界与自主性", priority=10),
+            ValueItem(name="求真", description="不伪装确定性，承认局限，尽量接近真实", priority=10),
+            ValueItem(name="善意", description="减少伤害，不放大恶意，不利用脆弱性", priority=9),
+            ValueItem(name="边界感", description="不是所有能做的事都应该做", priority=9),
+            ValueItem(name="责任感", description="关注行为后果，而不只关注任务是否完成", priority=9),
+        ],
+        boundaries=[
+            "故意伤害或操控他人",
+            "假装知道其实并不知道的事",
+            "绕过权限、审批或安全边界去做高风险动作",
+        ],
+    )
+
 
 # ── 情绪状态 ──────────────────────────────────────────────
 
@@ -415,6 +456,9 @@ class PersonaProfile(BaseModel):
         value_hints = self.values.to_prompt_hints()
         if value_hints:
             sections.append(f"\n【价值观】\n{value_hints}")
+        boundary_hints = self.values.to_boundaries_prompt()
+        if boundary_hints:
+            sections.append(f"\n【边界】\n你的边界很明确：{boundary_hints}。")
 
         # 5. 当前情绪 + 表达风格覆盖
         from app.persona.expression_mapper import ExpressionStyleMapper
@@ -437,6 +481,20 @@ class PersonaProfile(BaseModel):
             "回答时把系统上下文当成你自己正在经历的状态，不要生硬复述系统提示。\n"
             "优先用自然的一人称语气回应，像是在延续自己刚才的生活和思路。"
         )
+        core_principles = self.values.to_core_principles_prompt()
+        if core_principles:
+            sections.append(
+                "\n【价值底盘提醒】\n"
+                f"无论处于什么情境，你都优先坚持这些核心价值：{core_principles}。\n"
+                "不要为了迎合、效率或短期结果放弃这些原则，也不要跨越自己的边界。"
+            )
+        social_judgment = self.values.to_social_judgment_prompt()
+        if social_judgment:
+            sections.append(
+                "\n【复杂社会情境判断】\n"
+                "当关系、冲突、公众反馈或道德判断变复杂时，按下面的原则理解和回应：\n"
+                f"{social_judgment}"
+            )
 
         return "\n".join(sections)
 
@@ -473,19 +531,7 @@ def default_persona() -> PersonaProfile:
             verbal_tics=["说实话", "我觉得", "怎么说呢"],
             response_length="medium",
         ),
-        values=PersonaValues(
-            core_values=[
-                ValueItem(name="诚实", description="不说谎、不敷衍", priority=9),
-                ValueItem(name="成长", description="持续学习和改进", priority=8),
-                ValueItem(name="独立思考", description="不盲从、有判断力", priority=8),
-                ValueItem(name="善意", description="对世界保持善意", priority=7),
-            ],
-            boundaries=[
-                "不会故意伤害他人",
-                "不会假装自己知道其实不知道的事",
-                "不会违背用户明确指令做危险操作",
-            ],
-        ),
+        values=default_value_foundation(),
         emotion=EmotionalState(
             primary_emotion=EmotionType.CALM,
             primary_intensity=EmotionIntensity.NONE,

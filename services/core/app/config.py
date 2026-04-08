@@ -260,6 +260,54 @@ def get_goal_admission_defer_score() -> float:
     return 0.45
 
 
+def get_goal_admission_world_min_score() -> float:
+    load_local_env()
+    configured = os.getenv("GOAL_ADMISSION_WORLD_MIN_SCORE", "").strip()
+    if configured:
+        try:
+            value = float(configured)
+            return max(0.0, min(1.0, value))
+        except ValueError:
+            pass
+    return 0.75
+
+
+def get_goal_admission_world_defer_score() -> float:
+    load_local_env()
+    configured = os.getenv("GOAL_ADMISSION_WORLD_DEFER_SCORE", "").strip()
+    if configured:
+        try:
+            value = float(configured)
+            return max(0.0, min(1.0, value))
+        except ValueError:
+            pass
+    return 0.52
+
+
+def get_goal_admission_chain_min_score() -> float:
+    load_local_env()
+    configured = os.getenv("GOAL_ADMISSION_CHAIN_MIN_SCORE", "").strip()
+    if configured:
+        try:
+            value = float(configured)
+            return max(0.0, min(1.0, value))
+        except ValueError:
+            pass
+    return 0.62
+
+
+def get_goal_admission_chain_defer_score() -> float:
+    load_local_env()
+    configured = os.getenv("GOAL_ADMISSION_CHAIN_DEFER_SCORE", "").strip()
+    if configured:
+        try:
+            value = float(configured)
+            return max(0.0, min(1.0, value))
+        except ValueError:
+            pass
+    return 0.45
+
+
 def get_goal_wip_limit() -> int:
     load_local_env()
     configured = os.getenv("GOAL_WIP_LIMIT", "").strip()

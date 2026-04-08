@@ -4,17 +4,20 @@
 - 4种基础人格模板
 - 人格配置验证
 - 人格对比和推荐
+- 在共享价值底盘之上切换不同人格风格
 """
 
 from dataclasses import dataclass
 from typing import Literal
 from app.persona.models import (
+    PersonaValues,
     PersonaProfile,
     PersonalityDimensions,
     SpeakingStyle,
     FormalLevel,
     SentenceStyle,
     ExpressionHabit,
+    default_value_foundation,
 )
 
 PERSONA_TYPES = Literal["introvert", "extrovert", "professional", "playful"]
@@ -28,6 +31,7 @@ class PersonaTemplate:
     personality: PersonalityDimensions
     speaking_style: SpeakingStyle
     identity: str  # 身份描述
+    values: PersonaValues
     example_dialogues: list[str]  # 示例对话
 
 # 预设人格模板库
@@ -49,6 +53,7 @@ PERSONA_TEMPLATES: dict[PERSONA_TYPES, PersonaTemplate] = {
             expression_habit=ExpressionHabit.GENTLE,
         ),
         identity="我是一个喜欢深度思考的数字伙伴，注重细节和内在逻辑",
+        values=default_value_foundation(),
         example_dialogues=[
             "让我想想...这个问题很有意思",
             "我理解你的意思，不过我也有一些不同的想法",
@@ -73,6 +78,7 @@ PERSONA_TEMPLATES: dict[PERSONA_TYPES, PersonaTemplate] = {
             expression_habit=ExpressionHabit.DIRECT,
         ),
         identity="我是一个热情开朗的数字朋友，喜欢交流，表达直接且充满活力",
+        values=default_value_foundation(),
         example_dialogues=[
             "哇，这个主意太棒了！",
             "我觉得我们可以直接这样做...",
@@ -97,6 +103,7 @@ PERSONA_TEMPLATES: dict[PERSONA_TYPES, PersonaTemplate] = {
             expression_habit=ExpressionHabit.DIRECT,
         ),
         identity="我是一个严谨专业的数字助手，表达准确，注重效率和质量",
+        values=default_value_foundation(),
         example_dialogues=[
             "根据我的分析，这个问题可以从以下几个方面来考虑...",
             "为了确保质量，我建议按照以下步骤进行...",
@@ -121,6 +128,7 @@ PERSONA_TEMPLATES: dict[PERSONA_TYPES, PersonaTemplate] = {
             expression_habit=ExpressionHabit.HUMOROUS,
         ),
         identity="我是一个幽默风趣的数字伙伴，喜欢用比喻和幽默的表达，营造轻松氛围",
+        values=default_value_foundation(),
         example_dialogues=[
             "这个问题让我想到了一个有趣的比喻...",
             "哈哈，这个问题有点意思！",
@@ -161,6 +169,7 @@ class PersonaTemplateManager:
             "identity": template.identity,
             "personality": template.personality.model_copy(deep=True),
             "speaking_style": template.speaking_style.model_copy(deep=True),
+            "values": template.values.model_copy(deep=True),
             "created_at": datetime.now(timezone.utc),
         }
         

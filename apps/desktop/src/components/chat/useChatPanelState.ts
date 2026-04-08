@@ -1,16 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-import type { AppConfig, ChatFolderPermission, ChatModelProviderItem, FolderAccessLevel } from "../../lib/api";
+import type {
+  AppConfig,
+  ChatFolderPermission,
+  ChatModelProviderItem,
+  FolderAccessLevel,
+  RelationshipSummary,
+} from "../../lib/api";
 import {
   DEFAULT_CHAT_PROVIDER,
   DEFAULT_CHAT_MODEL,
   fetchChatModels,
   fetchChatFolderPermissions,
   fetchConfig,
+  fetchMemorySummary,
   removeChatFolderPermission,
   updateConfig,
   upsertChatFolderPermission,
 } from "../../lib/api";
+import { subscribeAppRealtime } from "../../lib/realtime";
 import type { ChatEntry } from "./chatTypes";
 import { useChatScrollBehavior } from "./useChatScrollBehavior";
 
@@ -25,6 +33,7 @@ type UseChatPanelStateResult = {
   textareaRef: RefObject<HTMLTextAreaElement>;
   messagesEndRef: RefObject<HTMLDivElement>;
   messagesContainerRef: RefObject<HTMLDivElement>;
+  relationship: RelationshipSummary | null;
   showMemoryContext: Set<string>;
   showConfigPanel: boolean;
   config: AppConfig;
@@ -50,6 +59,7 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
+  const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const [showMemoryContext, setShowMemoryContext] = useState<Set<string>>(new Set());
   const [showConfigPanel, setShowConfigPanel] = useState(false);
   const [config, setConfig] = useState<AppConfig>({
@@ -107,6 +117,24 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   }, [draft]);
+
+  useEffect(() => {
+    fetchMemorySummary()
+      .then((summary) => setRelationship(summary.relationship))
+      .catch(() => setRelationship(null));
+
+    const unsubscribe = subscribeAppRealtime((event) => {
+      const memoryPayload =
+        event.type === "snapshot" ? event.payload.memory : event.type === "memory_updated" ? event.payload : null;
+      if (!memoryPayload) {
+        return;
+      }
+
+      setRelationship(memoryPayload.relationship ?? memoryPayload.summary.relationship ?? null);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useChatScrollBehavior({
     messages,
@@ -191,6 +219,7 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     textareaRef,
     messagesEndRef,
     messagesContainerRef,
+    relationship,
     showMemoryContext,
     showConfigPanel,
     config,

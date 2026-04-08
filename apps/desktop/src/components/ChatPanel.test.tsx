@@ -1,7 +1,34 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, vi } from "vitest";
+
+const { fetchMemorySummary } = vi.hoisted(() => ({
+  fetchMemorySummary: vi.fn(),
+}));
+
+const { subscribeAppRealtime } = vi.hoisted(() => ({
+  subscribeAppRealtime: vi.fn(),
+}));
+
+vi.mock("../lib/api", async () => {
+  const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
+  return {
+    ...actual,
+    fetchMemorySummary,
+  };
+});
+
+vi.mock("../lib/realtime", () => ({
+  subscribeAppRealtime,
+}));
 
 import { ChatPanel } from "./ChatPanel";
+
+beforeEach(() => {
+  fetchMemorySummary.mockReset();
+  subscribeAppRealtime.mockReset();
+  fetchMemorySummary.mockReturnValue(new Promise(() => {}));
+  subscribeAppRealtime.mockReturnValue(() => {});
+});
 
 test("renders the chat page with header and messages", () => {
   render(
@@ -27,6 +54,114 @@ test("renders the chat page with header and messages", () => {
   expect(screen.getByText("我在。")).toBeInTheDocument();
   // 发送按钮存在
   expect(screen.getByLabelText("发送")).toBeInTheDocument();
+});
+
+test("renders relationship context above the chat input when available", async () => {
+  fetchMemorySummary.mockResolvedValue({
+    total_estimated: 12,
+    by_kind: {},
+    recent_count: 2,
+    strong_memories: 1,
+    relationship: {
+      available: true,
+      boundaries: ["先直接说判断，不用绕弯"],
+      commitments: ["答应你先说风险再给建议"],
+      preferences: ["喜欢先听理由再做决定"],
+    },
+    available: true,
+  });
+
+  render(
+    <ChatPanel
+      draft=""
+      focusGoalTitle={null}
+      focusModeLabel="常规自主"
+      isSending={false}
+      messages={[]}
+      modeLabel="运行中"
+      onDraftChange={vi.fn()}
+      onSend={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText("当前相处语境")).toBeInTheDocument();
+  });
+  expect(screen.getByText("本次回应原则")).toBeInTheDocument();
+  expect(screen.getAllByText("先直接说判断，不用绕弯").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText("答应你先说风险再给建议").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getAllByText("喜欢先听理由再做决定").length).toBeGreaterThanOrEqual(2);
+});
+
+test("updates relationship context from realtime memory events", async () => {
+  fetchMemorySummary.mockResolvedValue({
+    total_estimated: 0,
+    by_kind: {},
+    recent_count: 0,
+    strong_memories: 0,
+    relationship: {
+      available: false,
+      boundaries: [],
+      commitments: [],
+      preferences: [],
+    },
+    available: true,
+  });
+
+  let listener: ((event: any) => void) | null = null;
+  subscribeAppRealtime.mockImplementation((callback) => {
+    listener = callback;
+    return () => {};
+  });
+
+  render(
+    <ChatPanel
+      draft=""
+      focusGoalTitle={null}
+      focusModeLabel="常规自主"
+      isSending={false}
+      messages={[]}
+      modeLabel="运行中"
+      onDraftChange={vi.fn()}
+      onSend={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(subscribeAppRealtime).toHaveBeenCalled();
+  });
+
+  await act(async () => {
+    listener?.({
+      type: "memory_updated",
+      payload: {
+        summary: {
+          total_estimated: 20,
+          by_kind: {},
+          recent_count: 3,
+          strong_memories: 2,
+          relationship: {
+            available: true,
+            boundaries: ["如果我判断错了，希望你直接纠正我"],
+            commitments: ["答应你复杂问题不装懂，会先说明不确定性"],
+            preferences: ["更喜欢一起推演方案"],
+          },
+          available: true,
+        },
+        relationship: {
+          available: true,
+          boundaries: ["如果我判断错了，希望你直接纠正我"],
+          commitments: ["答应你复杂问题不装懂，会先说明不确定性"],
+          preferences: ["更喜欢一起推演方案"],
+        },
+        timeline: [],
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getAllByText("如果我判断错了，希望你直接纠正我").length).toBeGreaterThanOrEqual(2);
+  });
 });
 
 test("disables send while sending or when the draft is empty", () => {

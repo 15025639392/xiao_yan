@@ -24,7 +24,7 @@ from app.memory.models import (
 )
 from app.memory.repository import InMemoryMemoryRepository, MemoryRepository
 from app.memory.service import MemoryService
-from app.persona.models import PersonalityDimensions
+from app.persona.models import PersonalityDimensions, default_value_foundation
 
 
 # ═══════════════════════════════════════════════════
@@ -328,6 +328,25 @@ class TestConversationExtraction:
         assert any(e.importance >= 6 and ("明天" in e.content or "3点" in e.content or "提醒" in e.content)
                     for e in fact_entries)
 
+    def test_extract_user_boundary_as_value_signal(self, service: MemoryService):
+        extracted = service.extract_from_conversation(
+            user_message="你别催我，我希望先自己想一想再决定",
+            assistant_response="好，我会给你一点空间。",
+        )
+        boundary_entries = [e for e in extracted if e.source_context == "value_signal:boundary"]
+        assert len(boundary_entries) >= 1
+        assert any(e.subject == "用户边界" for e in boundary_entries)
+        assert any("别催我" in e.content or "先自己想一想" in e.content for e in boundary_entries)
+
+    def test_extract_assistant_commitment_as_value_signal(self, service: MemoryService):
+        extracted = service.extract_from_conversation(
+            user_message="那你明天提醒我复盘一下",
+            assistant_response="好，我答应你明天提醒你复盘。",
+        )
+        commitment_entries = [e for e in extracted if e.source_context == "value_signal:commitment"]
+        assert len(commitment_entries) >= 1
+        assert any("答应你明天提醒你复盘" in e.content or "明天提醒你复盘" in e.content for e in commitment_entries)
+
     def test_extract_positive_emotion(self, service: MemoryService):
         """检测到正面情绪关键词"""
         extracted = service.extract_from_conversation(
@@ -478,6 +497,76 @@ class TestPromptIntegration:
         ctx = service.build_memory_prompt_context(user_message="Python 怎么写 API")
         # 应该搜索并找到相关的 Python 记忆
         assert "Python" in ctx or len(ctx) > 0 or ctx == ""
+
+    def test_context_highlights_relationship_continuity(self, service_with_data):
+        service, repo = service_with_data
+        service.create(MemoryKind.FACT, "用户不喜欢被催促，希望先自己想一想", importance=9)
+        service.create(MemoryKind.FACT, "我答应明天提醒用户复盘", importance=8)
+        service.create(MemoryKind.FACT, "用户喜欢先看方案再做决定", importance=7)
+        service.create(MemoryKind.FACT, "昨天聊到一半转去看电影了", importance=3)
+
+        ctx = service.build_memory_prompt_context(
+            user_message="你最近怎么样",
+            persona_values=default_value_foundation(),
+        )
+
+        assert "关系连续性" in ctx
+        assert "尊重" in ctx
+        assert "不喜欢被催促" in ctx
+        assert "答应明天提醒用户复盘" in ctx
+
+    def test_context_includes_relationship_summary(self, service_with_data):
+        service, repo = service_with_data
+        service.create(
+            MemoryKind.FACT,
+            "用户边界：你别催我，我希望先自己想一想再决定",
+            importance=9,
+            subject="用户边界",
+            source_context="value_signal:boundary",
+        )
+        service.create(
+            MemoryKind.FACT,
+            "承诺/计划：答应你明天提醒你复盘",
+            importance=8,
+            subject="对用户承诺",
+            source_context="value_signal:commitment",
+        )
+        service.create(MemoryKind.SEMANTIC, "用户偏好：喜欢先看方案再做决定", importance=7, subject="用户偏好")
+
+        ctx = service.build_memory_prompt_context(
+            user_message="你最近怎么样",
+            persona_values=default_value_foundation(),
+        )
+
+        assert "关系状态摘要" in ctx
+        assert "相处边界" in ctx
+        assert "对用户承诺" in ctx
+        assert "用户偏好" in ctx
+
+    def test_relationship_summary_groups_signals(self, service_with_data):
+        service, repo = service_with_data
+        service.create(
+            MemoryKind.FACT,
+            "用户边界：你别催我，我希望先自己想一想再决定",
+            importance=9,
+            subject="用户边界",
+            source_context="value_signal:boundary",
+        )
+        service.create(
+            MemoryKind.FACT,
+            "承诺/计划：答应你明天提醒你复盘",
+            importance=8,
+            subject="对用户承诺",
+            source_context="value_signal:commitment",
+        )
+        service.create(MemoryKind.SEMANTIC, "用户偏好：喜欢先看方案再做决定", importance=7, subject="用户偏好")
+
+        summary = service.get_relationship_summary()
+
+        assert summary["available"] is True
+        assert any("别催我" in item for item in summary["boundaries"])
+        assert any("提醒你复盘" in item for item in summary["commitments"])
+        assert any("先看方案" in item for item in summary["preferences"])
 
     def test_summary_stats(self, service_with_data):
         service, repo = service_with_data

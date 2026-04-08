@@ -124,6 +124,29 @@ export type SelfProgrammingRuntimeConfig = {
   proactive_cooldown_minutes: number;
 };
 
+export type GoalAdmissionRuntimeConfig = {
+  stability_warning_rate: number;
+  stability_danger_rate: number;
+};
+
+export type GoalAdmissionConfigHistoryEntry = {
+  revision: number;
+  source: "bootstrap" | "api_update" | "rollback" | string;
+  stability_warning_rate: number;
+  stability_danger_rate: number;
+  created_at: string;
+  rolled_back_from_revision?: number | null;
+};
+
+export type GoalAdmissionConfigHistoryResponse = {
+  items: GoalAdmissionConfigHistoryEntry[];
+};
+
+export type GoalAdmissionConfigRollbackResponse = GoalAdmissionRuntimeConfig & {
+  revision: number;
+  rolled_back_from_revision: number;
+};
+
 export type BeingState = {
   mode: "awake" | "sleeping";
   focus_mode: "sleeping" | "morning_plan" | "autonomy" | "self_programming";
@@ -176,6 +199,13 @@ export type Goal = {
   parent_goal_id?: string | null;
   generation?: number;
   source?: string | null;
+  admission?: {
+    score: number;
+    recommended_decision: "admit" | "defer" | "drop";
+    applied_decision: "admit" | "defer" | "drop";
+    reason: string;
+    deferred_retries?: number;
+  } | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -221,6 +251,69 @@ export type InnerWorldState = {
 
 export type GoalsResponse = {
   goals: Goal[];
+};
+
+export type GoalAdmissionThresholds = {
+  user_topic: { min_score: number; defer_score: number };
+  world_event: { min_score: number; defer_score: number };
+  chain_next: { min_score: number; defer_score: number };
+};
+
+export type GoalAdmissionStats = {
+  mode: "off" | "shadow" | "enforce";
+  today: {
+    admit: number;
+    defer: number;
+    drop: number;
+    wip_blocked: number;
+  };
+  admitted_stability_24h: {
+    stable: number;
+    re_deferred: number;
+    dropped: number;
+  };
+  admitted_stability_24h_rate: number | null;
+  admitted_stability_alert?: {
+    level: "healthy" | "warning" | "danger" | "unknown";
+    warning_rate: number;
+    danger_rate: number;
+  };
+  deferred_queue_size: number;
+  wip_limit: number;
+  thresholds: GoalAdmissionThresholds;
+};
+
+export type GoalAdmissionCandidate = {
+  source_type: "user_topic" | "world_event" | "chain_next";
+  title: string;
+  source_content?: string | null;
+  chain_id?: string | null;
+  parent_goal_id?: string | null;
+  generation?: number;
+  retry_count: number;
+  fingerprint?: string | null;
+};
+
+export type DeferredGoalAdmissionCandidate = {
+  candidate: GoalAdmissionCandidate;
+  next_retry_at: string;
+  last_reason: string;
+};
+
+export type RecentGoalAdmissionDecision = {
+  candidate: GoalAdmissionCandidate;
+  decision: "admit" | "defer" | "drop";
+  reason: string;
+  score: number;
+  created_at: string;
+  retry_at?: string | null;
+  stability?: "stable" | "re_deferred" | "dropped";
+};
+
+export type GoalAdmissionCandidateSnapshot = {
+  deferred: DeferredGoalAdmissionCandidate[];
+  recent: RecentGoalAdmissionDecision[];
+  admitted?: RecentGoalAdmissionDecision[];
 };
 
 export type AutobioResponse = {
@@ -321,6 +414,14 @@ export function fetchMessages(): Promise<ChatHistoryResponse> {
 
 export function fetchGoals(): Promise<GoalsResponse> {
   return get<GoalsResponse>("/goals");
+}
+
+export function fetchGoalAdmissionStats(): Promise<GoalAdmissionStats> {
+  return get<GoalAdmissionStats>("/goals/admission/stats");
+}
+
+export function fetchGoalAdmissionCandidates(): Promise<GoalAdmissionCandidateSnapshot> {
+  return get<GoalAdmissionCandidateSnapshot>("/goals/admission/candidates");
 }
 
 export function fetchWorld(): Promise<InnerWorldState> {
@@ -426,6 +527,30 @@ export function updateSelfProgrammingConfig(
   patch: Partial<SelfProgrammingRuntimeConfig>,
 ): Promise<SelfProgrammingRuntimeConfig> {
   return put<SelfProgrammingRuntimeConfig>("/config/self-programming", patch);
+}
+
+/** 获取目标准入稳定性阈值配置 */
+export function fetchGoalAdmissionConfig(): Promise<GoalAdmissionRuntimeConfig> {
+  return get<GoalAdmissionRuntimeConfig>("/config/goal-admission");
+}
+
+/** 更新目标准入稳定性阈值配置 */
+export function updateGoalAdmissionConfig(
+  patch: Partial<GoalAdmissionRuntimeConfig>,
+): Promise<GoalAdmissionRuntimeConfig> {
+  return put<GoalAdmissionRuntimeConfig>("/config/goal-admission", patch);
+}
+
+/** 获取目标准入阈值变更历史 */
+export function fetchGoalAdmissionConfigHistory(
+  limit = 10,
+): Promise<GoalAdmissionConfigHistoryResponse> {
+  return get<GoalAdmissionConfigHistoryResponse>(`/config/goal-admission/history?limit=${limit}`);
+}
+
+/** 回滚目标准入稳定性阈值到上一版 */
+export function rollbackGoalAdmissionConfig(): Promise<GoalAdmissionConfigRollbackResponse> {
+  return post<GoalAdmissionConfigRollbackResponse>("/config/goal-admission/rollback");
 }
 
 // ══════════════════════════════════════════════
@@ -609,7 +734,15 @@ export type MemorySummary = {
   by_kind: Record<string, number>;
   recent_count: number;
   strong_memories: number;
+  relationship: RelationshipSummary;
   available: boolean;
+};
+
+export type RelationshipSummary = {
+  available: boolean;
+  boundaries: string[];
+  commitments: string[];
+  preferences: string[];
 };
 
 export type MemorySearchResult = {

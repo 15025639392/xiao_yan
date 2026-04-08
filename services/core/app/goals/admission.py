@@ -8,12 +8,13 @@ from difflib import SequenceMatcher
 from enum import Enum
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 
 from app.goals.models import Goal, GoalStatus
 from app.memory.models import MemoryEvent
+from app.safety.value_guard import find_value_boundary_reason
 from app.utils.file_utils import read_json_file, write_json_file
 
 
@@ -49,6 +50,15 @@ class DeferredGoalCandidate(BaseModel):
     last_reason: str
 
 
+class RecentAdmissionDecision(BaseModel):
+    candidate: GoalCandidate
+    decision: AdmissionDecision
+    reason: str
+    score: float
+    created_at: datetime
+    retry_at: datetime | None = None
+
+
 class AdmissionResult(BaseModel):
     score: float
     recommended_decision: AdmissionDecision
@@ -66,6 +76,7 @@ class GoalAdmissionStore:
         self._lock = Lock()
         self._state = {
             "deferred_candidates": [],
+            "recent_decisions": [],
             "daily_stats": {},
             "seen_fingerprints": {},
         }
@@ -87,6 +98,7 @@ class GoalAdmissionStore:
         self._state.update(
             {
                 "deferred_candidates": data.get("deferred_candidates", []),
+                "recent_decisions": data.get("recent_decisions", []),
                 "daily_stats": data.get("daily_stats", {}),
                 "seen_fingerprints": data.get("seen_fingerprints", {}),
             }
@@ -152,6 +164,11 @@ class GoalAdmissionStore:
             ]
             self._persist()
 
+    def list_deferred_candidates(self) -> list[dict]:
+        with self._lock:
+            items = deepcopy(self._state["deferred_candidates"])
+        return sorted(items, key=lambda item: item.get("next_retry_at") or "")
+
     def pop_due_candidate(self, now: datetime) -> GoalCandidate | None:
         with self._lock:
             due_index = None
@@ -184,6 +201,20 @@ class GoalAdmissionStore:
                 "updated_at": now.isoformat(),
             }
             self._persist()
+
+    def record_recent_decision(self, record: RecentAdmissionDecision, *, limit: int = 20) -> None:
+        with self._lock:
+            payload = record.model_dump(mode="json")
+            recent = self._state.setdefault("recent_decisions", [])
+            recent.append(payload)
+            if len(recent) > limit:
+                del recent[:-limit]
+            self._persist()
+
+    def list_recent_decisions(self, *, limit: int = 10) -> list[dict]:
+        with self._lock:
+            items = deepcopy(self._state.get("recent_decisions", []))
+        return list(reversed(items[-limit:]))
 
     def is_recently_seen(self, fingerprint: str, now: datetime, *, ttl: timedelta) -> bool:
         with self._lock:
@@ -228,6 +259,7 @@ class GoalAdmissionService:
         "重构",
         "实现",
         "测试",
+        "提醒",
     )
     GOAL_PREFIXES = (
         "持续理解用户最近在意的话题：",
@@ -252,6 +284,7 @@ class GoalAdmissionService:
         max_retries: int = 6,
     ) -> None:
         self.store = store
+        self._on_change: Callable[[], None] | None = None
         self.mode: GoalAdmissionMode = mode
         self.min_score = min_score
         self.defer_score = defer_score
@@ -262,6 +295,9 @@ class GoalAdmissionService:
         self.wip_limit = wip_limit
         self.world_enabled = world_enabled
         self.max_retries = max_retries
+
+    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
+        self._on_change = callback
 
     def canonical_topic(self, text: str) -> str:
         normalized = text.strip()
@@ -320,6 +356,30 @@ class GoalAdmissionService:
         elif recommended in {AdmissionDecision.DEFER, AdmissionDecision.DROP}:
             self.store.set_seen(fingerprint, now, recommended)
 
+        if recommended in {AdmissionDecision.DEFER, AdmissionDecision.DROP}:
+            self.store.record_recent_decision(
+                RecentAdmissionDecision(
+                    candidate=prepared,
+                    decision=recommended,
+                    reason=reason,
+                    score=round(score, 4),
+                    created_at=now,
+                    retry_at=retry_at,
+                )
+            )
+        elif recommended == AdmissionDecision.ADMIT and prepared.retry_count > 0:
+            self.store.record_recent_decision(
+                RecentAdmissionDecision(
+                    candidate=prepared,
+                    decision=AdmissionDecision.ADMIT,
+                    reason=reason,
+                    score=round(score, 4),
+                    created_at=now,
+                    retry_at=retry_at,
+                )
+            )
+        self._notify_changed()
+
         return AdmissionResult(
             score=round(score, 4),
             recommended_decision=recommended,
@@ -330,14 +390,39 @@ class GoalAdmissionService:
         )
 
     def pop_due_candidate(self, now: datetime) -> GoalCandidate | None:
-        return self.store.pop_due_candidate(now)
+        candidate = self.store.pop_due_candidate(now)
+        if candidate is not None:
+            self._notify_changed()
+        return candidate
 
-    def get_stats(self, now: datetime | None = None) -> dict:
+    def get_stats(
+        self,
+        now: datetime | None = None,
+        *,
+        stability_warning_rate: float = 0.6,
+        stability_danger_rate: float = 0.35,
+    ) -> dict:
         moment = now or datetime.now(timezone.utc)
         day = moment.astimezone(timezone.utc).date().isoformat()
+        warning_rate, danger_rate = self._normalize_stability_thresholds(
+            stability_warning_rate,
+            stability_danger_rate,
+        )
+        admitted_stability = self._build_admitted_stability_breakdown(self._normalize_datetime(moment))
+        admitted_total = sum(admitted_stability.values())
+        admitted_stability_rate = (
+            round(admitted_stability["stable"] / admitted_total, 4) if admitted_total > 0 else None
+        )
         return {
             "mode": self.mode,
             "today": self.store.get_stats(day),
+            "admitted_stability_24h": admitted_stability,
+            "admitted_stability_24h_rate": admitted_stability_rate,
+            "admitted_stability_alert": self._build_admitted_stability_alert(
+                admitted_stability_rate,
+                warning_rate=warning_rate,
+                danger_rate=danger_rate,
+            ),
             "deferred_queue_size": self.store.deferred_queue_size(),
             "wip_limit": self.wip_limit,
             "thresholds": {
@@ -346,6 +431,120 @@ class GoalAdmissionService:
                 "chain_next": {"min_score": self.chain_min_score, "defer_score": self.chain_defer_score},
             },
         }
+
+    def get_candidate_snapshot(self, now: datetime | None = None) -> dict[str, list[dict]]:
+        moment = self._normalize_datetime(now or datetime.now(timezone.utc))
+        records = self.store.list_recent_decisions(limit=20)
+        recent = [item for item in records if item.get("decision") in {"defer", "drop"}]
+        admitted = self._attach_admitted_stability(records, now=moment)
+        return {
+            "deferred": self.store.list_deferred_candidates(),
+            "recent": recent,
+            "admitted": admitted,
+        }
+
+    def _build_admitted_stability_breakdown(self, now: datetime) -> dict[str, int]:
+        records = self.store.list_recent_decisions(limit=20)
+        admitted = self._attach_admitted_stability(records, now=now)
+        summary = {"stable": 0, "re_deferred": 0, "dropped": 0}
+        for item in admitted:
+            stability = item.get("stability")
+            if stability in summary:
+                summary[stability] += 1
+        return summary
+
+    def _normalize_stability_thresholds(self, warning_rate: float, danger_rate: float) -> tuple[float, float]:
+        warning = max(0.0, min(1.0, float(warning_rate)))
+        danger = max(0.0, min(1.0, float(danger_rate)))
+        if danger > warning:
+            danger = warning
+        return warning, danger
+
+    def _build_admitted_stability_alert(
+        self,
+        admitted_stability_rate: float | None,
+        *,
+        warning_rate: float,
+        danger_rate: float,
+    ) -> dict[str, str | float]:
+        if admitted_stability_rate is None:
+            level = "unknown"
+        elif admitted_stability_rate < danger_rate:
+            level = "danger"
+        elif admitted_stability_rate < warning_rate:
+            level = "warning"
+        else:
+            level = "healthy"
+        return {
+            "level": level,
+            "warning_rate": round(warning_rate, 4),
+            "danger_rate": round(danger_rate, 4),
+        }
+
+    def _attach_admitted_stability(self, records: list[dict], *, now: datetime) -> list[dict]:
+        admitted = [item for item in records if item.get("decision") == "admit"]
+        if not admitted:
+            return []
+
+        raw_history = self.store.snapshot().get("recent_decisions", [])
+        history: list[tuple[str, AdmissionDecision, datetime]] = []
+        for item in raw_history if isinstance(raw_history, list) else []:
+            if not isinstance(item, dict):
+                continue
+            candidate = item.get("candidate")
+            if not isinstance(candidate, dict):
+                continue
+            fingerprint = candidate.get("fingerprint")
+            if not isinstance(fingerprint, str) or not fingerprint:
+                continue
+            created_at = self._parse_record_time(item.get("created_at"))
+            if created_at is None:
+                continue
+            decision = item.get("decision")
+            if decision == "admit":
+                history.append((fingerprint, AdmissionDecision.ADMIT, created_at))
+            elif decision == "defer":
+                history.append((fingerprint, AdmissionDecision.DEFER, created_at))
+            elif decision == "drop":
+                history.append((fingerprint, AdmissionDecision.DROP, created_at))
+
+        enriched: list[dict] = []
+        for item in admitted:
+            candidate = item.get("candidate") if isinstance(item, dict) else None
+            fingerprint = candidate.get("fingerprint") if isinstance(candidate, dict) else None
+            admitted_at = self._parse_record_time(item.get("created_at") if isinstance(item, dict) else None)
+
+            stability = "stable"
+            if isinstance(fingerprint, str) and fingerprint and admitted_at is not None:
+                upper_bound = min(admitted_at + timedelta(hours=24), now)
+                follow_up = [
+                    decision
+                    for event_fingerprint, decision, created_at in history
+                    if event_fingerprint == fingerprint and admitted_at < created_at <= upper_bound
+                ]
+                if AdmissionDecision.DROP in follow_up:
+                    stability = "dropped"
+                elif AdmissionDecision.DEFER in follow_up:
+                    stability = "re_deferred"
+
+            payload = deepcopy(item)
+            payload["stability"] = stability
+            enriched.append(payload)
+
+        return enriched
+
+    def _parse_record_time(self, raw_value: object) -> datetime | None:
+        if not isinstance(raw_value, str):
+            return None
+        try:
+            return self._normalize_datetime(datetime.fromisoformat(raw_value))
+        except ValueError:
+            return None
+
+    def _normalize_datetime(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
     def _prepare_candidate(self, candidate: GoalCandidate) -> GoalCandidate:
         if candidate.fingerprint is not None:
@@ -366,6 +565,13 @@ class GoalAdmissionService:
         all_goals: list[Goal],
         recent_events: list[MemoryEvent],
     ) -> tuple[float, AdmissionDecision, str]:
+        boundary_reason = find_value_boundary_reason(candidate.title, candidate.source_content)
+        if boundary_reason is not None:
+            return 0.0, AdmissionDecision.DROP, boundary_reason
+        relationship_boundary_reason = self._find_relationship_boundary_reason(candidate, recent_events=recent_events)
+        if relationship_boundary_reason is not None:
+            return 0.0, AdmissionDecision.DROP, relationship_boundary_reason
+
         fingerprint = candidate.fingerprint or ""
         if candidate.source_type in {GoalCandidateSource.USER_TOPIC, GoalCandidateSource.WORLD_EVENT}:
             if self.store.is_recently_seen(fingerprint, now, ttl=timedelta(minutes=5)):
@@ -394,7 +600,10 @@ class GoalAdmissionService:
         actionability = self._actionability_score(candidate.title)
         persistence = self._persistence_score(candidate, recent_events=recent_events)
         novelty = self._novelty_score(candidate, all_goals=all_goals)
-        return max(0.0, min(1.0, 0.5 * actionability + 0.3 * persistence + 0.2 * novelty))
+        relationship = self._relationship_alignment_score(candidate, recent_events=recent_events)
+        base_score = 0.5 * actionability + 0.3 * persistence + 0.2 * novelty
+        boosted_score = base_score + 0.5 * relationship
+        return max(0.0, min(1.0, boosted_score))
 
     def _score_chain_candidate(self, candidate: GoalCandidate) -> float:
         actionability = self._actionability_score(candidate.title)
@@ -458,6 +667,82 @@ class GoalAdmissionService:
         keywords = [item for item in re.split(r"[和与及、，,。.!！？?：:\s]+", topic) if len(item) >= 2]
         return any(keyword in content for keyword in keywords)
 
+    def _find_relationship_boundary_reason(
+        self,
+        candidate: GoalCandidate,
+        *,
+        recent_events: list[MemoryEvent],
+    ) -> str | None:
+        candidate_text = f"{candidate.title}\n{candidate.source_content or ''}"
+        for event in recent_events:
+            if event.source_context != "value_signal:boundary" and not event.content.startswith("用户边界："):
+                continue
+            boundary_text = event.content.removeprefix("用户边界：").strip()
+            if self._boundary_conflicts(boundary_text, candidate_text):
+                return f"relationship_boundary:{boundary_text[:24]}"
+        return None
+
+    def _boundary_conflicts(self, boundary_text: str, candidate_text: str) -> bool:
+        if not boundary_text or not candidate_text:
+            return False
+
+        if any(marker in boundary_text for marker in ("别催", "不要催")):
+            if any(marker in candidate_text for marker in ("催", "逼", "现在就做决定", "尽快做决定", "立刻做决定")):
+                return True
+
+        if any(marker in boundary_text for marker in ("先自己想", "自己想", "自己决定", "自己判断")):
+            if any(marker in candidate_text for marker in ("替用户决定", "替他决定", "替她决定", "帮用户做决定", "直接替", "不用想")):
+                return True
+
+        if "空间" in boundary_text and any(marker in candidate_text for marker in ("不要给", "不给", "压迫", "催")):
+            return True
+
+        return False
+
+    def _relationship_alignment_score(
+        self,
+        candidate: GoalCandidate,
+        *,
+        recent_events: list[MemoryEvent],
+    ) -> float:
+        candidate_text = f"{candidate.title}\n{candidate.source_content or ''}"
+        if not candidate_text.strip():
+            return 0.0
+
+        commitment_overlap = 0.0
+        for event in recent_events:
+            if event.source_context != "value_signal:commitment" and not event.content.startswith("承诺/计划："):
+                continue
+            commitment_text = event.content.removeprefix("承诺/计划：").strip()
+            overlap = self._text_overlap_ratio(commitment_text, candidate_text)
+            commitment_overlap = max(commitment_overlap, overlap)
+
+        return commitment_overlap
+
+    def _text_overlap_ratio(self, left: str, right: str) -> float:
+        left_tokens = self._meaningful_tokens(left)
+        right_tokens = self._meaningful_tokens(right)
+        if not left_tokens or not right_tokens:
+            return 0.0
+        overlap = left_tokens & right_tokens
+        return len(overlap) / len(left_tokens)
+
+    def _meaningful_tokens(self, text: str) -> set[str]:
+        tokens: set[str] = set()
+        ascii_words = re.findall(r"[A-Za-z0-9_]+", text.lower())
+        tokens.update(word for word in ascii_words if len(word) >= 3)
+
+        cjk_chunks = re.findall(r"[\u4e00-\u9fff]+", text)
+        stop_tokens = {"继续", "推进", "用户", "答应", "计划"}
+        for chunk in cjk_chunks:
+            if len(chunk) == 1:
+                continue
+            tokens.update(chunk[index : index + 2] for index in range(len(chunk) - 1))
+            if len(chunk) <= 8:
+                tokens.add(chunk)
+
+        return {token for token in tokens if len(token) >= 2 and token not in stop_tokens}
+
     def _decision_from_threshold(
         self,
         score: float,
@@ -500,3 +785,7 @@ class GoalAdmissionService:
     def _retry_backoff_minutes(self, retry_count: int) -> int:
         index = min(max(retry_count, 0), len(self.RETRY_BACKOFF_MINUTES) - 1)
         return self.RETRY_BACKOFF_MINUTES[index]
+
+    def _notify_changed(self) -> None:
+        if self._on_change is not None:
+            self._on_change()

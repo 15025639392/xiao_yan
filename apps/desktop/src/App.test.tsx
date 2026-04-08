@@ -1251,6 +1251,49 @@ test("updates a goal status from the app and refreshes the rendered goal", async
       );
     }
 
+    if (url.endsWith("/persona/emotion")) {
+      return new Response(
+        JSON.stringify({
+          primary_emotion: "engaged",
+          primary_intensity: "mild",
+          secondary_emotion: null,
+          secondary_intensity: "none",
+          mood_valence: 1,
+          arousal: 1,
+          is_calm: false,
+          active_entry_count: 0,
+          active_entries: [],
+          last_updated: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/memory/summary")) {
+      return new Response(
+        JSON.stringify({
+          total_estimated: 0,
+          by_kind: {},
+          recent_count: 0,
+          strong_memories: 0,
+          relationship: {
+            available: false,
+            boundaries: [],
+            commitments: [],
+            preferences: [],
+          },
+          available: true,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     if (url.endsWith("/autobio")) {
       return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
@@ -1346,6 +1389,49 @@ test("polls world state and renders the inner world panel", async () => {
       );
     }
 
+    if (url.endsWith("/persona/emotion")) {
+      return new Response(
+        JSON.stringify({
+          primary_emotion: "tired",
+          primary_intensity: "mild",
+          secondary_emotion: null,
+          secondary_intensity: "none",
+          mood_valence: -1,
+          arousal: -1,
+          is_calm: true,
+          active_entry_count: 0,
+          active_entries: [],
+          last_updated: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/memory/summary")) {
+      return new Response(
+        JSON.stringify({
+          total_estimated: 0,
+          by_kind: {},
+          recent_count: 0,
+          strong_memories: 0,
+          relationship: {
+            available: false,
+            boundaries: [],
+            commitments: [],
+            preferences: [],
+          },
+          available: true,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     if (url.endsWith("/autobio")) {
       return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
@@ -1432,6 +1518,49 @@ test("renders self programming state from polled runtime state", async () => {
           energy: "medium",
           mood: "engaged",
           focus_tension: "medium",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/persona/emotion")) {
+      return new Response(
+        JSON.stringify({
+          primary_emotion: "engaged",
+          primary_intensity: "mild",
+          secondary_emotion: null,
+          secondary_intensity: "none",
+          mood_valence: 1,
+          arousal: 0,
+          is_calm: true,
+          active_entry_count: 0,
+          active_entries: [],
+          last_updated: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (url.endsWith("/memory/summary")) {
+      return new Response(
+        JSON.stringify({
+          total_estimated: 0,
+          by_kind: {},
+          recent_count: 0,
+          strong_memories: 0,
+          relationship: {
+            available: false,
+            boundaries: [],
+            commitments: [],
+            preferences: [],
+          },
+          available: true,
         }),
         {
           status: 200,

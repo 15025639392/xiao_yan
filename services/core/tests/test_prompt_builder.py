@@ -72,3 +72,27 @@ def test_chat_instructions_include_folder_permissions_context():
     assert "read_only（只读）" in instructions
     assert "/tmp/my-workspace" in instructions
     assert "full_access（可读写）" in instructions
+
+
+def test_chat_instructions_include_relationship_guidance():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        user_message="你觉得我现在该怎么办",
+        persona_system_prompt=persona_prompt,
+        relationship_summary={
+            "available": True,
+            "boundaries": ["别催我，我希望先自己想一想再决定"],
+            "commitments": ["答应你明天提醒你复盘"],
+            "preferences": ["喜欢先看方案再做决定"],
+        },
+    )
+
+    assert "先尊重这段关系里已经形成的边界" in instructions
+    assert "别催我，我希望先自己想一想再决定" in instructions
+    assert "优先兑现或回应这些已形成的承诺" in instructions
+    assert "答应你明天提醒你复盘" in instructions
+    assert "喜欢先看方案再做决定" in instructions

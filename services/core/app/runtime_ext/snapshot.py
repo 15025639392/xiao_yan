@@ -4,10 +4,12 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage, ChatMessage
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
+from app.runtime_ext.runtime_config import get_runtime_config
 from app.world.models import WorldState
 from app.world.repository import WorldRepository
 from app.world.service import WorldStateService
@@ -138,6 +140,7 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
     state_store: StateStore = target_app.state.state_store
     memory_repository: MemoryRepository = target_app.state.memory_repository
     goal_repository: GoalRepository = target_app.state.goal_repository
+    goal_admission_service: GoalAdmissionService | None = getattr(target_app.state, "goal_admission_service", None)
 
     messages = [
         ChatHistoryMessage(
@@ -161,10 +164,22 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
         memory_repository,
         WorldStateService(),
     )
+    runtime_config = get_runtime_config()
     return {
         "state": state_store.get().model_dump(mode="json"),
         "messages": messages,
         "goals": [goal.model_dump(mode="json") for goal in goal_repository.list_goals()],
+        "goal_admission_stats": (
+            None
+            if goal_admission_service is None
+            else goal_admission_service.get_stats(
+                stability_warning_rate=runtime_config.goal_admission_stability_warning_rate,
+                stability_danger_rate=runtime_config.goal_admission_stability_danger_rate,
+            )
+        ),
+        "goal_admission_candidates": (
+            None if goal_admission_service is None else goal_admission_service.get_candidate_snapshot()
+        ),
         "world": world_state.model_dump(mode="json"),
         "autobio": deduplicate_entries(autobio_entries),
     }
@@ -174,6 +189,7 @@ def build_memory_payload(target_app: FastAPI) -> dict[str, Any]:
     memory_service = target_app.state.memory_service
     return {
         "summary": memory_service.get_memory_summary(),
+        "relationship": memory_service.get_relationship_summary(),
         "timeline": memory_service.get_memory_timeline(limit=40),
     }
 
@@ -192,4 +208,3 @@ def build_app_snapshot(target_app: FastAPI) -> dict[str, Any]:
         "memory": build_memory_payload(target_app),
         "persona": build_persona_payload(target_app),
     }
-

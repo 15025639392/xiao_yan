@@ -24,6 +24,7 @@ from app.persona.models import (
     SentenceStyle,
     SpeakingStyle,
     ValueItem,
+    default_value_foundation,
     default_persona,
 )
 from app.persona.emotion_engine import EmotionEngine
@@ -60,6 +61,9 @@ class TestPersonaProfile:
         p = default_persona()
         assert len(p.values.core_values) >= 3
         assert len(p.values.boundaries) >= 2
+        top_value_names = [item.name for item in p.values.get_top_values(5)]
+        assert "尊重" in top_value_names
+        assert "求真" in top_value_names
 
     def test_default_persona_has_features(self):
         p = default_persona()
@@ -223,6 +227,23 @@ class TestPersonaValues:
         hints = pv.to_prompt_hints()
         assert "诚实" in hints
         assert "不说谎" in hints or "绝不说谎" in hints or "底线" in hints
+
+    def test_default_value_foundation_contains_stable_values_and_boundaries(self):
+        values = default_value_foundation()
+        names = [item.name for item in values.core_values]
+        assert "尊重" in names
+        assert "求真" in names
+        assert "善意" in names
+        assert len(values.boundaries) >= 3
+
+    def test_default_value_foundation_contains_social_judgment_guidance(self):
+        values = default_value_foundation()
+        guidance = values.to_social_judgment_prompt()
+
+        assert "信息不足时，先澄清再判断" in guidance
+        assert "涉及冲突时，先看伤害、边界和权力差" in guidance
+        assert "在亲密或脆弱关系里，不替他人接管人生决定" in guidance
+        assert "面向公众时，不把讨好、刺激性或传播性当作最高目标" in guidance
 
 
 # ═══════════════════════════════════════════════════
@@ -403,6 +424,15 @@ class TestPersonaService:
     def test_build_system_prompt_contains_core_principles(self, service):
         prompt = service.build_system_prompt()
         assert "持续存在的人格体" in prompt
+        assert "价值底盘提醒" in prompt
+        assert "不要为了迎合、效率或短期结果放弃这些原则" in prompt
+
+    def test_build_system_prompt_contains_social_judgment_section(self, service):
+        prompt = service.build_system_prompt()
+        assert "复杂社会情境判断" in prompt
+        assert "信息不足时，先澄清再判断" in prompt
+        assert "不轻易给任何人贴死标签" in prompt
+        assert "不替他人接管人生决定" in prompt
 
     def test_apply_emotion_updates_state(self, service):
         new_state = service.apply_emotion(
@@ -427,6 +457,16 @@ class TestPersonaService:
         service.update_profile(name="持久化测试")
         profile2 = service.get_profile()
         assert profile2.name == "持久化测试"
+
+    def test_backfills_missing_value_foundation_for_legacy_profile(self):
+        repository = InMemoryPersonaRepository()
+        repository.save(PersonaProfile(name="旧人格", identity="持续存在的数字人"))
+
+        service = PersonaService(repository=repository)
+        profile = service.get_profile()
+
+        assert len(profile.values.core_values) >= 3
+        assert len(profile.values.boundaries) >= 3
 
     def test_infer_chat_emotion_positive(self, service):
         new_state = service.infer_chat_emotion("太棒了！厉害！")

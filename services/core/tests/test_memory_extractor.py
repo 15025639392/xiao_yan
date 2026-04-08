@@ -78,6 +78,19 @@ class TestPreferenceExtraction:
 
         assert len(preference_events) >= 1
 
+    def test_extract_user_boundary_as_value_signal(self, extractor):
+        message = ChatMessage(
+            role="user",
+            content="你别催我，我希望先自己想一想再决定",
+        )
+
+        events = extractor._extract_user_info(message, None)
+        boundary_events = [e for e in events if "用户边界" in e.content]
+
+        assert len(boundary_events) >= 1
+        assert boundary_events[0].source_context == "value_signal:boundary"
+        assert "别催我" in boundary_events[0].content or "先自己想一想" in boundary_events[0].content
+
 
 # ═══════════════════════════════════════════════════
 # 2. 用户习惯提取测试
@@ -240,6 +253,18 @@ class TestCommitmentExtraction:
         commitment_events = [e for e in events if "承诺" in e.content or "计划" in e.content]
 
         assert len(commitment_events) >= 1
+
+    def test_extract_commitment_marks_value_signal(self, extractor):
+        message = ChatMessage(
+            role="assistant",
+            content="我答应你明天提醒你复盘，我们到时候一起看结果",
+        )
+
+        events = extractor._extract_assistant_info(message, None)
+        commitment_events = [e for e in events if "承诺/计划" in e.content]
+
+        assert len(commitment_events) >= 1
+        assert any(e.source_context == "value_signal:commitment" for e in commitment_events)
 
 
 # ═══════════════════════════════════════════════════

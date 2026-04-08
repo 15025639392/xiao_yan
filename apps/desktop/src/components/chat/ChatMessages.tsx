@@ -1,10 +1,13 @@
+import type { RelationshipSummary } from "../../lib/api";
 import { MarkdownMessage } from "../MarkdownMessage";
 import type { ChatEntry } from "./chatTypes";
 import { ChatMemoryContext } from "./ChatMemoryContext";
+import { ChatMessageResponseReference } from "./ChatMessageResponseReference";
 
 type ChatMessagesProps = {
   assistantName: string;
   messages: ChatEntry[];
+  relationship: RelationshipSummary | null;
   isSending: boolean;
   showMemoryContext: Set<string>;
   onToggleMemoryContext: (messageId: string) => void;
@@ -15,12 +18,17 @@ type ChatMessagesProps = {
 export function ChatMessages({
   assistantName,
   messages,
+  relationship,
   isSending,
   showMemoryContext,
   onToggleMemoryContext,
   onResume,
   onDraftChange,
 }: ChatMessagesProps) {
+  const latestAssistantMessageId = [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.state !== "failed")?.id;
+
   if (messages.length === 0) {
     return (
       <div className="chat-page__empty">
@@ -64,6 +72,10 @@ export function ChatMessages({
             ) : (
               <p className="chat-message__content">{message.content}</p>
             )}
+
+            {message.role === "assistant" && message.id === latestAssistantMessageId ? (
+              <ChatMessageResponseReference relationship={relationship} />
+            ) : null}
           </div>
 
           {message.role === "assistant" &&
@@ -103,4 +115,3 @@ export function ChatMessages({
     </>
   );
 }
-

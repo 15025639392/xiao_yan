@@ -4,22 +4,28 @@ import type {
   ChatHistoryMessage,
   EmotionState,
   Goal,
+  GoalAdmissionCandidateSnapshot,
+  GoalAdmissionStats,
   InnerWorldState,
   MemoryEntryDisplay,
   MemorySummary,
   PersonaProfile,
+  RelationshipSummary,
 } from "./api";
 
 export type AppRuntimeRealtimePayload = {
   state: BeingState;
   messages: ChatHistoryMessage[];
   goals: Goal[];
+  goal_admission_stats?: GoalAdmissionStats | null;
+  goal_admission_candidates?: GoalAdmissionCandidateSnapshot | null;
   world: InnerWorldState | null;
   autobio: string[];
 };
 
 export type AppMemoryRealtimePayload = {
   summary: MemorySummary;
+  relationship: RelationshipSummary;
   timeline: MemoryEntryDisplay[];
 };
 

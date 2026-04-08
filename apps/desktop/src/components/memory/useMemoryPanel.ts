@@ -11,12 +11,14 @@ import {
   type MemoryEntryDisplay,
   type MemoryKind,
   type MemorySummary,
+  type RelationshipSummary,
 } from "../../lib/api";
 import { subscribeAppRealtime } from "../../lib/realtime";
 import type { ViewMode } from "./memoryConstants";
 
 export function useMemoryPanelState() {
   const [summary, setSummary] = useState<MemorySummary | null>(null);
+  const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const [entries, setEntries] = useState<MemoryEntryDisplay[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MemoryEntryDisplay[] | null>(null);
@@ -47,6 +49,7 @@ export function useMemoryPanelState() {
       setLoading(true);
       const [summaryData, timelineData] = await Promise.all([fetchMemorySummary(), fetchMemoryTimeline(40)]);
       setSummary(summaryData);
+      setRelationship(summaryData.relationship);
       setEntries(timelineData.entries);
     } catch {
       // 静默失败 — 后端可能没启动
@@ -247,6 +250,7 @@ export function useMemoryPanelState() {
       }
 
       setSummary(memoryPayload.summary);
+      setRelationship(memoryPayload.relationship ?? memoryPayload.summary.relationship ?? null);
       setEntries(memoryPayload.timeline);
       setLoading(false);
     });
@@ -273,6 +277,7 @@ export function useMemoryPanelState() {
 
   return {
     summary,
+    relationship,
     activeFilter,
     setActiveFilter,
     searchQuery,
@@ -315,4 +320,3 @@ export function useMemoryPanelState() {
     handleBatchDelete,
   };
 }
-

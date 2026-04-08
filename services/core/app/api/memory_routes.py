@@ -40,6 +40,10 @@ def build_memory_router() -> APIRouter:
     def get_memory_summary(memory_service: MemoryService = Depends(get_memory_service)) -> dict:
         return memory_service.get_memory_summary()
 
+    @router.get("/memory/relationship-summary")
+    def get_relationship_summary(memory_service: MemoryService = Depends(get_memory_service)) -> dict:
+        return memory_service.get_relationship_summary()
+
     @router.get("/memory/timeline")
     def get_memory_timeline(limit: int = 30, memory_service: MemoryService = Depends(get_memory_service)) -> dict:
         return {"entries": memory_service.get_memory_timeline(limit=limit)}
@@ -118,4 +122,3 @@ def build_memory_router() -> APIRouter:
         return {"success": True, "starred": important, "memory_id": memory_id}
 
     return router
-

@@ -2,11 +2,15 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   fetchConfig,
+  fetchGoalAdmissionConfig,
+  fetchGoalAdmissionConfigHistory,
   fetchChatModels,
   fetchChatFolderPermissions,
   removeChatFolderPermission,
+  rollbackGoalAdmissionConfig,
   resetPersona,
   updateConfig,
+  updateGoalAdmissionConfig,
   upsertChatFolderPermission,
   updatePersona,
   updatePersonaFeatures,
@@ -139,6 +143,50 @@ describe("persona api methods", () => {
         body: JSON.stringify({
           chat_model: "gpt-5.4",
         }),
+      }),
+    );
+  });
+
+  test("uses goal-admission config endpoints with expected methods", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          stability_warning_rate: 0.6,
+          stability_danger_rate: 0.35,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchGoalAdmissionConfig();
+    await updateGoalAdmissionConfig({ stability_warning_rate: 0.7 });
+    await fetchGoalAdmissionConfigHistory(5);
+    await rollbackGoalAdmissionConfig();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:8000/config/goal-admission");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8000/config/goal-admission",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          stability_warning_rate: 0.7,
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://127.0.0.1:8000/config/goal-admission/history?limit=5",
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://127.0.0.1:8000/config/goal-admission/rollback",
+      expect.objectContaining({
+        method: "POST",
       }),
     );
   });

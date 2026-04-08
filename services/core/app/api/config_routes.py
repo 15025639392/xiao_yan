@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.api.deps import get_goal_admission_service
 from app.config import LLMProviderConfig, get_llm_provider_configs
+from app.goals.admission import GoalAdmissionService
 from app.llm.gateway import ChatGateway
 from app.runtime_ext.runtime_config import get_runtime_config
 
@@ -43,6 +45,52 @@ class SelfProgrammingConfigResponse(BaseModel):
     proactive_cooldown_minutes: int
 
 
+class GoalAdmissionConfigUpdateRequest(BaseModel):
+    stability_warning_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    stability_danger_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    user_topic_min_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    user_topic_defer_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    world_event_min_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    world_event_defer_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    chain_next_min_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    chain_next_defer_score: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class GoalAdmissionConfigResponse(BaseModel):
+    stability_warning_rate: float
+    stability_danger_rate: float
+    user_topic_min_score: float
+    user_topic_defer_score: float
+    world_event_min_score: float
+    world_event_defer_score: float
+    chain_next_min_score: float
+    chain_next_defer_score: float
+
+
+class GoalAdmissionConfigHistoryItem(BaseModel):
+    revision: int
+    source: str
+    stability_warning_rate: float
+    stability_danger_rate: float
+    user_topic_min_score: float
+    user_topic_defer_score: float
+    world_event_min_score: float
+    world_event_defer_score: float
+    chain_next_min_score: float
+    chain_next_defer_score: float
+    created_at: str
+    rolled_back_from_revision: int | None = None
+
+
+class GoalAdmissionConfigHistoryResponse(BaseModel):
+    items: list[GoalAdmissionConfigHistoryItem]
+
+
+class GoalAdmissionConfigRollbackResponse(GoalAdmissionConfigResponse):
+    revision: int
+    rolled_back_from_revision: int
+
+
 class ChatModelProviderItem(BaseModel):
     provider_id: str
     provider_name: str
@@ -63,6 +111,26 @@ def build_config_router() -> APIRouter:
     def _provider_catalog_by_id() -> dict[str, LLMProviderConfig]:
         providers = get_llm_provider_configs()
         return {provider.provider_id: provider for provider in providers}
+
+    def _goal_admission_config_response(config) -> GoalAdmissionConfigResponse:
+        return GoalAdmissionConfigResponse(
+            stability_warning_rate=config.goal_admission_stability_warning_rate,
+            stability_danger_rate=config.goal_admission_stability_danger_rate,
+            user_topic_min_score=config.goal_admission_user_topic_min_score,
+            user_topic_defer_score=config.goal_admission_user_topic_defer_score,
+            world_event_min_score=config.goal_admission_world_event_min_score,
+            world_event_defer_score=config.goal_admission_world_event_defer_score,
+            chain_next_min_score=config.goal_admission_chain_next_min_score,
+            chain_next_defer_score=config.goal_admission_chain_next_defer_score,
+        )
+
+    def _apply_thresholds_to_admission_service(payload: dict[str, float | int], service: GoalAdmissionService) -> None:
+        service.min_score = float(payload["user_topic_min_score"])
+        service.defer_score = float(payload["user_topic_defer_score"])
+        service.world_min_score = float(payload["world_event_min_score"])
+        service.world_defer_score = float(payload["world_event_defer_score"])
+        service.chain_min_score = float(payload["chain_next_min_score"])
+        service.chain_defer_score = float(payload["chain_next_defer_score"])
 
     @router.get("/config")
     def get_config() -> ConfigResponse:
@@ -146,6 +214,83 @@ def build_config_router() -> APIRouter:
         return SelfProgrammingConfigResponse(
             hard_failure_cooldown_minutes=config.self_programming_hard_failure_cooldown_minutes,
             proactive_cooldown_minutes=config.self_programming_proactive_cooldown_minutes,
+        )
+
+    @router.get("/config/goal-admission")
+    def get_goal_admission_config() -> GoalAdmissionConfigResponse:
+        config = get_runtime_config()
+        return _goal_admission_config_response(config)
+
+    @router.put("/config/goal-admission")
+    def update_goal_admission_config(
+        request: GoalAdmissionConfigUpdateRequest,
+        admission_service: GoalAdmissionService = Depends(get_goal_admission_service),
+    ) -> GoalAdmissionConfigResponse:
+        if (
+            request.stability_warning_rate is None
+            and request.stability_danger_rate is None
+            and request.user_topic_min_score is None
+            and request.user_topic_defer_score is None
+            and request.world_event_min_score is None
+            and request.world_event_defer_score is None
+            and request.chain_next_min_score is None
+            and request.chain_next_defer_score is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="at least one goal-admission config field is required",
+            )
+
+        config = get_runtime_config()
+        try:
+            updated = config.update_goal_admission_thresholds(
+                stability_warning_rate=request.stability_warning_rate,
+                stability_danger_rate=request.stability_danger_rate,
+                user_topic_min_score=request.user_topic_min_score,
+                user_topic_defer_score=request.user_topic_defer_score,
+                world_event_min_score=request.world_event_min_score,
+                world_event_defer_score=request.world_event_defer_score,
+                chain_next_min_score=request.chain_next_min_score,
+                chain_next_defer_score=request.chain_next_defer_score,
+                source="api_update",
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+        _apply_thresholds_to_admission_service(updated, admission_service)
+        return _goal_admission_config_response(config)
+
+    @router.get("/config/goal-admission/history")
+    def get_goal_admission_config_history(
+        limit: int = Query(default=10, ge=1, le=50),
+    ) -> GoalAdmissionConfigHistoryResponse:
+        config = get_runtime_config()
+        items = config.list_goal_admission_config_history(limit=limit)
+        return GoalAdmissionConfigHistoryResponse(
+            items=[GoalAdmissionConfigHistoryItem.model_validate(item) for item in items],
+        )
+
+    @router.post("/config/goal-admission/rollback")
+    def rollback_goal_admission_config(
+        admission_service: GoalAdmissionService = Depends(get_goal_admission_service),
+    ) -> GoalAdmissionConfigRollbackResponse:
+        config = get_runtime_config()
+        try:
+            rolled_back = config.rollback_goal_admission_thresholds()
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        _apply_thresholds_to_admission_service(rolled_back, admission_service)
+        return GoalAdmissionConfigRollbackResponse(
+            stability_warning_rate=float(rolled_back["stability_warning_rate"]),
+            stability_danger_rate=float(rolled_back["stability_danger_rate"]),
+            user_topic_min_score=float(rolled_back["user_topic_min_score"]),
+            user_topic_defer_score=float(rolled_back["user_topic_defer_score"]),
+            world_event_min_score=float(rolled_back["world_event_min_score"]),
+            world_event_defer_score=float(rolled_back["world_event_defer_score"]),
+            chain_next_min_score=float(rolled_back["chain_next_min_score"]),
+            chain_next_defer_score=float(rolled_back["chain_next_defer_score"]),
+            revision=int(rolled_back["revision"]),
+            rolled_back_from_revision=int(rolled_back["rolled_back_from_revision"]),
         )
 
     @router.get("/config/chat-models")

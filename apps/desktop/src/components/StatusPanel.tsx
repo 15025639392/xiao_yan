@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import type { BeingState, EmotionState } from "../lib/api";
-import { fetchEmotionState } from "../lib/api";
+import type { BeingState, EmotionState, RelationshipSummary } from "../lib/api";
+import { fetchEmotionState, fetchMemorySummary } from "../lib/api";
+import { subscribeAppRealtime } from "../lib/realtime";
 import { ApprovalPanel } from "./ApprovalPanel";
+import { MemoryRelationshipSummary } from "./memory/MemoryRelationshipSummary";
 import { StartApprovalPanel } from "./StartApprovalPanel";
 import { EmotionPanel } from "./status/EmotionPanel";
 import { SelfProgrammingCooldownSettings } from "./status/SelfProgrammingCooldownSettings";
@@ -24,11 +26,29 @@ export function StatusPanel({ state, error, onRollback, onApprovalDecision }: St
     state.today_plan?.steps.length && state.today_plan.steps.every((step) => step.status === "completed");
   const selfProgrammingJob = state.self_programming_job;
   const [emotionState, setEmotionState] = useState<EmotionState | null>(null);
+  const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const [showEmotionDetails, setShowEmotionDetails] = useState(false);
 
   useEffect(() => {
     fetchEmotionState().then(setEmotionState).catch(console.error);
+    fetchMemorySummary()
+      .then((summary) => setRelationship(summary.relationship))
+      .catch(() => setRelationship(null));
   }, [state.mode, state.focus_mode]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeAppRealtime((event) => {
+      const memoryPayload =
+        event.type === "snapshot" ? event.payload.memory : event.type === "memory_updated" ? event.payload : null;
+      if (!memoryPayload) {
+        return;
+      }
+
+      setRelationship(memoryPayload.relationship ?? memoryPayload.summary.relationship ?? null);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const headerBadge = state.today_plan ? (
     <StatusBadge tone={planCompleted ? "completed" : "active"}>
@@ -47,6 +67,8 @@ export function StatusPanel({ state, error, onRollback, onApprovalDecision }: St
           onToggleDetails={() => setShowEmotionDetails(!showEmotionDetails)}
         />
       ) : null}
+
+      <MemoryRelationshipSummary relationship={relationship} />
 
       {selfProgrammingJob ? (
         selfProgrammingJob.status === "pending_start_approval"

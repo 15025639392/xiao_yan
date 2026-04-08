@@ -41,6 +41,7 @@ export function ChatPanel({
     textareaRef,
     messagesEndRef,
     messagesContainerRef,
+    relationship,
     showMemoryContext,
     showConfigPanel,
     config,
@@ -92,6 +93,7 @@ export function ChatPanel({
         <ChatMessages
           assistantName={assistantName}
           messages={messages}
+          relationship={relationship}
           isSending={isSending}
           showMemoryContext={showMemoryContext}
           onToggleMemoryContext={toggleMemoryContext}
@@ -104,6 +106,7 @@ export function ChatPanel({
       <ChatInputForm
         draft={draft}
         isSending={isSending}
+        relationship={relationship}
         textareaRef={textareaRef}
         onDraftChange={onDraftChange}
         onKeyDown={handleKeyDown}

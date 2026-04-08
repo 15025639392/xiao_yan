@@ -1,4 +1,4 @@
-import type { Goal } from "../../lib/api";
+import type { Goal, RelationshipSummary } from "../../lib/api";
 import { EmptyState } from "../ui/EmptyState";
 import { GoalItem } from "./GoalItem";
 import type { GoalColumn } from "./goalsUtils";
@@ -12,6 +12,7 @@ type GoalBoardProps = {
   onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
   onDecomposeGoal: (goalId: string) => void;
   loadingDecompose: Set<string>;
+  relationship: RelationshipSummary | null;
 };
 
 export function GoalBoard({
@@ -23,6 +24,7 @@ export function GoalBoard({
   onUpdateGoalStatus,
   onDecomposeGoal,
   loadingDecompose,
+  relationship,
 }: GoalBoardProps) {
   return (
     <section className="goal-board">
@@ -67,6 +69,7 @@ export function GoalBoard({
                             onUpdateGoalStatus={onUpdateGoalStatus}
                             onDecomposeGoal={onDecomposeGoal}
                             loadingDecompose={loadingDecompose}
+                            relationship={relationship}
                           />
                         ))}
                       </ul>
@@ -115,6 +118,7 @@ export function GoalBoard({
                         onUpdateGoalStatus={onUpdateGoalStatus}
                         onDecomposeGoal={onDecomposeGoal}
                         loadingDecompose={loadingDecompose}
+                        relationship={relationship}
                       />
                     ))}
                   </ul>
@@ -127,4 +131,3 @@ export function GoalBoard({
     </section>
   );
 }
-

@@ -68,6 +68,12 @@
 - [ ] 新参数上线具备标准流程：回放评估 -> 小流量 -> 全量。
 - [ ] 关键指标波动可解释（有复盘记录与参数变更记录）。
 
+### 开工状态（2026-04-08）
+
+- [x] 分来源阈值配置化（`user_topic/world_event/chain_next`）
+- [x] 周度回放对比脚本（baseline vs candidate）
+- [x] 小流量上线与回退 Runbook（见 `docs/runbooks/goal-admission-phase3-canary.md`）
+
 ---
 
 ## Phase 4: Hybrid Intelligence（最终形态）
@@ -95,4 +101,3 @@
 - 必须可观测：指标、日志、样本回放缺一不可。
 - 必须小步推进：参数与策略变更都走“先验证后放量”。
 - 必须有责任边界：产品、工程、值班角色明确。
-
