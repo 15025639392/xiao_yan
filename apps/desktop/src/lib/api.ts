@@ -248,6 +248,37 @@ export type GoalAdmissionStats = {
   thresholds: GoalAdmissionThresholds;
 };
 
+export type GoalAdmissionCandidate = {
+  source_type: "user_topic" | "world_event" | "chain_next";
+  title: string;
+  source_content?: string | null;
+  chain_id?: string | null;
+  parent_goal_id?: string | null;
+  generation?: number;
+  retry_count: number;
+  fingerprint?: string | null;
+};
+
+export type DeferredGoalAdmissionCandidate = {
+  candidate: GoalAdmissionCandidate;
+  next_retry_at: string;
+  last_reason: string;
+};
+
+export type RecentGoalAdmissionDecision = {
+  candidate: GoalAdmissionCandidate;
+  decision: "defer" | "drop";
+  reason: string;
+  score: number;
+  created_at: string;
+  retry_at?: string | null;
+};
+
+export type GoalAdmissionCandidateSnapshot = {
+  deferred: DeferredGoalAdmissionCandidate[];
+  recent: RecentGoalAdmissionDecision[];
+};
+
 export type AutobioResponse = {
   entries: string[];
 };
@@ -350,6 +381,10 @@ export function fetchGoals(): Promise<GoalsResponse> {
 
 export function fetchGoalAdmissionStats(): Promise<GoalAdmissionStats> {
   return get<GoalAdmissionStats>("/goals/admission/stats");
+}
+
+export function fetchGoalAdmissionCandidates(): Promise<GoalAdmissionCandidateSnapshot> {
+  return get<GoalAdmissionCandidateSnapshot>("/goals/admission/candidates");
 }
 
 export function fetchWorld(): Promise<InnerWorldState> {

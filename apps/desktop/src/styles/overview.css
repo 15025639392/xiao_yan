@@ -261,6 +261,104 @@
   color: var(--text-primary);
 }
 
+.goals-candidate-pool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid rgba(168, 85, 247, 0.18);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(168, 85, 247, 0.05), rgba(168, 85, 247, 0.015)),
+    var(--bg-surface);
+}
+
+.goals-candidate-pool__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.goals-candidate-pool__title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.goals-candidate-pool__hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.goals-candidate-pool__columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.goals-candidate-pool__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.goals-candidate-pool__group-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.goals-candidate-pool__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.goals-candidate-pool__item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.goals-candidate-pool__item-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.goals-candidate-pool__item-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.5rem;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.goals-candidate-pool__item-chip--drop {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.goals-candidate-pool__item-chip--defer {
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.goals-candidate-pool__item-text,
+.goals-candidate-pool__empty {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 .goal-board__row {
   display: grid;
   grid-template-columns: 2fr 1fr;

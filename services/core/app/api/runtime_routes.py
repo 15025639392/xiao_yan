@@ -78,6 +78,12 @@ def build_runtime_router() -> APIRouter:
     ) -> dict:
         return admission_service.get_stats()
 
+    @router.get("/goals/admission/candidates")
+    def get_goal_admission_candidates(
+        admission_service: GoalAdmissionService = Depends(get_goal_admission_service),
+    ) -> dict:
+        return admission_service.get_candidate_snapshot()
+
     def _rebuild_today_plan_for_goal(
         goal: Goal,
         planner: MorningPlanPlanner,

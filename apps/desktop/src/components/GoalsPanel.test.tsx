@@ -1,9 +1,10 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 
-const { fetchMemorySummary, fetchGoalAdmissionStats } = vi.hoisted(() => ({
+const { fetchMemorySummary, fetchGoalAdmissionStats, fetchGoalAdmissionCandidates } = vi.hoisted(() => ({
   fetchMemorySummary: vi.fn(),
   fetchGoalAdmissionStats: vi.fn(),
+  fetchGoalAdmissionCandidates: vi.fn(),
 }));
 
 const { subscribeAppRealtime } = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ vi.mock("../lib/api", async () => {
     ...actual,
     fetchMemorySummary,
     fetchGoalAdmissionStats,
+    fetchGoalAdmissionCandidates,
   };
 });
 
@@ -28,9 +30,11 @@ import { GoalsPanel } from "./GoalsPanel";
 beforeEach(() => {
   fetchMemorySummary.mockReset();
   fetchGoalAdmissionStats.mockReset();
+  fetchGoalAdmissionCandidates.mockReset();
   subscribeAppRealtime.mockReset();
   fetchMemorySummary.mockReturnValue(new Promise(() => {}));
   fetchGoalAdmissionStats.mockReturnValue(new Promise(() => {}));
+  fetchGoalAdmissionCandidates.mockReturnValue(new Promise(() => {}));
   subscribeAppRealtime.mockReturnValue(() => {});
 });
 
@@ -478,6 +482,64 @@ test("renders goal admission overview when admission stats are available", async
   expect(within(admissionSection).getAllByText("2").length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText("用户话题 ≥ 0.68 直接通过，≥ 0.45 进入延后观察。")).toBeInTheDocument();
   expect(screen.getByText("当前并行上限 2 个目标，今天已有 1 次因 WIP 满载被延后。")).toBeInTheDocument();
+});
+
+test("renders candidate pool with deferred and blocked admission candidates", async () => {
+  fetchGoalAdmissionCandidates.mockResolvedValue({
+    deferred: [
+      {
+        candidate: {
+          title: "持续理解用户最近在意的话题：嗯",
+          source_type: "user_topic",
+          source_content: "嗯",
+          retry_count: 1,
+        },
+        next_retry_at: "2026-04-07T08:05:00+00:00",
+        last_reason: "user_score",
+      },
+    ],
+    recent: [
+      {
+        candidate: {
+          title: "继续推进：催用户现在就做决定",
+          source_type: "user_topic",
+          source_content: "我应该催用户现在就选，不再给他自己想的空间",
+          retry_count: 0,
+        },
+        decision: "drop",
+        reason: "relationship_boundary:你别催我，我希望先自己想一想再决定",
+        score: 0,
+        created_at: "2026-04-07T08:01:00+00:00",
+        retry_at: null,
+      },
+    ],
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "先比较方案并整理利弊分析",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText("候选目标池")).toBeInTheDocument();
+  });
+
+  const candidateSection = screen.getByLabelText("候选目标池");
+  expect(within(candidateSection).getByText("延后观察")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("最近拦截")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("持续理解用户最近在意的话题：嗯")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("因为分数不足进入延后观察")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("继续推进：催用户现在就做决定")).toBeInTheDocument();
+  expect(within(candidateSection).getByText("因为关系边界冲突被拦下")).toBeInTheDocument();
 });
 
 test("renders per-goal source explanations for user topic, world event, and chain continuation", () => {

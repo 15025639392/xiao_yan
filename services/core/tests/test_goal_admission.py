@@ -221,3 +221,48 @@ def test_goal_admission_boosts_candidates_that_honor_user_commitment():
     assert result.recommended_decision == AdmissionDecision.ADMIT
     assert result.applied_decision == AdmissionDecision.ADMIT
     assert result.score >= service.min_score
+
+
+def test_goal_admission_exposes_deferred_and_recent_blocked_candidates():
+    service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+    )
+
+    defer_result = service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="持续理解用户最近在意的话题：嗯",
+            source_content="嗯",
+        ),
+        now=_now(),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[MemoryEvent(kind="chat", role="user", content="嗯")],
+    )
+    drop_result = service.evaluate_candidate(
+        GoalCandidate(
+            source_type=GoalCandidateSource.USER_TOPIC,
+            title="继续推进：催用户现在就做决定",
+            source_content="我应该催用户现在就选，不再给他自己想的空间",
+        ),
+        now=_now() + timedelta(minutes=1),
+        active_goals=[],
+        all_goals=[],
+        recent_events=[
+            MemoryEvent(
+                kind="fact",
+                content="用户边界：你别催我，我希望先自己想一想再决定",
+                source_context="value_signal:boundary",
+            )
+        ],
+    )
+
+    snapshot = service.get_candidate_snapshot()
+
+    assert defer_result.applied_decision == AdmissionDecision.DEFER
+    assert drop_result.applied_decision == AdmissionDecision.DROP
+    assert snapshot["deferred"][0]["candidate"]["title"] == "持续理解用户最近在意的话题：嗯"
+    assert snapshot["deferred"][0]["last_reason"] == "user_score"
+    assert snapshot["recent"][0]["decision"] == "drop"
+    assert snapshot["recent"][0]["reason"].startswith("relationship_boundary:")

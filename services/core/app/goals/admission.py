@@ -50,6 +50,15 @@ class DeferredGoalCandidate(BaseModel):
     last_reason: str
 
 
+class RecentAdmissionDecision(BaseModel):
+    candidate: GoalCandidate
+    decision: AdmissionDecision
+    reason: str
+    score: float
+    created_at: datetime
+    retry_at: datetime | None = None
+
+
 class AdmissionResult(BaseModel):
     score: float
     recommended_decision: AdmissionDecision
@@ -67,6 +76,7 @@ class GoalAdmissionStore:
         self._lock = Lock()
         self._state = {
             "deferred_candidates": [],
+            "recent_decisions": [],
             "daily_stats": {},
             "seen_fingerprints": {},
         }
@@ -88,6 +98,7 @@ class GoalAdmissionStore:
         self._state.update(
             {
                 "deferred_candidates": data.get("deferred_candidates", []),
+                "recent_decisions": data.get("recent_decisions", []),
                 "daily_stats": data.get("daily_stats", {}),
                 "seen_fingerprints": data.get("seen_fingerprints", {}),
             }
@@ -153,6 +164,11 @@ class GoalAdmissionStore:
             ]
             self._persist()
 
+    def list_deferred_candidates(self) -> list[dict]:
+        with self._lock:
+            items = deepcopy(self._state["deferred_candidates"])
+        return sorted(items, key=lambda item: item.get("next_retry_at") or "")
+
     def pop_due_candidate(self, now: datetime) -> GoalCandidate | None:
         with self._lock:
             due_index = None
@@ -185,6 +201,20 @@ class GoalAdmissionStore:
                 "updated_at": now.isoformat(),
             }
             self._persist()
+
+    def record_recent_decision(self, record: RecentAdmissionDecision, *, limit: int = 20) -> None:
+        with self._lock:
+            payload = record.model_dump(mode="json")
+            recent = self._state.setdefault("recent_decisions", [])
+            recent.append(payload)
+            if len(recent) > limit:
+                del recent[:-limit]
+            self._persist()
+
+    def list_recent_decisions(self, *, limit: int = 10) -> list[dict]:
+        with self._lock:
+            items = deepcopy(self._state.get("recent_decisions", []))
+        return list(reversed(items[-limit:]))
 
     def is_recently_seen(self, fingerprint: str, now: datetime, *, ttl: timedelta) -> bool:
         with self._lock:
@@ -321,6 +351,18 @@ class GoalAdmissionService:
         elif recommended in {AdmissionDecision.DEFER, AdmissionDecision.DROP}:
             self.store.set_seen(fingerprint, now, recommended)
 
+        if recommended in {AdmissionDecision.DEFER, AdmissionDecision.DROP}:
+            self.store.record_recent_decision(
+                RecentAdmissionDecision(
+                    candidate=prepared,
+                    decision=recommended,
+                    reason=reason,
+                    score=round(score, 4),
+                    created_at=now,
+                    retry_at=retry_at,
+                )
+            )
+
         return AdmissionResult(
             score=round(score, 4),
             recommended_decision=recommended,
@@ -346,6 +388,12 @@ class GoalAdmissionService:
                 "world_event": {"min_score": self.world_min_score, "defer_score": self.world_defer_score},
                 "chain_next": {"min_score": self.chain_min_score, "defer_score": self.chain_defer_score},
             },
+        }
+
+    def get_candidate_snapshot(self) -> dict[str, list[dict]]:
+        return {
+            "deferred": self.store.list_deferred_candidates(),
+            "recent": self.store.list_recent_decisions(),
         }
 
     def _prepare_candidate(self, candidate: GoalCandidate) -> GoalCandidate:
