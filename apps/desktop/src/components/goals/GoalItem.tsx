@@ -1,6 +1,7 @@
 import type { Goal, RelationshipSummary } from "../../lib/api";
 import { StatusBadge } from "../ui";
 import { renderGoalStatus } from "./goalsUtils";
+import { getGoalSourceMeta } from "./goalSourceMeta";
 import { getGoalRelationshipHints } from "./relationshipGoalHints";
 
 type GoalItemProps = {
@@ -22,6 +23,7 @@ export function GoalItem({
   loadingDecompose,
   relationship,
 }: GoalItemProps) {
+  const sourceMeta = getGoalSourceMeta(goal);
   const relationshipHints = getGoalRelationshipHints(goal, relationship);
 
   return (
@@ -34,15 +36,23 @@ export function GoalItem({
           <div className="goal-card__meta">
             {goal.chain_id ? <span className="goal-card__meta-item">链 {goal.chain_id}</span> : null}
             <span className="goal-card__meta-item">G{goal.generation ?? 0}</span>
-            {goal.source ? (
-              <span className="goal-card__meta-item" title={goal.source}>
-                📌
-              </span>
-            ) : null}
           </div>
         </div>
         <StatusBadge tone={goal.status}>{renderGoalStatus(goal.status)}</StatusBadge>
       </div>
+
+      <section className={`goal-card__source goal-card__source--${sourceMeta.tone}`} aria-label="目标来历">
+        <div className="goal-card__source-head">
+          <span className="goal-card__source-chip">{sourceMeta.label}</span>
+          <span className="goal-card__source-summary">{sourceMeta.summary}</span>
+        </div>
+        {sourceMeta.context ? (
+          <div className="goal-card__source-context">
+            <span className="goal-card__source-context-label">{sourceMeta.contextLabel}</span>
+            <span className="goal-card__source-context-text">{sourceMeta.context}</span>
+          </div>
+        ) : null}
+      </section>
 
       {relationshipHints.length > 0 ? (
         <section className="goal-card__relationship" aria-label="关系提示">

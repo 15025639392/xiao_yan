@@ -479,3 +479,51 @@ test("renders goal admission overview when admission stats are available", async
   expect(screen.getByText("用户话题 ≥ 0.68 直接通过，≥ 0.45 进入延后观察。")).toBeInTheDocument();
   expect(screen.getByText("当前并行上限 2 个目标，今天已有 1 次因 WIP 满载被延后。")).toBeInTheDocument();
 });
+
+test("renders per-goal source explanations for user topic, world event, and chain continuation", () => {
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-user",
+          title: "持续理解用户最近在意的话题：星星",
+          source: "你还记得星星吗",
+          status: "active",
+          generation: 0,
+        },
+        {
+          id: "goal-world",
+          title: "继续消化自己刚经历的状态：凌晨窗外突然安静下来",
+          source: "凌晨窗外突然安静下来",
+          status: "active",
+          generation: 0,
+        },
+        {
+          id: "goal-chain",
+          title: "继续推进：整理今天的对话记忆",
+          source: "你还记得星星吗",
+          status: "active",
+          generation: 1,
+          chain_id: "chain-1",
+          parent_goal_id: "goal-user",
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  const userGoal = screen.getByText("持续理解用户最近在意的话题：星星").closest("li");
+  expect(userGoal).not.toBeNull();
+  expect(within(userGoal as HTMLElement).getByText("用户话题")).toBeInTheDocument();
+  expect(within(userGoal as HTMLElement).getByText("来自最近一次用户表达或关注。")).toBeInTheDocument();
+
+  const worldGoal = screen.getByText("继续消化自己刚经历的状态：凌晨窗外突然安静下来").closest("li");
+  expect(worldGoal).not.toBeNull();
+  expect(within(worldGoal as HTMLElement).getByText("世界事件")).toBeInTheDocument();
+  expect(within(worldGoal as HTMLElement).getByText("来自她刚经历的一次世界或内在事件。")).toBeInTheDocument();
+
+  const chainGoal = screen.getByText("继续推进：整理今天的对话记忆").closest("li");
+  expect(chainGoal).not.toBeNull();
+  expect(within(chainGoal as HTMLElement).getByText("链式续推")).toBeInTheDocument();
+  expect(within(chainGoal as HTMLElement).getByText("不是全新目标，而是沿着上一代目标继续往前推进。")).toBeInTheDocument();
+});
