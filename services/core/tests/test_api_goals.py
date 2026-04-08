@@ -12,7 +12,17 @@ from app.runtime import StateStore
 
 def test_get_goals_returns_saved_goals():
     repository = InMemoryGoalRepository()
-    repository.save_goal(Goal(title="继续理解用户的睡眠作息"))
+    repository.save_goal(
+        Goal(
+            title="继续理解用户的睡眠作息",
+            admission={
+                "score": 0.82,
+                "recommended_decision": "admit",
+                "applied_decision": "admit",
+                "reason": "user_score",
+            },
+        )
+    )
 
     def override_goal_repository():
         return repository
@@ -26,6 +36,8 @@ def test_get_goals_returns_saved_goals():
         body = response.json()
         assert body["goals"][0]["title"] == "继续理解用户的睡眠作息"
         assert body["goals"][0]["status"] == "active"
+        assert body["goals"][0]["admission"]["applied_decision"] == "admit"
+        assert body["goals"][0]["admission"]["reason"] == "user_score"
     finally:
         app.dependency_overrides.clear()
 

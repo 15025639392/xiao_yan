@@ -130,6 +130,9 @@ def test_tick_once_generates_goal_from_latest_user_topic_when_no_active_goals():
 
     assert len(active_goals) == 1
     assert "星星和夜空" in active_goals[0].title
+    assert active_goals[0].admission is not None
+    assert active_goals[0].admission.applied_decision == "admit"
+    assert active_goals[0].admission.reason == "user_score"
     assert state.active_goal_ids == [active_goals[0].id]
     assert "星星和夜空" in state.current_thought
 

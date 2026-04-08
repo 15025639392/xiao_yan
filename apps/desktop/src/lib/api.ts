@@ -176,6 +176,12 @@ export type Goal = {
   parent_goal_id?: string | null;
   generation?: number;
   source?: string | null;
+  admission?: {
+    score: number;
+    recommended_decision: "admit" | "defer" | "drop";
+    applied_decision: "admit" | "defer" | "drop";
+    reason: string;
+  } | null;
   created_at?: string | null;
   updated_at?: string | null;
 };

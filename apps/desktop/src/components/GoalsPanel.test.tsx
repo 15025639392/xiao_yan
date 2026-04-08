@@ -527,3 +527,32 @@ test("renders per-goal source explanations for user topic, world event, and chai
   expect(within(chainGoal as HTMLElement).getByText("链式续推")).toBeInTheDocument();
   expect(within(chainGoal as HTMLElement).getByText("不是全新目标，而是沿着上一代目标继续往前推进。")).toBeInTheDocument();
 });
+
+test("renders per-goal admission badge and explanation when metadata is available", () => {
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "持续理解用户最近在意的话题：星星",
+          source: "你还记得星星吗",
+          status: "active",
+          generation: 0,
+          admission: {
+            score: 0.82,
+            recommended_decision: "admit",
+            applied_decision: "admit",
+            reason: "user_score",
+          },
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  const goalCard = screen.getByText("持续理解用户最近在意的话题：星星").closest("li");
+  expect(goalCard).not.toBeNull();
+  expect(within(goalCard as HTMLElement).getByText("准入通过")).toBeInTheDocument();
+  expect(within(goalCard as HTMLElement).getByText("符合用户话题准入阈值，已允许进入目标看板。")).toBeInTheDocument();
+  expect(within(goalCard as HTMLElement).getByText("评分 0.82")).toBeInTheDocument();
+});

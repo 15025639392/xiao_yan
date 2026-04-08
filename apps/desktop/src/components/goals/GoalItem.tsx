@@ -1,5 +1,6 @@
 import type { Goal, RelationshipSummary } from "../../lib/api";
 import { StatusBadge } from "../ui";
+import { getGoalAdmissionDisplay } from "./goalAdmissionMeta";
 import { renderGoalStatus } from "./goalsUtils";
 import { getGoalSourceMeta } from "./goalSourceMeta";
 import { getGoalRelationshipHints } from "./relationshipGoalHints";
@@ -23,6 +24,7 @@ export function GoalItem({
   loadingDecompose,
   relationship,
 }: GoalItemProps) {
+  const admissionDisplay = getGoalAdmissionDisplay(goal);
   const sourceMeta = getGoalSourceMeta(goal);
   const relationshipHints = getGoalRelationshipHints(goal, relationship);
 
@@ -53,6 +55,16 @@ export function GoalItem({
           </div>
         ) : null}
       </section>
+
+      {admissionDisplay ? (
+        <section className={`goal-card__admission goal-card__admission--${admissionDisplay.tone}`} aria-label="准入判断">
+          <div className="goal-card__admission-head">
+            <span className="goal-card__admission-chip">{admissionDisplay.badge}</span>
+            <span className="goal-card__admission-score">{admissionDisplay.scoreText}</span>
+          </div>
+          <div className="goal-card__admission-summary">{admissionDisplay.summary}</div>
+        </section>
+      ) : null}
 
       {relationshipHints.length > 0 ? (
         <section className="goal-card__relationship" aria-label="关系提示">
