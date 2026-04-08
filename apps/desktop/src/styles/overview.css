@@ -190,6 +190,22 @@
   color: var(--text-secondary);
 }
 
+.goals-admission__detail-text--muted {
+  color: var(--text-muted);
+}
+
+.goals-admission__detail-text--success {
+  color: var(--success);
+}
+
+.goals-admission__detail-text--warning {
+  color: var(--warning);
+}
+
+.goals-admission__detail-text--danger {
+  color: var(--danger);
+}
+
 .goals-guidance {
   display: flex;
   flex-direction: column;

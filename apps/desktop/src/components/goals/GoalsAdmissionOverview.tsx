@@ -19,15 +19,28 @@ function formatThreshold(label: string, minScore: number, deferScore: number): s
   return `${label} ≥ ${minScore.toFixed(2)} 直接通过，≥ ${deferScore.toFixed(2)} 进入延后观察。`;
 }
 
+type StabilityRateTone = "muted" | "success" | "warning" | "danger";
+
+function describeStabilityRate(rate: number | null): { text: string; tone: StabilityRateTone } {
+  if (rate === null) {
+    return { text: "24h 稳定率暂无样本。", tone: "muted" };
+  }
+  const percentage = `${(rate * 100).toFixed(1)}%`;
+  if (rate >= 0.75) {
+    return { text: `24h 稳定率 ${percentage}（健康）。`, tone: "success" };
+  }
+  if (rate >= 0.5) {
+    return { text: `24h 稳定率 ${percentage}（需关注）。`, tone: "warning" };
+  }
+  return { text: `24h 稳定率 ${percentage}（告警）。`, tone: "danger" };
+}
+
 export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
   if (!stats) {
     return null;
   }
   const stability = stats.admitted_stability_24h;
-  const stabilityRateText =
-    stats.admitted_stability_24h_rate === null
-      ? "24h 稳定率暂无样本。"
-      : `24h 稳定率 ${(stats.admitted_stability_24h_rate * 100).toFixed(1)}%。`;
+  const stabilityRate = describeStabilityRate(stats.admitted_stability_24h_rate);
 
   return (
     <section className="goals-admission" aria-label="目标准入守门">
@@ -71,7 +84,9 @@ export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
           <div className="goals-admission__detail-text">
             {`稳定 ${stability.stable}，再次延后 ${stability.re_deferred}，再次拦截 ${stability.dropped}。`}
           </div>
-          <div className="goals-admission__detail-text">{stabilityRateText}</div>
+          <div className={`goals-admission__detail-text goals-admission__detail-text--${stabilityRate.tone}`}>
+            {stabilityRate.text}
+          </div>
         </SurfaceCard>
       </div>
     </section>

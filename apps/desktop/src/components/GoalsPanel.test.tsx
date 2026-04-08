@@ -489,7 +489,49 @@ test("renders goal admission overview when admission stats are available", async
   expect(screen.getByText("用户话题 ≥ 0.68 直接通过，≥ 0.45 进入延后观察。")).toBeInTheDocument();
   expect(screen.getByText("当前并行上限 2 个目标，今天已有 1 次因 WIP 满载被延后。")).toBeInTheDocument();
   expect(screen.getByText("稳定 5，再次延后 2，再次拦截 1。")).toBeInTheDocument();
-  expect(screen.getByText("24h 稳定率 62.5%。")).toBeInTheDocument();
+  expect(screen.getByText("24h 稳定率 62.5%（需关注）。")).toBeInTheDocument();
+});
+
+test("shows danger signal when 24h stability rate is too low", async () => {
+  fetchGoalAdmissionStats.mockResolvedValue({
+    mode: "enforce",
+    today: {
+      admit: 4,
+      defer: 3,
+      drop: 2,
+      wip_blocked: 0,
+    },
+    admitted_stability_24h: {
+      stable: 1,
+      re_deferred: 1,
+      dropped: 2,
+    },
+    admitted_stability_24h_rate: 0.25,
+    deferred_queue_size: 1,
+    wip_limit: 2,
+    thresholds: {
+      user_topic: { min_score: 0.68, defer_score: 0.45 },
+      world_event: { min_score: 0.75, defer_score: 0.52 },
+      chain_next: { min_score: 0.62, defer_score: 0.45 },
+    },
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "先比较方案并整理利弊分析",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  const rateText = await screen.findByText("24h 稳定率 25.0%（告警）。");
+  expect(rateText).toHaveClass("goals-admission__detail-text--danger");
 });
 
 test("renders candidate pool with deferred and blocked admission candidates", async () => {
