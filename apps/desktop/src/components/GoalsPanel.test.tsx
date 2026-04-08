@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 const { fetchMemorySummary, fetchGoalAdmissionStats, fetchGoalAdmissionCandidates, updateGoalAdmissionConfig } = vi.hoisted(() => ({
   fetchMemorySummary: vi.fn(),
@@ -43,6 +43,10 @@ beforeEach(() => {
     stability_danger_rate: 0.35,
   });
   subscribeAppRealtime.mockReturnValue(() => {});
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 test("renders goals and forwards status updates", () => {
@@ -502,9 +506,7 @@ test("renders goal admission overview when admission stats are available", async
   expect(screen.getByText("当前并行上限 2 个目标，今天已有 1 次因 WIP 满载被延后。")).toBeInTheDocument();
   expect(screen.getByText("稳定 5，再次延后 2，再次拦截 1。")).toBeInTheDocument();
   expect(screen.getByText("24h 稳定率 62.5%（需关注）。")).toBeInTheDocument();
-  expect(
-    screen.getByText("⚠ 24h 稳定率低于健康线（当前 62.5%，告警线 35.0%，健康线 60.0%）。"),
-  ).toBeInTheDocument();
+  expect(screen.queryByText("⚠ 24h 稳定率低于健康线（当前 62.5%，告警线 35.0%，健康线 60.0%）。")).not.toBeInTheDocument();
 });
 
 test("updates stability thresholds and refreshes admission stats", async () => {
@@ -585,20 +587,86 @@ test("updates stability thresholds and refreshes admission stats", async () => {
   await waitFor(() => {
     expect(screen.getByText("目标准入守门")).toBeInTheDocument();
   });
+  vi.useFakeTimers();
   fireEvent.change(screen.getByLabelText("健康线(%)"), { target: { value: "70" } });
   fireEvent.change(screen.getByLabelText("告警线(%)"), { target: { value: "40" } });
   fireEvent.click(screen.getByRole("button", { name: "保存阈值" }));
 
-  await waitFor(() => {
-    expect(updateGoalAdmissionConfig).toHaveBeenCalledWith({
-      stability_warning_rate: 0.7,
-      stability_danger_rate: 0.4,
-    });
+  expect(updateGoalAdmissionConfig).not.toHaveBeenCalled();
+  expect(screen.getByText("已暂存，可在 5 秒内撤销")).toBeInTheDocument();
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5200);
   });
-  await waitFor(() => {
-    expect(screen.getByText("阈值已保存")).toBeInTheDocument();
+
+  expect(updateGoalAdmissionConfig).toHaveBeenCalledWith({
+    stability_warning_rate: 0.7,
+    stability_danger_rate: 0.4,
   });
+  expect(screen.getByText("阈值已保存")).toBeInTheDocument();
   expect(fetchGoalAdmissionStats).toHaveBeenCalledTimes(2);
+});
+
+test("can undo threshold update before delayed commit", async () => {
+  fetchGoalAdmissionStats.mockResolvedValue({
+    mode: "shadow",
+    today: {
+      admit: 8,
+      defer: 3,
+      drop: 2,
+      wip_blocked: 1,
+    },
+    admitted_stability_24h: {
+      stable: 5,
+      re_deferred: 2,
+      dropped: 1,
+    },
+    admitted_stability_24h_rate: 0.625,
+    admitted_stability_alert: {
+      level: "warning",
+      warning_rate: 0.6,
+      danger_rate: 0.35,
+    },
+    deferred_queue_size: 2,
+    wip_limit: 2,
+    thresholds: {
+      user_topic: { min_score: 0.68, defer_score: 0.45 },
+      world_event: { min_score: 0.75, defer_score: 0.52 },
+      chain_next: { min_score: 0.62, defer_score: 0.45 },
+    },
+  });
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "先比较方案并整理利弊分析",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText("目标准入守门")).toBeInTheDocument();
+  });
+  vi.useFakeTimers();
+  fireEvent.change(screen.getByLabelText("健康线(%)"), { target: { value: "70" } });
+  fireEvent.change(screen.getByLabelText("告警线(%)"), { target: { value: "40" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存阈值" }));
+  fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5200);
+  });
+
+  expect(updateGoalAdmissionConfig).not.toHaveBeenCalled();
+  expect(screen.getByText("已撤销阈值变更")).toBeInTheDocument();
+  expect((screen.getByLabelText("健康线(%)") as HTMLInputElement).value).toBe("60");
+  expect((screen.getByLabelText("告警线(%)") as HTMLInputElement).value).toBe("35");
 });
 
 test("shows danger signal when 24h stability rate is too low", async () => {

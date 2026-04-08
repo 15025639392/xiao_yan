@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GoalAdmissionRuntimeConfig, GoalAdmissionStats } from "../../lib/api";
 import { MetricCard, SurfaceCard } from "../ui";
 
@@ -9,6 +9,7 @@ type GoalsAdmissionOverviewProps = {
 
 const DEFAULT_WARNING_RATE = 0.6;
 const DEFAULT_DANGER_RATE = 0.35;
+const UNDO_WINDOW_MS = 5000;
 
 function describeMode(mode: GoalAdmissionStats["mode"]): string {
   if (mode === "off") {
@@ -40,17 +41,20 @@ function describeStabilityRate(rate: number | null): { text: string; tone: Stabi
   return { text: `24h 稳定率 ${percentage}（告警）。`, tone: "danger" };
 }
 
-function buildStabilityAlert(stats: GoalAdmissionStats): {
+function buildStabilityAlert(
+  stats: GoalAdmissionStats,
+  overrides?: { warningRate?: number; dangerRate?: number },
+): {
   level: "healthy" | "warning" | "danger" | "unknown";
   warningRate: number;
   dangerRate: number;
   text: string | null;
 } {
   const alert = stats.admitted_stability_alert;
-  const warningRate = alert?.warning_rate ?? DEFAULT_WARNING_RATE;
-  const dangerRate = alert?.danger_rate ?? DEFAULT_DANGER_RATE;
+  const warningRate = overrides?.warningRate ?? alert?.warning_rate ?? DEFAULT_WARNING_RATE;
+  const dangerRate = overrides?.dangerRate ?? alert?.danger_rate ?? DEFAULT_DANGER_RATE;
   const rate = stats.admitted_stability_24h_rate;
-  const level = alert?.level ?? (rate === null ? "unknown" : rate < dangerRate ? "danger" : rate < warningRate ? "warning" : "healthy");
+  const level = rate === null ? "unknown" : rate < dangerRate ? "danger" : rate < warningRate ? "warning" : "healthy";
 
   if (rate === null || level === "unknown" || level === "healthy") {
     return {
@@ -85,9 +89,27 @@ export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: G
   const [savingThresholds, setSavingThresholds] = useState(false);
   const [thresholdError, setThresholdError] = useState<string | null>(null);
   const [thresholdOk, setThresholdOk] = useState<string | null>(null);
+  const [pendingThresholdChange, setPendingThresholdChange] = useState<{
+    previous: { warningRate: number; dangerRate: number };
+    next: { warningRate: number; dangerRate: number };
+    remainingMs: number;
+  } | null>(null);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function clearPendingTimers() {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }
 
   useEffect(() => {
-    if (!stats) {
+    if (!stats || pendingThresholdChange) {
       return;
     }
     const warning = stats.admitted_stability_alert?.warning_rate ?? DEFAULT_WARNING_RATE;
@@ -95,19 +117,33 @@ export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: G
     setWarningDraft(Math.round(warning * 100));
     setDangerDraft(Math.round(danger * 100));
   }, [
+    pendingThresholdChange,
     stats?.admitted_stability_alert?.warning_rate,
     stats?.admitted_stability_alert?.danger_rate,
   ]);
+
+  useEffect(() => {
+    return () => {
+      clearPendingTimers();
+    };
+  }, []);
 
   if (!stats) {
     return null;
   }
   const stability = stats.admitted_stability_24h;
   const stabilityRate = describeStabilityRate(stats.admitted_stability_24h_rate);
-  const stabilityAlert = buildStabilityAlert(stats);
+  const serverWarningRate = stats.admitted_stability_alert?.warning_rate ?? DEFAULT_WARNING_RATE;
+  const serverDangerRate = stats.admitted_stability_alert?.danger_rate ?? DEFAULT_DANGER_RATE;
+  const effectiveWarningRate = pendingThresholdChange?.next.warningRate ?? serverWarningRate;
+  const effectiveDangerRate = pendingThresholdChange?.next.dangerRate ?? serverDangerRate;
+  const stabilityAlert = buildStabilityAlert(stats, {
+    warningRate: effectiveWarningRate,
+    dangerRate: effectiveDangerRate,
+  });
 
   async function saveThresholds() {
-    if (!onUpdateStabilityThresholds || savingThresholds) {
+    if (!onUpdateStabilityThresholds || savingThresholds || pendingThresholdChange) {
       return;
     }
     const warning = Math.max(0, Math.min(100, warningDraft)) / 100;
@@ -117,20 +153,62 @@ export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: G
       setThresholdOk(null);
       return;
     }
-    setSavingThresholds(true);
     setThresholdError(null);
-    setThresholdOk(null);
-    try {
-      await onUpdateStabilityThresholds({
-        stability_warning_rate: warning,
-        stability_danger_rate: danger,
+    setThresholdOk("已暂存，可在 5 秒内撤销");
+    const previous = {
+      warningRate: serverWarningRate,
+      dangerRate: serverDangerRate,
+    };
+    const next = { warningRate: warning, dangerRate: danger };
+    setPendingThresholdChange({
+      previous,
+      next,
+      remainingMs: UNDO_WINDOW_MS,
+    });
+    clearPendingTimers();
+
+    countdownTimerRef.current = setInterval(() => {
+      setPendingThresholdChange((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          remainingMs: Math.max(0, current.remainingMs - 200),
+        };
       });
-      setThresholdOk("阈值已保存");
-    } catch (error) {
-      setThresholdError(error instanceof Error ? error.message : "阈值保存失败");
-    } finally {
-      setSavingThresholds(false);
+    }, 200);
+
+    commitTimerRef.current = setTimeout(async () => {
+      setSavingThresholds(true);
+      try {
+        await onUpdateStabilityThresholds({
+          stability_warning_rate: next.warningRate,
+          stability_danger_rate: next.dangerRate,
+        });
+        setThresholdOk("阈值已保存");
+      } catch (error) {
+        setWarningDraft(Math.round(previous.warningRate * 100));
+        setDangerDraft(Math.round(previous.dangerRate * 100));
+        setThresholdError(error instanceof Error ? error.message : "阈值保存失败");
+      } finally {
+        clearPendingTimers();
+        setPendingThresholdChange(null);
+        setSavingThresholds(false);
+      }
+    }, UNDO_WINDOW_MS);
+  }
+
+  function undoThresholdChange() {
+    if (!pendingThresholdChange) {
+      return;
     }
+    clearPendingTimers();
+    setWarningDraft(Math.round(pendingThresholdChange.previous.warningRate * 100));
+    setDangerDraft(Math.round(pendingThresholdChange.previous.dangerRate * 100));
+    setPendingThresholdChange(null);
+    setThresholdError(null);
+    setThresholdOk("已撤销阈值变更");
   }
 
   return (
@@ -181,6 +259,18 @@ export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: G
           <div className={`goals-admission__detail-text goals-admission__detail-text--${stabilityRate.tone}`}>
             {stabilityRate.text}
           </div>
+          {pendingThresholdChange ? (
+            <div className="goals-admission__pending">
+              <span>{`阈值将在 ${Math.ceil(pendingThresholdChange.remainingMs / 1000)} 秒后生效。`}</span>
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                onClick={undoThresholdChange}
+              >
+                撤销
+              </button>
+            </div>
+          ) : null}
           <div className="goals-admission__threshold-editor">
             <label className="goals-admission__threshold-field">
               <span>健康线(%)</span>
@@ -206,7 +296,7 @@ export function GoalsAdmissionOverview({ stats, onUpdateStabilityThresholds }: G
               type="button"
               className="btn btn--secondary btn--sm"
               onClick={saveThresholds}
-              disabled={savingThresholds || !onUpdateStabilityThresholds}
+              disabled={savingThresholds || pendingThresholdChange !== null || !onUpdateStabilityThresholds}
             >
               保存阈值
             </button>
