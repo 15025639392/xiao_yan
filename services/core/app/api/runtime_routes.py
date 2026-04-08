@@ -20,6 +20,7 @@ from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import deduplicate_entries, ensure_realtime_hub_initialized, ensure_runtime_initialized
+from app.runtime_ext.runtime_config import get_runtime_config
 
 
 def build_runtime_router() -> APIRouter:
@@ -76,7 +77,11 @@ def build_runtime_router() -> APIRouter:
     def get_goal_admission_stats(
         admission_service: GoalAdmissionService = Depends(get_goal_admission_service),
     ) -> dict:
-        return admission_service.get_stats()
+        config = get_runtime_config()
+        return admission_service.get_stats(
+            stability_warning_rate=config.goal_admission_stability_warning_rate,
+            stability_danger_rate=config.goal_admission_stability_danger_rate,
+        )
 
     @router.get("/goals/admission/candidates")
     def get_goal_admission_candidates(

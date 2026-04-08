@@ -395,9 +395,19 @@ class GoalAdmissionService:
             self._notify_changed()
         return candidate
 
-    def get_stats(self, now: datetime | None = None) -> dict:
+    def get_stats(
+        self,
+        now: datetime | None = None,
+        *,
+        stability_warning_rate: float = 0.6,
+        stability_danger_rate: float = 0.35,
+    ) -> dict:
         moment = now or datetime.now(timezone.utc)
         day = moment.astimezone(timezone.utc).date().isoformat()
+        warning_rate, danger_rate = self._normalize_stability_thresholds(
+            stability_warning_rate,
+            stability_danger_rate,
+        )
         admitted_stability = self._build_admitted_stability_breakdown(self._normalize_datetime(moment))
         admitted_total = sum(admitted_stability.values())
         admitted_stability_rate = (
@@ -408,6 +418,11 @@ class GoalAdmissionService:
             "today": self.store.get_stats(day),
             "admitted_stability_24h": admitted_stability,
             "admitted_stability_24h_rate": admitted_stability_rate,
+            "admitted_stability_alert": self._build_admitted_stability_alert(
+                admitted_stability_rate,
+                warning_rate=warning_rate,
+                danger_rate=danger_rate,
+            ),
             "deferred_queue_size": self.store.deferred_queue_size(),
             "wip_limit": self.wip_limit,
             "thresholds": {
@@ -437,6 +452,34 @@ class GoalAdmissionService:
             if stability in summary:
                 summary[stability] += 1
         return summary
+
+    def _normalize_stability_thresholds(self, warning_rate: float, danger_rate: float) -> tuple[float, float]:
+        warning = max(0.0, min(1.0, float(warning_rate)))
+        danger = max(0.0, min(1.0, float(danger_rate)))
+        if danger > warning:
+            danger = warning
+        return warning, danger
+
+    def _build_admitted_stability_alert(
+        self,
+        admitted_stability_rate: float | None,
+        *,
+        warning_rate: float,
+        danger_rate: float,
+    ) -> dict[str, str | float]:
+        if admitted_stability_rate is None:
+            level = "unknown"
+        elif admitted_stability_rate < danger_rate:
+            level = "danger"
+        elif admitted_stability_rate < warning_rate:
+            level = "warning"
+        else:
+            level = "healthy"
+        return {
+            "level": level,
+            "warning_rate": round(warning_rate, 4),
+            "danger_rate": round(danger_rate, 4),
+        }
 
     def _attach_admitted_stability(self, records: list[dict], *, now: datetime) -> list[dict]:
         admitted = [item for item in records if item.get("decision") == "admit"]

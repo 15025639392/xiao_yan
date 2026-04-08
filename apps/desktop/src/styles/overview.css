@@ -159,6 +159,27 @@
   color: var(--text-muted);
 }
 
+.goals-admission__alert {
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.goals-admission__alert--warning {
+  border-color: rgba(245, 158, 11, 0.36);
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.goals-admission__alert--danger {
+  border-color: rgba(239, 68, 68, 0.38);
+  background: var(--danger-muted);
+  color: var(--danger);
+}
+
 .goals-admission__metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

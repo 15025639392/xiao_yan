@@ -9,6 +9,7 @@ from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage, ChatMessage
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
+from app.runtime_ext.runtime_config import get_runtime_config
 from app.world.models import WorldState
 from app.world.repository import WorldRepository
 from app.world.service import WorldStateService
@@ -163,11 +164,19 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
         memory_repository,
         WorldStateService(),
     )
+    runtime_config = get_runtime_config()
     return {
         "state": state_store.get().model_dump(mode="json"),
         "messages": messages,
         "goals": [goal.model_dump(mode="json") for goal in goal_repository.list_goals()],
-        "goal_admission_stats": None if goal_admission_service is None else goal_admission_service.get_stats(),
+        "goal_admission_stats": (
+            None
+            if goal_admission_service is None
+            else goal_admission_service.get_stats(
+                stability_warning_rate=runtime_config.goal_admission_stability_warning_rate,
+                stability_danger_rate=runtime_config.goal_admission_stability_danger_rate,
+            )
+        ),
         "goal_admission_candidates": (
             None if goal_admission_service is None else goal_admission_service.get_candidate_snapshot()
         ),

@@ -5,6 +5,9 @@ type GoalsAdmissionOverviewProps = {
   stats: GoalAdmissionStats | null;
 };
 
+const DEFAULT_WARNING_RATE = 0.6;
+const DEFAULT_DANGER_RATE = 0.35;
+
 function describeMode(mode: GoalAdmissionStats["mode"]): string {
   if (mode === "off") {
     return "off 模式：当前不做准入守门，所有目标都会直接落地。";
@@ -35,12 +38,52 @@ function describeStabilityRate(rate: number | null): { text: string; tone: Stabi
   return { text: `24h 稳定率 ${percentage}（告警）。`, tone: "danger" };
 }
 
+function buildStabilityAlert(stats: GoalAdmissionStats): {
+  level: "healthy" | "warning" | "danger" | "unknown";
+  warningRate: number;
+  dangerRate: number;
+  text: string | null;
+} {
+  const alert = stats.admitted_stability_alert;
+  const warningRate = alert?.warning_rate ?? DEFAULT_WARNING_RATE;
+  const dangerRate = alert?.danger_rate ?? DEFAULT_DANGER_RATE;
+  const rate = stats.admitted_stability_24h_rate;
+  const level = alert?.level ?? (rate === null ? "unknown" : rate < dangerRate ? "danger" : rate < warningRate ? "warning" : "healthy");
+
+  if (rate === null || level === "unknown" || level === "healthy") {
+    return {
+      level,
+      warningRate,
+      dangerRate,
+      text: null,
+    };
+  }
+
+  const rateText = `${(rate * 100).toFixed(1)}%`;
+  if (level === "danger") {
+    return {
+      level,
+      warningRate,
+      dangerRate,
+      text: `🚨 24h 稳定率进入告警区（当前 ${rateText}，告警线 ${(dangerRate * 100).toFixed(1)}%）。`,
+    };
+  }
+
+  return {
+    level,
+    warningRate,
+    dangerRate,
+    text: `⚠ 24h 稳定率低于健康线（当前 ${rateText}，告警线 ${(dangerRate * 100).toFixed(1)}%，健康线 ${(warningRate * 100).toFixed(1)}%）。`,
+  };
+}
+
 export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
   if (!stats) {
     return null;
   }
   const stability = stats.admitted_stability_24h;
   const stabilityRate = describeStabilityRate(stats.admitted_stability_24h_rate);
+  const stabilityAlert = buildStabilityAlert(stats);
 
   return (
     <section className="goals-admission" aria-label="目标准入守门">
@@ -48,6 +91,9 @@ export function GoalsAdmissionOverview({ stats }: GoalsAdmissionOverviewProps) {
         <span className="goals-admission__title">目标准入守门</span>
         <span className="goals-admission__hint">{describeMode(stats.mode)}</span>
       </div>
+      {stabilityAlert.text ? (
+        <div className={`goals-admission__alert goals-admission__alert--${stabilityAlert.level}`}>{stabilityAlert.text}</div>
+      ) : null}
 
       <div className="goals-admission__metrics">
         <MetricCard label="今日通过" value={stats.today.admit} tone="success" />

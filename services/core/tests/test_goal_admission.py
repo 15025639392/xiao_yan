@@ -499,3 +499,8 @@ def test_goal_admission_stats_include_24h_stability_breakdown():
         "dropped": 1,
     }
     assert stats["admitted_stability_24h_rate"] == 0.3333
+    assert stats["admitted_stability_alert"] == {
+        "level": "danger",
+        "warning_rate": 0.6,
+        "danger_rate": 0.35,
+    }

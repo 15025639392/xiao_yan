@@ -221,6 +221,11 @@ def test_get_goal_admission_stats_returns_current_snapshot():
             "dropped": 0,
         }
         assert body["admitted_stability_24h_rate"] is None
+        assert body["admitted_stability_alert"] == {
+            "level": "unknown",
+            "warning_rate": 0.6,
+            "danger_rate": 0.35,
+        }
     finally:
         app.dependency_overrides.clear()
 

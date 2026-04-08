@@ -271,3 +271,68 @@ def test_update_self_programming_config_rejects_empty_patch():
     response = client.put("/config/self-programming", json={})
     assert response.status_code == 400
     assert response.json()["detail"] == "at least one self-programming config field is required"
+
+
+def test_get_goal_admission_config_returns_defaults():
+    config = get_runtime_config()
+    original_warning = config.goal_admission_stability_warning_rate
+    original_danger = config.goal_admission_stability_danger_rate
+    try:
+        config.goal_admission_stability_warning_rate = 0.6
+        config.goal_admission_stability_danger_rate = 0.35
+        client = TestClient(app)
+        response = client.get("/config/goal-admission")
+        assert response.status_code == 200
+        assert response.json() == {
+            "stability_warning_rate": 0.6,
+            "stability_danger_rate": 0.35,
+        }
+    finally:
+        config.goal_admission_stability_warning_rate = original_warning
+        config.goal_admission_stability_danger_rate = original_danger
+
+
+def test_update_goal_admission_config_supports_patch():
+    config = get_runtime_config()
+    original_warning = config.goal_admission_stability_warning_rate
+    original_danger = config.goal_admission_stability_danger_rate
+    try:
+        config.goal_admission_stability_warning_rate = 0.6
+        config.goal_admission_stability_danger_rate = 0.35
+
+        client = TestClient(app)
+        response = client.put(
+            "/config/goal-admission",
+            json={
+                "stability_warning_rate": 0.7,
+                "stability_danger_rate": 0.4,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json() == {
+            "stability_warning_rate": 0.7,
+            "stability_danger_rate": 0.4,
+        }
+    finally:
+        config.goal_admission_stability_warning_rate = original_warning
+        config.goal_admission_stability_danger_rate = original_danger
+
+
+def test_update_goal_admission_config_rejects_invalid_threshold_order():
+    client = TestClient(app)
+    response = client.put(
+        "/config/goal-admission",
+        json={
+            "stability_warning_rate": 0.3,
+            "stability_danger_rate": 0.5,
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "stability_danger_rate must be <= stability_warning_rate"
+
+
+def test_update_goal_admission_config_rejects_empty_patch():
+    client = TestClient(app)
+    response = client.put("/config/goal-admission", json={})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "at least one goal-admission config field is required"

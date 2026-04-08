@@ -454,6 +454,11 @@ test("renders goal admission overview when admission stats are available", async
       dropped: 1,
     },
     admitted_stability_24h_rate: 0.625,
+    admitted_stability_alert: {
+      level: "warning",
+      warning_rate: 0.6,
+      danger_rate: 0.35,
+    },
     deferred_queue_size: 2,
     wip_limit: 2,
     thresholds: {
@@ -490,6 +495,9 @@ test("renders goal admission overview when admission stats are available", async
   expect(screen.getByText("当前并行上限 2 个目标，今天已有 1 次因 WIP 满载被延后。")).toBeInTheDocument();
   expect(screen.getByText("稳定 5，再次延后 2，再次拦截 1。")).toBeInTheDocument();
   expect(screen.getByText("24h 稳定率 62.5%（需关注）。")).toBeInTheDocument();
+  expect(
+    screen.getByText("⚠ 24h 稳定率低于健康线（当前 62.5%，告警线 35.0%，健康线 60.0%）。"),
+  ).toBeInTheDocument();
 });
 
 test("shows danger signal when 24h stability rate is too low", async () => {
@@ -507,6 +515,11 @@ test("shows danger signal when 24h stability rate is too low", async () => {
       dropped: 2,
     },
     admitted_stability_24h_rate: 0.25,
+    admitted_stability_alert: {
+      level: "danger",
+      warning_rate: 0.6,
+      danger_rate: 0.35,
+    },
     deferred_queue_size: 1,
     wip_limit: 2,
     thresholds: {
@@ -532,6 +545,7 @@ test("shows danger signal when 24h stability rate is too low", async () => {
 
   const rateText = await screen.findByText("24h 稳定率 25.0%（告警）。");
   expect(rateText).toHaveClass("goals-admission__detail-text--danger");
+  expect(screen.getByText("🚨 24h 稳定率进入告警区（当前 25.0%，告警线 35.0%）。")).toBeInTheDocument();
 });
 
 test("renders candidate pool with deferred and blocked admission candidates", async () => {
@@ -669,6 +683,11 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
               dropped: 0,
             },
             admitted_stability_24h_rate: 0.5,
+            admitted_stability_alert: {
+              level: "warning",
+              warning_rate: 0.6,
+              danger_rate: 0.35,
+            },
             deferred_queue_size: 1,
             wip_limit: 2,
             thresholds: {

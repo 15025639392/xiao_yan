@@ -43,6 +43,16 @@ class SelfProgrammingConfigResponse(BaseModel):
     proactive_cooldown_minutes: int
 
 
+class GoalAdmissionConfigUpdateRequest(BaseModel):
+    stability_warning_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    stability_danger_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class GoalAdmissionConfigResponse(BaseModel):
+    stability_warning_rate: float
+    stability_danger_rate: float
+
+
 class ChatModelProviderItem(BaseModel):
     provider_id: str
     provider_name: str
@@ -146,6 +156,51 @@ def build_config_router() -> APIRouter:
         return SelfProgrammingConfigResponse(
             hard_failure_cooldown_minutes=config.self_programming_hard_failure_cooldown_minutes,
             proactive_cooldown_minutes=config.self_programming_proactive_cooldown_minutes,
+        )
+
+    @router.get("/config/goal-admission")
+    def get_goal_admission_config() -> GoalAdmissionConfigResponse:
+        config = get_runtime_config()
+        return GoalAdmissionConfigResponse(
+            stability_warning_rate=config.goal_admission_stability_warning_rate,
+            stability_danger_rate=config.goal_admission_stability_danger_rate,
+        )
+
+    @router.put("/config/goal-admission")
+    def update_goal_admission_config(
+        request: GoalAdmissionConfigUpdateRequest,
+    ) -> GoalAdmissionConfigResponse:
+        if request.stability_warning_rate is None and request.stability_danger_rate is None:
+            raise HTTPException(
+                status_code=400,
+                detail="at least one goal-admission config field is required",
+            )
+
+        config = get_runtime_config()
+        next_warning = (
+            config.goal_admission_stability_warning_rate
+            if request.stability_warning_rate is None
+            else float(request.stability_warning_rate)
+        )
+        next_danger = (
+            config.goal_admission_stability_danger_rate
+            if request.stability_danger_rate is None
+            else float(request.stability_danger_rate)
+        )
+        if next_danger > next_warning:
+            raise HTTPException(
+                status_code=400,
+                detail="stability_danger_rate must be <= stability_warning_rate",
+            )
+
+        if request.stability_warning_rate is not None:
+            config.goal_admission_stability_warning_rate = request.stability_warning_rate
+        if request.stability_danger_rate is not None:
+            config.goal_admission_stability_danger_rate = request.stability_danger_rate
+
+        return GoalAdmissionConfigResponse(
+            stability_warning_rate=config.goal_admission_stability_warning_rate,
+            stability_danger_rate=config.goal_admission_stability_danger_rate,
         )
 
     @router.get("/config/chat-models")

@@ -24,6 +24,8 @@ class RuntimeConfig:
         instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
         instance._self_programming_hard_failure_cooldown_minutes = 60
         instance._self_programming_proactive_cooldown_minutes = 720
+        instance._goal_admission_stability_warning_rate = 0.6
+        instance._goal_admission_stability_danger_rate = 0.35
         instance._folder_permissions = {}
         return instance
 
@@ -44,6 +46,10 @@ class RuntimeConfig:
                 instance._self_programming_hard_failure_cooldown_minutes = 60
             if not hasattr(instance, "_self_programming_proactive_cooldown_minutes"):
                 instance._self_programming_proactive_cooldown_minutes = 720
+            if not hasattr(instance, "_goal_admission_stability_warning_rate"):
+                instance._goal_admission_stability_warning_rate = 0.6
+            if not hasattr(instance, "_goal_admission_stability_danger_rate"):
+                instance._goal_admission_stability_danger_rate = 0.35
             if not hasattr(instance, "_folder_permissions") or not isinstance(instance._folder_permissions, dict):
                 instance._folder_permissions = {}
 
@@ -120,6 +126,26 @@ class RuntimeConfig:
     def self_programming_proactive_cooldown_minutes(self, value: int) -> None:
         with self._lock:
             self._self_programming_proactive_cooldown_minutes = max(1, min(7 * 24 * 60, int(value)))
+
+    @property
+    def goal_admission_stability_warning_rate(self) -> float:
+        with self._lock:
+            return self._goal_admission_stability_warning_rate
+
+    @goal_admission_stability_warning_rate.setter
+    def goal_admission_stability_warning_rate(self, value: float) -> None:
+        with self._lock:
+            self._goal_admission_stability_warning_rate = max(0.0, min(1.0, float(value)))
+
+    @property
+    def goal_admission_stability_danger_rate(self) -> float:
+        with self._lock:
+            return self._goal_admission_stability_danger_rate
+
+    @goal_admission_stability_danger_rate.setter
+    def goal_admission_stability_danger_rate(self, value: float) -> None:
+        with self._lock:
+            self._goal_admission_stability_danger_rate = max(0.0, min(1.0, float(value)))
 
     def list_folder_permissions(self) -> list[tuple[str, FolderAccessLevel]]:
         with self._lock:

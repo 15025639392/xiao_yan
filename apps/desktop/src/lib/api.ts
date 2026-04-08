@@ -124,6 +124,11 @@ export type SelfProgrammingRuntimeConfig = {
   proactive_cooldown_minutes: number;
 };
 
+export type GoalAdmissionRuntimeConfig = {
+  stability_warning_rate: number;
+  stability_danger_rate: number;
+};
+
 export type BeingState = {
   mode: "awake" | "sleeping";
   focus_mode: "sleeping" | "morning_plan" | "autonomy" | "self_programming";
@@ -250,6 +255,11 @@ export type GoalAdmissionStats = {
     dropped: number;
   };
   admitted_stability_24h_rate: number | null;
+  admitted_stability_alert?: {
+    level: "healthy" | "warning" | "danger" | "unknown";
+    warning_rate: number;
+    danger_rate: number;
+  };
   deferred_queue_size: number;
   wip_limit: number;
   thresholds: GoalAdmissionThresholds;
@@ -499,6 +509,18 @@ export function updateSelfProgrammingConfig(
   patch: Partial<SelfProgrammingRuntimeConfig>,
 ): Promise<SelfProgrammingRuntimeConfig> {
   return put<SelfProgrammingRuntimeConfig>("/config/self-programming", patch);
+}
+
+/** 获取目标准入稳定性阈值配置 */
+export function fetchGoalAdmissionConfig(): Promise<GoalAdmissionRuntimeConfig> {
+  return get<GoalAdmissionRuntimeConfig>("/config/goal-admission");
+}
+
+/** 更新目标准入稳定性阈值配置 */
+export function updateGoalAdmissionConfig(
+  patch: Partial<GoalAdmissionRuntimeConfig>,
+): Promise<GoalAdmissionRuntimeConfig> {
+  return put<GoalAdmissionRuntimeConfig>("/config/goal-admission", patch);
 }
 
 // ══════════════════════════════════════════════
