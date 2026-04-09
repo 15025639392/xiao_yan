@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import { isTauriRuntime, toTauriErrorMessage } from "./fsAccess";
+import { toTauriErrorMessage } from "./fsAccess";
 
 export type CodexDelegateCommandResult = {
   command: string;
@@ -33,14 +33,25 @@ export type CodexDelegateResponse = {
   timed_out: boolean;
 };
 
-function ensureTauriRuntime(): void {
-  if (!isTauriRuntime()) {
-    throw new Error("Tauri runtime not detected");
+function normalizeCodexDelegateInvokeError(raw: string): string {
+  const message = raw.trim();
+  if (!message) {
+    return "调用 codex_run_delegate 失败：未返回可读错误（请重启客户端后重试）";
   }
+
+  if (
+    /(__TAURI__|__TAURI_INTERNALS__|__TAURI_IPC__)/i.test(message) ||
+    /tauri runtime not detected/i.test(message) ||
+    /failed to deserialize ipc|ipc channel/i.test(message) ||
+    /invoke is not a function/i.test(message)
+  ) {
+    return `当前环境不是 Tauri 宿主，无法运行真实 Codex delegate (${message})`;
+  }
+
+  return message;
 }
 
 export async function runCodexDelegate(request: CodexDelegateRequest): Promise<CodexDelegateResponse> {
-  ensureTauriRuntime();
   try {
     return await invoke<CodexDelegateResponse>("codex_run_delegate", {
       request: {
@@ -52,6 +63,6 @@ export async function runCodexDelegate(request: CodexDelegateRequest): Promise<C
       },
     });
   } catch (error) {
-    throw new Error(toTauriErrorMessage(error));
+    throw new Error(normalizeCodexDelegateInvokeError(toTauriErrorMessage(error)));
   }
 }

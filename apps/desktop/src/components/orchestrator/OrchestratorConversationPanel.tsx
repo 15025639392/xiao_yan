@@ -17,6 +17,7 @@ type OrchestratorConversationPanelProps = {
   onCancelSession: (sessionId: string) => Promise<void>;
   onActivateSession: (sessionId: string) => Promise<void>;
   onSendQuickMessage: (message: string) => Promise<void> | void;
+  onClearConsole: () => void;
   metrics: { total: number; done: number; running: number; failed: number };
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
@@ -35,6 +36,7 @@ export function OrchestratorConversationPanel({
   onCancelSession,
   onActivateSession,
   onSendQuickMessage,
+  onClearConsole,
   metrics,
   onToggleSidebar,
   sidebarOpen,
@@ -105,14 +107,28 @@ export function OrchestratorConversationPanel({
             <span className="orchestrator-chat-context__progress-text">{metrics.done}/{metrics.total || 0} 任务</span>
           </div>
           
-          <button 
-            className="orchestrator-chat-context__toggle"
-            onClick={onToggleSidebar}
-            type="button"
-            title={sidebarOpen ? "收起详情" : "展开详情"}
-          >
-            {sidebarOpen ? "📊" : "📈"}
-          </button>
+          <div className="orchestrator-chat-context__actions">
+            {messages.length > 0 ? (
+              <button
+                className="orchestrator-chat-context__action"
+                onClick={onClearConsole}
+                type="button"
+                title="清空控制台内容"
+                aria-label="清空控制台内容"
+              >
+                清空控制台
+              </button>
+            ) : null}
+            <button
+              className="orchestrator-chat-context__toggle"
+              onClick={onToggleSidebar}
+              type="button"
+              title={sidebarOpen ? "收起高级信息" : "展开高级信息"}
+              aria-label={sidebarOpen ? "收起高级信息" : "展开高级信息"}
+            >
+              {sidebarOpen ? "📊" : "📈"}
+            </button>
+          </div>
         </div>
         {messages.length === 0 ? (
           <div className="chat-page__empty">

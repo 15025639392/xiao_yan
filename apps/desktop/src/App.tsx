@@ -22,6 +22,7 @@ import {
   cancelOrchestratorSession,
   chat,
   chatWithOrchestrator,
+  clearOrchestratorMessages,
   completeOrchestratorDelegate,
   createOrchestratorSession,
   fetchOrchestratorMessages,
@@ -34,8 +35,8 @@ import {
   fetchWorld,
   generateOrchestratorPlan,
   rejectOrchestratorPlan,
+  removeChatFolderPermission,
   resumeOrchestratorSession,
-  submitOrchestratorDirective,
   resumeChat,
   sleep,
   tickOrchestratorScheduler,
@@ -59,10 +60,24 @@ import { MemoryPage } from "./pages/MemoryPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { CapabilitiesPage } from "./pages/CapabilitiesPage";
 import { OrchestratorPage } from "./pages/OrchestratorPage";
-import { buildFolderPermissionPlan, loadImportedProjectRegistry } from "./lib/projects";
+import {
+  addImportedProject,
+  buildFolderPermissionPlan,
+  loadImportedProjectRegistry,
+  normalizeProjectPath,
+  removeImportedProject,
+  saveImportedProjectRegistry,
+  setActiveImportedProject,
+  type ImportedProjectRegistry,
+} from "./lib/projects";
 import { buildDelegateDebugInfo } from "./lib/orchestratorDelegateDebug";
-import { isTauriRuntime } from "./lib/tauri/fsAccess";
 import { runCodexDelegate } from "./lib/tauri/codexDelegate";
+import {
+  fsClearAllowedDirectory,
+  fsSetAllowedDirectory,
+  isTauriRuntime,
+  pickDirectory,
+} from "./lib/tauri";
 import {
   appendOrchestratorDelta,
   finalizeOrchestratorMessage,
@@ -133,6 +148,11 @@ export default function App() {
     defaultOrchestratorScheduler,
   );
   const [orchestratorMessagesBySession, setOrchestratorMessagesBySession] = useState<Record<string, OrchestratorMessage[]>>({});
+  const [importedProjectRegistry, setImportedProjectRegistry] = useState<ImportedProjectRegistry>(() =>
+    loadImportedProjectRegistry(),
+  );
+  const [isUpdatingProjects, setIsUpdatingProjects] = useState(false);
+  const [projectControlError, setProjectControlError] = useState("");
   const [persona, setPersona] = useState<PersonaProfile | null>(null);
   const [draft, setDraft] = useState("");
   const [orchestratorDraft, setOrchestratorDraft] = useState("");
@@ -154,8 +174,7 @@ export default function App() {
   const activeOrchestratorSessionId = state.orchestrator_session?.session_id ?? sessionList[0]?.session_id ?? null;
   const activeOrchestratorMessages =
     activeOrchestratorSessionId == null ? [] : orchestratorMessagesBySession[activeOrchestratorSessionId] ?? [];
-  const importedProjects = loadImportedProjectRegistry();
-  const activeImportedProjectPath = importedProjects.active_project_path;
+  const activeImportedProjectPath = importedProjectRegistry.active_project_path;
 
   useEffect(() => {
     if (hasAttemptedImportedProjectRestoreRef.current) {
@@ -163,13 +182,12 @@ export default function App() {
     }
     hasAttemptedImportedProjectRestoreRef.current = true;
 
-    const registry = loadImportedProjectRegistry();
-    if (registry.projects.length === 0) {
+    if (importedProjectRegistry.projects.length === 0) {
       return;
     }
 
     let cancelled = false;
-    void restoreImportedProjectsToCore(registry).catch((err) => {
+    void restoreImportedProjectsToCore(importedProjectRegistry).catch((err) => {
       if (cancelled) {
         return;
       }
@@ -180,7 +198,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [importedProjectRegistry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -522,13 +540,9 @@ export default function App() {
 
 	      const delegateRunId = runningTask.delegate_run_id;
 
-	      delegateRunIdsRef.current.add(delegateRunId);
-	      void (async () => {
+		      delegateRunIdsRef.current.add(delegateRunId);
+		      void (async () => {
 	        try {
-          if (!isTauriRuntime()) {
-            throw new Error("当前环境不是 Tauri 宿主，无法运行真实 Codex delegate");
-          }
-
           const delegateRequest = extractDelegateRequest(runningTask);
           const delegatePrompt = extractDelegatePrompt(runningTask, delegateRequest, session);
           const delegateTimeoutSeconds = resolveDelegateTimeoutSeconds(runningTask);
@@ -540,32 +554,44 @@ export default function App() {
 	            timeoutSeconds: delegateTimeoutSeconds,
 	          });
 
-	          await completeOrchestratorDelegate({
-	            session_id: session.session_id,
-	            task_id: runningTask.task_id,
-	            delegate_run_id: delegateRunId,
-	            result: {
-              status: delegateResult.status,
-              summary: delegateResult.summary,
-              changed_files: delegateResult.changed_files,
-              command_results: delegateResult.command_results.map((item) => ({
-                command: item.command,
-                success: item.success,
-                exit_code: item.exit_code,
-                stdout: item.stdout,
-                stderr: item.stderr,
-                duration_ms: item.duration_ms,
-              })),
-              followup_needed: delegateResult.followup_needed,
-              error: delegateResult.error ?? null,
-              debug: buildDelegateDebugInfo(delegateResult.stdout, delegateResult.stderr) ?? null,
-            },
-          });
-          await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
-        } catch (err) {
-          const message = err instanceof Error ? err.message : "Codex delegate 执行失败";
-          try {
-	            await completeOrchestratorDelegate({
+		          try {
+		            await completeOrchestratorDelegate({
+		              session_id: session.session_id,
+		              task_id: runningTask.task_id,
+		              delegate_run_id: delegateRunId,
+		              result: {
+		                status: delegateResult.status,
+		                summary: delegateResult.summary,
+		                changed_files: delegateResult.changed_files,
+		                command_results: delegateResult.command_results.map((item) => ({
+		                  command: item.command,
+		                  success: item.success,
+		                  exit_code: item.exit_code,
+		                  stdout: item.stdout,
+		                  stderr: item.stderr,
+		                  duration_ms: item.duration_ms,
+		                })),
+		                followup_needed: delegateResult.followup_needed,
+		                error: delegateResult.error ?? null,
+		                debug: buildDelegateDebugInfo(delegateResult.stdout, delegateResult.stderr) ?? null,
+		              },
+		            });
+		          } catch (completeError) {
+		            if (isRecoverableDelegateCompletionConflict(completeError)) {
+		              await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+		              return;
+		            }
+		            throw completeError;
+		          }
+		          await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+	        } catch (err) {
+	          if (isRecoverableDelegateCompletionConflict(err)) {
+	            await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+	            return;
+	          }
+	          const message = err instanceof Error ? err.message : "Codex delegate 执行失败";
+	          try {
+		            await completeOrchestratorDelegate({
 	              session_id: session.session_id,
 	              task_id: runningTask.task_id,
 	              delegate_run_id: delegateRunId,
@@ -576,13 +602,17 @@ export default function App() {
                 command_results: [],
                 followup_needed: [],
                 error: message,
-              },
-            });
-            await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
-          } catch (completeError) {
-            const merged =
-              completeError instanceof Error
-                ? `${message}; ${completeError.message}`
+		              },
+		            });
+	            await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+	          } catch (completeError) {
+	            if (isRecoverableDelegateCompletionConflict(completeError)) {
+	              await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+	              return;
+	            }
+	            const merged =
+	              completeError instanceof Error
+	                ? `${message}; ${completeError.message}`
                 : message;
             setError(merged);
             return;
@@ -648,7 +678,7 @@ export default function App() {
     try {
       if (isExplicitOrchestratorEntry(content)) {
         if (!activeImportedProjectPath) {
-          throw new Error("进入主控前需要先在聊天配置里导入并激活一个项目");
+          throw new Error("进入主控前需要先在主控工作台导入并激活一个项目");
         }
 
         await ensureOrchestratorProjectPermission(activeImportedProjectPath);
@@ -800,16 +830,138 @@ export default function App() {
     }
   }
 
-  async function handleSubmitOrchestratorDirective(sessionId: string, message: string) {
-    try {
-      setError("");
-      await submitOrchestratorDirective(sessionId, message);
-      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "主控指令提交失败";
-      setError(detail);
-      throw err instanceof Error ? err : new Error(detail);
+  function applyImportedProjectRegistry(nextRegistry: ImportedProjectRegistry) {
+    setImportedProjectRegistry(nextRegistry);
+    saveImportedProjectRegistry(nextRegistry);
+  }
+
+  async function syncImportedProjectPermissions(
+    previousRegistry: ImportedProjectRegistry,
+    nextRegistry: ImportedProjectRegistry,
+  ) {
+    const nextPlan = buildFolderPermissionPlan(nextRegistry);
+    for (const permission of nextPlan) {
+      await upsertChatFolderPermission(permission.path, permission.access_level);
     }
+
+    const previousPaths = new Set(previousRegistry.projects.map((project) => normalizeProjectPath(project.path)));
+    const nextPaths = new Set(nextRegistry.projects.map((project) => normalizeProjectPath(project.path)));
+    for (const path of previousPaths) {
+      if (!path || nextPaths.has(path)) {
+        continue;
+      }
+      await removeChatFolderPermission(path);
+    }
+  }
+
+  async function handleImportProjectToOrchestrator() {
+    if (!isTauriRuntime()) {
+      setProjectControlError("当前环境不是 Tauri 宿主，无法导入本地项目。");
+      return;
+    }
+    setProjectControlError("");
+    setIsUpdatingProjects(true);
+    try {
+      const selected = await pickDirectory();
+      if (!selected) {
+        return;
+      }
+
+      const previousRegistry = importedProjectRegistry;
+      const nextRegistry = addImportedProject(previousRegistry, selected);
+      const normalized = await fsSetAllowedDirectory(selected);
+      const appliedRegistry = setActiveImportedProject(nextRegistry, normalized);
+      await syncImportedProjectPermissions(previousRegistry, appliedRegistry);
+      applyImportedProjectRegistry(appliedRegistry);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "导入项目失败";
+      setProjectControlError(detail);
+      setError(detail);
+    } finally {
+      setIsUpdatingProjects(false);
+    }
+  }
+
+  async function handleActivateOrchestratorProject(path: string) {
+    if (!isTauriRuntime()) {
+      setProjectControlError("当前环境不是 Tauri 宿主，无法切换主控项目。");
+      return;
+    }
+    setProjectControlError("");
+    setIsUpdatingProjects(true);
+    try {
+      const normalizedPath = normalizeProjectPath(path);
+      const previousRegistry = importedProjectRegistry;
+      const nextRegistry = setActiveImportedProject(previousRegistry, normalizedPath);
+      if (nextRegistry.active_project_path === previousRegistry.active_project_path) {
+        return;
+      }
+
+      await fsSetAllowedDirectory(normalizedPath);
+      await syncImportedProjectPermissions(previousRegistry, nextRegistry);
+      applyImportedProjectRegistry(nextRegistry);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "切换主控项目失败";
+      setProjectControlError(detail);
+      setError(detail);
+    } finally {
+      setIsUpdatingProjects(false);
+    }
+  }
+
+  async function handleRemoveOrchestratorProject(path: string) {
+    if (!isTauriRuntime()) {
+      setProjectControlError("当前环境不是 Tauri 宿主，无法移除项目。");
+      return;
+    }
+    setProjectControlError("");
+    setIsUpdatingProjects(true);
+    try {
+      const normalizedPath = normalizeProjectPath(path);
+      const previousRegistry = importedProjectRegistry;
+      const previousActivePath = normalizeProjectPath(previousRegistry.active_project_path ?? "");
+      const nextRegistry = removeImportedProject(previousRegistry, normalizedPath);
+      if (nextRegistry.projects.length === previousRegistry.projects.length) {
+        return;
+      }
+
+      if (previousActivePath === normalizedPath) {
+        if (nextRegistry.active_project_path) {
+          await fsSetAllowedDirectory(nextRegistry.active_project_path);
+        } else {
+          await fsClearAllowedDirectory();
+        }
+      }
+
+      await syncImportedProjectPermissions(previousRegistry, nextRegistry);
+      applyImportedProjectRegistry(nextRegistry);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "移除项目失败";
+      setProjectControlError(detail);
+      setError(detail);
+    } finally {
+      setIsUpdatingProjects(false);
+    }
+  }
+
+  function handleClearOrchestratorConsole() {
+    const sessionId = activeOrchestratorSessionId;
+    if (!sessionId) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        setError("");
+        await clearOrchestratorMessages(sessionId);
+        setOrchestratorMessagesBySession((current) => ({
+          ...current,
+          [sessionId]: [],
+        }));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "清空主控控制台失败");
+      }
+    })();
   }
 
   async function sendOrchestratorMessage(
@@ -1109,9 +1261,16 @@ export default function App() {
             onApprovePlan={handleApproveOrchestratorPlan}
             onRejectPlan={handleRejectOrchestratorPlan}
             onResumeSession={handleResumeOrchestratorSession}
-            onSubmitDirective={handleSubmitOrchestratorDirective}
             onCancelSession={handleCancelOrchestrator}
             onSendQuickMessage={handleSendOrchestratorQuickMessage}
+            onClearConsole={handleClearOrchestratorConsole}
+            projectRegistry={importedProjectRegistry}
+            isUpdatingProjects={isUpdatingProjects}
+            projectError={projectControlError}
+            tauriSupported={isTauriRuntime()}
+            onImportProject={handleImportProjectToOrchestrator}
+            onActivateProject={handleActivateOrchestratorProject}
+            onRemoveProject={handleRemoveOrchestratorProject}
           />
         ) : route === "tools" ? (
           <ToolPanel />
@@ -1280,6 +1439,17 @@ function extractDelegatePrompt(
 function resolveDelegateTimeoutSeconds(task: OrchestratorTask): number {
   const requested = DELEGATE_TIMEOUT_SECONDS_BY_KIND[task.kind] ?? DELEGATE_TIMEOUT_SECONDS_FALLBACK;
   return Math.max(DELEGATE_TIMEOUT_SECONDS_MIN, Math.min(DELEGATE_TIMEOUT_SECONDS_MAX, requested));
+}
+
+function isRecoverableDelegateCompletionConflict(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  if (!message.includes("request failed: 409")) {
+    return false;
+  }
+  return true;
 }
 
 function upsertOrchestratorSession(

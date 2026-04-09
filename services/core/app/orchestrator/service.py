@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 from typing import Callable
@@ -41,6 +41,8 @@ VerificationRunner = Callable[[str, list[str]], OrchestratorVerification]
 
 
 class OrchestratorService:
+    _stuck_verifying_timeout = timedelta(minutes=15)
+
     def __init__(
         self,
         repository: OrchestratorSessionRepository,
@@ -88,7 +90,8 @@ class OrchestratorService:
         return saved
 
     def list_sessions(self) -> list[OrchestratorSession]:
-        return self._repository.list_sessions()
+        sessions = self._repository.list_sessions()
+        return [self._recover_stuck_verifying_session(session) for session in sessions]
 
     def activate_session(self, session_id: str, *, hub: AppRealtimeHub | None = None) -> OrchestratorSession:
         session = self._get_session(session_id)
@@ -588,7 +591,16 @@ class OrchestratorService:
             self._sync_state(verifying, current_thought="主控正在统一执行计划内验收命令。")
         self._publish_session_updated(verifying, hub)
 
-        verification = self._verification_runner(verifying.project_path, commands)
+        try:
+            verification = self._verification_runner(verifying.project_path, commands)
+        except Exception as error:  # noqa: BLE001 - guard session state from being stuck in verifying forever.
+            message = str(error).strip() or error.__class__.__name__
+            verification = OrchestratorVerification(
+                commands=commands,
+                command_results=[],
+                passed=False,
+                summary=f"统一验收执行异常：{message}",
+            )
         completed = verifying.model_copy(
             update={
                 "verification": verification,
@@ -738,7 +750,19 @@ class OrchestratorService:
         if session.plan is None:
             return None
 
-        should_reset_verify_stage = session.verification is not None and not session.verification.passed
+        should_reset_verify_stage = (
+            (session.verification is not None and not session.verification.passed)
+            or (
+                session.status == OrchestratorSessionStatus.FAILED
+                and session.coordination is not None
+                and session.coordination.failure_category == OrchestratorFailureCategory.VERIFICATION_FAILURE
+            )
+            or (
+                session.status == OrchestratorSessionStatus.FAILED
+                and session.verification is None
+                and self._all_tasks_succeeded(session)
+            )
+        )
         updated_tasks: list[OrchestratorTask] = []
         reset_count = 0
 
@@ -963,7 +987,44 @@ class OrchestratorService:
         session = self._repository.get(session_id)
         if session is None:
             raise ValueError("orchestrator session not found")
-        return session
+        return self._recover_stuck_verifying_session(session)
+
+    def _recover_stuck_verifying_session(self, session: OrchestratorSession) -> OrchestratorSession:
+        if session.status != OrchestratorSessionStatus.VERIFYING:
+            return session
+        if session.verification is not None:
+            return session
+        if not self._all_tasks_succeeded(session):
+            return session
+
+        now = self._now()
+        if now - session.updated_at < self._stuck_verifying_timeout:
+            return session
+
+        summary = "统一验收状态疑似中断（超过 15 分钟无更新），已自动标记为失败，请恢复推进重跑验收。"
+        recovered = session.model_copy(
+            update={
+                "status": OrchestratorSessionStatus.FAILED,
+                "coordination": OrchestratorSessionCoordination(
+                    mode=OrchestratorCoordinationMode.FAILED,
+                    priority_score=self._priority_score(session),
+                    waiting_reason=summary,
+                    failure_category=OrchestratorFailureCategory.VERIFICATION_FAILURE,
+                ),
+                "summary": summary,
+                "updated_at": now,
+            }
+        )
+        saved = self._repository.save(recovered)
+        if self._is_active_session(saved.session_id):
+            self._sync_state(saved, current_thought="主控统一验收疑似中断，已自动标记为失败，等待恢复。")
+        if self._conversation_service is not None:
+            self._conversation_service.append_system_event(
+                saved,
+                summary=summary,
+                blocks=[self._conversation_service.build_session_status_block(saved)],
+            )
+        return saved
 
     def _get_task(self, session: OrchestratorSession, task_id: str) -> OrchestratorTask:
         if session.plan is None:

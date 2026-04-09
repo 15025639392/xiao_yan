@@ -151,9 +151,30 @@ function buildProps(overrides: Partial<OrchestratorPageProps> = {}): Orchestrato
     onApprovePlan: vi.fn().mockResolvedValue(undefined),
     onRejectPlan: vi.fn().mockResolvedValue(undefined),
     onResumeSession: vi.fn().mockResolvedValue(undefined),
-    onSubmitDirective: vi.fn().mockResolvedValue(undefined),
     onCancelSession: vi.fn().mockResolvedValue(undefined),
     onSendQuickMessage: vi.fn().mockResolvedValue(undefined),
+    onClearConsole: vi.fn(),
+    projectRegistry: {
+      projects: [
+        {
+          path: "/tmp/demo-project",
+          name: "demo-project",
+          imported_at: "2026-04-08T10:00:00.000Z",
+        },
+        {
+          path: "/tmp/demo-project-2",
+          name: "demo-project-2",
+          imported_at: "2026-04-08T11:00:00.000Z",
+        },
+      ],
+      active_project_path: "/tmp/demo-project",
+    },
+    isUpdatingProjects: false,
+    projectError: "",
+    tauriSupported: true,
+    onImportProject: vi.fn().mockResolvedValue(undefined),
+    onActivateProject: vi.fn().mockResolvedValue(undefined),
+    onRemoveProject: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -177,8 +198,48 @@ test("expands advanced info to show context and side tabs", () => {
 
   expect(screen.getByRole("button", { name: "收起高级信息" })).toBeInTheDocument();
   expect(screen.getByText("当前焦点")).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "项目主控" })).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: "计划" })).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: "会话池" })).toBeInTheDocument();
+});
+
+test("clears console content from chat-first header", () => {
+  const onClearConsole = vi.fn();
+  render(<OrchestratorPage {...buildProps({ onClearConsole })} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "清空控制台内容" }));
+
+  expect(onClearConsole).toHaveBeenCalledTimes(1);
+});
+
+test("manages imported projects in orchestrator sidebar", async () => {
+  const onImportProject = vi.fn().mockResolvedValue(undefined);
+  const onActivateProject = vi.fn().mockResolvedValue(undefined);
+  const onRemoveProject = vi.fn().mockResolvedValue(undefined);
+  render(
+    <OrchestratorPage
+      {...buildProps({
+        onImportProject,
+        onActivateProject,
+        onRemoveProject,
+      })}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "展开高级信息" }));
+  fireEvent.click(screen.getByRole("tab", { name: "项目主控" }));
+  fireEvent.click(screen.getByRole("button", { name: "导入项目" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "移除" })[0]);
+
+  await waitFor(() => {
+    expect(onImportProject).toHaveBeenCalledTimes(1);
+    expect(onRemoveProject).toHaveBeenCalledTimes(1);
+  });
+
+  fireEvent.click(screen.getAllByRole("button", { name: "设为主控" })[1]);
+  await waitFor(() => {
+    expect(onActivateProject).toHaveBeenCalledWith("/tmp/demo-project-2");
+  });
 });
 
 test("forwards approve action from chat-first header", () => {

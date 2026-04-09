@@ -35,6 +35,9 @@ class OrchestratorConversationService:
     def list_messages(self, session_id: str) -> list[OrchestratorMessage]:
         return self._repository.list_messages(session_id)
 
+    def clear_messages(self, session_id: str) -> int:
+        return self._repository.clear_session(session_id)
+
     def append_user_message(self, session_id: str, message: str, *, hub: AppRealtimeHub | None = None) -> OrchestratorMessage:
         return self._append_message(
             OrchestratorMessage(

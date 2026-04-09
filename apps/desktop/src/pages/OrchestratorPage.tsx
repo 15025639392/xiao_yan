@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 
 import { OrchestratorConversationPanel } from "../components/orchestrator/OrchestratorConversationPanel";
 import type { OrchestratorMessage, OrchestratorSchedulerSnapshot, OrchestratorSession } from "../lib/api";
-import { getProjectNameFromPath } from "../lib/projects";
+import type { ImportedProjectRegistry } from "../lib/projects";
+import { getProjectNameFromPath, normalizeProjectPath } from "../lib/projects";
 
 export type OrchestratorPageProps = {
   sessions: OrchestratorSession[];
@@ -18,12 +19,19 @@ export type OrchestratorPageProps = {
   onApprovePlan: (sessionId: string) => Promise<void>;
   onRejectPlan: (sessionId: string) => Promise<void>;
   onResumeSession: (sessionId: string) => Promise<void>;
-  onSubmitDirective: (sessionId: string, message: string) => Promise<void>;
   onCancelSession: (sessionId: string) => Promise<void>;
   onSendQuickMessage: (message: string) => Promise<void> | void;
+  onClearConsole: () => void;
+  projectRegistry: ImportedProjectRegistry;
+  isUpdatingProjects: boolean;
+  projectError: string;
+  tauriSupported: boolean;
+  onImportProject: () => Promise<void>;
+  onActivateProject: (path: string) => Promise<void>;
+  onRemoveProject: (path: string) => Promise<void>;
 };
 
-type SidebarTab = "plan" | "tasks" | "verification" | "sessions";
+type SidebarTab = "projects" | "plan" | "tasks" | "verification" | "sessions";
 
 export function OrchestratorPage({
   sessions,
@@ -41,9 +49,17 @@ export function OrchestratorPage({
   onResumeSession,
   onCancelSession,
   onSendQuickMessage,
+  onClearConsole,
+  projectRegistry,
+  isUpdatingProjects,
+  projectError,
+  tauriSupported,
+  onImportProject,
+  onActivateProject,
+  onRemoveProject,
 }: OrchestratorPageProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<SidebarTab>("plan");
+  const [activeTab, setActiveTab] = useState<SidebarTab>("projects");
   const session = sessions.find((item) => item.session_id === activeSessionId) ?? sessions[0] ?? null;
 
   const metrics = useMemo(() => {
@@ -70,6 +86,18 @@ export function OrchestratorPage({
             <strong>{activeProjectPath ? getProjectNameFromPath(activeProjectPath) : "未选择项目"}</strong>
           </div>
         </div>
+        <div className="orchestrator-empty-card">
+          <div className="orchestrator-empty-card__badge">项目主控</div>
+          <ProjectsSidebar
+            registry={projectRegistry}
+            isUpdating={isUpdatingProjects}
+            projectError={projectError}
+            tauriSupported={tauriSupported}
+            onImportProject={onImportProject}
+            onActivateProject={onActivateProject}
+            onRemoveProject={onRemoveProject}
+          />
+        </div>
       </section>
     );
   }
@@ -90,6 +118,7 @@ export function OrchestratorPage({
           onCancelSession={onCancelSession}
           onActivateSession={onActivateSession}
           onSendQuickMessage={onSendQuickMessage}
+          onClearConsole={onClearConsole}
           metrics={metrics}
           onToggleSidebar={() => setAdvancedOpen(!advancedOpen)}
           sidebarOpen={advancedOpen}
@@ -127,6 +156,7 @@ export function OrchestratorPage({
         <aside className="orchestrator-chat-sidebar">
           <div className="orchestrator-chat-sidebar__tabs" role="tablist" aria-label="主控侧栏">
             {[
+              ["projects", "项目主控"],
               ["plan", "计划"],
               ["tasks", "任务"],
               ["verification", "验收"],
@@ -146,6 +176,17 @@ export function OrchestratorPage({
           </div>
 
           <div className="orchestrator-chat-sidebar__panel">
+            {activeTab === "projects" ? (
+              <ProjectsSidebar
+                registry={projectRegistry}
+                isUpdating={isUpdatingProjects}
+                projectError={projectError}
+                tauriSupported={tauriSupported}
+                onImportProject={onImportProject}
+                onActivateProject={onActivateProject}
+                onRemoveProject={onRemoveProject}
+              />
+            ) : null}
             {activeTab === "plan" ? <PlanSidebar session={session} /> : null}
             {activeTab === "tasks" ? <TasksSidebar session={session} /> : null}
             {activeTab === "verification" ? <VerificationSidebar session={session} /> : null}
@@ -155,6 +196,94 @@ export function OrchestratorPage({
           </div>
         </aside>
       ) : null}
+    </div>
+  );
+}
+
+function ProjectsSidebar({
+  registry,
+  isUpdating,
+  projectError,
+  tauriSupported,
+  onImportProject,
+  onActivateProject,
+  onRemoveProject,
+}: {
+  registry: ImportedProjectRegistry;
+  isUpdating: boolean;
+  projectError: string;
+  tauriSupported: boolean;
+  onImportProject: () => Promise<void>;
+  onActivateProject: (path: string) => Promise<void>;
+  onRemoveProject: (path: string) => Promise<void>;
+}) {
+  if (!tauriSupported) {
+    return <p className="orchestrator-empty">当前环境不是 Tauri 宿主，无法管理本地导入项目。</p>;
+  }
+
+  const activePath = normalizeProjectPath(registry.active_project_path ?? "");
+
+  return (
+    <div className="orchestrator-side-section">
+      <span className="orchestrator-side-section__label">项目主控</span>
+      <div className="orchestrator-projects__header">
+        <span className="orchestrator-projects__meta">
+          共导入 {registry.projects.length} 个项目
+        </span>
+        <button
+          type="button"
+          className="btn btn--primary btn--sm"
+          onClick={() => void onImportProject()}
+          disabled={isUpdating}
+        >
+          导入项目
+        </button>
+      </div>
+
+      {registry.projects.length === 0 ? (
+        <p className="orchestrator-empty">还没有导入项目，先选择一个项目文件夹。</p>
+      ) : (
+        <ul className="orchestrator-projects__list">
+          {registry.projects.map((project) => {
+            const normalizedPath = normalizeProjectPath(project.path);
+            const isActive = normalizedPath === activePath;
+            return (
+              <li key={normalizedPath} className={`orchestrator-projects__item ${isActive ? "is-active" : ""}`}>
+                <div className="orchestrator-projects__item-main">
+                  <strong>{project.name}</strong>
+                  <span className={`orchestrator-pill ${isActive ? "orchestrator-pill--running" : ""}`}>
+                    {isActive ? "主控" : "已导入"}
+                  </span>
+                </div>
+                <p className="orchestrator-projects__path" title={normalizedPath}>
+                  {normalizedPath}
+                </p>
+                <div className="orchestrator-projects__actions">
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => void onActivateProject(normalizedPath)}
+                    disabled={isUpdating || isActive}
+                  >
+                    设为主控
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    onClick={() => void onRemoveProject(normalizedPath)}
+                    disabled={isUpdating}
+                  >
+                    移除
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {projectError ? <p className="orchestrator-projects__error">{projectError}</p> : null}
+      <p className="orchestrator-projects__hint">项目权限策略：主控项目可读写，其他导入项目默认只读。</p>
     </div>
   );
 }

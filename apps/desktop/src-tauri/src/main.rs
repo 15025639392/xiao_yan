@@ -79,6 +79,108 @@ const CODEX_DEFAULT_TIMEOUT_SECONDS: u64 = 20 * 60;
 const CODEX_MAX_TIMEOUT_SECONDS: u64 = 60 * 60;
 const CODEX_STREAM_CAPTURE_MAX_BYTES: usize = 8 * 1024 * 1024;
 
+fn codex_binary_name() -> &'static str {
+    if cfg!(windows) {
+        "codex.exe"
+    } else {
+        "codex"
+    }
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+}
+
+fn common_gui_bin_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(home) = home_dir() {
+        dirs.push(home.join(".npm-global").join("bin"));
+        dirs.push(home.join(".local").join("bin"));
+        dirs.push(home.join(".cargo").join("bin"));
+        dirs.push(home.join(".volta").join("bin"));
+    }
+    dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    dirs.push(PathBuf::from("/usr/local/bin"));
+    dirs.push(PathBuf::from("/usr/bin"));
+    dirs
+}
+
+fn augment_process_path_for_gui() {
+    let mut desired_dirs = common_gui_bin_dirs();
+
+    if let Some(raw) = std::env::var_os("CODEX_BIN") {
+        let configured = PathBuf::from(raw);
+        if configured.is_file() {
+            if let Some(parent) = configured.parent() {
+                desired_dirs.insert(0, parent.to_path_buf());
+            }
+        }
+    }
+
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = std::env::split_paths(&existing).collect::<Vec<_>>();
+    let mut changed = false;
+
+    for dir in desired_dirs {
+        if !dir.is_dir() {
+            continue;
+        }
+        if paths.iter().any(|current| current == &dir) {
+            continue;
+        }
+        paths.insert(0, dir);
+        changed = true;
+    }
+
+    if changed {
+        if let Ok(joined) = std::env::join_paths(paths) {
+            std::env::set_var("PATH", joined);
+        }
+    }
+}
+
+fn resolve_codex_executable() -> Result<PathBuf, String> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    let binary_name = codex_binary_name();
+
+    if let Some(raw) = std::env::var_os("CODEX_BIN") {
+        let trimmed = raw.to_string_lossy().trim().to_string();
+        if !trimmed.is_empty() {
+            candidates.push(PathBuf::from(trimmed));
+        }
+    }
+
+    if let Some(path_var) = std::env::var_os("PATH") {
+        candidates.extend(std::env::split_paths(&path_var).map(|dir| dir.join(binary_name)));
+    }
+
+    candidates.extend(
+        common_gui_bin_dirs()
+            .into_iter()
+            .map(|dir| dir.join(binary_name)),
+    );
+
+    let mut dedup = HashSet::new();
+    let mut searched = Vec::new();
+    for candidate in candidates {
+        let key = candidate.to_string_lossy().to_string();
+        if !dedup.insert(key.clone()) {
+            continue;
+        }
+        searched.push(key);
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    let sample = searched.into_iter().take(8).collect::<Vec<_>>().join(", ");
+    Err(format!(
+        "codex binary not found. Install Codex CLI and ensure PATH is inherited by the Tauri app, or set CODEX_BIN to an absolute path. searched: {sample}"
+    ))
+}
+
 fn is_delegate_payload(value: &serde_json::Value) -> bool {
     let Some(object) = value.as_object() else {
         return false;
@@ -884,8 +986,9 @@ fn run_codex_delegate_blocking(
         .into_iter()
         .collect::<BTreeSet<String>>();
 
+    let codex_executable = resolve_codex_executable()?;
     let start = Instant::now();
-    let mut child = Command::new("codex")
+    let mut child = Command::new(&codex_executable)
         .arg("exec")
         .arg("--sandbox")
         .arg("workspace-write")
@@ -905,7 +1008,12 @@ fn run_codex_delegate_blocking(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("spawn codex failed: {e}"))?;
+        .map_err(|e| {
+            format!(
+                "spawn codex failed (bin={}): {e}",
+                codex_executable.display()
+            )
+        })?;
 
     let stdout_pipe = child
         .stdout
@@ -1208,6 +1316,8 @@ async fn pet_toggle(app: tauri::AppHandle) -> Result<PetStatusResponse, String> 
 }
 
 fn main() {
+    augment_process_path_for_gui();
+
     tauri::Builder::default()
         .manage(Mutex::new(FsAccessState::default()))
         .plugin(tauri_plugin_dialog::init())

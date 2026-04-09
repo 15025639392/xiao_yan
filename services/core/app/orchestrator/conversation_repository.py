@@ -31,6 +31,13 @@ class OrchestratorConversationRepository:
             self._persist_locked()
             return self._messages_by_session[message.session_id][-1].model_copy(deep=True)
 
+    def clear_session(self, session_id: str) -> int:
+        with self._lock:
+            bucket = self._messages_by_session.pop(session_id, None)
+            removed = 0 if bucket is None else len(bucket)
+            self._persist_locked()
+            return removed
+
     def save(self, message: OrchestratorMessage) -> OrchestratorMessage:
         with self._lock:
             bucket = self._messages_by_session.setdefault(message.session_id, [])

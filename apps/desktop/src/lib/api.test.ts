@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+  clearOrchestratorMessages,
   fetchConfig,
   fetchGoalAdmissionConfig,
   fetchGoalAdmissionConfigHistory,
@@ -96,6 +97,33 @@ describe("persona api methods", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
       "http://127.0.0.1:8000/chat/folder-permissions?path=%2Ftmp%2Fproject",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  test("clears orchestrator messages with DELETE endpoint", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          session_id: "session-1",
+          deleted_count: 3,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const payload = await clearOrchestratorMessages("session-1");
+
+    expect(payload).toEqual({
+      session_id: "session-1",
+      deleted_count: 3,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/orchestrator/sessions/session-1/messages",
       expect.objectContaining({ method: "DELETE" }),
     );
   });

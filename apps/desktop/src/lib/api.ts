@@ -235,6 +235,11 @@ export type OrchestratorChatSubmissionResult = {
   assistant_message_id: string;
 };
 
+export type OrchestratorMessagesDeleteResponse = {
+  session_id: string;
+  deleted_count: number;
+};
+
 export type OrchestratorDelegateRun = {
   task_id: string;
   delegate_run_id: string;
@@ -497,6 +502,33 @@ export type AutobioResponse = {
 
 export const BASE_URL = "http://127.0.0.1:8000";
 
+async function buildHttpError(response: Response): Promise<Error> {
+  let detail = "";
+  try {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const payload = await response.json();
+      if (typeof payload?.detail === "string") {
+        detail = payload.detail;
+      } else if (payload && typeof payload === "object") {
+        detail = JSON.stringify(payload);
+      }
+    } else {
+      const text = (await response.text()).trim();
+      if (text) {
+        detail = text;
+      }
+    }
+  } catch {
+    detail = "";
+  }
+
+  if (detail) {
+    return new Error(`request failed: ${response.status} (${detail})`);
+  }
+  return new Error(`request failed: ${response.status}`);
+}
+
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
@@ -507,7 +539,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`request failed: ${response.status}`);
+    throw await buildHttpError(response);
   }
 
   return response.json();
@@ -523,7 +555,7 @@ async function put<T>(path: string, body?: unknown): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`request failed: ${response.status}`);
+    throw await buildHttpError(response);
   }
 
   return response.json();
@@ -533,7 +565,7 @@ async function get<T>(path: string): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`);
 
   if (!response.ok) {
-    throw new Error(`request failed: ${response.status}`);
+    throw await buildHttpError(response);
   }
 
   return response.json();
@@ -629,6 +661,12 @@ export async function fetchOrchestratorMessages(sessionId: string): Promise<Orch
   return Array.isArray(payload.messages) ? payload.messages : [];
 }
 
+export function clearOrchestratorMessages(
+  sessionId: string,
+): Promise<OrchestratorMessagesDeleteResponse> {
+  return del<OrchestratorMessagesDeleteResponse>(`/orchestrator/sessions/${sessionId}/messages`);
+}
+
 export function chatWithOrchestrator(
   sessionId: string,
   message: string,
@@ -664,7 +702,7 @@ export async function removeChatFolderPermission(path: string): Promise<ChatFold
     method: "DELETE",
   });
   if (!response.ok) {
-    throw new Error(`request failed: ${response.status}`);
+    throw await buildHttpError(response);
   }
   return response.json();
 }
@@ -1103,7 +1141,9 @@ export function starMemory(
 /** HTTP DELETE/PUT 辅助函数 */
 async function del<T>(path: string): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, { method: "DELETE" });
-  if (!response.ok) throw new Error(`request failed: ${response.status}`);
+  if (!response.ok) {
+    throw await buildHttpError(response);
+  }
   return response.json();
 }
 

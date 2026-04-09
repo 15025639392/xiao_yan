@@ -13,10 +13,37 @@ import type {
   CapabilityResult,
 } from "./types";
 
+async function buildHttpError(response: Response): Promise<Error> {
+  let detail = "";
+  try {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const payload = await response.json();
+      if (typeof payload?.detail === "string") {
+        detail = payload.detail;
+      } else if (payload && typeof payload === "object") {
+        detail = JSON.stringify(payload);
+      }
+    } else {
+      const text = (await response.text()).trim();
+      if (text) {
+        detail = text;
+      }
+    }
+  } catch {
+    detail = "";
+  }
+
+  if (detail) {
+    return new Error(`request failed: ${response.status} (${detail})`);
+  }
+  return new Error(`request failed: ${response.status}`);
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`);
   if (!response.ok) {
-    throw new Error(`request failed: ${response.status}`);
+    throw await buildHttpError(response);
   }
   return response.json();
 }
@@ -28,7 +55,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`request failed: ${response.status}`);
+    throw await buildHttpError(response);
   }
   return response.json();
 }

@@ -33,6 +33,11 @@ class OrchestratorChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
 
 
+class OrchestratorMessagesDeleteResponse(BaseModel):
+    session_id: str
+    deleted_count: int
+
+
 def build_orchestrator_router() -> APIRouter:
     router = APIRouter()
 
@@ -44,7 +49,7 @@ def build_orchestrator_router() -> APIRouter:
         status_code = 409
         if any(token in detail for token in ["not found"]):
             status_code = 404
-        elif any(token in detail for token in ["required", "must", "not ready", "no imported", "project_path"]):
+        elif any(token in detail for token in ["required", "must", "not ready", "no imported", "project_path", "unsupported"]):
             status_code = 400
         raise HTTPException(status_code=status_code, detail=detail) from error
 
@@ -71,6 +76,7 @@ def build_orchestrator_router() -> APIRouter:
         orchestrator_service: OrchestratorService,
         conversation_service: OrchestratorConversationService,
         save_user_message: bool,
+        directive_fallback_to_chat: bool = False,
     ) -> tuple[OrchestratorSession | None, str | None]:
         normalized = message.strip()
         lowered = normalized.lower()
@@ -94,7 +100,12 @@ def build_orchestrator_router() -> APIRouter:
                 session = orchestrator_service.generate_plan(session_id, hub=_hub(request))
                 return session, "新的主控计划已经生成，我把任务拆解和待审批信息贴到消息流里了。"
             if any(token in lowered for token in ["scope", "验收", "优先级", "范围", "acceptance"]):
-                session = orchestrator_service.apply_directive(session_id, normalized, hub=_hub(request))
+                try:
+                    session = orchestrator_service.apply_directive(session_id, normalized, hub=_hub(request))
+                except ValueError as error:
+                    if directive_fallback_to_chat and str(error) == "unsupported orchestrator directive":
+                        return None, None
+                    raise error
                 return session, session.summary or "主控边界已经更新。"
         except ValueError as error:
             raise error
@@ -270,6 +281,19 @@ def build_orchestrator_router() -> APIRouter:
         except ValueError as error:
             _raise_client_error(error)
 
+    @router.delete("/orchestrator/sessions/{session_id}/messages", response_model=OrchestratorMessagesDeleteResponse)
+    def clear_messages(
+        session_id: str,
+        service: OrchestratorService = Depends(get_orchestrator_service),
+        conversation_service: OrchestratorConversationService = Depends(get_orchestrator_conversation_service),
+    ) -> OrchestratorMessagesDeleteResponse:
+        try:
+            service.get_session(session_id)
+            deleted_count = conversation_service.clear_messages(session_id)
+            return OrchestratorMessagesDeleteResponse(session_id=session_id, deleted_count=deleted_count)
+        except ValueError as error:
+            _raise_client_error(error)
+
     @router.post("/orchestrator/sessions/{session_id}/chat", response_model=OrchestratorChatSubmissionResult)
     def chat_with_orchestrator(
         session_id: str,
@@ -293,6 +317,7 @@ def build_orchestrator_router() -> APIRouter:
                 orchestrator_service=service,
                 conversation_service=conversation_service,
                 save_user_message=False,
+                directive_fallback_to_chat=True,
             )
             if handled_session is not None and reply is not None:
                 assistant_message = conversation_service.append_assistant_message(

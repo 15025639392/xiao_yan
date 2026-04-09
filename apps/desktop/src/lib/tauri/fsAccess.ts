@@ -23,8 +23,21 @@ export type ShellRunOptions = {
 
 export function isTauriRuntime(): boolean {
   if (typeof window === "undefined") return false;
-  const w = window as unknown as { __TAURI__?: unknown };
-  return Boolean(w.__TAURI__);
+
+  const w = window as unknown as {
+    __TAURI__?: unknown;
+    __TAURI_INTERNALS__?: unknown;
+    __TAURI_IPC__?: unknown;
+  };
+  if (Boolean(w.__TAURI__) || Boolean(w.__TAURI_INTERNALS__) || typeof w.__TAURI_IPC__ === "function") {
+    return true;
+  }
+
+  if (typeof navigator !== "undefined" && typeof navigator.userAgent === "string") {
+    return /\btauri\b/i.test(navigator.userAgent);
+  }
+
+  return false;
 }
 
 function ensureTauri(): void {

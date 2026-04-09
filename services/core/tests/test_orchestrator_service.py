@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 
@@ -7,8 +8,11 @@ import pytest
 
 from app.domain.models import (
     BeingState,
+    OrchestratorCoordinationMode,
     OrchestratorDelegateCompletionPayload,
     OrchestratorDelegateResult,
+    OrchestratorFailureCategory,
+    OrchestratorSessionCoordination,
     OrchestratorSessionStatus,
     OrchestratorVerification,
     WakeMode,
@@ -619,3 +623,121 @@ def test_apply_directive_records_directive_card(project_dir: Path) -> None:
         if any(block.type == "directive_card" for block in message.blocks)
     )
     assert any(block.type == "directive_card" for block in directive_message.blocks)
+
+
+def test_run_plan_verification_exception_marks_session_failed(project_dir: Path) -> None:
+    config = get_runtime_config()
+    config.set_folder_permission(str(project_dir), "full_access")
+    state_store = StateStore(
+        initial_state=BeingState(mode=WakeMode.AWAKE),
+        memory_repository=InMemoryMemoryRepository(),
+    )
+    repository = OrchestratorSessionRepository(in_memory=True)
+
+    service = OrchestratorService(
+        repository=repository,
+        state_store=state_store,
+        verification_runner=lambda _path, _commands: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    session = service.create_session("进入主控，升级当前项目", str(project_dir))
+    session = service.generate_plan(session.session_id)
+    session = service.approve_plan(session.session_id)
+
+    while session.status.value not in {"completed", "failed"}:
+        session = service.dispatch(session.session_id)
+        running_task = next(task for task in session.plan.tasks if task.status.value == "running")
+        session = service.complete_delegate(
+            OrchestratorDelegateCompletionPayload(
+                session_id=session.session_id,
+                task_id=running_task.task_id,
+                delegate_run_id=running_task.delegate_run_id or "",
+                result=OrchestratorDelegateResult(
+                    status="succeeded",
+                    summary=f"{running_task.title} 完成",
+                    changed_files=["src/main.ts"] if running_task.kind.value == "implement" else [],
+                ),
+            )
+        )
+
+    assert session.status == OrchestratorSessionStatus.FAILED
+    assert session.verification is not None
+    assert session.verification.passed is False
+    assert session.verification.summary is not None
+    assert "统一验收执行异常" in session.verification.summary
+    assert session.coordination is not None
+    assert session.coordination.mode == OrchestratorCoordinationMode.FAILED
+    assert session.coordination.failure_category == OrchestratorFailureCategory.VERIFICATION_FAILURE
+
+
+def test_get_session_auto_recovers_stale_verifying_session(project_dir: Path) -> None:
+    config = get_runtime_config()
+    config.set_folder_permission(str(project_dir), "full_access")
+    state_store = StateStore(
+        initial_state=BeingState(mode=WakeMode.AWAKE),
+        memory_repository=InMemoryMemoryRepository(),
+    )
+    repository = OrchestratorSessionRepository(in_memory=True)
+    service = OrchestratorService(
+        repository=repository,
+        state_store=state_store,
+        verification_runner=lambda _path, commands: OrchestratorVerification(
+            commands=commands,
+            passed=True,
+            summary=f"验证通过，共执行 {len(commands)} 条命令。",
+        ),
+    )
+
+    session = service.create_session("进入主控，升级当前项目", str(project_dir))
+    session = service.generate_plan(session.session_id)
+    session = service.approve_plan(session.session_id)
+
+    while session.status.value != "completed":
+        session = service.dispatch(session.session_id)
+        running_task = next(task for task in session.plan.tasks if task.status.value == "running")
+        session = service.complete_delegate(
+            OrchestratorDelegateCompletionPayload(
+                session_id=session.session_id,
+                task_id=running_task.task_id,
+                delegate_run_id=running_task.delegate_run_id or "",
+                result=OrchestratorDelegateResult(
+                    status="succeeded",
+                    summary=f"{running_task.title} 完成",
+                    changed_files=["src/main.ts"] if running_task.kind.value == "implement" else [],
+                ),
+            )
+        )
+
+    stale = session.model_copy(
+        update={
+            "status": OrchestratorSessionStatus.VERIFYING,
+            "verification": None,
+            "coordination": OrchestratorSessionCoordination(
+                mode=OrchestratorCoordinationMode.VERIFYING,
+                priority_score=1,
+                waiting_reason="正在统一执行计划内验收命令。",
+                failure_category=None,
+            ),
+            "updated_at": datetime.now(timezone.utc) - timedelta(minutes=20),
+        }
+    )
+    repository.save(stale)
+
+    recovered = service.get_session(session.session_id)
+
+    assert recovered.status == OrchestratorSessionStatus.FAILED
+    assert recovered.verification is None
+    assert recovered.summary is not None
+    assert "统一验收状态疑似中断" in recovered.summary
+    assert recovered.coordination is not None
+    assert recovered.coordination.mode == OrchestratorCoordinationMode.FAILED
+    assert recovered.coordination.failure_category == OrchestratorFailureCategory.VERIFICATION_FAILURE
+
+    resumed = service.resume_session(session.session_id)
+    assert resumed.status == OrchestratorSessionStatus.DISPATCHING
+    assert resumed.verification is None
+    assert resumed.plan is not None
+    verify = next(task for task in resumed.plan.tasks if task.task_id == "verify-1")
+    summarize = next(task for task in resumed.plan.tasks if task.task_id == "summarize-1")
+    assert verify.status == "pending"
+    assert summarize.status == "pending"
