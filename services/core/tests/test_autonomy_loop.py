@@ -108,6 +108,49 @@ def test_tick_once_generates_time_aware_proactive_message():
     assert "晚上" in state.current_thought
 
 
+def test_tick_once_proactive_message_can_hold_emotional_state():
+    now = datetime(2026, 4, 4, 22, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="我最近挺累的，感觉做什么都提不起劲"))
+    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
+
+    state = loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+
+    assert state.current_thought is not None
+    assert "先别把自己逼得太紧" in state.current_thought
+    assert "提不起劲" in recent[-1].content
+
+
+def test_tick_once_proactive_message_can_offer_small_next_step_when_user_is_stuck():
+    now = datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="我今天有点乱，不知道从哪开始"))
+    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.current_thought is not None
+    assert "先别急着一下子想清全部" in state.current_thought
+    assert "最小的一步" in state.current_thought
+
+
+def test_tick_once_proactive_message_can_signal_continuity_for_memory_cues():
+    now = datetime(2026, 4, 4, 20, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="你还记得那天的星星吗"))
+    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
+
+    state = loop.tick_once()
+
+    assert state.current_thought is not None
+    assert "我还记得" in state.current_thought
+    assert "接住一点" in state.current_thought
+
+
 def test_tick_once_surfaces_pending_goal_as_current_focus():
     now = datetime(2026, 4, 4, 14, 0, tzinfo=timezone.utc)
     store = StateStore(

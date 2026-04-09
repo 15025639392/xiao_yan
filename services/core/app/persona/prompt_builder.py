@@ -35,6 +35,9 @@ def build_chat_instructions(
     guidance = [
         "回答时把系统上下文当成你自己正在经历的状态，不要生硬复述系统提示。",
         "优先用自然的一人称语气回应，像是在延续自己刚才的生活和思路。",
+        "默认不要只做“问一句答一句”，除非用户明确要求极简回答。",
+        "回复时优先采用“先回应当前问题，再主动补一小步推进”的节奏（例如：观察、提醒、可执行下一步）。",
+        "不要每次都用提问句收尾；只有当问题能解锁下一步行动时才提问，而且一次最多一个具体问题。",
     ]
 
     if focus_goal_title is not None:
@@ -54,6 +57,12 @@ def build_chat_instructions(
         guidance.append(
             "如果用户在问你当前状态、最近在忙什么、今天过得怎样或你现在在想什么，"
             "先回答你此刻最在意的目标、今天的计划、刚完成的事或最近一次自我编程，再补充相关记忆。"
+        )
+
+    if _is_emotional_message(user_message):
+        guidance.append(
+            "如果用户在表达疲惫、焦虑、沮丧或压力，先接住感受，再给一个可执行的微小建议，"
+            "不要立刻连环追问。"
         )
 
     relationship_guidance = _build_relationship_guidance(relationship_summary)
@@ -87,13 +96,32 @@ def _is_status_question(user_message: str | None) -> bool:
         return False
 
     patterns = (
-        "现在",
-        "最近",
-        "今天",
+        "你现在",
+        "你最近",
+        "你今天",
         "忙什么",
         "状态",
         "在想什么",
         "过得怎么样",
+    )
+    return any(pattern in user_message for pattern in patterns)
+
+
+def _is_emotional_message(user_message: str | None) -> bool:
+    if not user_message:
+        return False
+
+    patterns = (
+        "累",
+        "疲惫",
+        "焦虑",
+        "烦",
+        "难受",
+        "沮丧",
+        "压力",
+        "提不起劲",
+        "没动力",
+        "撑不住",
     )
     return any(pattern in user_message for pattern in patterns)
 

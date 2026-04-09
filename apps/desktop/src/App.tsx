@@ -5,16 +5,41 @@ import { ChatPanel } from "./components/ChatPanel";
 import type { ChatEntry } from "./components/ChatPanel";
 import { PersonaPanel } from "./components/PersonaPanel";
 import { ToolPanel } from "./components/ToolPanel";
-import type { BeingState, Goal, InnerWorldState, PersonaProfile } from "./lib/api";
+import type {
+  BeingState,
+  Goal,
+  InnerWorldState,
+  OrchestratorMessage,
+  OrchestratorDelegateRequest,
+  OrchestratorSchedulerSnapshot,
+  OrchestratorSession,
+  OrchestratorTask,
+  PersonaProfile,
+} from "./lib/api";
 import {
+  activateOrchestratorSession,
+  approveOrchestratorPlan,
+  cancelOrchestratorSession,
   chat,
+  chatWithOrchestrator,
+  completeOrchestratorDelegate,
+  createOrchestratorSession,
+  fetchOrchestratorMessages,
+  fetchOrchestratorScheduler,
+  fetchOrchestratorSessions,
   fetchGoals,
   fetchAutobio,
   fetchMessages,
   fetchState,
   fetchWorld,
+  generateOrchestratorPlan,
+  rejectOrchestratorPlan,
+  resumeOrchestratorSession,
+  submitOrchestratorDirective,
   resumeChat,
   sleep,
+  tickOrchestratorScheduler,
+  upsertChatFolderPermission,
   updateGoalStatus,
   updatePersonaFeatures,
   wake,
@@ -33,8 +58,28 @@ import { OverviewPanel } from "./pages/OverviewPage";
 import { MemoryPage } from "./pages/MemoryPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { CapabilitiesPage } from "./pages/CapabilitiesPage";
+import { OrchestratorPage } from "./pages/OrchestratorPage";
+import { buildFolderPermissionPlan, loadImportedProjectRegistry } from "./lib/projects";
+import { buildDelegateDebugInfo } from "./lib/orchestratorDelegateDebug";
+import { isTauriRuntime } from "./lib/tauri/fsAccess";
+import { runCodexDelegate } from "./lib/tauri/codexDelegate";
+import {
+  appendOrchestratorDelta,
+  finalizeOrchestratorMessage,
+  markOrchestratorMessageFailed,
+  mergeOrchestratorMessages,
+  upsertOrchestratorStreamingMessage,
+} from "./lib/orchestratorMessages";
 
-type AppRoute = "overview" | "chat" | "persona" | "memory" | "history" | "tools" | "capabilities";
+type AppRoute =
+  | "overview"
+  | "chat"
+  | "persona"
+  | "memory"
+  | "history"
+  | "tools"
+  | "capabilities"
+  | "orchestrator";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -44,7 +89,37 @@ const initialState: BeingState = {
   today_plan: null,
   last_action: null,
   self_programming_job: null,
+  orchestrator_session: null,
 };
+
+const defaultOrchestratorScheduler: OrchestratorSchedulerSnapshot = {
+  max_parallel_sessions: 2,
+  running_sessions: 0,
+  available_slots: 0,
+  queued_sessions: 0,
+  active_session_id: null,
+  running_session_ids: [],
+  queued_session_ids: [],
+  verification_rollup: {
+    total_sessions: 0,
+    passed_sessions: 0,
+    failed_sessions: 0,
+    pending_sessions: 0,
+  },
+  policy_note: null,
+};
+
+const DELEGATE_TIMEOUT_SECONDS_BY_KIND: Record<OrchestratorTask["kind"], number> = {
+  analyze: 20 * 60,
+  implement: 45 * 60,
+  test: 35 * 60,
+  verify: 25 * 60,
+  summarize: 15 * 60,
+};
+
+const DELEGATE_TIMEOUT_SECONDS_MIN = 30;
+const DELEGATE_TIMEOUT_SECONDS_MAX = 60 * 60;
+const DELEGATE_TIMEOUT_SECONDS_FALLBACK = 20 * 60;
 
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => resolveRoute(window.location.hash));
@@ -53,30 +128,81 @@ export default function App() {
   const [autobioEntries, setAutobioEntries] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [orchestratorSessions, setOrchestratorSessions] = useState<OrchestratorSession[]>([]);
+  const [orchestratorScheduler, setOrchestratorScheduler] = useState<OrchestratorSchedulerSnapshot>(
+    defaultOrchestratorScheduler,
+  );
+  const [orchestratorMessagesBySession, setOrchestratorMessagesBySession] = useState<Record<string, OrchestratorMessage[]>>({});
   const [persona, setPersona] = useState<PersonaProfile | null>(null);
   const [draft, setDraft] = useState("");
+  const [orchestratorDraft, setOrchestratorDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isOrchestratorSending, setIsOrchestratorSending] = useState(false);
   const [error, setError] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">(() => loadThemePreference());
   const [showBrandMenu, setShowBrandMenu] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [petVisible, setPetVisible] = useState(false);
   const pendingRequestMessageRef = useRef<string | null>(null);
+  const schedulerTickInFlightRef = useRef(false);
+  const delegateRunIdsRef = useRef(new Set<string>());
+  const hasAttemptedImportedProjectRestoreRef = useRef(false);
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
   const assistantName = persona?.name?.trim() || "小晏";
   const assistantIdentity = persona?.identity?.trim() || "AI Agent Desktop";
+  const sessionList = normalizeOrchestratorSessions(orchestratorSessions);
+  const activeOrchestratorSessionId = state.orchestrator_session?.session_id ?? sessionList[0]?.session_id ?? null;
+  const activeOrchestratorMessages =
+    activeOrchestratorSessionId == null ? [] : orchestratorMessagesBySession[activeOrchestratorSessionId] ?? [];
+  const importedProjects = loadImportedProjectRegistry();
+  const activeImportedProjectPath = importedProjects.active_project_path;
+
+  useEffect(() => {
+    if (hasAttemptedImportedProjectRestoreRef.current) {
+      return;
+    }
+    hasAttemptedImportedProjectRestoreRef.current = true;
+
+    const registry = loadImportedProjectRegistry();
+    if (registry.projects.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void restoreImportedProjectsToCore(registry).catch((err) => {
+      if (cancelled) {
+        return;
+      }
+      const detail = err instanceof Error ? err.message : "unknown error";
+      setError(`恢复已导入项目权限失败: ${detail}`);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     async function syncRuntime() {
       try {
-        const [nextState, nextMessages, nextGoals, nextWorld, nextAutobio] = await Promise.all([
+        const [
+          nextState,
+          nextMessages,
+          nextGoals,
+          nextWorld,
+          nextAutobio,
+          nextOrchestratorSessions,
+          nextOrchestratorScheduler,
+        ] = await Promise.all([
           fetchState(),
           fetchMessages(),
           fetchGoals(),
           fetchWorld(),
           fetchAutobio(),
+          fetchOrchestratorSessions().catch(() => []),
+          fetchOrchestratorScheduler().catch(() => defaultOrchestratorScheduler),
         ]);
 
         if (cancelled) {
@@ -88,6 +214,8 @@ export default function App() {
         setGoals(nextGoals.goals);
         setWorld(nextWorld);
         setAutobioEntries(nextAutobio.entries);
+        setOrchestratorSessions(normalizeOrchestratorSessions(nextOrchestratorSessions));
+        setOrchestratorScheduler(normalizeOrchestratorScheduler(nextOrchestratorScheduler));
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "同步失败");
@@ -154,6 +282,76 @@ export default function App() {
         return;
       }
 
+      if (event.type === "orchestrator_message_appended") {
+        setOrchestratorMessagesBySession((current) => ({
+          ...current,
+          [event.payload.session_id]: mergeOrchestratorMessages(current[event.payload.session_id] ?? [], [event.payload]),
+        }));
+        setError("");
+        return;
+      }
+
+      if (event.type === "orchestrator_message_started") {
+        setOrchestratorMessagesBySession((current) => ({
+          ...current,
+          [event.payload.session_id]: upsertOrchestratorStreamingMessage(
+            current[event.payload.session_id] ?? [],
+            event.payload.session_id,
+            event.payload.assistant_message_id,
+            event.payload.sequence,
+          ),
+        }));
+        setError("");
+        return;
+      }
+
+      if (event.type === "orchestrator_message_delta") {
+        setOrchestratorMessagesBySession((current) => ({
+          ...current,
+          [event.payload.session_id]: appendOrchestratorDelta(
+            current[event.payload.session_id] ?? [],
+            event.payload.assistant_message_id,
+            event.payload.delta,
+          ),
+        }));
+        setError("");
+        return;
+      }
+
+      if (event.type === "orchestrator_message_completed") {
+        setOrchestratorMessagesBySession((current) => ({
+          ...current,
+          [event.payload.session_id]: finalizeOrchestratorMessage(
+            current[event.payload.session_id] ?? [],
+            event.payload.assistant_message_id,
+            event.payload.content,
+            event.payload.blocks,
+          ),
+        }));
+        setError("");
+        return;
+      }
+
+      if (event.type === "orchestrator_message_failed") {
+        setOrchestratorMessagesBySession((current) => ({
+          ...current,
+          [event.payload.session_id]: markOrchestratorMessageFailed(
+            current[event.payload.session_id] ?? [],
+            event.payload.assistant_message_id,
+          ),
+        }));
+        setError(event.payload.error);
+        return;
+      }
+
+      if (event.type === "orchestrator_session_updated") {
+        setOrchestratorSessions((current) =>
+          upsertOrchestratorSession(normalizeOrchestratorSessions(current), event.payload),
+        );
+        void refreshOrchestratorScheduler();
+        return;
+      }
+
       const runtimePayload =
         event.type === "snapshot" ? event.payload.runtime : event.type === "runtime_updated" ? event.payload : null;
       if (!runtimePayload) {
@@ -188,6 +386,33 @@ export default function App() {
       unsubscribePersona();
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeOrchestratorSessionId) {
+      return;
+    }
+
+    let cancelled = false;
+    void fetchOrchestratorMessages(activeOrchestratorSessionId)
+      .then((nextMessages) => {
+        if (cancelled) {
+          return;
+        }
+        setOrchestratorMessagesBySession((current) => ({
+          ...current,
+          [activeOrchestratorSessionId]: mergeOrchestratorMessages(current[activeOrchestratorSessionId] ?? [], nextMessages),
+        }));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("加载主控消息失败:", err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrchestratorSessionId]);
 
   // 主题切换：更新 DOM 和 localStorage
   useEffect(() => {
@@ -249,6 +474,127 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (state.focus_mode === "orchestrator" && state.orchestrator_session && route !== "orchestrator") {
+      handleNavigate("orchestrator");
+    }
+  }, [route, state.focus_mode, state.orchestrator_session]);
+
+  useEffect(() => {
+    const hasDispatchingSession = sessionList.some((session) => session.status === "dispatching");
+    const hasQueuedSession = sessionList.some(
+      (session) => session.coordination?.mode === "queued" || session.coordination?.mode === "preempted",
+    );
+    const hasSchedulerDemand =
+      hasDispatchingSession || (hasQueuedSession && orchestratorScheduler.available_slots > 0);
+    if (!hasSchedulerDemand || schedulerTickInFlightRef.current) {
+      return;
+    }
+
+    schedulerTickInFlightRef.current = true;
+    void (async () => {
+      try {
+        const snapshot = await tickOrchestratorScheduler();
+        setOrchestratorScheduler(normalizeOrchestratorScheduler(snapshot));
+        await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "主控调度失败");
+      } finally {
+        schedulerTickInFlightRef.current = false;
+      }
+    })();
+  }, [orchestratorScheduler.available_slots, sessionList]);
+
+  useEffect(() => {
+    for (const session of sessionList) {
+      if (!session.plan) {
+        continue;
+      }
+      const runningTask = session.plan.tasks.find(
+        (task) => task.status === "running" && typeof task.delegate_run_id === "string" && task.delegate_run_id.length > 0,
+      );
+      if (!runningTask?.delegate_run_id) {
+        continue;
+	      }
+	      if (delegateRunIdsRef.current.has(runningTask.delegate_run_id)) {
+	        continue;
+	      }
+
+	      const delegateRunId = runningTask.delegate_run_id;
+
+	      delegateRunIdsRef.current.add(delegateRunId);
+	      void (async () => {
+	        try {
+          if (!isTauriRuntime()) {
+            throw new Error("当前环境不是 Tauri 宿主，无法运行真实 Codex delegate");
+          }
+
+          const delegateRequest = extractDelegateRequest(runningTask);
+          const delegatePrompt = extractDelegatePrompt(runningTask, delegateRequest, session);
+          const delegateTimeoutSeconds = resolveDelegateTimeoutSeconds(runningTask);
+	          const delegateResult = await runCodexDelegate({
+	            prompt: delegatePrompt,
+	            projectPath: session.project_path,
+	            runId: delegateRunId,
+	            outputSchema: delegateRequest.output_schema,
+	            timeoutSeconds: delegateTimeoutSeconds,
+	          });
+
+	          await completeOrchestratorDelegate({
+	            session_id: session.session_id,
+	            task_id: runningTask.task_id,
+	            delegate_run_id: delegateRunId,
+	            result: {
+              status: delegateResult.status,
+              summary: delegateResult.summary,
+              changed_files: delegateResult.changed_files,
+              command_results: delegateResult.command_results.map((item) => ({
+                command: item.command,
+                success: item.success,
+                exit_code: item.exit_code,
+                stdout: item.stdout,
+                stderr: item.stderr,
+                duration_ms: item.duration_ms,
+              })),
+              followup_needed: delegateResult.followup_needed,
+              error: delegateResult.error ?? null,
+              debug: buildDelegateDebugInfo(delegateResult.stdout, delegateResult.stderr) ?? null,
+            },
+          });
+          await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Codex delegate 执行失败";
+          try {
+	            await completeOrchestratorDelegate({
+	              session_id: session.session_id,
+	              task_id: runningTask.task_id,
+	              delegate_run_id: delegateRunId,
+	              result: {
+                status: "failed",
+                summary: "Codex delegate 执行失败",
+                changed_files: [],
+                command_results: [],
+                followup_needed: [],
+                error: message,
+              },
+            });
+            await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+          } catch (completeError) {
+            const merged =
+              completeError instanceof Error
+                ? `${message}; ${completeError.message}`
+                : message;
+            setError(merged);
+            return;
+          }
+          setError(message);
+        } finally {
+	          delegateRunIdsRef.current.delete(delegateRunId);
+	        }
+	      })();
+    }
+  }, [sessionList]);
+
   async function handleWake() {
     try {
       setError("");
@@ -295,20 +641,41 @@ export default function App() {
       return;
     }
 
-    const userMessage: ChatEntry = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content,
-    };
-
     setError("");
     setDraft("");
-    setMessages((current) => [...current, userMessage]);
-    pendingRequestMessageRef.current = content;
     setIsSending(true);
 
     try {
-      const result = await chat(content);
+      if (isExplicitOrchestratorEntry(content)) {
+        if (!activeImportedProjectPath) {
+          throw new Error("进入主控前需要先在聊天配置里导入并激活一个项目");
+        }
+
+        await ensureOrchestratorProjectPermission(activeImportedProjectPath);
+        const session = await createOrchestratorSession({
+          goal: content,
+          project_path: activeImportedProjectPath,
+        });
+        await generateOrchestratorPlan(session.session_id);
+        await Promise.all([
+          refreshRuntimeState(),
+          refreshOrchestratorSessions(),
+          refreshOrchestratorScheduler(),
+          refreshOrchestratorMessages(session.session_id),
+        ]);
+        handleNavigate("orchestrator");
+        return;
+      }
+
+      const userMessage: ChatEntry = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content,
+      };
+
+      setMessages((current) => [...current, userMessage]);
+      pendingRequestMessageRef.current = content;
+      await chat(content);
     } catch (err) {
       setError(err instanceof Error ? err.message : "发送失败");
     } finally {
@@ -351,6 +718,134 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "目标状态更新失败");
     }
+  }
+
+  async function refreshRuntimeState() {
+    const refreshedState = await fetchState();
+    setState(refreshedState);
+  }
+
+  async function refreshOrchestratorSessions() {
+    setOrchestratorSessions(normalizeOrchestratorSessions(await fetchOrchestratorSessions()));
+  }
+
+  async function refreshOrchestratorScheduler() {
+    const refreshedScheduler = await fetchOrchestratorScheduler().catch(() => defaultOrchestratorScheduler);
+    setOrchestratorScheduler(normalizeOrchestratorScheduler(refreshedScheduler));
+  }
+
+  async function refreshOrchestratorMessages(sessionId: string) {
+    const refreshedMessages = await fetchOrchestratorMessages(sessionId);
+    setOrchestratorMessagesBySession((current) => ({
+      ...current,
+      [sessionId]: mergeOrchestratorMessages(current[sessionId] ?? [], refreshedMessages),
+    }));
+  }
+
+  async function handleApproveOrchestratorPlan(sessionId: string) {
+    try {
+      setError("");
+      await approveOrchestratorPlan(sessionId);
+      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "主控计划审批失败");
+    }
+  }
+
+  async function handleRejectOrchestratorPlan(sessionId: string) {
+    try {
+      setError("");
+      await rejectOrchestratorPlan(sessionId);
+      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "主控计划拒绝失败");
+    }
+  }
+
+  async function handleCancelOrchestrator(sessionId: string) {
+    try {
+      setError("");
+      await cancelOrchestratorSession(sessionId);
+      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+      handleNavigate("chat");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "退出主控失败");
+    }
+  }
+
+  async function handleActivateOrchestratorSession(sessionId: string) {
+    try {
+      setError("");
+      await activateOrchestratorSession(sessionId);
+      await Promise.all([
+        refreshRuntimeState(),
+        refreshOrchestratorSessions(),
+        refreshOrchestratorScheduler(),
+        refreshOrchestratorMessages(sessionId),
+      ]);
+      handleNavigate("orchestrator");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "切换主控会话失败");
+    }
+  }
+
+  async function handleResumeOrchestratorSession(sessionId: string) {
+    try {
+      setError("");
+      await resumeOrchestratorSession(sessionId);
+      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+      handleNavigate("orchestrator");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "恢复主控会话失败");
+    }
+  }
+
+  async function handleSubmitOrchestratorDirective(sessionId: string, message: string) {
+    try {
+      setError("");
+      await submitOrchestratorDirective(sessionId, message);
+      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "主控指令提交失败";
+      setError(detail);
+      throw err instanceof Error ? err : new Error(detail);
+    }
+  }
+
+  async function sendOrchestratorMessage(
+    content: string,
+    options: { clearDraft: boolean },
+  ): Promise<void> {
+    const sessionId = activeOrchestratorSessionId;
+    if (!sessionId || !content) {
+      return;
+    }
+
+    setError("");
+    if (options.clearDraft) {
+      setOrchestratorDraft("");
+    }
+    setIsOrchestratorSending(true);
+
+    try {
+      await chatWithOrchestrator(sessionId, content);
+      await Promise.all([refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+    } catch (err) {
+      if (options.clearDraft) {
+        setOrchestratorDraft(content);
+      }
+      setError(err instanceof Error ? err.message : "主控消息发送失败");
+    } finally {
+      setIsOrchestratorSending(false);
+    }
+  }
+
+  async function handleSendOrchestratorMessage() {
+    await sendOrchestratorMessage(orchestratorDraft.trim(), { clearDraft: true });
+  }
+
+  async function handleSendOrchestratorQuickMessage(message: string) {
+    await sendOrchestratorMessage(message.trim(), { clearDraft: false });
   }
 
   async function handleRollback(jobId: string) {
@@ -513,6 +1008,17 @@ export default function App() {
             </svg>
             <span>能力中枢</span>
           </button>
+          <button
+            className={`app-sidebar__nav-item ${route === "orchestrator" ? "app-sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNavigate("orchestrator")}
+            type="button"
+          >
+            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 6h16M4 12h10M4 18h7" />
+              <path d="M17 9l3 3-3 3" />
+            </svg>
+            <span>主控工作台</span>
+          </button>
         </nav>
 
         <div className="app-sidebar__section">
@@ -588,6 +1094,25 @@ export default function App() {
           <MemoryPage assistantName={assistantName} />
         ) : route === "history" ? (
           <HistoryPage onSelectRollback={handleRollback} />
+        ) : route === "orchestrator" ? (
+          <OrchestratorPage
+            sessions={sessionList}
+            scheduler={orchestratorScheduler}
+            messages={activeOrchestratorMessages}
+            activeSessionId={activeOrchestratorSessionId}
+            activeProjectPath={activeImportedProjectPath}
+            draft={orchestratorDraft}
+            isSending={isOrchestratorSending}
+            onDraftChange={setOrchestratorDraft}
+            onSendMessage={handleSendOrchestratorMessage}
+            onActivateSession={handleActivateOrchestratorSession}
+            onApprovePlan={handleApproveOrchestratorPlan}
+            onRejectPlan={handleRejectOrchestratorPlan}
+            onResumeSession={handleResumeOrchestratorSession}
+            onSubmitDirective={handleSubmitOrchestratorDirective}
+            onCancelSession={handleCancelOrchestrator}
+            onSendQuickMessage={handleSendOrchestratorQuickMessage}
+          />
         ) : route === "tools" ? (
           <ToolPanel />
         ) : route === "capabilities" ? (
@@ -650,6 +1175,22 @@ export default function App() {
   );
 }
 
+async function ensureOrchestratorProjectPermission(projectPath: string) {
+  try {
+    await upsertChatFolderPermission(projectPath, "full_access");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "unknown error";
+    throw new Error(`主控项目权限尚未同步到 core，请重新激活或重新导入该项目。${detail ? ` (${detail})` : ""}`);
+  }
+}
+
+async function restoreImportedProjectsToCore(registry: ReturnType<typeof loadImportedProjectRegistry>) {
+  const permissionPlan = buildFolderPermissionPlan(registry);
+  for (const permission of permissionPlan) {
+    await upsertChatFolderPermission(permission.path, permission.access_level);
+  }
+}
+
 function resolveRoute(hash: string): AppRoute {
   if (hash === "#/chat") return "chat";
   if (hash === "#/persona") return "persona";
@@ -657,6 +1198,7 @@ function resolveRoute(hash: string): AppRoute {
   if (hash === "#/history") return "history";
   if (hash === "#/tools") return "tools";
   if (hash === "#/capabilities") return "capabilities";
+  if (hash === "#/orchestrator") return "orchestrator";
   return "overview";
 }
 
@@ -667,6 +1209,7 @@ function routeToHash(route: AppRoute): string {
   if (route === "history") return "#/history";
   if (route === "tools") return "#/tools";
   if (route === "capabilities") return "#/capabilities";
+  if (route === "orchestrator") return "#/orchestrator";
   return "#/";
 }
 
@@ -691,7 +1234,119 @@ function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {
   if (focusMode === "self_programming") {
     return "自我编程";
   }
+  if (focusMode === "orchestrator") {
+    return "主控编排";
+  }
   return "休眠";
+}
+
+function isExplicitOrchestratorEntry(message: string): boolean {
+  return /(进入主控|切到主控|开启主控|主控模式)/.test(message);
+}
+
+function extractDelegateRequest(task: OrchestratorTask): OrchestratorDelegateRequest {
+  const candidate = task.artifacts?.delegate_request as OrchestratorDelegateRequest | undefined;
+  if (!candidate || typeof candidate !== "object") {
+    throw new Error("当前任务缺少 delegate_request 协议");
+  }
+  return candidate;
+}
+
+function extractDelegatePrompt(
+  task: OrchestratorTask,
+  request: OrchestratorDelegateRequest,
+  session: OrchestratorSession,
+): string {
+  const prompt = task.artifacts?.delegate_prompt;
+  if (typeof prompt === "string" && prompt.trim()) {
+    return prompt;
+  }
+
+  return [
+    "你是小晏主控模式派发出的 Codex delegate。",
+    `主控总目标: ${session.goal}`,
+    `当前任务: ${task.title}`,
+    `项目路径: ${request.project_path}`,
+    `允许改动范围: ${request.scope_paths.join(", ") || "."}`,
+    `禁止路径: ${request.forbidden_paths.join(", ") || "无"}`,
+    `验收命令: ${request.acceptance_commands.join(" | ") || "无"}`,
+    "最终输出必须严格符合 JSON Schema，且 changed_files 返回相对项目根路径。",
+    "仅在必要时执行命令；command_results 最多保留 8 条。",
+    "command_results 中 stdout/stderr 只保留关键片段，每条建议不超过 400 字，超出请写 TRUNCATED。",
+    "summary 聚焦结论，不要重复粘贴大段文件内容或命令原文输出。",
+  ].join("\n");
+}
+
+function resolveDelegateTimeoutSeconds(task: OrchestratorTask): number {
+  const requested = DELEGATE_TIMEOUT_SECONDS_BY_KIND[task.kind] ?? DELEGATE_TIMEOUT_SECONDS_FALLBACK;
+  return Math.max(DELEGATE_TIMEOUT_SECONDS_MIN, Math.min(DELEGATE_TIMEOUT_SECONDS_MAX, requested));
+}
+
+function upsertOrchestratorSession(
+  current: OrchestratorSession[],
+  next: OrchestratorSession,
+): OrchestratorSession[] {
+  const without = current.filter((item) => item.session_id !== next.session_id);
+  return [...without, next].sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  );
+}
+
+function normalizeOrchestratorSessions(value: unknown): OrchestratorSession[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeOrchestratorScheduler(value: unknown): OrchestratorSchedulerSnapshot {
+  if (!value || typeof value !== "object") {
+    return defaultOrchestratorScheduler;
+  }
+  const candidate = value as Partial<OrchestratorSchedulerSnapshot>;
+  return {
+    max_parallel_sessions:
+      typeof candidate.max_parallel_sessions === "number"
+        ? candidate.max_parallel_sessions
+        : defaultOrchestratorScheduler.max_parallel_sessions,
+    running_sessions:
+      typeof candidate.running_sessions === "number"
+        ? candidate.running_sessions
+        : defaultOrchestratorScheduler.running_sessions,
+    available_slots:
+      typeof candidate.available_slots === "number"
+        ? candidate.available_slots
+        : defaultOrchestratorScheduler.available_slots,
+    queued_sessions:
+      typeof candidate.queued_sessions === "number"
+        ? candidate.queued_sessions
+        : defaultOrchestratorScheduler.queued_sessions,
+    active_session_id:
+      typeof candidate.active_session_id === "string" || candidate.active_session_id === null
+        ? candidate.active_session_id
+        : defaultOrchestratorScheduler.active_session_id,
+    running_session_ids: Array.isArray(candidate.running_session_ids) ? candidate.running_session_ids : [],
+    queued_session_ids: Array.isArray(candidate.queued_session_ids) ? candidate.queued_session_ids : [],
+    verification_rollup:
+      candidate.verification_rollup && typeof candidate.verification_rollup === "object"
+        ? {
+            total_sessions:
+              typeof candidate.verification_rollup.total_sessions === "number"
+                ? candidate.verification_rollup.total_sessions
+                : 0,
+            passed_sessions:
+              typeof candidate.verification_rollup.passed_sessions === "number"
+                ? candidate.verification_rollup.passed_sessions
+                : 0,
+            failed_sessions:
+              typeof candidate.verification_rollup.failed_sessions === "number"
+                ? candidate.verification_rollup.failed_sessions
+                : 0,
+            pending_sessions:
+              typeof candidate.verification_rollup.pending_sessions === "number"
+                ? candidate.verification_rollup.pending_sessions
+                : 0,
+          }
+        : defaultOrchestratorScheduler.verification_rollup,
+    policy_note: typeof candidate.policy_note === "string" ? candidate.policy_note : null,
+  };
 }
 
 function loadThemePreference(): "dark" | "light" {

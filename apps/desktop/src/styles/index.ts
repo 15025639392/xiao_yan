@@ -29,5 +29,6 @@ import "./self-programming.css";
 import "./approval.css";
 import "./tools.css";
 import "./capabilities.css";
+import "./orchestrator.css";
 import "./emotion-panel.css";
 import "./responsive.css";

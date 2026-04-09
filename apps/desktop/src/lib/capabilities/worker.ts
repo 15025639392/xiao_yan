@@ -323,6 +323,7 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
         typeof timeoutRaw === "number" && Number.isFinite(timeoutRaw)
           ? Math.max(1, Math.min(120, Math.floor(timeoutRaw)))
           : undefined;
+      const cwd = asString(request.args.cwd) ?? undefined;
       const allowedExecutables = Array.isArray(request.args.allowed_executables)
         ? request.args.allowed_executables.filter((item): item is string => typeof item === "string" && item.length > 0)
         : undefined;
@@ -333,6 +334,7 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
         : undefined;
       try {
         const result = await shellRunCommand(command, {
+          cwd,
           timeoutSeconds,
           allowedExecutables,
           allowedGitSubcommands,

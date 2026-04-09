@@ -29,7 +29,7 @@ MINIMAX_FALLBACK_MODELS = [
 
 class ConfigUpdateRequest(BaseModel):
     chat_context_limit: int | None = Field(default=None, ge=1, le=20, description="聊天上下文相关事件数量限制（1-20）")
-    chat_provider: str | None = Field(default=None, min_length=1, description="聊天服务商标识，例如 openai/minimaxi/nvidia")
+    chat_provider: str | None = Field(default=None, min_length=1, description="聊天服务商标识，例如 openai/minimaxi/nvidia/deepseek")
     chat_model: str | None = Field(default=None, min_length=1, description="聊天模型名称，例如 gpt-5.4")
     chat_read_timeout_seconds: int | None = Field(default=None, ge=10, le=600, description="聊天 read 超时（秒），默认 180")
 

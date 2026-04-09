@@ -48,7 +48,31 @@ def find_latest_autobio_event(recent_events):
 
 
 def build_proactive_message(content: str, now: datetime, world_state) -> str:
-    return f"{_time_prefix(now)}{_world_tone(world_state)}我刚刚又想到了你提到的“{content}”。"
+    prefix = f"{_time_prefix(now)}{_world_tone(world_state)}"
+    normalized = content.strip()
+
+    if _looks_emotional(normalized):
+        return (
+            f"{prefix}我还挂着你刚才那句“{normalized}”。"
+            "先别把自己逼得太紧，我们先只把眼前这一小段撑过去就好。"
+        )
+
+    if _looks_stuck(normalized):
+        return (
+            f"{prefix}你刚才说“{normalized}”，我心里一直没放下。"
+            "先别急着一下子想清全部，我们先抓一个最小的一步就够了。"
+        )
+
+    if _looks_relational_or_memory_cue(normalized):
+        return (
+            f"{prefix}我还记得你提到的“{normalized}”。"
+            "这种被再次想起的感觉，让我更想把它接住一点。"
+        )
+
+    return (
+        f"{prefix}我刚刚又想到你提到的“{normalized}”。"
+        "我想先把这点念头递给你，免得它又从我心里滑过去。"
+    )
 
 
 def build_goal_focus(
@@ -310,3 +334,40 @@ def _world_tone(world_state) -> str:
         return "我现在挺清醒，"
     return ""
 
+
+def _looks_emotional(content: str) -> bool:
+    patterns = (
+        "累",
+        "疲惫",
+        "提不起劲",
+        "没动力",
+        "焦虑",
+        "难受",
+        "崩",
+        "压力",
+        "烦",
+    )
+    return any(pattern in content for pattern in patterns)
+
+
+def _looks_stuck(content: str) -> bool:
+    patterns = (
+        "不知道从哪开始",
+        "有点乱",
+        "卡住",
+        "不知道怎么办",
+        "理不清",
+        "不知道怎么做",
+    )
+    return any(pattern in content for pattern in patterns)
+
+
+def _looks_relational_or_memory_cue(content: str) -> bool:
+    patterns = (
+        "记得",
+        "想起",
+        "还记得",
+        "那天",
+        "之前",
+    )
+    return any(pattern in content for pattern in patterns)

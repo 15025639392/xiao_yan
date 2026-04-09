@@ -11,6 +11,8 @@ from app.goals.repository import GoalRepository
 from app.llm.gateway import ChatGateway
 from app.memory.repository import MemoryRepository
 from app.memory.service import MemoryService
+from app.orchestrator.conversation_service import OrchestratorConversationService
+from app.orchestrator.service import OrchestratorService
 from app.persona.service import PersonaService
 from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
@@ -70,6 +72,16 @@ def get_memory_repository(request: Request) -> MemoryRepository:
 def get_state_store(request: Request) -> StateStore:
     ensure_runtime_initialized(request.app)
     return request.app.state.state_store
+
+
+def get_orchestrator_service(request: Request) -> OrchestratorService:
+    ensure_runtime_initialized(request.app)
+    return request.app.state.orchestrator_service
+
+
+def get_orchestrator_conversation_service(request: Request) -> OrchestratorConversationService:
+    ensure_runtime_initialized(request.app)
+    return request.app.state.orchestrator_conversation_service
 
 
 def get_goal_repository(request: Request) -> GoalRepository:

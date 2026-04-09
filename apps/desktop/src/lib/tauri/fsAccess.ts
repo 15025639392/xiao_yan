@@ -15,6 +15,7 @@ export type ShellRunResult = {
 };
 
 export type ShellRunOptions = {
+  cwd?: string;
   timeoutSeconds?: number;
   allowedExecutables?: string[];
   allowedGitSubcommands?: string[];
@@ -108,10 +109,14 @@ export async function shellRunCommand(command: string, options?: ShellRunOptions
   try {
     const payload: {
       command: string;
+      cwd?: string;
       timeoutSeconds?: number;
       allowedExecutables?: string[];
       allowedGitSubcommands?: string[];
     } = { command };
+    if (typeof options?.cwd === "string" && options.cwd.trim()) {
+      payload.cwd = options.cwd;
+    }
     if (typeof options?.timeoutSeconds === "number" && Number.isFinite(options.timeoutSeconds)) {
       payload.timeoutSeconds = options.timeoutSeconds;
     }

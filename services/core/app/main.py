@@ -9,6 +9,7 @@ from app.api.capabilities_routes import build_capabilities_router
 from app.api.chat_routes import build_chat_router
 from app.api.config_routes import build_config_router
 from app.api.memory_routes import build_memory_router
+from app.api.orchestrator_routes import build_orchestrator_router
 from app.api.persona_routes import build_persona_router
 from app.api.runtime_routes import build_runtime_router
 from app.api.self_programming_routes import build_self_programming_router
@@ -52,6 +53,7 @@ app.include_router(build_world_router())
 app.include_router(build_capabilities_router())
 app.include_router(build_chat_router())
 app.include_router(build_self_programming_router())
+app.include_router(build_orchestrator_router())
 app.include_router(build_config_router())
 app.include_router(build_persona_router())
 app.include_router(build_memory_router())
@@ -65,6 +67,8 @@ from app.api.deps import (  # noqa: E402
     get_goal_repository,
     get_memory_repository,
     get_memory_service,
+    get_orchestrator_conversation_service,
+    get_orchestrator_service,
     get_morning_plan_draft_generator,
     get_morning_plan_planner,
     get_persona_service,

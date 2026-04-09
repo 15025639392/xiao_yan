@@ -151,6 +151,13 @@ NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
 NVIDIA_MODEL=meta/llama-3.1-70b-instruct
 NVIDIA_WIRE_API=chat
 CHAT_PROVIDER=nvidia
+
+# DeepSeek（可选：接入深度求索服务商）
+DEEPSEEK_API_KEY=sk-xxxxx
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_WIRE_API=chat
+CHAT_PROVIDER=deepseek
 ```
 
 #### 4. 安装前端依赖

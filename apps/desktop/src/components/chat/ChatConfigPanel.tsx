@@ -1,14 +1,41 @@
-import { useEffect, useState } from "react";
-import type { AppConfig, ChatModelProviderItem } from "../../lib/api";
-import { fsClearAllowedDirectory, fsGetAllowedDirectory, fsSetAllowedDirectory, isTauriRuntime, pickDirectory } from "../../lib/tauri";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  AppConfig,
+  ChatFolderPermission,
+  ChatModelProviderItem,
+  FolderAccessLevel,
+} from "../../lib/api";
+import {
+  addImportedProject,
+  applyFolderPermissionsToRegistry,
+  buildFolderPermissionPlan,
+  loadImportedProjectRegistry,
+  normalizeProjectPath,
+  removeImportedProject,
+  saveImportedProjectRegistry,
+  setActiveImportedProject,
+  type ImportedProjectRegistry,
+} from "../../lib/projects";
+import {
+  fsClearAllowedDirectory,
+  fsGetAllowedDirectory,
+  fsSetAllowedDirectory,
+  isTauriRuntime,
+  pickDirectory,
+} from "../../lib/tauri";
 import { ConfigModal, RangeSettingField } from "../ui";
 
 type ChatConfigPanelProps = {
   config: AppConfig;
   isUpdating: boolean;
   error: string;
+  folderPermissions: ChatFolderPermission[];
+  isUpdatingFolderPermissions: boolean;
+  folderPermissionsError: string;
   chatModelProviders: ChatModelProviderItem[];
   chatModelsError: string;
+  onAddOrUpdateFolderPermission: (path: string, accessLevel: FolderAccessLevel) => Promise<void>;
+  onRemoveFolderPermission: (path: string) => Promise<void>;
   onUpdate: (config: Partial<AppConfig>) => Promise<void>;
   onClose: () => void;
 };
@@ -29,8 +56,13 @@ export function ChatConfigPanel({
   config,
   isUpdating,
   error,
+  folderPermissions,
+  isUpdatingFolderPermissions,
+  folderPermissionsError,
   chatModelProviders,
   chatModelsError,
+  onAddOrUpdateFolderPermission,
+  onRemoveFolderPermission,
   onUpdate,
   onClose,
 }: ChatConfigPanelProps) {
@@ -39,10 +71,26 @@ export function ChatConfigPanel({
   const [modelError, setModelError] = useState("");
   const [tauriAllowedDir, setTauriAllowedDir] = useState<string | null>(null);
   const [tauriFsError, setTauriFsError] = useState("");
-  const [isUpdatingTauriFs, setIsUpdatingTauriFs] = useState(false);
+  const [projectRegistry, setProjectRegistry] = useState<ImportedProjectRegistry>(() =>
+    loadImportedProjectRegistry(),
+  );
+  const [projectError, setProjectError] = useState("");
+  const [isUpdatingProjects, setIsUpdatingProjects] = useState(false);
   const hasFetchedProviders = chatModelProviders.length > 0;
   const selectedProvider = chatModelProviders.find((provider) => provider.provider_id === providerDraft);
   const modelOptions = selectedProvider?.models ?? [];
+  const projectPermissionPlan = useMemo(
+    () => buildFolderPermissionPlan(projectRegistry),
+    [projectRegistry],
+  );
+  const permissionByPath = useMemo(() => {
+    const map = new Map<string, FolderAccessLevel>();
+    for (const permission of folderPermissions) {
+      map.set(normalizeProjectPath(permission.path), permission.access_level);
+    }
+    return map;
+  }, [folderPermissions]);
+  const isMutatingProjects = isUpdatingProjects || isUpdatingFolderPermissions;
 
   useEffect(() => {
     setProviderDraft(config.chat_provider);
@@ -55,6 +103,17 @@ export function ChatConfigPanel({
       .then(setTauriAllowedDir)
       .catch((e) => setTauriFsError(e instanceof Error ? e.message : "读取本地权限失败"));
   }, []);
+
+  useEffect(() => {
+    setProjectRegistry((previous) => {
+      const next = applyFolderPermissionsToRegistry(previous, folderPermissions, tauriAllowedDir);
+      if (isSameRegistry(previous, next)) {
+        return previous;
+      }
+      saveImportedProjectRegistry(next);
+      return next;
+    });
+  }, [folderPermissions, tauriAllowedDir]);
 
   useEffect(() => {
     if (!selectedProvider) {
@@ -72,37 +131,101 @@ export function ChatConfigPanel({
     }
   }, [modelDraft, modelOptions, selectedProvider]);
 
-  async function handlePickTauriAllowedDir() {
-    if (!isTauriRuntime()) return;
-    setTauriFsError("");
-    setIsUpdatingTauriFs(true);
-    try {
-      const selected = await pickDirectory();
-      if (!selected) return;
-      const normalized = await fsSetAllowedDirectory(selected);
-      setTauriAllowedDir(normalized);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      setTauriFsError(message || "设置本地权限失败");
-      console.error("set allowed dir failed:", e);
-    } finally {
-      setIsUpdatingTauriFs(false);
+  async function syncProjectPermissionPlan(nextRegistry: ImportedProjectRegistry, removedPaths: string[] = []) {
+    const plan = buildFolderPermissionPlan(nextRegistry);
+    for (const permission of plan) {
+      await onAddOrUpdateFolderPermission(permission.path, permission.access_level);
+    }
+    for (const removedPath of removedPaths) {
+      await onRemoveFolderPermission(removedPath);
     }
   }
 
-  async function handleClearTauriAllowedDir() {
+  function updateProjectRegistry(nextRegistry: ImportedProjectRegistry) {
+    setProjectRegistry(nextRegistry);
+    saveImportedProjectRegistry(nextRegistry);
+  }
+
+  async function handleImportProject() {
     if (!isTauriRuntime()) return;
     setTauriFsError("");
-    setIsUpdatingTauriFs(true);
+    setProjectError("");
+    setIsUpdatingProjects(true);
     try {
-      await fsClearAllowedDirectory();
-      setTauriAllowedDir(null);
+      const selected = await pickDirectory();
+      if (!selected) return;
+
+      const nextRegistry = addImportedProject(projectRegistry, selected);
+      const normalized = await fsSetAllowedDirectory(selected);
+      await syncProjectPermissionPlan(nextRegistry);
+      updateProjectRegistry(nextRegistry);
+      setTauriAllowedDir(normalized);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      setTauriFsError(message || "清除本地权限失败");
-      console.error("clear allowed dir failed:", e);
+      setProjectError(message || "导入项目失败");
+      console.error("import project failed:", e);
     } finally {
-      setIsUpdatingTauriFs(false);
+      setIsUpdatingProjects(false);
+    }
+  }
+
+  async function handleActivateProject(path: string) {
+    if (!isTauriRuntime()) return;
+    setProjectError("");
+    setIsUpdatingProjects(true);
+    try {
+      const normalizedPath = normalizeProjectPath(path);
+      const nextRegistry = setActiveImportedProject(projectRegistry, normalizedPath);
+      if (isSameRegistry(projectRegistry, nextRegistry)) {
+        return;
+      }
+
+      await fsSetAllowedDirectory(normalizedPath);
+      await syncProjectPermissionPlan(nextRegistry);
+      updateProjectRegistry(nextRegistry);
+      setTauriAllowedDir(normalizedPath);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setProjectError(message || "切换主控项目失败");
+      console.error("activate project failed:", e);
+    } finally {
+      setIsUpdatingProjects(false);
+    }
+  }
+
+  async function handleRemoveProject(path: string) {
+    if (!isTauriRuntime()) return;
+    setProjectError("");
+    setIsUpdatingProjects(true);
+    try {
+      const normalizedPath = normalizeProjectPath(path);
+      const activePath = projectRegistry.active_project_path
+        ? normalizeProjectPath(projectRegistry.active_project_path)
+        : null;
+      const nextRegistry = removeImportedProject(projectRegistry, normalizedPath);
+      if (isSameRegistry(projectRegistry, nextRegistry)) {
+        return;
+      }
+
+      if (activePath === normalizedPath) {
+        if (nextRegistry.active_project_path) {
+          await fsSetAllowedDirectory(nextRegistry.active_project_path);
+          setTauriAllowedDir(nextRegistry.active_project_path);
+        } else {
+          await fsClearAllowedDirectory();
+          setTauriAllowedDir(null);
+        }
+      }
+
+      const shouldRemovePermission = permissionByPath.has(normalizedPath);
+      await syncProjectPermissionPlan(nextRegistry, shouldRemovePermission ? [normalizedPath] : []);
+      updateProjectRegistry(nextRegistry);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setProjectError(message || "移除项目失败");
+      console.error("remove project failed:", e);
+    } finally {
+      setIsUpdatingProjects(false);
     }
   }
 
@@ -142,40 +265,85 @@ export function ChatConfigPanel({
         <div className="config-panel__section config-panel__section--filesystem">
           <div className="config-panel__section-header">
             <span className="config-panel__section-icon">💾</span>
-            <label className="config-panel__label">本地文件系统 (Tauri)</label>
+            <label className="config-panel__label">项目主控</label>
           </div>
 
           <div className="config-panel__filesystem-compact">
-            {tauriAllowedDir && (
-              <div className="config-panel__fs-path" title={tauriAllowedDir}>
-                {tauriAllowedDir}
-              </div>
-            )}
-            <div className="config-panel__fs-footer">
+            <div className="config-panel__project-header">
               <div className={`config-panel__fs-status ${tauriAllowedDir ? "config-panel__fs-status--active" : ""}`}>
                 <span className="config-panel__fs-status-dot"></span>
-                <span className="config-panel__fs-status-text">{tauriAllowedDir ? "已授权" : "未设置"}</span>
+                <span className="config-panel__fs-status-text">
+                  {tauriAllowedDir ? "已设置主控项目" : "未设置主控项目"}
+                </span>
               </div>
-              <div className="config-panel__fs-actions">
-                <button
-                  type="button"
-                  className="config-panel__fs-btn config-panel__fs-btn--primary"
-                  onClick={() => void handlePickTauriAllowedDir()}
-                  disabled={isUpdatingTauriFs}
-                >
-                  {tauriAllowedDir ? "更改" : "选择目录"}
-                </button>
-                {tauriAllowedDir && (
-                  <button
-                    type="button"
-                    className="config-panel__fs-btn config-panel__fs-btn--danger"
-                    onClick={() => void handleClearTauriAllowedDir()}
-                    disabled={isUpdatingTauriFs}
-                    title="清除授权"
-                  >
-                    清除
-                  </button>
-                )}
+              <button
+                type="button"
+                className="config-panel__fs-btn config-panel__fs-btn--primary"
+                onClick={() => void handleImportProject()}
+                disabled={isMutatingProjects}
+              >
+                导入项目
+              </button>
+            </div>
+
+            {projectRegistry.projects.length === 0 ? (
+              <div className="config-panel__project-empty">还没有导入项目，先选择一个项目文件夹。</div>
+            ) : (
+              <ul className="config-panel__project-list">
+                {projectRegistry.projects.map((project) => {
+                  const normalizedPath = normalizeProjectPath(project.path);
+                  const isActive = normalizedPath === normalizeProjectPath(projectRegistry.active_project_path ?? "");
+                  const permission = permissionByPath.get(normalizedPath);
+
+                  return (
+                    <li key={normalizedPath} className={`config-panel__project-item ${isActive ? "is-active" : ""}`}>
+                      <div className="config-panel__project-main">
+                        <div className="config-panel__project-name-row">
+                          <strong className="config-panel__project-name">{project.name}</strong>
+                          <span className={`config-panel__project-badge ${isActive ? "is-active" : ""}`}>
+                            {isActive ? "主控" : "已导入"}
+                          </span>
+                          {permission ? (
+                            <span className="config-panel__project-badge config-panel__project-badge--muted">
+                              {permission === "full_access" ? "可读写" : "只读"}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="config-panel__project-path" title={normalizedPath}>
+                          {normalizedPath}
+                        </div>
+                      </div>
+                      <div className="config-panel__project-actions">
+                        <button
+                          type="button"
+                          className="config-panel__fs-btn"
+                          onClick={() => void handleActivateProject(normalizedPath)}
+                          disabled={isMutatingProjects || isActive}
+                        >
+                          设为主控
+                        </button>
+                        <button
+                          type="button"
+                          className="config-panel__fs-btn config-panel__fs-btn--danger"
+                          onClick={() => void handleRemoveProject(normalizedPath)}
+                          disabled={isMutatingProjects}
+                        >
+                          移除
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            <div className="config-panel__fs-footer">
+              <div className="config-panel__fs-status">
+                <span className="config-panel__fs-status-text">
+                  共导入 {projectRegistry.projects.length} 个项目，当前主控:
+                  {" "}
+                  {projectRegistry.active_project_path ? normalizeProjectPath(projectRegistry.active_project_path) : "无"}
+                </span>
               </div>
             </div>
           </div>
@@ -184,6 +352,23 @@ export function ChatConfigPanel({
             <div className="config-panel__error-box">
               <span className="config-panel__error-icon">⚠</span>
               <span>{tauriFsError}</span>
+            </div>
+          ) : null}
+          {projectError ? (
+            <div className="config-panel__error-box">
+              <span className="config-panel__error-icon">⚠</span>
+              <span>{projectError}</span>
+            </div>
+          ) : null}
+          {folderPermissionsError ? (
+            <div className="config-panel__error-box">
+              <span className="config-panel__error-icon">⚠</span>
+              <span>{folderPermissionsError}</span>
+            </div>
+          ) : null}
+          {projectPermissionPlan.length > 0 ? (
+            <div className="config-panel__description">
+              权限策略：主控项目可读写，其他导入项目默认只读。
             </div>
           ) : null}
         </div>
@@ -278,4 +463,27 @@ export function ChatConfigPanel({
       </div>
     </ConfigModal>
   );
+}
+
+function isSameRegistry(a: ImportedProjectRegistry, b: ImportedProjectRegistry): boolean {
+  if (normalizeProjectPath(a.active_project_path ?? "") !== normalizeProjectPath(b.active_project_path ?? "")) {
+    return false;
+  }
+  if (a.projects.length !== b.projects.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.projects.length; index += 1) {
+    const left = a.projects[index];
+    const right = b.projects[index];
+    if (
+      normalizeProjectPath(left?.path ?? "") !== normalizeProjectPath(right?.path ?? "") ||
+      (left?.name ?? "") !== (right?.name ?? "") ||
+      (left?.imported_at ?? "") !== (right?.imported_at ?? "")
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }

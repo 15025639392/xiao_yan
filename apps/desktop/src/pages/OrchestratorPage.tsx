@@ -75,118 +75,87 @@ export function OrchestratorPage({
   }
 
   return (
-    <section className="orchestrator-page orchestrator-page--chatfirst">
-      <header className="orchestrator-chat-header">
-        <div className="orchestrator-chat-header__copy">
-          <p className="orchestrator-page__eyebrow">Orchestrator V3</p>
-          <h2 className="orchestrator-page__title">{session.project_name}</h2>
-          <p className="orchestrator-page__subtitle">{session.goal}</p>
-        </div>
-        <div className="orchestrator-chat-header__meta">
-          <span className={`orchestrator-status orchestrator-status--${session.status}`}>{renderSessionStatus(session.status)}</span>
-          <span className="orchestrator-pill">{metrics.done}/{metrics.total || 0} 已完成</span>
-          {session.coordination?.queue_position ? <span className="orchestrator-pill">队列 #{session.coordination.queue_position}</span> : null}
-          <span className="orchestrator-pill">并行上限 {scheduler.max_parallel_sessions}</span>
-        </div>
-        <div className="orchestrator-page__header-actions">
-          {session.status === "pending_plan_approval" ? (
-            <button className="btn btn--primary btn--sm" onClick={() => void onApprovePlan(session.session_id)} type="button">
-              批准并开工
-            </button>
-          ) : null}
-          {session.status !== "pending_plan_approval" && canResumeSession(session) ? (
-            <button className="btn btn--secondary btn--sm" onClick={() => void onResumeSession(session.session_id)} type="button">
-              {session.coordination?.failure_category === "verification_failure" ? "重跑验收" : "恢复推进"}
-            </button>
-          ) : null}
-          <button className="btn btn--ghost btn--sm" onClick={() => void setAdvancedOpen((value) => !value)} type="button">
-            {advancedOpen ? "收起高级信息" : "展开高级信息"}
-          </button>
-          <button className="btn btn--ghost btn--sm" onClick={() => void onCancelSession(session.session_id)} type="button">
-            退出主控
-          </button>
-        </div>
-      </header>
-
-      <div className={`orchestrator-chat-layout ${advancedOpen ? "orchestrator-chat-layout--sidebar-open" : ""}`}>
-        <div className="orchestrator-chat-main">
-          <OrchestratorConversationPanel
-            session={session}
-            messages={messages}
-            draft={draft}
-            isSending={isSending}
-            onDraftChange={onDraftChange}
-            onSendMessage={() => void onSendMessage()}
-            onApprovePlan={onApprovePlan}
-            onRejectPlan={onRejectPlan}
-            onResumeSession={onResumeSession}
-            onCancelSession={onCancelSession}
-            onActivateSession={onActivateSession}
-            onSendQuickMessage={onSendQuickMessage}
-          />
-
-          {advancedOpen ? (
-            <section className="orchestrator-chat-advanced" aria-label="主控高级信息">
-              <div className="orchestrator-chat-context-bar">
-                <div className="orchestrator-chat-context-item">
-                  <span>当前焦点</span>
-                  <strong>{resolveCurrentFocus(session)}</strong>
-                </div>
-                <div className="orchestrator-chat-context-item">
-                  <span>下一步</span>
-                  <strong>{resolveNextMove(session)}</strong>
-                </div>
-                <div className="orchestrator-chat-context-item">
-                  <span>等待原因</span>
-                  <strong>{session.coordination?.waiting_reason || "主控已就绪"}</strong>
-                </div>
-              </div>
-
-              {session.status === "pending_plan_approval" ? (
-                <div className="orchestrator-chat-advanced__actions">
-                  <button className="btn btn--secondary btn--sm" onClick={() => void onRejectPlan(session.session_id)} type="button">
-                    拒绝计划
-                  </button>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-        </div>
+    <div className={`orchestrator-chat-layout ${advancedOpen ? "orchestrator-chat-layout--sidebar-open" : ""}`}>
+      <div className="orchestrator-chat-main">
+        <OrchestratorConversationPanel
+          session={session}
+          messages={messages}
+          draft={draft}
+          isSending={isSending}
+          onDraftChange={onDraftChange}
+          onSendMessage={() => void onSendMessage()}
+          onApprovePlan={onApprovePlan}
+          onRejectPlan={onRejectPlan}
+          onResumeSession={onResumeSession}
+          onCancelSession={onCancelSession}
+          onActivateSession={onActivateSession}
+          onSendQuickMessage={onSendQuickMessage}
+          metrics={metrics}
+          onToggleSidebar={() => setAdvancedOpen(!advancedOpen)}
+          sidebarOpen={advancedOpen}
+        />
 
         {advancedOpen ? (
-          <aside className="orchestrator-chat-sidebar">
-            <div className="orchestrator-chat-sidebar__tabs" role="tablist" aria-label="主控侧栏">
-              {[
-                ["plan", "计划"],
-                ["tasks", "任务"],
-                ["verification", "验收"],
-                ["sessions", "会话池"],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  className={`orchestrator-chat-sidebar__tab ${activeTab === key ? "orchestrator-chat-sidebar__tab--active" : ""}`}
-                  aria-selected={activeTab === key}
-                  onClick={() => setActiveTab(key as SidebarTab)}
-                >
-                  {label}
-                </button>
-              ))}
+          <section className="orchestrator-chat-advanced" aria-label="主控高级信息">
+            <div className="orchestrator-chat-context-bar">
+              <div className="orchestrator-chat-context-item">
+                <span>当前焦点</span>
+                <strong>{resolveCurrentFocus(session)}</strong>
+              </div>
+              <div className="orchestrator-chat-context-item">
+                <span>下一步</span>
+                <strong>{resolveNextMove(session)}</strong>
+              </div>
+              <div className="orchestrator-chat-context-item">
+                <span>等待原因</span>
+                <strong>{session.coordination?.waiting_reason || "主控已就绪"}</strong>
+              </div>
             </div>
 
-            <div className="orchestrator-chat-sidebar__panel">
-              {activeTab === "plan" ? <PlanSidebar session={session} /> : null}
-              {activeTab === "tasks" ? <TasksSidebar session={session} /> : null}
-              {activeTab === "verification" ? <VerificationSidebar session={session} /> : null}
-              {activeTab === "sessions" ? (
-                <SessionsSidebar sessions={sessions} activeSessionId={session.session_id} onActivateSession={onActivateSession} />
-              ) : null}
-            </div>
-          </aside>
+            {session.status === "pending_plan_approval" ? (
+              <div className="orchestrator-chat-advanced__actions">
+                <button className="btn btn--secondary btn--sm" onClick={() => void onRejectPlan(session.session_id)} type="button">
+                  拒绝计划
+                </button>
+              </div>
+            ) : null}
+          </section>
         ) : null}
       </div>
-    </section>
+
+      {advancedOpen ? (
+        <aside className="orchestrator-chat-sidebar">
+          <div className="orchestrator-chat-sidebar__tabs" role="tablist" aria-label="主控侧栏">
+            {[
+              ["plan", "计划"],
+              ["tasks", "任务"],
+              ["verification", "验收"],
+              ["sessions", "会话池"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                className={`orchestrator-chat-sidebar__tab ${activeTab === key ? "orchestrator-chat-sidebar__tab--active" : ""}`}
+                aria-selected={activeTab === key}
+                onClick={() => setActiveTab(key as SidebarTab)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="orchestrator-chat-sidebar__panel">
+            {activeTab === "plan" ? <PlanSidebar session={session} /> : null}
+            {activeTab === "tasks" ? <TasksSidebar session={session} /> : null}
+            {activeTab === "verification" ? <VerificationSidebar session={session} /> : null}
+            {activeTab === "sessions" ? (
+              <SessionsSidebar sessions={sessions} activeSessionId={session.session_id} onActivateSession={onActivateSession} />
+            ) : null}
+          </div>
+        </aside>
+      ) : null}
+    </div>
   );
 }
 
@@ -229,23 +198,80 @@ function TasksSidebar({ session }: { session: OrchestratorSession }) {
   }
 
   return (
-    <ol className="orchestrator-flow-list">
-      {tasks.map((task) => (
-        <li key={task.task_id} className={`orchestrator-flow-step orchestrator-flow-step--${task.status}`}>
-          <div className="orchestrator-flow-step__marker" />
-          <div className="orchestrator-flow-step__body">
-            <div className="orchestrator-flow-step__head">
-              <div>
-                <div className="orchestrator-flow-step__eyebrow">{task.kind.toUpperCase()}</div>
-                <strong>{task.title}</strong>
-              </div>
-              <span className={`orchestrator-pill orchestrator-pill--${task.status}`}>{renderTaskStatus(task.status)}</span>
+    <>
+      <div className="orchestrator-tasks-summary">
+        <div className="orchestrator-tasks-summary__item">
+          <span className="orchestrator-tasks-summary__label">总任务</span>
+          <span className="orchestrator-tasks-summary__value">{tasks.length}</span>
+        </div>
+        <div className="orchestrator-tasks-summary__item">
+          <span className="orchestrator-tasks-summary__label">已完成</span>
+          <span className="orchestrator-tasks-summary__value orchestrator-tasks-summary__value--success">
+            {tasks.filter(t => t.status === "succeeded").length}
+          </span>
+        </div>
+        <div className="orchestrator-tasks-summary__item">
+          <span className="orchestrator-tasks-summary__label">进行中</span>
+          <span className="orchestrator-tasks-summary__value orchestrator-tasks-summary__value--warning">
+            {tasks.filter(t => t.status === "running").length}
+          </span>
+        </div>
+        <div className="orchestrator-tasks-summary__item">
+          <span className="orchestrator-tasks-summary__label">失败</span>
+          <span className="orchestrator-tasks-summary__value orchestrator-tasks-summary__value--danger">
+            {tasks.filter(t => t.status === "failed").length}
+          </span>
+        </div>
+      </div>
+      
+      <div className="orchestrator-tasks-progress">
+        <div className="orchestrator-progress-bar">
+          <span 
+            style={{ 
+              width: `${tasks.length > 0 ? (tasks.filter(t => t.status === "succeeded").length / tasks.length) * 100 : 0}%` 
+            }}
+          ></span>
+        </div>
+        <span className="orchestrator-tasks-progress__text">
+          {tasks.length > 0 ? Math.round((tasks.filter(t => t.status === "succeeded").length / tasks.length) * 100) : 0}% 完成
+        </span>
+      </div>
+
+      <ol className="orchestrator-flow-list">
+        {tasks.map((task, index) => (
+          <li key={task.task_id} className={`orchestrator-flow-step orchestrator-flow-step--${task.status}`}>
+            <div className="orchestrator-flow-step__marker">
+              <span>{index + 1}</span>
             </div>
-            <p className="orchestrator-flow-step__summary">{task.result_summary || task.error || "等待推进"}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
+            <div className="orchestrator-flow-step__body">
+              <div className="orchestrator-flow-step__head">
+                <div>
+                  <div className="orchestrator-flow-step__eyebrow">{task.kind.toUpperCase()}</div>
+                  <strong>{task.title}</strong>
+                  {task.delegate_run_id ? (
+                    <div className="orchestrator-task__runid">运行ID: {task.delegate_run_id}</div>
+                  ) : null}
+                </div>
+                <span className={`orchestrator-pill orchestrator-pill--${task.status}`}>
+                  {renderTaskStatus(task.status)}
+                </span>
+              </div>
+              <p className="orchestrator-flow-step__summary">
+                {task.result_summary || task.error || "等待推进"}
+              </p>
+              {task.status === "running" && (
+                <div className="orchestrator-task__progress">
+                  <div className="orchestrator-progress-bar orchestrator-progress-bar--small">
+                    <span style={{ width: "60%" }}></span>
+                  </div>
+                  <span className="orchestrator-task__progress-text">进行中...</span>
+                </div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }
 

@@ -96,3 +96,36 @@ def test_chat_instructions_include_relationship_guidance():
     assert "优先兑现或回应这些已形成的承诺" in instructions
     assert "答应你明天提醒你复盘" in instructions
     assert "喜欢先看方案再做决定" in instructions
+
+
+def test_chat_instructions_include_proactive_dialogue_guidance():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        user_message="我今天有点乱，不知道从哪开始",
+        persona_system_prompt=persona_prompt,
+    )
+
+    assert "默认不要只做“问一句答一句”" in instructions
+    assert "先回应当前问题，再主动补一小步推进" in instructions
+    assert "只有当问题能解锁下一步行动时才提问" in instructions
+    assert "不要每次都用提问句收尾" in instructions
+
+
+def test_chat_instructions_emotion_messages_should_not_trigger_interrogation():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        user_message="我最近挺累的，感觉做什么都提不起劲",
+        persona_system_prompt=persona_prompt,
+    )
+
+    assert "先接住感受" in instructions
+    assert "给一个可执行的微小建议" in instructions
+    assert "不要立刻连环追问" in instructions

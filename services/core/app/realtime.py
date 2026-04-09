@@ -43,6 +43,101 @@ class AppRealtimeHub:
     def publish_persona(self) -> None:
         self._schedule_broadcast("persona_updated", lambda snapshot: snapshot["persona"])
 
+    def publish_orchestrator_session_updated(self, payload: Any) -> None:
+        self._schedule_payload("orchestrator_session_updated", payload)
+
+    def publish_orchestrator_task_updated(self, payload: Any) -> None:
+        self._schedule_payload("orchestrator_task_updated", payload)
+
+    def publish_orchestrator_plan_pending_approval(self, payload: Any) -> None:
+        self._schedule_payload("orchestrator_plan_pending_approval", payload)
+
+    def publish_orchestrator_verification_completed(self, payload: Any) -> None:
+        self._schedule_payload("orchestrator_verification_completed", payload)
+
+    def publish_orchestrator_message_started(
+        self,
+        *,
+        session_id: str,
+        assistant_message_id: str,
+        response_id: str | None = None,
+    ) -> None:
+        seq = self._get_next_sequence(f"orchestrator:{session_id}")
+        self._schedule_payload(
+            "orchestrator_message_started",
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "response_id": response_id,
+                "sequence": seq,
+                "timestamp_ms": _current_timestamp_ms(),
+            },
+        )
+
+    def publish_orchestrator_message_delta(
+        self,
+        *,
+        session_id: str,
+        assistant_message_id: str,
+        delta: str,
+    ) -> None:
+        seq = self._get_next_sequence(f"orchestrator:{session_id}")
+        self._schedule_payload(
+            "orchestrator_message_delta",
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "delta": delta,
+                "sequence": seq,
+                "timestamp_ms": _current_timestamp_ms(),
+            },
+        )
+
+    def publish_orchestrator_message_completed(
+        self,
+        *,
+        session_id: str,
+        assistant_message_id: str,
+        response_id: str | None,
+        content: str,
+        blocks: Any,
+    ) -> None:
+        seq = self._get_next_sequence(f"orchestrator:{session_id}")
+        self._schedule_payload(
+            "orchestrator_message_completed",
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "response_id": response_id,
+                "content": content,
+                "blocks": blocks,
+                "sequence": seq,
+                "timestamp_ms": _current_timestamp_ms(),
+            },
+        )
+
+    def publish_orchestrator_message_failed(
+        self,
+        *,
+        session_id: str,
+        assistant_message_id: str,
+        error: str,
+    ) -> None:
+        seq = self._get_next_sequence(f"orchestrator:{session_id}")
+        self._schedule_payload(
+            "orchestrator_message_failed",
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "error": error,
+                "sequence": seq,
+                "timestamp_ms": _current_timestamp_ms(),
+            },
+        )
+
+    def publish_orchestrator_message_appended(self, payload: Any) -> None:
+        self._schedule_payload("orchestrator_message_appended", payload)
+
     def publish_chat_started(
         self,
         assistant_message_id: str,

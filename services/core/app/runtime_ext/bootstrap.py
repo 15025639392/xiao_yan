@@ -18,6 +18,8 @@ from app.config import (
     get_goal_admission_world_defer_score,
     get_goal_admission_world_min_score,
     get_goal_admission_storage_path,
+    get_orchestrator_message_storage_path,
+    get_orchestrator_storage_path,
     get_goal_wip_limit,
     is_goal_admission_world_enabled,
     get_memory_storage_path,
@@ -29,6 +31,10 @@ from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
 from app.goals.repository import FileGoalRepository
 from app.memory.repository import FileMemoryRepository
 from app.memory.service import MemoryService
+from app.orchestrator.conversation_repository import OrchestratorConversationRepository
+from app.orchestrator.conversation_service import OrchestratorConversationService
+from app.orchestrator.repository import OrchestratorSessionRepository
+from app.orchestrator.service import OrchestratorService
 from app.persona.service import FilePersonaRepository, PersonaService
 from app.realtime import AppRealtimeHub
 from app.runtime import StateStore
@@ -84,6 +90,17 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     self_programming_history = SelfProgrammingHistory(
         storage_path=get_state_storage_path().parent / ".self-programming-history.json",
     )
+    orchestrator_repository = OrchestratorSessionRepository(get_orchestrator_storage_path())
+    orchestrator_conversation_repository = OrchestratorConversationRepository(get_orchestrator_message_storage_path())
+    orchestrator_conversation_service = OrchestratorConversationService(
+        repository=orchestrator_conversation_repository,
+        scheduler_provider=lambda: orchestrator_service.get_scheduler_snapshot(),
+    )
+    orchestrator_service = OrchestratorService(
+        repository=orchestrator_repository,
+        state_store=state_store,
+        conversation_service=orchestrator_conversation_service,
+    )
 
     try:
         from app.llm.gateway import ChatGateway
@@ -128,6 +145,14 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.autonomy_thread = worker
     target_app.state.autonomy_loop = loop
     target_app.state.self_programming_history = self_programming_history
+    target_app.state.orchestrator_repository = orchestrator_repository
+    target_app.state.orchestrator_conversation_repository = orchestrator_conversation_repository
+    target_app.state.orchestrator_conversation_service = orchestrator_conversation_service
+    target_app.state.orchestrator_service = orchestrator_service
+
+    current_orchestrator_session = state_store.get().orchestrator_session
+    if current_orchestrator_session is not None:
+        orchestrator_repository.save(current_orchestrator_session)
 
 
 def shutdown_runtime(target_app: FastAPI) -> None:

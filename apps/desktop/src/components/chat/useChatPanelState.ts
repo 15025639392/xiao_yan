@@ -187,7 +187,7 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     const normalizedPath = path.trim();
     if (!normalizedPath) {
       setFolderPermissionsError("请输入文件夹绝对路径");
-      return;
+      throw new Error("请输入文件夹绝对路径");
     }
 
     setIsUpdatingFolderPermissions(true);
@@ -196,7 +196,9 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
       const updated = await upsertChatFolderPermission(normalizedPath, accessLevel);
       setFolderPermissions(updated.permissions);
     } catch (error) {
-      setFolderPermissionsError(error instanceof Error ? error.message : "更新文件夹权限失败");
+      const message = error instanceof Error ? error.message : "更新文件夹权限失败";
+      setFolderPermissionsError(message);
+      throw error instanceof Error ? error : new Error(message);
     } finally {
       setIsUpdatingFolderPermissions(false);
     }
@@ -209,7 +211,9 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
       const updated = await removeChatFolderPermission(path);
       setFolderPermissions(updated.permissions);
     } catch (error) {
-      setFolderPermissionsError(error instanceof Error ? error.message : "移除文件夹权限失败");
+      const message = error instanceof Error ? error.message : "移除文件夹权限失败";
+      setFolderPermissionsError(message);
+      throw error instanceof Error ? error : new Error(message);
     } finally {
       setIsUpdatingFolderPermissions(false);
     }

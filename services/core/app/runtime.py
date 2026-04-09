@@ -2,7 +2,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Callable
 
-from app.domain.models import BeingState, SelfProgrammingJob, TodayPlan
+from app.domain.models import BeingState, OrchestratorSession, SelfProgrammingJob, TodayPlan
 from app.memory.repository import MemoryRepository
 from app.utils.file_utils import read_json_file, write_json_file
 from app.usecases.lifecycle import go_to_sleep, wake_up
@@ -38,10 +38,17 @@ class StateStore:
             ):
                 self_programming_job = SelfProgrammingJob.model_validate(self_programming_job)
 
+            orchestrator_session = state.orchestrator_session
+            if orchestrator_session is not None and not isinstance(
+                orchestrator_session, OrchestratorSession
+            ):
+                orchestrator_session = OrchestratorSession.model_validate(orchestrator_session)
+
             self._state = state.model_copy(
                 update={
                     "today_plan": today_plan,
                     "self_programming_job": self_programming_job,
+                    "orchestrator_session": orchestrator_session,
                 },
                 deep=True,
             )

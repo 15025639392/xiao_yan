@@ -43,6 +43,11 @@ def _is_nvidia_like_base_url(base_url: str) -> bool:
     return "integrate.api.nvidia.com" in normalized or "api.nvidia.com" in normalized
 
 
+def _is_deepseek_like_base_url(base_url: str) -> bool:
+    normalized = base_url.lower()
+    return "api.deepseek.com" in normalized or "deepseek.com" in normalized
+
+
 def _normalize_provider_id(provider_id: str) -> str:
     normalized = provider_id.strip().lower()
     normalized = re.sub(r"[^a-z0-9_-]+", "-", normalized)
@@ -53,7 +58,7 @@ def _normalize_provider_id(provider_id: str) -> str:
 def _infer_wire_api(base_url: str, configured: str | None) -> str:
     if configured and configured.strip():
         return configured.strip()
-    if _is_minimax_like_base_url(base_url) or _is_nvidia_like_base_url(base_url):
+    if _is_minimax_like_base_url(base_url) or _is_nvidia_like_base_url(base_url) or _is_deepseek_like_base_url(base_url):
         return "chat"
     return "responses"
 
@@ -149,6 +154,22 @@ def get_llm_provider_configs() -> list[LLMProviderConfig]:
             base_url=nvidia_base_url or "https://integrate.api.nvidia.com/v1",
             wire_api=_infer_wire_api(nvidia_base_url or "https://integrate.api.nvidia.com/v1", nvidia_wire_api),
             default_model=nvidia_model,
+        )
+
+    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+    deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip() or "deepseek-chat"
+    deepseek_wire_api = os.getenv("DEEPSEEK_WIRE_API")
+    if deepseek_wire_api is None:
+        deepseek_wire_api = "chat"
+    if deepseek_api_key:
+        register_provider(
+            provider_id="deepseek",
+            provider_name="DeepSeek",
+            api_key=deepseek_api_key,
+            base_url=deepseek_base_url or "https://api.deepseek.com",
+            wire_api=_infer_wire_api(deepseek_base_url or "https://api.deepseek.com", deepseek_wire_api),
+            default_model=deepseek_model,
         )
 
     custom_provider_ids = os.getenv("LLM_PROVIDER_IDS", "")
@@ -255,6 +276,22 @@ def get_capability_queue_storage_path() -> Path:
     if configured:
         return Path(configured).expanduser()
     return get_service_root() / ".data" / "capability_queue.json"
+
+
+def get_orchestrator_storage_path() -> Path:
+    load_local_env()
+    configured = os.getenv("ORCHESTRATOR_STORAGE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    return get_service_root() / ".data" / "orchestrator_sessions.json"
+
+
+def get_orchestrator_message_storage_path() -> Path:
+    load_local_env()
+    configured = os.getenv("ORCHESTRATOR_MESSAGE_STORAGE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    return get_service_root() / ".data" / "orchestrator_messages.json"
 
 
 def get_goal_admission_mode() -> str:

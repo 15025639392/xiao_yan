@@ -554,6 +554,41 @@ def test_gateway_from_env_supports_nvidia_key_and_chat_default():
                 os.environ[key] = value
 
 
+def test_gateway_from_env_supports_deepseek_key_and_chat_default():
+    env_backup = {
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+        "MINIMAX_API_KEY": os.getenv("MINIMAX_API_KEY"),
+        "NVIDIA_API_KEY": os.getenv("NVIDIA_API_KEY"),
+        "DEEPSEEK_API_KEY": os.getenv("DEEPSEEK_API_KEY"),
+        "DEEPSEEK_MODEL": os.getenv("DEEPSEEK_MODEL"),
+        "DEEPSEEK_BASE_URL": os.getenv("DEEPSEEK_BASE_URL"),
+        "DEEPSEEK_WIRE_API": os.getenv("DEEPSEEK_WIRE_API"),
+        "CHAT_PROVIDER": os.getenv("CHAT_PROVIDER"),
+    }
+
+    try:
+        os.environ["OPENAI_API_KEY"] = ""
+        os.environ["MINIMAX_API_KEY"] = ""
+        os.environ["NVIDIA_API_KEY"] = ""
+        os.environ["DEEPSEEK_API_KEY"] = "deepseek-key"
+        os.environ["DEEPSEEK_MODEL"] = "deepseek-chat"
+        os.environ["DEEPSEEK_BASE_URL"] = "https://api.deepseek.com"
+        os.environ.pop("DEEPSEEK_WIRE_API", None)
+        os.environ["CHAT_PROVIDER"] = "deepseek"
+
+        gateway = ChatGateway.from_env()
+        assert gateway.api_key == "deepseek-key"
+        assert gateway.wire_api == "chat"
+        assert gateway.model == "deepseek-chat"
+        assert gateway.base_url == "https://api.deepseek.com"
+    finally:
+        for key, value in env_backup.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def test_gateway_chat_wire_merges_multiple_system_messages():
     gateway = ChatGateway(
         api_key="test-key",

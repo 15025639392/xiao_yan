@@ -3,6 +3,7 @@ import { afterEach, vi } from "vitest";
 
 import App from "./App";
 import { resetAppRealtimeForTests } from "./lib/realtime";
+import { IMPORTED_PROJECTS_STORAGE_KEY } from "./lib/projects";
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -565,6 +566,468 @@ test("does not duplicate text when chat delta payloads are cumulative snapshots"
   await waitFor(() => {
     expect(screen.getByText("你好呀")).toBeInTheDocument();
   });
+});
+
+test("syncs active imported project permission before entering orchestrator mode", async () => {
+  localStorage.setItem(
+    IMPORTED_PROJECTS_STORAGE_KEY,
+    JSON.stringify({
+      projects: [
+        {
+          path: "/tmp/demo-project",
+          name: "demo-project",
+          imported_at: "2026-04-08T12:00:00.000Z",
+        },
+      ],
+      active_project_path: "/tmp/demo-project",
+    }),
+  );
+
+  let sessionCreated = false;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          focus_mode: sessionCreated ? "orchestrator" : "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          orchestrator_session: sessionCreated
+            ? {
+                session_id: "session-1",
+                project_path: "/tmp/demo-project",
+                project_name: "demo-project",
+                goal: "进入主控，处理当前项目",
+                status: "pending_plan_approval",
+                plan: null,
+                delegates: [],
+                coordination: {
+                  mode: "ready",
+                  priority_score: 1,
+                },
+                verification: null,
+                summary: null,
+                entered_at: "2026-04-08T12:00:00.000Z",
+                updated_at: "2026-04-08T12:00:00.000Z",
+              }
+            : null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/orchestrator/sessions") && !init?.method) {
+      return new Response(JSON.stringify(sessionCreated ? [{
+        session_id: "session-1",
+        project_path: "/tmp/demo-project",
+        project_name: "demo-project",
+        goal: "进入主控，处理当前项目",
+        status: "pending_plan_approval",
+        plan: {
+          objective: "进入主控，处理当前项目",
+          constraints: [],
+          definition_of_done: [],
+          project_snapshot: {
+            project_path: "/tmp/demo-project",
+            project_name: "demo-project",
+            repository_root: "/tmp/demo-project",
+            languages: ["TypeScript"],
+            package_manager: "npm",
+            framework: "vite",
+            entry_files: ["src/main.ts"],
+            test_commands: ["npm test"],
+            build_commands: ["npm run build"],
+            key_directories: ["src"],
+          },
+          tasks: [],
+        },
+        delegates: [],
+        coordination: {
+          mode: "ready",
+          priority_score: 1,
+        },
+        verification: null,
+        summary: null,
+        entered_at: "2026-04-08T12:00:00.000Z",
+        updated_at: "2026-04-08T12:00:00.000Z",
+      }] : []), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/orchestrator/scheduler")) {
+      return new Response(
+        JSON.stringify({
+          max_parallel_sessions: 2,
+          running_sessions: 0,
+          available_slots: 2,
+          queued_sessions: 0,
+          active_session_id: sessionCreated ? "session-1" : null,
+          running_session_ids: [],
+          queued_session_ids: [],
+          verification_rollup: {
+            total_sessions: sessionCreated ? 1 : 0,
+            passed_sessions: 0,
+            failed_sessions: 0,
+            pending_sessions: sessionCreated ? 1 : 0,
+          },
+          policy_note: "最多并行 2 个项目会话",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat/folder-permissions") && init?.method === "PUT") {
+      expect(init.body).toBe(
+        JSON.stringify({
+          path: "/tmp/demo-project",
+          access_level: "full_access",
+        }),
+      );
+      return new Response(
+        JSON.stringify({
+          permissions: [{ path: "/tmp/demo-project", access_level: "full_access" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/orchestrator/sessions") && init?.method === "POST") {
+      sessionCreated = true;
+      expect(init.body).toBe(
+        JSON.stringify({
+          goal: "进入主控，处理当前项目",
+          project_path: "/tmp/demo-project",
+        }),
+      );
+      return new Response(
+        JSON.stringify({
+          session_id: "session-1",
+          project_path: "/tmp/demo-project",
+          project_name: "demo-project",
+          goal: "进入主控，处理当前项目",
+          status: "draft",
+          plan: null,
+          delegates: [],
+          coordination: {
+            mode: "idle",
+            priority_score: 1,
+          },
+          verification: null,
+          summary: null,
+          entered_at: "2026-04-08T12:00:00.000Z",
+          updated_at: "2026-04-08T12:00:00.000Z",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/orchestrator/sessions/session-1/plan") && init?.method === "POST") {
+      return new Response(
+        JSON.stringify({
+          session_id: "session-1",
+          project_path: "/tmp/demo-project",
+          project_name: "demo-project",
+          goal: "进入主控，处理当前项目",
+          status: "pending_plan_approval",
+          plan: {
+            objective: "进入主控，处理当前项目",
+            constraints: [],
+            definition_of_done: [],
+            project_snapshot: {
+              project_path: "/tmp/demo-project",
+              project_name: "demo-project",
+              repository_root: "/tmp/demo-project",
+              languages: ["TypeScript"],
+              package_manager: "npm",
+              framework: "vite",
+              entry_files: ["src/main.ts"],
+              test_commands: ["npm test"],
+              build_commands: ["npm run build"],
+              key_directories: ["src"],
+            },
+            tasks: [],
+          },
+          delegates: [],
+          coordination: {
+            mode: "ready",
+            priority_score: 1,
+          },
+          verification: null,
+          summary: null,
+          entered_at: "2026-04-08T12:00:00.000Z",
+          updated_at: "2026-04-08T12:00:00.000Z",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  MockWebSocket.instances[0]?.open();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "进入主控，处理当前项目" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(window.location.hash).toBe("#/orchestrator");
+  });
+
+  const callUrls = fetchMock.mock.calls.map(([input, init]) => ({
+    url: String(input),
+    method: init?.method ?? "GET",
+  }));
+  const syncIndex = callUrls.findIndex(
+    (call) => call.url.endsWith("/chat/folder-permissions") && call.method === "PUT",
+  );
+  const createIndex = callUrls.findIndex(
+    (call) => call.url.endsWith("/orchestrator/sessions") && call.method === "POST",
+  );
+
+  expect(syncIndex).toBeGreaterThanOrEqual(0);
+  expect(createIndex).toBeGreaterThan(syncIndex);
+});
+
+test("restores imported project registry to core folder permissions on app startup", async () => {
+  localStorage.setItem(
+    IMPORTED_PROJECTS_STORAGE_KEY,
+    JSON.stringify({
+      projects: [
+        {
+          path: "/tmp/project-a",
+          name: "project-a",
+          imported_at: "2026-04-08T12:00:00.000Z",
+        },
+        {
+          path: "/tmp/project-b",
+          name: "project-b",
+          imported_at: "2026-04-08T12:01:00.000Z",
+        },
+      ],
+      active_project_path: "/tmp/project-b",
+    }),
+  );
+
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          orchestrator_session: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/orchestrator/sessions")) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/orchestrator/scheduler")) {
+      return new Response(
+        JSON.stringify({
+          max_parallel_sessions: 2,
+          running_sessions: 0,
+          available_slots: 2,
+          queued_sessions: 0,
+          active_session_id: null,
+          running_session_ids: [],
+          queued_session_ids: [],
+          verification_rollup: {
+            total_sessions: 0,
+            passed_sessions: 0,
+            failed_sessions: 0,
+            pending_sessions: 0,
+          },
+          policy_note: "最多并行 2 个项目会话",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/persona/emotion")) {
+      return new Response(
+        JSON.stringify({
+          primary: "calm",
+          intensity: 0.4,
+          energy: 0.7,
+          valence: 0.6,
+          confidence: 0.8,
+          updated_at: "2026-04-08T12:05:00.000Z",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/memory/summary")) {
+      return new Response(
+        JSON.stringify({
+          stats: {
+            total_memories: 0,
+            by_type: {},
+            by_priority: {},
+          },
+          relationship: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat/folder-permissions") && init?.method === "PUT") {
+      return new Response(JSON.stringify({ permissions: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(<App />);
+
+  await waitFor(() => {
+    const permissionCalls = fetchMock.mock.calls.filter(([input, init]) =>
+      String(input).endsWith("/chat/folder-permissions") && init?.method === "PUT",
+    );
+    expect(permissionCalls).toHaveLength(2);
+  });
+
+  const permissionBodies = fetchMock.mock.calls
+    .filter(([input, init]) => String(input).endsWith("/chat/folder-permissions") && init?.method === "PUT")
+    .map(([, init]) => JSON.parse(String(init?.body)));
+
+  expect(permissionBodies).toEqual(
+    expect.arrayContaining([
+      {
+        path: "/tmp/project-a",
+        access_level: "read_only",
+      },
+      {
+        path: "/tmp/project-b",
+        access_level: "full_access",
+      },
+    ]),
+  );
 });
 
 test("does not duplicate text when chat delta payloads overlap with previous suffix", async () => {

@@ -124,6 +124,180 @@ export type SelfProgrammingRuntimeConfig = {
   proactive_cooldown_minutes: number;
 };
 
+export type DelegateCommandResult = {
+  command: string;
+  success: boolean;
+  exit_code?: number | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  duration_ms?: number | null;
+};
+
+export type ProjectSnapshot = {
+  project_path: string;
+  project_name: string;
+  repository_root: string;
+  languages: string[];
+  package_manager?: string | null;
+  framework?: string | null;
+  entry_files: string[];
+  test_commands: string[];
+  build_commands: string[];
+  key_directories: string[];
+};
+
+export type OrchestratorDelegateRequest = {
+  objective: string;
+  project_path: string;
+  scope_paths: string[];
+  forbidden_paths: string[];
+  acceptance_commands: string[];
+  output_schema: Record<string, unknown>;
+};
+
+export type OrchestratorDelegateDebugInfo = {
+  stderr_excerpt?: string | null;
+  last_jsonl_event?: Record<string, unknown> | null;
+};
+
+export type OrchestratorDelegateResult = {
+  status: "succeeded" | "failed" | string;
+  summary?: string | null;
+  changed_files: string[];
+  command_results: DelegateCommandResult[];
+  followup_needed: string[];
+  error?: string | null;
+  debug?: OrchestratorDelegateDebugInfo | null;
+};
+
+export type OrchestratorTask = {
+  task_id: string;
+  title: string;
+  kind: "analyze" | "implement" | "test" | "verify" | "summarize";
+  scope_paths: string[];
+  acceptance_commands: string[];
+  depends_on: string[];
+  delegate_target: "codex" | string;
+  status: "pending" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  result_summary?: string | null;
+  artifacts?: Record<string, unknown>;
+  delegate_run_id?: string | null;
+  error?: string | null;
+};
+
+export type OrchestratorPlan = {
+  objective: string;
+  constraints: string[];
+  definition_of_done: string[];
+  project_snapshot: ProjectSnapshot;
+  tasks: OrchestratorTask[];
+};
+
+export type OrchestratorVerification = {
+  commands: string[];
+  command_results: DelegateCommandResult[];
+  passed: boolean;
+  summary?: string | null;
+};
+
+export type OrchestratorMessageBlock = {
+  type:
+    | "markdown"
+    | "plan_card"
+    | "approval_card"
+    | "task_card"
+    | "directive_card"
+    | "verification_card"
+    | "summary_card"
+    | "session_status_card"
+    | string;
+  text?: string | null;
+  plan?: OrchestratorPlan | null;
+  task?: OrchestratorTask | null;
+  verification?: OrchestratorVerification | null;
+  session?: OrchestratorSession | null;
+  summary?: string | null;
+  details?: Record<string, unknown>;
+};
+
+export type OrchestratorMessage = {
+  message_id: string;
+  session_id: string;
+  role: "user" | "assistant" | "system";
+  blocks: OrchestratorMessageBlock[];
+  state?: "streaming" | "completed" | "failed";
+  created_at: string;
+  related_task_id?: string | null;
+};
+
+export type OrchestratorChatSubmissionResult = {
+  session_id: string;
+  assistant_message_id: string;
+};
+
+export type OrchestratorDelegateRun = {
+  task_id: string;
+  delegate_run_id: string;
+  provider: string;
+  status: string;
+  started_at: string;
+  completed_at?: string | null;
+};
+
+export type OrchestratorSessionCoordination = {
+  mode: "idle" | "ready" | "running" | "queued" | "preempted" | "verifying" | "completed" | "failed" | "cancelled";
+  priority_score: number;
+  queue_position?: number | null;
+  waiting_reason?: string | null;
+  failure_category?: "delegate_failure" | "verification_failure" | "policy_violation" | null;
+  preempted_by_session_id?: string | null;
+  dispatch_slot?: number | null;
+};
+
+export type OrchestratorSession = {
+  session_id: string;
+  project_path: string;
+  project_name: string;
+  goal: string;
+  priority_bias?: number;
+  status:
+    | "draft"
+    | "planning"
+    | "pending_plan_approval"
+    | "dispatching"
+    | "running"
+    | "verifying"
+    | "completed"
+    | "failed"
+    | "cancelled";
+  plan?: OrchestratorPlan | null;
+  delegates: OrchestratorDelegateRun[];
+  coordination?: OrchestratorSessionCoordination | null;
+  verification?: OrchestratorVerification | null;
+  summary?: string | null;
+  entered_at: string;
+  updated_at: string;
+};
+
+export type OrchestratorVerificationRollup = {
+  total_sessions: number;
+  passed_sessions: number;
+  failed_sessions: number;
+  pending_sessions: number;
+};
+
+export type OrchestratorSchedulerSnapshot = {
+  max_parallel_sessions: number;
+  running_sessions: number;
+  available_slots: number;
+  queued_sessions: number;
+  active_session_id?: string | null;
+  running_session_ids: string[];
+  queued_session_ids: string[];
+  verification_rollup: OrchestratorVerificationRollup;
+  policy_note?: string | null;
+};
+
 export type GoalAdmissionRuntimeConfig = {
   stability_warning_rate: number;
   stability_danger_rate: number;
@@ -149,12 +323,13 @@ export type GoalAdmissionConfigRollbackResponse = GoalAdmissionRuntimeConfig & {
 
 export type BeingState = {
   mode: "awake" | "sleeping";
-  focus_mode: "sleeping" | "morning_plan" | "autonomy" | "self_programming";
+  focus_mode: "sleeping" | "morning_plan" | "autonomy" | "self_programming" | "orchestrator";
   current_thought: string | null;
   active_goal_ids: string[];
   today_plan?: TodayPlan | null;
   last_action?: ToolExecutionResult | null;
   self_programming_job?: SelfProgrammingJob | null;
+  orchestrator_session?: OrchestratorSession | null;
 };
 
 export type ChatSubmissionResult = {
@@ -374,6 +549,100 @@ export function sleep(): Promise<BeingState> {
 
 export function chat(message: string): Promise<ChatSubmissionResult> {
   return post<ChatSubmissionResult>("/chat", { message });
+}
+
+export function createOrchestratorSession(body: {
+  goal: string;
+  project_path: string;
+}): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>("/orchestrator/sessions", body);
+}
+
+export function fetchOrchestratorSessions(): Promise<OrchestratorSession[]> {
+  return get<OrchestratorSession[]>("/orchestrator/sessions");
+}
+
+export function fetchOrchestratorScheduler(): Promise<OrchestratorSchedulerSnapshot> {
+  return get<OrchestratorSchedulerSnapshot>("/orchestrator/scheduler");
+}
+
+export function tickOrchestratorScheduler(): Promise<OrchestratorSchedulerSnapshot> {
+  return post<OrchestratorSchedulerSnapshot>("/orchestrator/scheduler/tick");
+}
+
+export function activateOrchestratorSession(sessionId: string): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>(`/orchestrator/sessions/${sessionId}/activate`);
+}
+
+export function generateOrchestratorPlan(sessionId: string): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>(`/orchestrator/sessions/${sessionId}/plan`);
+}
+
+export function approveOrchestratorPlan(sessionId: string): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>(`/orchestrator/sessions/${sessionId}/approve-plan`);
+}
+
+export function rejectOrchestratorPlan(
+  sessionId: string,
+  reason?: string,
+): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>(
+    `/orchestrator/sessions/${sessionId}/reject-plan`,
+    reason ? { reason } : undefined,
+  );
+}
+
+export function dispatchOrchestratorSession(sessionId: string): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>(`/orchestrator/sessions/${sessionId}/dispatch`);
+}
+
+export function fetchOrchestratorSession(sessionId: string): Promise<OrchestratorSession> {
+  return get<OrchestratorSession>(`/orchestrator/sessions/${sessionId}`);
+}
+
+export function fetchOrchestratorTasks(sessionId: string): Promise<OrchestratorTask[]> {
+  return get<OrchestratorTask[]>(`/orchestrator/sessions/${sessionId}/tasks`);
+}
+
+export function cancelOrchestratorSession(sessionId: string): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>(`/orchestrator/sessions/${sessionId}/cancel`);
+}
+
+export function resumeOrchestratorSession(sessionId: string): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>(`/orchestrator/sessions/${sessionId}/resume`);
+}
+
+export function submitOrchestratorDirective(
+  sessionId: string,
+  message: string,
+): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>(`/orchestrator/sessions/${sessionId}/directive`, { message });
+}
+
+export async function fetchOrchestratorMessages(sessionId: string): Promise<OrchestratorMessage[]> {
+  const payload = await get<OrchestratorMessage[] | { messages?: OrchestratorMessage[] }>(
+    `/orchestrator/sessions/${sessionId}/messages`,
+  );
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  return Array.isArray(payload.messages) ? payload.messages : [];
+}
+
+export function chatWithOrchestrator(
+  sessionId: string,
+  message: string,
+): Promise<OrchestratorChatSubmissionResult> {
+  return post<OrchestratorChatSubmissionResult>(`/orchestrator/sessions/${sessionId}/chat`, { message });
+}
+
+export function completeOrchestratorDelegate(body: {
+  session_id: string;
+  task_id: string;
+  delegate_run_id: string;
+  result: OrchestratorDelegateResult;
+}): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>("/orchestrator/delegates/complete", body);
 }
 
 export function fetchChatFolderPermissions(): Promise<ChatFolderPermissionsResponse> {

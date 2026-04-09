@@ -30,6 +30,17 @@ DEFAULT_ALLOWED_EXECUTABLES: tuple[str, ...] = (
     "find",
     "grep",
     "git",
+    "node",
+    "npm",
+    "npx",
+    "pnpm",
+    "yarn",
+    "bun",
+    "python",
+    "python3",
+    "uv",
+    "pytest",
+    "cargo",
 )
 
 DEFAULT_ALLOWED_GIT_SUBCOMMANDS: tuple[str, ...] = (

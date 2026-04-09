@@ -273,6 +273,100 @@
   padding: var(--space-3);
 }
 
+.config-panel__project-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.config-panel__project-empty {
+  padding: var(--space-3);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.config-panel__project-list {
+  list-style: none;
+  margin: 0 0 var(--space-3) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.config-panel__project-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  padding: var(--space-2) var(--space-3);
+}
+
+.config-panel__project-item.is-active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary-muted);
+}
+
+.config-panel__project-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.config-panel__project-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.config-panel__project-name {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.config-panel__project-badge {
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-default);
+  font-size: 0.75rem;
+  padding: 2px var(--space-2);
+  color: var(--text-secondary);
+}
+
+.config-panel__project-badge.is-active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.config-panel__project-badge--muted {
+  background: transparent;
+}
+
+.config-panel__project-path {
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.config-panel__project-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
 .config-panel__fs-path {
   font-size: 0.8125rem;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -469,6 +563,20 @@
 }
 
 @media (max-width: 700px) {
+  .config-panel__project-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .config-panel__project-item {
+    flex-direction: column;
+  }
+
+  .config-panel__project-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .config-panel__fs-footer {
     flex-direction: column;
     align-items: flex-start;
