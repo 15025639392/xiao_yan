@@ -13,7 +13,7 @@ from app.memory.repository import MemoryRepository
 from app.memory.service import MemoryService
 from app.orchestrator.conversation_service import OrchestratorConversationService
 from app.orchestrator.service import OrchestratorService
-from app.persona.service import PersonaService
+from app.persona.service import InMemoryPersonaRepository, PersonaService
 from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import ensure_runtime_initialized
@@ -24,7 +24,13 @@ from app.world.service import WorldStateService
 
 def get_persona_service(request: Request) -> PersonaService:
     ensure_runtime_initialized(request.app)
-    return request.app.state.persona_service  # type: ignore[attr-defined]
+    persona_service = getattr(request.app.state, "persona_service", None)
+    if persona_service is None:
+        # Some tests inject only `state_store` and bypass full runtime bootstrap.
+        # Provide a local in-memory fallback so persona-dependent routes remain usable.
+        persona_service = PersonaService(repository=InMemoryPersonaRepository())
+        request.app.state.persona_service = persona_service
+    return persona_service
 
 
 def get_memory_service(request: Request) -> MemoryService:

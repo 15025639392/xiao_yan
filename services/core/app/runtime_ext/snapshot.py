@@ -165,6 +165,7 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
         WorldStateService(),
     )
     runtime_config = get_runtime_config()
+    mac_console_status = getattr(target_app.state, "mac_console_bootstrap_status", None)
     return {
         "state": state_store.get().model_dump(mode="json"),
         "messages": messages,
@@ -182,6 +183,7 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
         ),
         "world": world_state.model_dump(mode="json"),
         "autobio": deduplicate_entries(autobio_entries),
+        "mac_console_status": mac_console_status,
     }
 
 

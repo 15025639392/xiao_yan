@@ -7,8 +7,9 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.api.deps import get_state_store
+from app.api.deps import get_persona_service, get_state_store
 from app.domain.models import BeingState, FocusMode, SelfProgrammingStatus
+from app.persona.service import PersonaService
 from app.runtime import StateStore
 from app.self_programming.history_models import HistoryEntryStatus
 from app.self_programming.history_store import SelfProgrammingHistory
@@ -119,6 +120,7 @@ def build_self_programming_router() -> APIRouter:
         job_id: str,
         request: ApprovalRequest,
         state_store: StateStore = Depends(get_state_store),
+        persona_service: PersonaService = Depends(get_persona_service),
     ) -> dict:
         state = state_store.get()
         job = state.self_programming_job
@@ -144,10 +146,15 @@ def build_self_programming_router() -> APIRouter:
             state.model_copy(
                 update={
                     "self_programming_job": rejected_job,
-                    "current_thought": f"开工申请被拒绝：{rejected_job.rejection_reason}",
+                    "current_thought": _compose_reflective_thought(
+                        state.current_thought,
+                        summary=f"开工申请被拒了，{rejected_job.target_area} 这块的方案还不够清晰",
+                        next_step=f"我会先按反馈重写方向说明。原因：{rejected_job.rejection_reason}",
+                    ),
                 }
             )
         )
+        persona_service.infer_self_programming_emotion("rejected", rejected_job.target_area)
         return {"success": True, "message": "已拒绝开工", "job_id": job_id}
 
     @router.post("/self-programming/{job_id}/delegate")
@@ -251,6 +258,7 @@ def build_self_programming_router() -> APIRouter:
     def promote_job(
         job_id: str,
         state_store: StateStore = Depends(get_state_store),
+        persona_service: PersonaService = Depends(get_persona_service),
     ) -> dict:
         state = state_store.get()
         job = state.self_programming_job
@@ -264,10 +272,15 @@ def build_self_programming_router() -> APIRouter:
             state.model_copy(
                 update={
                     "self_programming_job": promoted,
-                    "current_thought": "补丁已通过晋升门禁并生效。",
+                    "current_thought": _compose_reflective_thought(
+                        state.current_thought,
+                        summary=f"{promoted.target_area} 的补丁已通过晋升门禁并生效",
+                        next_step="我会盯一轮稳定性，确认这次提升不是偶然通过。",
+                    ),
                 }
             )
         )
+        persona_service.infer_self_programming_emotion("applied", promoted.target_area)
         return {"success": True, "message": "已晋升", "job_id": job_id}
 
     @router.post("/self-programming/{job_id}/approve")
@@ -303,6 +316,7 @@ def build_self_programming_router() -> APIRouter:
         job_id: str,
         request: ApprovalRequest,
         state_store: StateStore = Depends(get_state_store),
+        persona_service: PersonaService = Depends(get_persona_service),
     ) -> dict:
         state = state_store.get()
         job = state.self_programming_job
@@ -324,6 +338,7 @@ def build_self_programming_router() -> APIRouter:
         )
         new_state = _finish_state_with_rejection(state, rejected_job)
         state_store.set(new_state)
+        persona_service.infer_self_programming_emotion("rejected", rejected_job.target_area)
         return {"success": True, "message": "已拒绝", "job_id": job_id}
 
     @router.get("/self-programming/history")
@@ -363,6 +378,7 @@ def build_self_programming_router() -> APIRouter:
         http_request: Request,
         request: ApprovalRequest | None = None,
         state_store: StateStore = Depends(get_state_store),
+        persona_service: PersonaService = Depends(get_persona_service),
     ) -> dict:
         state = state_store.get()
         job = state.self_programming_job
@@ -396,10 +412,17 @@ def build_self_programming_router() -> APIRouter:
             new_state = state.model_copy(
                 update={
                     "self_programming_job": updated_job,
-                    "current_thought": f"自我编程 {job_id} 已回滚: {rollback_info[:100]}",
+                    "current_thought": _build_rollback_reflective_thought(
+                        previous_thought=state.current_thought,
+                        target_area=updated_job.target_area,
+                        rollback_status=rollback_result.status,
+                        rollback_info=rollback_info,
+                    ),
                 }
             )
             state_store.set(new_state)
+            if updated_job.status == SelfProgrammingStatus.FAILED:
+                persona_service.infer_self_programming_emotion("failed", updated_job.target_area)
 
             try:
                 history = _get_history(http_request)
@@ -425,14 +448,46 @@ def build_self_programming_router() -> APIRouter:
 
 
 def _finish_state_with_rejection(state: BeingState, job) -> BeingState:
+    reason = job.approval_reason or "未知"
     return state.model_copy(
         update={
             "focus_mode": FocusMode.AUTONOMY,
             "self_programming_job": job,
-            "current_thought": (
-                f"这次关于 {job.target_area} 的自我编程被拒绝了。"
-                f"原因：{job.approval_reason or '未知'}。"
-                "我会记住这次的教训，下次做得更好。"
+            "current_thought": _compose_reflective_thought(
+                state.current_thought,
+                summary=f"这次关于 {job.target_area} 的自我编程被拒绝了",
+                next_step=f"我会先复盘拒绝点，再提交更小更稳的方案。原因：{reason}",
             ),
         }
     )
+
+
+def _build_rollback_reflective_thought(
+    previous_thought: str | None,
+    target_area: str,
+    rollback_status: RollbackStatus,
+    rollback_info: str,
+) -> str:
+    rollback_summary = rollback_info.strip()[:100]
+    if rollback_status in {RollbackStatus.SUCCESS, RollbackStatus.PARTIAL}:
+        return _compose_reflective_thought(
+            previous_thought,
+            summary=f"{target_area} 的改动已回滚",
+            next_step=f"我先稳住系统，再把失败点整理成可复现清单。回滚摘要：{rollback_summary}",
+        )
+    return _compose_reflective_thought(
+        previous_thought,
+        summary=f"{target_area} 的回滚没有完全生效",
+        next_step=f"我需要继续排查恢复路径。回滚摘要：{rollback_summary}",
+    )
+
+
+def _compose_reflective_thought(previous_thought: str | None, *, summary: str, next_step: str) -> str:
+    normalized_summary = summary.strip().rstrip("。")
+    normalized_next_step = next_step.strip().rstrip("。")
+    normalized_previous = (previous_thought or "").strip().rstrip("。")
+    if not normalized_previous:
+        return f"{normalized_summary}。{normalized_next_step}。"
+
+    clipped_previous = normalized_previous if len(normalized_previous) <= 48 else f"{normalized_previous[:48]}…"
+    return f"刚才我还在想「{clipped_previous}」。{normalized_summary}。{normalized_next_step}。"

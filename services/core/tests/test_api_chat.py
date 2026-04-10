@@ -311,6 +311,53 @@ class EmptyToolOutputFallbackGateway(StubGateway):
         }
 
 
+class RecursiveToolLoopGateway(StubGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.create_call_count = 0
+        self.stream_call_count = 0
+
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        self.create_call_count += 1
+        return {
+            "id": f"resp_tool_loop_{self.create_call_count}",
+            "output": [
+                {
+                    "type": "function_call",
+                    "id": f"fc_loop_{self.create_call_count}",
+                    "call_id": f"call_loop_{self.create_call_count}",
+                    "name": "unknown_tool",
+                    "arguments": "{}",
+                }
+            ],
+        }
+
+    def stream_response(self, messages, instructions=None):
+        self.stream_call_count += 1
+        self.last_messages = list(messages)
+        self.last_instructions = instructions
+        yield {
+            "type": "response_started",
+            "response_id": "resp_loop_fallback",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "我先基于当前上下文直接回答。",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_loop_fallback",
+            "output_text": "我先基于当前上下文直接回答。",
+        }
+
+
 def test_post_chat_returns_submission_confirmation():
     memory_repository = InMemoryMemoryRepository()
     memory_service = MemoryService(repository=memory_repository)
@@ -659,6 +706,44 @@ def test_post_chat_falls_back_to_plain_stream_when_tools_response_has_empty_outp
         app.dependency_overrides.clear()
 
 
+def test_post_chat_falls_back_to_plain_stream_when_tools_enter_recursive_loop():
+    memory_repository = InMemoryMemoryRepository()
+    memory_service = MemoryService(repository=memory_repository)
+    gateway = RecursiveToolLoopGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_memory_service():
+        return memory_service
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "hello"})
+        assert response.status_code == 200
+        assert response.json() == {
+            "response_id": "resp_loop_fallback",
+            "assistant_message_id": response.json()["assistant_message_id"],
+        }
+        assert gateway.stream_call_count == 1
+        assert gateway.create_call_count >= 3
+        recent = list(reversed(memory_repository.list_recent(limit=5)))
+        assert [event.role for event in recent] == ["user", "assistant"]
+        assert recent[-1].content == "我先基于当前上下文直接回答。"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_chat_does_not_duplicate_memory_rows_when_service_uses_same_repository():
     memory_repository = InMemoryMemoryRepository()
     memory_service = MemoryService(repository=memory_repository)
@@ -999,6 +1084,77 @@ def test_post_chat_instructions_tell_persona_to_prioritize_current_focus_goal():
         assert "整理今天的对话记忆" in gateway.last_instructions
         assert "优先自然承接这个焦点目标" in gateway.last_instructions
         assert "先回答你此刻最在意的目标、今天的计划、刚完成的事或最近一次自我编程" in gateway.last_instructions
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_instructions_include_current_thought_for_continuity():
+    memory_repository = InMemoryMemoryRepository()
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            focus_mode=FocusMode.AUTONOMY,
+            current_thought="我还在琢磨今天这条线怎么收束。",
+        )
+    )
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "你刚刚在想什么"})
+        assert response.status_code == 200
+        assert gateway.last_instructions is not None
+        assert "你此刻脑海里还有一个没收束的念头" in gateway.last_instructions
+        assert "我还在琢磨今天这条线怎么收束" in gateway.last_instructions
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_updates_current_thought_after_reply():
+    memory_repository = InMemoryMemoryRepository()
+    state_store = StateStore(BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY))
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "今天先做哪一步"})
+        assert response.status_code == 200
+
+        current_state = state_store.get()
+        assert current_state.current_thought is not None
+        assert "今天先做哪一步" in current_state.current_thought
     finally:
         app.dependency_overrides.clear()
 

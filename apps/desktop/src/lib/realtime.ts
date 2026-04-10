@@ -7,6 +7,7 @@ import type {
   GoalAdmissionCandidateSnapshot,
   GoalAdmissionStats,
   InnerWorldState,
+  MacConsoleBootstrapStatus,
   MemoryEntryDisplay,
   MemorySummary,
   OrchestratorPlan,
@@ -26,6 +27,7 @@ export type AppRuntimeRealtimePayload = {
   goal_admission_candidates?: GoalAdmissionCandidateSnapshot | null;
   world: InnerWorldState | null;
   autobio: string[];
+  mac_console_status?: MacConsoleBootstrapStatus | null;
 };
 
 export type AppMemoryRealtimePayload = {

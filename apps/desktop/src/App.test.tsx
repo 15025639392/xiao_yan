@@ -568,6 +568,157 @@ test("does not duplicate text when chat delta payloads are cumulative snapshots"
   });
 });
 
+test("clears chat list when runtime snapshot returns empty messages", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+          self_programming_job: null,
+          orchestrator_session: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(
+        JSON.stringify({
+          messages: [
+            {
+              id: "assistant-old",
+              role: "assistant",
+              content: "旧聊天内容",
+              created_at: "2026-04-10T02:00:00.000Z",
+              session_id: null,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/orchestrator/sessions")) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/orchestrator/scheduler")) {
+      return new Response(
+        JSON.stringify({
+          max_parallel_sessions: 2,
+          running_sessions: 0,
+          available_slots: 2,
+          queued_sessions: 0,
+          active_session_id: null,
+          running_session_ids: [],
+          queued_session_ids: [],
+          verification_rollup: {
+            total_sessions: 0,
+            passed_sessions: 0,
+            failed_sessions: 0,
+            pending_sessions: 0,
+          },
+          policy_note: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  const socket = MockWebSocket.instances[0];
+  socket.open();
+
+  await waitFor(() => {
+    expect(screen.getByText("旧聊天内容")).toBeInTheDocument();
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "runtime_updated",
+      payload: {
+        state: {
+          mode: "sleeping",
+          focus_mode: "sleeping",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+          self_programming_job: null,
+          orchestrator_session: null,
+        },
+        messages: [],
+        goals: [],
+        world: {
+          time_of_day: "night",
+          energy: "low",
+          mood: "calm",
+          focus_tension: "low",
+        },
+        autobio: [],
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.queryByText("旧聊天内容")).not.toBeInTheDocument();
+  });
+});
+
 test("syncs active imported project permission before entering orchestrator mode", async () => {
   localStorage.setItem(
     IMPORTED_PROJECTS_STORAGE_KEY,

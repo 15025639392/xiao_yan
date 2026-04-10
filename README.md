@@ -116,6 +116,9 @@
 - Node.js 18 或更高版本
 - npm 或 yarn 包管理器
 
+> 小晏会在后端启动时自动执行 mac 控制台环境自检与补齐（仅 macOS）。
+> 如需手动检查，可运行：`./scripts/bootstrap_mac_console.sh --check`
+
 ### 安装步骤
 
 #### 1. 克隆仓库

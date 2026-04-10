@@ -6,7 +6,7 @@ from app.main import (
     get_orchestrator_conversation_service,
     get_orchestrator_service,
 )
-from app.domain.models import OrchestratorSession
+from app.domain.models import OrchestratorSession, OrchestratorSessionStatus
 from app.orchestrator.conversation_models import OrchestratorChatSubmissionResult
 
 
@@ -14,6 +14,9 @@ class StubOrchestratorService:
     def __init__(self, session: OrchestratorSession) -> None:
         self.session = session
         self.apply_directive_calls = 0
+        self.resume_calls = 0
+        self.approve_calls = 0
+        self.reject_calls = 0
 
     def get_session(self, session_id: str) -> OrchestratorSession:
         assert session_id == self.session.session_id
@@ -23,6 +26,24 @@ class StubOrchestratorService:
         _ = (session_id, message, hub)
         self.apply_directive_calls += 1
         raise ValueError("unsupported orchestrator directive")
+
+    def resume_session(self, session_id: str, *, hub=None) -> OrchestratorSession:
+        _ = (session_id, hub)
+        self.resume_calls += 1
+        self.session = self.session.model_copy(update={"status": OrchestratorSessionStatus.DISPATCHING})
+        return self.session
+
+    def approve_plan(self, session_id: str, *, hub=None) -> OrchestratorSession:
+        _ = (session_id, hub)
+        self.approve_calls += 1
+        self.session = self.session.model_copy(update={"status": OrchestratorSessionStatus.DISPATCHING})
+        return self.session
+
+    def reject_plan(self, session_id: str, *, reason: str | None = None, hub=None) -> OrchestratorSession:
+        _ = (session_id, reason, hub)
+        self.reject_calls += 1
+        self.session = self.session.model_copy(update={"status": OrchestratorSessionStatus.DRAFT})
+        return self.session
 
 
 class StubOrchestratorConversationService:
@@ -133,5 +154,47 @@ def test_orchestrator_messages_can_be_cleared() -> None:
             "deleted_count": 2,
         }
         assert conversation_service.cleared_session_ids == [session.session_id]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_orchestrator_chat_numeric_choice_can_resume_failed_session() -> None:
+    session = OrchestratorSession(
+        session_id="session_numeric_choice_resume",
+        project_path="/tmp/demo",
+        project_name="demo",
+        goal="处理当前项目",
+        status=OrchestratorSessionStatus.FAILED,
+    )
+    service = StubOrchestratorService(session)
+    class StubConversationForNumericChoice(StubOrchestratorConversationService):
+        def append_assistant_message(self, session: OrchestratorSession, reply: str, *, hub=None):
+            _ = (session, hub)
+            self.user_messages.append(f"assistant:{reply}")
+            class _Message:
+                message_id = "assistant_numeric_choice_1"
+            return _Message()
+
+    conversation_service = StubConversationForNumericChoice()
+
+    app.dependency_overrides[get_orchestrator_service] = lambda: service
+    app.dependency_overrides[get_orchestrator_conversation_service] = lambda: conversation_service
+    app.dependency_overrides[get_chat_gateway] = lambda: object()
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            f"/orchestrator/sessions/{session.session_id}/chat",
+            json={"message": "2"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "session_id": session.session_id,
+            "assistant_message_id": "assistant_numeric_choice_1",
+        }
+        assert service.resume_calls == 1
+        assert service.apply_directive_calls == 0
+        assert conversation_service.stream_calls == 0
     finally:
         app.dependency_overrides.clear()

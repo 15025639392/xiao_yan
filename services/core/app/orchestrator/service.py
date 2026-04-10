@@ -119,6 +119,7 @@ class OrchestratorService:
         updated = (
             self._apply_scope_directive(session, normalized_message)
             or self._apply_acceptance_directive(session, normalized_message)
+            or self._apply_secondary_approval_directive(session, normalized_message)
             or self._apply_priority_directive(session, normalized_message)
         )
         if updated is None:
@@ -340,6 +341,19 @@ class OrchestratorService:
         *,
         hub: AppRealtimeHub | None = None,
     ) -> OrchestratorSession:
+        high_risk_reason = self._resolve_high_risk_reason(next_task)
+        if (
+            next_task.kind == OrchestratorTaskKind.IMPLEMENT
+            and high_risk_reason is not None
+            and not bool(next_task.artifacts.get("secondary_approval_granted"))
+        ):
+            return self._mark_task_waiting_secondary_approval(
+                session,
+                next_task,
+                reason=high_risk_reason,
+                hub=hub,
+            )
+
         delegate_run_id = uuid4().hex
         delegate_request = build_delegate_request(goal=session.goal, project_path=session.project_path, task=next_task)
         delegate_prompt = build_delegate_prompt(delegate_request)
@@ -568,6 +582,9 @@ class OrchestratorService:
         if not succeeded:
             return saved
 
+        if updated_task is not None and updated_task.kind == OrchestratorTaskKind.VERIFY:
+            saved = self._complete_local_summarize(saved, hub=hub)
+
         if self._all_tasks_succeeded(saved):
             return self._run_plan_verification(saved, hub=hub)
         return saved
@@ -638,6 +655,104 @@ class OrchestratorService:
         self._publish_verification_completed(saved, hub)
         self._publish_session_updated(saved, hub)
         return saved
+
+    def _complete_local_summarize(
+        self,
+        session: OrchestratorSession,
+        *,
+        hub: AppRealtimeHub | None = None,
+    ) -> OrchestratorSession:
+        if session.plan is None:
+            return session
+
+        summarize_task = next(
+            (
+                task
+                for task in session.plan.tasks
+                if task.kind == OrchestratorTaskKind.SUMMARIZE
+                and task.status in {OrchestratorTaskStatus.PENDING, OrchestratorTaskStatus.QUEUED}
+            ),
+            None,
+        )
+        if summarize_task is None:
+            return session
+
+        succeeded = {task.task_id for task in session.plan.tasks if task.status == OrchestratorTaskStatus.SUCCEEDED}
+        if not all(dep in succeeded for dep in summarize_task.depends_on):
+            return session
+
+        summary_text = self._build_local_summary_text(session)
+        updated_tasks: list[OrchestratorTask] = []
+        for task in session.plan.tasks:
+            if task.task_id == summarize_task.task_id:
+                updated_tasks.append(
+                    task.model_copy(
+                        update={
+                            "status": OrchestratorTaskStatus.SUCCEEDED,
+                            "result_summary": summary_text,
+                            "delegate_run_id": None,
+                            "error": None,
+                            "artifacts": {
+                                **task.artifacts,
+                                "local_execution": True,
+                                "local_summary": summary_text,
+                            },
+                        }
+                    )
+                )
+            else:
+                updated_tasks.append(task)
+
+        updated = session.model_copy(
+            update={
+                "plan": session.plan.model_copy(update={"tasks": updated_tasks}),
+                "status": OrchestratorSessionStatus.DISPATCHING,
+                "coordination": OrchestratorSessionCoordination(
+                    mode=OrchestratorCoordinationMode.READY,
+                    priority_score=self._priority_score(session),
+                    waiting_reason="本地摘要已完成，准备统一验收。",
+                    failure_category=None,
+                ),
+                "summary": summary_text,
+                "updated_at": self._now(),
+            }
+        )
+        saved = self._repository.save(updated)
+        if self._is_active_session(saved.session_id):
+            self._sync_state(saved, current_thought="本地摘要已完成，准备统一验收。")
+        updated_task = self._get_task(saved, summarize_task.task_id)
+        if self._conversation_service is not None:
+            self._conversation_service.append_task_update(saved, updated_task, phase="本地整理完成", hub=hub)
+        self._publish_task_updated(saved, updated_task, hub)
+        self._publish_session_updated(saved, hub)
+        return saved
+
+    def _build_local_summary_text(self, session: OrchestratorSession) -> str:
+        if session.plan is None:
+            return "本地摘要已完成。"
+
+        changed_files: list[str] = []
+        for task in session.plan.tasks:
+            raw_changed = task.artifacts.get("changed_files")
+            if isinstance(raw_changed, list):
+                for item in raw_changed:
+                    if isinstance(item, str) and item.strip():
+                        changed_files.append(item.strip())
+                continue
+            delegate_result = task.artifacts.get("delegate_result")
+            if isinstance(delegate_result, dict):
+                result_files = delegate_result.get("changed_files")
+                if isinstance(result_files, list):
+                    for item in result_files:
+                        if isinstance(item, str) and item.strip():
+                            changed_files.append(item.strip())
+
+        unique_files = list(dict.fromkeys(changed_files))
+        completed_count = sum(1 for task in session.plan.tasks if task.status == OrchestratorTaskStatus.SUCCEEDED)
+        return (
+            f"本地摘要：任务完成 {completed_count}/{len(session.plan.tasks)}，"
+            f"累计改动 {len(unique_files)} 个文件。"
+        )
 
     def _run_verification_commands(self, project_path: str, commands: list[str]) -> OrchestratorVerification:
         if not commands:
@@ -868,6 +983,104 @@ class OrchestratorService:
             "updated_at": self._now(),
         }
         )
+
+    def _mark_task_waiting_secondary_approval(
+        self,
+        session: OrchestratorSession,
+        task: OrchestratorTask,
+        *,
+        reason: str,
+        hub: AppRealtimeHub | None = None,
+    ) -> OrchestratorSession:
+        wait_message = f"检测到高风险变更，任务「{task.title}」需二次审批后才能执行。原因：{reason}"
+        already_waiting = (
+            session.coordination is not None
+            and session.coordination.mode == OrchestratorCoordinationMode.QUEUED
+            and session.coordination.waiting_reason == wait_message
+            and task.status == OrchestratorTaskStatus.QUEUED
+            and task.artifacts.get("secondary_approval_required") is True
+            and task.artifacts.get("secondary_approval_granted") is not True
+        )
+        if already_waiting:
+            return session
+
+        if session.plan is None:
+            return session
+
+        updated_tasks: list[OrchestratorTask] = []
+        for current in session.plan.tasks:
+            if current.task_id == task.task_id:
+                updated_tasks.append(
+                    current.model_copy(
+                        update={
+                            "status": OrchestratorTaskStatus.QUEUED,
+                            "artifacts": {
+                                **current.artifacts,
+                                "secondary_approval_required": True,
+                                "secondary_approval_reason": reason,
+                                "secondary_approval_granted": False,
+                            },
+                        }
+                    )
+                )
+            else:
+                updated_tasks.append(current)
+
+        updated_plan = session.plan.model_copy(update={"tasks": updated_tasks})
+        updated = session.model_copy(
+            update={
+                "plan": updated_plan,
+                "status": OrchestratorSessionStatus.DISPATCHING,
+                "coordination": OrchestratorSessionCoordination(
+                    mode=OrchestratorCoordinationMode.QUEUED,
+                    priority_score=self._priority_score(session),
+                    waiting_reason=wait_message,
+                    failure_category=None,
+                ),
+                "summary": wait_message,
+                "updated_at": self._now(),
+            }
+        )
+        saved = self._repository.save(updated)
+        if self._is_active_session(saved.session_id):
+            self._sync_state(saved, current_thought=wait_message)
+        updated_task = self._get_task(saved, task.task_id)
+        if self._conversation_service is not None:
+            self._conversation_service.append_task_update(saved, updated_task, phase="待二次审批", hub=hub)
+        self._publish_task_updated(saved, updated_task, hub)
+        self._publish_session_updated(saved, hub)
+        return saved
+
+    def _resolve_high_risk_reason(self, task: OrchestratorTask) -> str | None:
+        if task.kind != OrchestratorTaskKind.IMPLEMENT:
+            return None
+
+        normalized_scope = [item.strip().strip("/") for item in task.scope_paths if item.strip()]
+        reasons: list[str] = []
+        if "." in normalized_scope:
+            reasons.append("scope 覆盖项目根目录")
+        if len(normalized_scope) >= 4:
+            reasons.append("scope 覆盖目录过多")
+        top_level_crossing = [item for item in normalized_scope if item in {"apps", "services", "packages"}]
+        if len(top_level_crossing) >= 2:
+            reasons.append("跨多个顶级模块同时改动")
+
+        dangerous_patterns = [
+            r"\brm\s+-rf\b",
+            r"\bsudo\b",
+            r"git\s+reset\s+--hard",
+            r"git\s+checkout\s+--\s",
+            r"curl\s+.+\|\s*(?:sh|bash)",
+            r"chmod\s+-R",
+        ]
+        for command in task.acceptance_commands:
+            if any(re.search(pattern, command, flags=re.IGNORECASE) for pattern in dangerous_patterns):
+                reasons.append(f"验收命令存在高风险动作：{command}")
+                break
+
+        if not reasons:
+            return None
+        return "；".join(list(dict.fromkeys(reasons)))
 
     def _with_coordination(
         self,
@@ -1117,7 +1330,10 @@ class OrchestratorService:
         changed = False
         for task in session.plan.tasks:
             if task.kind in {OrchestratorTaskKind.ANALYZE, OrchestratorTaskKind.IMPLEMENT} and task.status != OrchestratorTaskStatus.SUCCEEDED:
-                next_task = task.model_copy(update={"scope_paths": paths})
+                next_artifacts = task.artifacts
+                if task.kind == OrchestratorTaskKind.IMPLEMENT:
+                    next_artifacts = self._reset_secondary_approval_artifacts(task.artifacts)
+                next_task = task.model_copy(update={"scope_paths": paths, "artifacts": next_artifacts})
                 updated_tasks.append(next_task)
                 changed = changed or next_task.scope_paths != task.scope_paths
             else:
@@ -1158,7 +1374,10 @@ class OrchestratorService:
         changed = False
         for task in session.plan.tasks:
             if task.kind in {OrchestratorTaskKind.IMPLEMENT, OrchestratorTaskKind.VERIFY} and task.status != OrchestratorTaskStatus.SUCCEEDED:
-                next_task = task.model_copy(update={"acceptance_commands": commands})
+                next_artifacts = task.artifacts
+                if task.kind == OrchestratorTaskKind.IMPLEMENT:
+                    next_artifacts = self._reset_secondary_approval_artifacts(task.artifacts)
+                next_task = task.model_copy(update={"acceptance_commands": commands, "artifacts": next_artifacts})
                 updated_tasks.append(next_task)
                 changed = changed or next_task.acceptance_commands != task.acceptance_commands
             else:
@@ -1175,6 +1394,76 @@ class OrchestratorService:
                 "verification": None,
                 "summary": summary,
                 "coordination": self._copy_coordination(session, priority_score=self._priority_score(session)),
+                "updated_at": self._now(),
+            }
+        )
+
+    def _apply_secondary_approval_directive(
+        self,
+        session: OrchestratorSession,
+        message: str,
+    ) -> OrchestratorSession | None:
+        normalized = message.strip()
+        if not re.search(r"(高风险|二次审批|risk)", normalized, flags=re.IGNORECASE):
+            return None
+        if not re.search(r"(批准|确认|允许|继续)", normalized):
+            return None
+        if session.plan is None:
+            raise ValueError("session plan is not ready")
+
+        target_task: OrchestratorTask | None = None
+        for task in session.plan.tasks:
+            if task.kind != OrchestratorTaskKind.IMPLEMENT:
+                continue
+            if task.status == OrchestratorTaskStatus.SUCCEEDED:
+                continue
+            risk_reason = self._resolve_high_risk_reason(task)
+            if risk_reason is None:
+                continue
+            if task.artifacts.get("secondary_approval_granted") is True:
+                continue
+            target_task = task
+            break
+
+        if target_task is None:
+            raise ValueError("no high-risk task is waiting for secondary approval")
+
+        updated_tasks: list[OrchestratorTask] = []
+        for task in session.plan.tasks:
+            if task.task_id == target_task.task_id:
+                updated_tasks.append(
+                    task.model_copy(
+                        update={
+                            "status": OrchestratorTaskStatus.PENDING,
+                            "artifacts": {
+                                **task.artifacts,
+                                "secondary_approval_required": True,
+                                "secondary_approval_granted": True,
+                                "secondary_approved_at": self._now().isoformat(),
+                            },
+                        }
+                    )
+                )
+            else:
+                updated_tasks.append(task.model_copy(deep=True))
+
+        summary = f"已批准高风险任务：{target_task.title}"
+        coordination = self._copy_coordination(session, priority_score=self._priority_score(session)).model_copy(
+            update={
+                "mode": OrchestratorCoordinationMode.READY,
+                "waiting_reason": "高风险任务已批准，等待调度派发。",
+                "queue_position": None,
+                "preempted_by_session_id": None,
+                "failure_category": None,
+            }
+        )
+        updated_plan = session.plan.model_copy(update={"tasks": updated_tasks})
+        return session.model_copy(
+            update={
+                "plan": updated_plan,
+                "status": OrchestratorSessionStatus.DISPATCHING,
+                "summary": summary,
+                "coordination": coordination,
                 "updated_at": self._now(),
             }
         )
@@ -1215,6 +1504,17 @@ class OrchestratorService:
                 "coordination": self._copy_coordination(updated, priority_score=self._priority_score(updated)),
             }
         )
+
+    def _reset_secondary_approval_artifacts(self, artifacts: dict[str, object]) -> dict[str, object]:
+        cleaned = dict(artifacts)
+        for key in [
+            "secondary_approval_required",
+            "secondary_approval_reason",
+            "secondary_approval_granted",
+            "secondary_approved_at",
+        ]:
+            cleaned.pop(key, None)
+        return cleaned
 
     def _copy_coordination(
         self,

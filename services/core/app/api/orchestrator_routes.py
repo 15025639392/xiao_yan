@@ -8,6 +8,7 @@ from app.domain.models import (
     OrchestratorDelegateCompletionPayload,
     OrchestratorSchedulerSnapshot,
     OrchestratorSession,
+    OrchestratorSessionStatus,
     OrchestratorTask,
 )
 from app.llm.gateway import ChatGateway
@@ -68,6 +69,25 @@ def build_orchestrator_router() -> APIRouter:
     def _is_generate_plan_message(message: str) -> bool:
         return any(token in message for token in ["生成计划", "修改计划", "重新计划", "给我一个计划", "制定计划"])
 
+    def _map_numeric_choice_to_command(session: OrchestratorSession, choice: str) -> str | None:
+        if choice not in {"1", "2", "3"}:
+            return None
+
+        if session.status == OrchestratorSessionStatus.PENDING_PLAN_APPROVAL:
+            if choice == "1":
+                return "批准计划"
+            if choice in {"2", "3"}:
+                return "拒绝计划"
+
+        if session.status in {OrchestratorSessionStatus.FAILED, OrchestratorSessionStatus.CANCELLED}:
+            return "恢复主控"
+
+        waiting_reason = (session.coordination.waiting_reason if session.coordination else "") or ""
+        if "高风险" in waiting_reason and choice == "1":
+            return "批准高风险任务并继续"
+
+        return None
+
     def _handle_command_message(
         *,
         session_id: str,
@@ -79,6 +99,10 @@ def build_orchestrator_router() -> APIRouter:
         directive_fallback_to_chat: bool = False,
     ) -> tuple[OrchestratorSession | None, str | None]:
         normalized = message.strip()
+        current_session = orchestrator_service.get_session(session_id)
+        mapped_choice_command = _map_numeric_choice_to_command(current_session, normalized)
+        if mapped_choice_command is not None:
+            normalized = mapped_choice_command
         lowered = normalized.lower()
         if save_user_message:
             conversation_service.append_user_message(session_id, normalized, hub=_hub(request))
@@ -99,7 +123,7 @@ def build_orchestrator_router() -> APIRouter:
             if _is_generate_plan_message(normalized):
                 session = orchestrator_service.generate_plan(session_id, hub=_hub(request))
                 return session, "新的主控计划已经生成，我把任务拆解和待审批信息贴到消息流里了。"
-            if any(token in lowered for token in ["scope", "验收", "优先级", "范围", "acceptance"]):
+            if any(token in lowered for token in ["scope", "验收", "优先级", "范围", "acceptance", "高风险", "risk", "二次审批"]):
                 try:
                     session = orchestrator_service.apply_directive(session_id, normalized, hub=_hub(request))
                 except ValueError as error:

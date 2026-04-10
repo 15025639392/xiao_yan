@@ -331,7 +331,7 @@ class OrchestratorConversationService:
 
         completed = saved.model_copy(
             update={
-                "blocks": [OrchestratorMessageBlock(type="markdown", text=output_text)],
+                "blocks": [OrchestratorMessageBlock(type="markdown", text=_sanitize_orchestrator_reply(output_text))],
                 "state": OrchestratorMessageState.COMPLETED,
             }
         )
@@ -347,7 +347,7 @@ class OrchestratorConversationService:
                 session_id=session.session_id,
                 assistant_message_id=saved.message_id,
                 response_id=response_id,
-                content=output_text,
+                content=completed.blocks[0].text or "",
                 blocks=[block.model_dump(mode="json") for block in completed.blocks],
             )
         return OrchestratorChatSubmissionResult(
@@ -397,6 +397,16 @@ def _merge_stream_content(current_content: str, delta: str) -> str:
         if current_content[-overlap:] == delta[:overlap]:
             return f"{current_content}{delta[overlap:]}"
     return f"{current_content}{delta}"
+
+
+def _sanitize_orchestrator_reply(text: str) -> str:
+    cleaned = text
+    for marker in ["等待系统返回", "正在执行中请稍候", "请稍候，正在执行", "执行结果：\n（等待系统返回）"]:
+        cleaned = cleaned.replace(marker, "")
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return "我已收到你的指令。若要推动主控执行，请直接发送“继续推进”或“恢复推进”。"
+    return cleaned
 
 
 def build_now_iso() -> str:

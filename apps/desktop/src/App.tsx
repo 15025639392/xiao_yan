@@ -9,6 +9,7 @@ import type {
   BeingState,
   Goal,
   InnerWorldState,
+  MacConsoleBootstrapStatus,
   OrchestratorMessage,
   OrchestratorDelegateRequest,
   OrchestratorSchedulerSnapshot,
@@ -140,6 +141,7 @@ export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => resolveRoute(window.location.hash));
   const [state, setState] = useState<BeingState>(initialState);
   const [world, setWorld] = useState<InnerWorldState | null>(null);
+  const [macConsoleStatus, setMacConsoleStatus] = useState<MacConsoleBootstrapStatus | null>(null);
   const [autobioEntries, setAutobioEntries] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -166,6 +168,7 @@ export default function App() {
   const pendingRequestMessageRef = useRef<string | null>(null);
   const schedulerTickInFlightRef = useRef(false);
   const delegateRunIdsRef = useRef(new Set<string>());
+  const orchestratorFeedbackPollInFlightRef = useRef(false);
   const hasAttemptedImportedProjectRestoreRef = useRef(false);
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
   const assistantName = persona?.name?.trim() || "小晏";
@@ -228,7 +231,7 @@ export default function App() {
         }
 
         setState(nextState);
-        setMessages((current) => mergeMessages(current, nextMessages.messages));
+        setMessages((current) => syncMessagesFromRuntime(current, nextMessages.messages));
         setGoals(nextGoals.goals);
         setWorld(nextWorld);
         setAutobioEntries(nextAutobio.entries);
@@ -377,9 +380,12 @@ export default function App() {
       }
 
       setState(runtimePayload.state);
-      setMessages((current) => mergeMessages(current, runtimePayload.messages));
+      setMessages((current) => syncMessagesFromRuntime(current, runtimePayload.messages));
       setGoals(runtimePayload.goals);
       setWorld(runtimePayload.world);
+      if (runtimePayload.mac_console_status !== undefined) {
+        setMacConsoleStatus(runtimePayload.mac_console_status ?? null);
+      }
       setAutobioEntries(runtimePayload.autobio);
       setError("");
     });
@@ -514,7 +520,12 @@ export default function App() {
       try {
         const snapshot = await tickOrchestratorScheduler();
         setOrchestratorScheduler(normalizeOrchestratorScheduler(snapshot));
-        await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+        await Promise.all([
+          refreshRuntimeState(),
+          refreshOrchestratorSessions(),
+          refreshOrchestratorScheduler(),
+          activeOrchestratorSessionId ? refreshOrchestratorMessages(activeOrchestratorSessionId) : Promise.resolve(),
+        ]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "主控调度失败");
       } finally {
@@ -522,6 +533,45 @@ export default function App() {
       }
     })();
   }, [orchestratorScheduler.available_slots, sessionList]);
+
+  useEffect(() => {
+    if (route !== "orchestrator" || !activeOrchestratorSessionId) {
+      return;
+    }
+
+    const activeSession = sessionList.find((session) => session.session_id === activeOrchestratorSessionId);
+    const isTerminal = activeSession != null && ["completed", "failed", "cancelled"].includes(activeSession.status);
+    if (isTerminal && !isOrchestratorSending) {
+      return;
+    }
+
+    let cancelled = false;
+    const sessionId = activeOrchestratorSessionId;
+    const timer = window.setInterval(() => {
+      if (cancelled || orchestratorFeedbackPollInFlightRef.current) {
+        return;
+      }
+      orchestratorFeedbackPollInFlightRef.current = true;
+      void Promise.all([
+        refreshOrchestratorSessions(),
+        refreshOrchestratorScheduler(),
+        refreshOrchestratorMessages(sessionId),
+      ])
+        .catch((err) => {
+          if (!cancelled) {
+            console.warn("主控回执轮询失败:", err);
+          }
+        })
+        .finally(() => {
+          orchestratorFeedbackPollInFlightRef.current = false;
+        });
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [route, activeOrchestratorSessionId, sessionList, isOrchestratorSending]);
 
   useEffect(() => {
     for (const session of sessionList) {
@@ -578,17 +628,32 @@ export default function App() {
 		            });
 		          } catch (completeError) {
 		            if (isRecoverableDelegateCompletionConflict(completeError)) {
-		              await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
-		              return;
-		            }
-		            throw completeError;
+			              await Promise.all([
+                      refreshRuntimeState(),
+                      refreshOrchestratorSessions(),
+                      refreshOrchestratorScheduler(),
+                      refreshOrchestratorMessages(session.session_id),
+                    ]);
+			              return;
+			            }
+			            throw completeError;
+			          }
+			          await Promise.all([
+                    refreshRuntimeState(),
+                    refreshOrchestratorSessions(),
+                    refreshOrchestratorScheduler(),
+                    refreshOrchestratorMessages(session.session_id),
+                  ]);
+		        } catch (err) {
+		          if (isRecoverableDelegateCompletionConflict(err)) {
+		            await Promise.all([
+                    refreshRuntimeState(),
+                    refreshOrchestratorSessions(),
+                    refreshOrchestratorScheduler(),
+                    refreshOrchestratorMessages(session.session_id),
+                  ]);
+		            return;
 		          }
-		          await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
-	        } catch (err) {
-	          if (isRecoverableDelegateCompletionConflict(err)) {
-	            await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
-	            return;
-	          }
 	          const message = err instanceof Error ? err.message : "Codex delegate 执行失败";
 	          try {
 		            await completeOrchestratorDelegate({
@@ -604,10 +669,20 @@ export default function App() {
                 error: message,
 		              },
 		            });
-	            await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+	            await Promise.all([
+                refreshRuntimeState(),
+                refreshOrchestratorSessions(),
+                refreshOrchestratorScheduler(),
+                refreshOrchestratorMessages(session.session_id),
+              ]);
 	          } catch (completeError) {
 	            if (isRecoverableDelegateCompletionConflict(completeError)) {
-	              await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+	              await Promise.all([
+                  refreshRuntimeState(),
+                  refreshOrchestratorSessions(),
+                  refreshOrchestratorScheduler(),
+                  refreshOrchestratorMessages(session.session_id),
+                ]);
 	              return;
 	            }
 	            const merged =
@@ -755,6 +830,27 @@ export default function App() {
     setState(refreshedState);
   }
 
+  async function handlePersonaUpdated() {
+    try {
+      const [nextState, nextMessages, nextGoals, nextWorld, nextAutobio] = await Promise.all([
+        fetchState(),
+        fetchMessages(),
+        fetchGoals(),
+        fetchWorld(),
+        fetchAutobio(),
+      ]);
+
+      setState(nextState);
+      setMessages(syncMessagesFromRuntime([], nextMessages.messages));
+      setGoals(nextGoals.goals);
+      setWorld(nextWorld);
+      setAutobioEntries(nextAutobio.entries);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "同步失败");
+    }
+  }
+
   async function refreshOrchestratorSessions() {
     setOrchestratorSessions(normalizeOrchestratorSessions(await fetchOrchestratorSessions()));
   }
@@ -776,7 +872,12 @@ export default function App() {
     try {
       setError("");
       await approveOrchestratorPlan(sessionId);
-      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+      await Promise.all([
+        refreshRuntimeState(),
+        refreshOrchestratorSessions(),
+        refreshOrchestratorScheduler(),
+        refreshOrchestratorMessages(sessionId),
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "主控计划审批失败");
     }
@@ -786,7 +887,12 @@ export default function App() {
     try {
       setError("");
       await rejectOrchestratorPlan(sessionId);
-      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+      await Promise.all([
+        refreshRuntimeState(),
+        refreshOrchestratorSessions(),
+        refreshOrchestratorScheduler(),
+        refreshOrchestratorMessages(sessionId),
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "主控计划拒绝失败");
     }
@@ -823,7 +929,12 @@ export default function App() {
     try {
       setError("");
       await resumeOrchestratorSession(sessionId);
-      await Promise.all([refreshRuntimeState(), refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+      await Promise.all([
+        refreshRuntimeState(),
+        refreshOrchestratorSessions(),
+        refreshOrchestratorScheduler(),
+        refreshOrchestratorMessages(sessionId),
+      ]);
       handleNavigate("orchestrator");
     } catch (err) {
       setError(err instanceof Error ? err.message : "恢复主控会话失败");
@@ -981,7 +1092,11 @@ export default function App() {
 
     try {
       await chatWithOrchestrator(sessionId, content);
-      await Promise.all([refreshOrchestratorSessions(), refreshOrchestratorScheduler()]);
+      await Promise.all([
+        refreshOrchestratorSessions(),
+        refreshOrchestratorScheduler(),
+        refreshOrchestratorMessages(sessionId),
+      ]);
     } catch (err) {
       if (options.clearDraft) {
         setOrchestratorDraft(content);
@@ -1237,6 +1352,9 @@ export default function App() {
           />
         ) : route === "persona" ? (
           <PersonaPanel
+            onPersonaUpdated={() => {
+              void handlePersonaUpdated();
+            }}
             assistantName={assistantName}
             petEnabled={persona?.features?.avatar_enabled ?? false}
             petVisible={petVisible}
@@ -1285,6 +1403,7 @@ export default function App() {
             onUpdateGoalStatus={handleUpdateGoalStatus}
             state={state}
             world={world}
+            macConsoleStatus={macConsoleStatus}
             autobioEntries={autobioEntries}
             onRollback={handleRollback}
             onApprovalDecision={handleApprovalDecision}
@@ -1397,6 +1516,15 @@ function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {
     return "主控编排";
   }
   return "休眠";
+}
+
+function syncMessagesFromRuntime(current: ChatEntry[], incoming: Parameters<typeof mergeMessages>[1]): ChatEntry[] {
+  // Runtime payload contains full chat snapshot; empty list means messages were cleared.
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    // Keep local in-flight/failed assistant bubbles to avoid interrupting retry UX.
+    return current.filter((entry) => entry.state === "streaming" || entry.state === "failed");
+  }
+  return mergeMessages(current, incoming);
 }
 
 function isExplicitOrchestratorEntry(message: string): boolean {

@@ -337,6 +337,28 @@ export type BeingState = {
   orchestrator_session?: OrchestratorSession | null;
 };
 
+export type MacConsoleBootstrapStatus = {
+  state:
+    | "disabled"
+    | "skipped_non_macos"
+    | "script_missing"
+    | "check_passed"
+    | "check_error"
+    | "autofix_succeeded"
+    | "autofix_error"
+    | "autofix_failed"
+    | string;
+  healthy: boolean;
+  platform: string;
+  enabled: boolean;
+  attempted_autofix: boolean;
+  summary: string;
+  checked_at?: string | null;
+  script_path?: string | null;
+  check_exit_code?: number | null;
+  apply_exit_code?: number | null;
+};
+
 export type ChatSubmissionResult = {
   response_id: string | null;
   assistant_message_id: string;
@@ -713,6 +735,10 @@ export function resumeChat(body: ChatResumeRequest): Promise<ChatSubmissionResul
 
 export function fetchState(): Promise<BeingState> {
   return get<BeingState>("/state");
+}
+
+export function fetchMacConsoleStatus(): Promise<MacConsoleBootstrapStatus> {
+  return get<MacConsoleBootstrapStatus>("/environment/mac-console");
 }
 
 export function fetchMessages(): Promise<ChatHistoryResponse> {

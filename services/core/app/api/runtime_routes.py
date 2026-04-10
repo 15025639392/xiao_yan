@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from app.api.deps import (
     get_goal_admission_service,
@@ -8,6 +8,7 @@ from app.api.deps import (
     get_memory_repository,
     get_morning_plan_draft_generator,
     get_morning_plan_planner,
+    get_persona_service,
     get_state_store,
 )
 from app.domain.models import FocusMode, WakeMode
@@ -17,6 +18,7 @@ from app.goals.models import GoalStatus, GoalStatusUpdate
 from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage, ChatHistoryResponse
 from app.memory.repository import MemoryRepository
+from app.persona.service import PersonaService
 from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import deduplicate_entries, ensure_realtime_hub_initialized, ensure_runtime_initialized
@@ -29,6 +31,25 @@ def build_runtime_router() -> APIRouter:
     @router.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @router.get("/environment/mac-console")
+    def get_mac_console_environment_status(request: Request) -> dict:
+        ensure_runtime_initialized(request.app)
+        return (
+            getattr(request.app.state, "mac_console_bootstrap_status", None)
+            or {
+                "state": "unknown",
+                "healthy": False,
+                "platform": "unknown",
+                "enabled": False,
+                "attempted_autofix": False,
+                "summary": "mac console bootstrap status is unavailable.",
+                "checked_at": None,
+                "script_path": None,
+                "check_exit_code": None,
+                "apply_exit_code": None,
+            }
+        )
 
     @router.websocket("/ws/app")
     async def app_realtime(websocket: WebSocket) -> None:
@@ -104,18 +125,32 @@ def build_runtime_router() -> APIRouter:
             ),
         }
 
+    def _goal_emotion_event_for(status: GoalStatus) -> str | None:
+        mapping = {
+            GoalStatus.ACTIVE: "progress",
+            GoalStatus.PAUSED: "blocked",
+            GoalStatus.COMPLETED: "completed",
+            GoalStatus.ABANDONED: "abandoned",
+        }
+        return mapping.get(status)
+
     @router.post("/goals/{goal_id}/status")
     def update_goal_status(
         goal_id: str,
         request: GoalStatusUpdate,
         goal_repository: GoalRepository = Depends(get_goal_repository),
         state_store: StateStore = Depends(get_state_store),
+        persona_service: PersonaService = Depends(get_persona_service),
         planner: MorningPlanPlanner = Depends(get_morning_plan_planner),
         draft_generator: MorningPlanDraftGenerator | None = Depends(get_morning_plan_draft_generator),
     ) -> Goal:
         goal = goal_repository.update_status(goal_id, request.status)
         if goal is None:
             raise HTTPException(status_code=404, detail="goal not found")
+
+        emotion_event = _goal_emotion_event_for(request.status)
+        if emotion_event is not None:
+            persona_service.infer_goal_emotion(emotion_event, goal.title)
 
         state = state_store.get()
         if request.status in {GoalStatus.PAUSED, GoalStatus.ABANDONED} and goal_id in state.active_goal_ids:

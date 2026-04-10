@@ -2,7 +2,7 @@ import { AutobioPanel } from "../components/AutobioPanel";
 import { GoalsPanel } from "../components/GoalsPanel";
 import { StatusPanel } from "../components/StatusPanel";
 import { WorldPanel } from "../components/WorldPanel";
-import type { BeingState, Goal, InnerWorldState } from "../lib/api";
+import type { BeingState, Goal, InnerWorldState, MacConsoleBootstrapStatus } from "../lib/api";
 
 export function OverviewPanel({
   focusGoalTitle,
@@ -12,6 +12,7 @@ export function OverviewPanel({
   onUpdateGoalStatus,
   state,
   world,
+  macConsoleStatus,
   autobioEntries,
   onRollback,
   onApprovalDecision,
@@ -23,6 +24,7 @@ export function OverviewPanel({
   onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
   state: BeingState;
   world: InnerWorldState | null;
+  macConsoleStatus?: MacConsoleBootstrapStatus | null;
   autobioEntries: string[];
   onRollback?: (jobId: string) => void;
   onApprovalDecision?: (jobId: string, approved: boolean) => void;
@@ -62,6 +64,7 @@ export function OverviewPanel({
             error={""}
             focusGoalTitle={focusGoalTitle}
             state={state}
+            macConsoleStatus={macConsoleStatus}
             onRollback={onRollback}
             onApprovalDecision={onApprovalDecision}
           />
@@ -81,4 +84,3 @@ export function OverviewPanel({
     </div>
   );
 }
-

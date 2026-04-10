@@ -73,3 +73,76 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* 身体环境状态卡片 */
+.environment-status-card {
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-elevated);
+}
+
+.environment-status-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.environment-status-card__title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.environment-status-card__title {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.environment-status-card__subtitle {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.environment-status-card__summary {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.environment-status-card__meta {
+  margin: var(--space-3) 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.environment-status-card__meta div {
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+
+.environment-status-card__meta dt {
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  margin: 0;
+}
+
+.environment-status-card__meta dd {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 700px) {
+  .environment-status-card__meta {
+    grid-template-columns: 1fr;
+  }
+}

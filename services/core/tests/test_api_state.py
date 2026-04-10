@@ -54,3 +54,16 @@ def test_get_state_includes_self_programming_job():
         assert body["self_programming_job"]["verification"]["passed"] is True
     finally:
         app.dependency_overrides.clear()
+
+
+def test_get_mac_console_environment_status_returns_bootstrap_snapshot():
+    client = TestClient(app)
+
+    response = client.get("/environment/mac-console")
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["state"]
+    assert isinstance(body["healthy"], bool)
+    assert isinstance(body["platform"], str)
+    assert isinstance(body["summary"], str)

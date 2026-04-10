@@ -94,6 +94,7 @@ def test_realtime_socket_sends_initial_snapshot():
     assert message["payload"]["runtime"]["messages"][0]["content"] == "你好"
     assert message["payload"]["runtime"]["goals"][0]["title"] == "整理今天的记忆"
     assert message["payload"]["runtime"]["autobio"][0] == "我刚整理过记忆。"
+    assert "mac_console_status" in message["payload"]["runtime"]
     assert any(
         item["content"] == "我刚整理过记忆。"
         for item in message["payload"]["memory"]["timeline"]
@@ -168,6 +169,7 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
 
     assert runtime_event["type"] == "runtime_updated"
     assert runtime_event["payload"]["state"]["focus_mode"] == "morning_plan"
+    assert "mac_console_status" in runtime_event["payload"]
     assert runtime_event_after_admission["type"] == "runtime_updated"
     assert runtime_event_after_admission["payload"]["goal_admission_candidates"]["recent"][0]["reason"].startswith(
         "relationship_boundary:"

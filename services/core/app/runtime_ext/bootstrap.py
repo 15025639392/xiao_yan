@@ -38,6 +38,7 @@ from app.orchestrator.service import OrchestratorService
 from app.persona.service import FilePersonaRepository, PersonaService
 from app.realtime import AppRealtimeHub
 from app.runtime import StateStore
+from app.runtime_ext.mac_console_bootstrap import maybe_bootstrap_mac_console_environment
 from app.runtime_ext.snapshot import (
     build_app_snapshot,
     build_chat_messages,
@@ -59,6 +60,8 @@ logger = getLogger(__name__)
 def ensure_runtime_initialized(target_app: FastAPI) -> None:
     if hasattr(target_app.state, "state_store"):
         return
+
+    target_app.state.mac_console_bootstrap_status = maybe_bootstrap_mac_console_environment()
 
     memory_repository = FileMemoryRepository(get_memory_storage_path())
     state_store = StateStore(

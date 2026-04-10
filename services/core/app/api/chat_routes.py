@@ -147,6 +147,22 @@ def build_chat_router() -> APIRouter:
             f"已输出内容：\n{partial_content}"
         )
 
+    def _compact_text(text: str | None, *, limit: int) -> str:
+        if not text:
+            return ""
+        compacted = " ".join(text.strip().split())
+        if len(compacted) <= limit:
+            return compacted
+        return f"{compacted[: limit - 1].rstrip()}…"
+
+    def _build_post_chat_thought(user_message: str, assistant_response: str) -> str:
+        topic = _compact_text(user_message, limit=28) or "刚才这段对话"
+        first_line = next((line for line in assistant_response.splitlines() if line.strip()), assistant_response)
+        assistant_snippet = _compact_text(first_line, limit=42)
+        if assistant_snippet:
+            return f"我刚顺着“{topic}”回应了你，脑子里还停着这句：{assistant_snippet}"
+        return f"我刚顺着“{topic}”回应了你，接下来想把它再往前推一小步。"
+
     def _should_fallback_to_stream_without_tools(exception: Exception) -> bool:
         if not isinstance(exception, httpx.HTTPStatusError):
             return False
@@ -179,6 +195,7 @@ def build_chat_router() -> APIRouter:
         instructions: str,
         assistant_message_id: str,
         initial_output_text: str = "",
+        suppress_started_event: bool = False,
     ) -> tuple[ChatSubmissionResult, str]:
         response_id: str | None = None
         output_text = initial_output_text
@@ -190,13 +207,13 @@ def build_chat_router() -> APIRouter:
                 event_type = event["type"]
                 if event_type == "response_started":
                     response_id = event.get("response_id") or response_id
-                    if hub is not None and not started:
+                    if hub is not None and not started and not suppress_started_event:
                         hub.publish_chat_started(assistant_message_id, response_id=response_id)
                         started = True
                     continue
 
                 if event_type == "text_delta":
-                    if hub is not None and not started:
+                    if hub is not None and not started and not suppress_started_event:
                         hub.publish_chat_started(assistant_message_id, response_id=response_id)
                         started = True
 
@@ -238,7 +255,7 @@ def build_chat_router() -> APIRouter:
                 hub.publish_chat_failed(assistant_message_id, str(exception))
             raise HTTPException(status_code=502, detail=str(exception)) from exception
 
-        if hub is not None and not started:
+        if hub is not None and not started and not suppress_started_event:
             hub.publish_chat_started(assistant_message_id, response_id=response_id)
         if hub is not None:
             hub.publish_chat_completed(assistant_message_id, response_id, output_text)
@@ -488,6 +505,19 @@ def build_chat_router() -> APIRouter:
 
         return calls
 
+    def _build_function_call_signature(function_calls: list[tuple[str, str, dict]]) -> str:
+        normalized: list[dict[str, str]] = []
+        for _, tool_name, arguments in function_calls:
+            try:
+                arguments_key = json.dumps(arguments, ensure_ascii=False, sort_keys=True)
+            except Exception:  # noqa: BLE001
+                arguments_key = str(arguments)
+            normalized.append({"tool": tool_name, "arguments": arguments_key})
+        try:
+            return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+        except Exception:  # noqa: BLE001
+            return str(normalized)
+
     def _extract_output_text(response_payload: dict) -> str:
         if isinstance(response_payload.get("output_text"), str):
             return response_payload["output_text"]
@@ -538,11 +568,33 @@ def build_chat_router() -> APIRouter:
 
         file_tools = _build_chat_file_tools()
         accumulated_input: list[dict] = [message.model_dump() for message in chat_messages]
+        max_tool_rounds = 8
+        tool_repeat_streak_limit = 3
+        last_call_signature: str | None = None
+        same_call_signature_streak = 0
         # Lightweight diagnostics: helps identify "content too large" cases in provider errors.
         payload_hint = f"messages={len(chat_messages)}, instructions_chars={len(instructions or '')}"
 
+        def _fallback_without_tools(reason: str) -> tuple[ChatSubmissionResult, str]:
+            fallback_instructions = (
+                f"{instructions}\n\n"
+                "[Tool fallback]\n"
+                f"工具调用出现循环/超限（{reason}）。"
+                "请不要再调用任何工具，直接基于已有上下文回答；"
+                "如信息不足请明确说明不足点。"
+            )
+            return _run_chat_submission(
+                request=request,
+                gateway=gateway,
+                chat_messages=chat_messages,
+                instructions=fallback_instructions,
+                assistant_message_id=assistant_message_id,
+                initial_output_text=initial_output_text,
+                suppress_started_event=started,
+            )
+
         try:
-            for _ in range(8):
+            for _ in range(max_tool_rounds):
                 try:
                     response_payload = create_with_tools(
                         accumulated_input,
@@ -619,6 +671,15 @@ def build_chat_router() -> APIRouter:
                     hub.publish_chat_started(assistant_message_id, response_id=response_id)
                     started = True
 
+                call_signature = _build_function_call_signature(function_calls)
+                if call_signature == last_call_signature:
+                    same_call_signature_streak += 1
+                else:
+                    same_call_signature_streak = 1
+                    last_call_signature = call_signature
+                if same_call_signature_streak >= tool_repeat_streak_limit:
+                    return _fallback_without_tools("repeated_tool_calls")
+
                 tool_outputs: list[dict[str, str]] = []
                 for call_id, tool_name, arguments in function_calls:
                     tool_output = _execute_file_tool_call(file_tools, tool_name, arguments)
@@ -638,7 +699,7 @@ def build_chat_router() -> APIRouter:
 
                 accumulated_input.extend(tool_outputs)
 
-            raise HTTPException(status_code=502, detail="tool call recursion limit exceeded")
+            return _fallback_without_tools("tool_call_recursion_limit_exceeded")
         except HTTPException:
             if hub is not None and started:
                 hub.publish_chat_failed(assistant_message_id, "tool execution failed")
@@ -699,8 +760,8 @@ def build_chat_router() -> APIRouter:
         latest_plan_completion = find_latest_today_plan_completion(memory_repository)
         latest_self_programming = _summarize_latest_self_programming(state)
 
-        persona_system_prompt = persona_service.build_system_prompt()
         persona_service.infer_chat_emotion(request_body.message)
+        persona_system_prompt = persona_service.build_system_prompt()
 
         memory_context = memory_service.build_memory_prompt_context(
             user_message=request_body.message,
@@ -728,6 +789,7 @@ def build_chat_router() -> APIRouter:
             latest_plan_completion=latest_plan_completion,
             latest_self_programming=latest_self_programming,
             user_message=request_body.message,
+            current_thought=state.current_thought,
             persona_system_prompt=persona_system_prompt,
             relationship_summary=relationship_summary,
             memory_context=memory_context or None,
@@ -751,6 +813,9 @@ def build_chat_router() -> APIRouter:
         )
         for entry in extracted:
             memory_service.save(entry)
+        latest_state = state_store.get()
+        next_thought = _build_post_chat_thought(request_body.message, output_text)
+        state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))
 
         return submission
 
@@ -770,8 +835,8 @@ def build_chat_router() -> APIRouter:
         latest_plan_completion = find_latest_today_plan_completion(memory_repository)
         latest_self_programming = _summarize_latest_self_programming(state)
 
-        persona_system_prompt = persona_service.build_system_prompt()
         persona_service.infer_chat_emotion(request_body.message)
+        persona_system_prompt = persona_service.build_system_prompt()
         memory_context = memory_service.build_memory_prompt_context(
             user_message=request_body.message,
             max_chars=600,
@@ -797,6 +862,7 @@ def build_chat_router() -> APIRouter:
             latest_plan_completion=latest_plan_completion,
             latest_self_programming=latest_self_programming,
             user_message=request_body.message,
+            current_thought=state.current_thought,
             persona_system_prompt=persona_system_prompt,
             relationship_summary=relationship_summary,
             memory_context=memory_context or None,
@@ -821,6 +887,9 @@ def build_chat_router() -> APIRouter:
         )
         for entry in extracted:
             memory_service.save(entry)
+        latest_state = state_store.get()
+        next_thought = _build_post_chat_thought(request_body.message, output_text)
+        state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))
 
         return submission
 

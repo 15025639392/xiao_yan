@@ -67,6 +67,7 @@ def _goal_admission_meta(admission, candidate: GoalCandidate | None = None) -> G
 
 class AutonomyLoop:
     WORLD_EVENT_COOLDOWN = timedelta(minutes=30)
+    REFLECTIVE_CHECKIN_INTERVAL = timedelta(minutes=10)
 
     def __init__(
         self,
@@ -259,6 +260,7 @@ class AutonomyLoop:
         if action.kind == "reflect":
             thought = _build_proactive_thought(recent_events, now, world_state)
             updates = {"current_thought": thought}
+            proactive_message: str | None = None
 
             latest_user_event = _find_latest_user_event(recent_events)
             if (
@@ -270,15 +272,27 @@ class AutonomyLoop:
                     now,
                     world_state,
                 )
+                updates["current_thought"] = proactive_message
+                updates["last_proactive_source"] = latest_user_event.content
+                updates["last_proactive_at"] = now
+            elif (
+                latest_user_event is None
+                and recent_events
+                and (
+                    state.last_proactive_at is None
+                    or now - state.last_proactive_at >= self.REFLECTIVE_CHECKIN_INTERVAL
+                )
+            ):
+                proactive_message = thought
+                updates["last_proactive_at"] = now
+
+            if proactive_message:
                 entry = MemoryEntry.create(
                     kind=MemoryKind.CHAT_RAW,
                     content=proactive_message,
                     role="assistant",
                 )
                 self.memory_repository.save_event(MemoryEvent.from_entry(entry))
-                updates["current_thought"] = proactive_message
-                updates["last_proactive_source"] = latest_user_event.content
-                updates["last_proactive_at"] = now
 
             next_state = state.model_copy(update=updates)
             return self.state_store.set(next_state)

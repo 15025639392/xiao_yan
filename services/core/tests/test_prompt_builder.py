@@ -129,3 +129,20 @@ def test_chat_instructions_emotion_messages_should_not_trigger_interrogation():
     assert "先接住感受" in instructions
     assert "给一个可执行的微小建议" in instructions
     assert "不要立刻连环追问" in instructions
+
+
+def test_chat_instructions_include_current_thought_continuity_guidance():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        user_message="你刚刚在想什么",
+        persona_system_prompt=persona_prompt,
+        current_thought="我还在琢磨今天那条对话线索。",
+    )
+
+    assert "你此刻脑海里还有一个没收束的念头" in instructions
+    assert "我还在琢磨今天那条对话线索" in instructions
+    assert "先自然承接这个念头" in instructions

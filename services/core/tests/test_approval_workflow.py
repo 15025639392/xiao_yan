@@ -20,8 +20,16 @@ from app.domain.models import (
     SelfProgrammingStatus,
     WakeMode,
 )
-from app.main import app
+from app.main import app, get_persona_service
+from app.persona.models import EmotionType
+from app.persona.service import InMemoryPersonaRepository, PersonaService
 from app.runtime import StateStore
+from app.self_programming.rollback_recovery import (
+    RollbackPlan,
+    RollbackReason,
+    RollbackResult,
+    RollbackStatus,
+)
 
 
 # ═══════════════════════════════════════════════════
@@ -200,6 +208,36 @@ def test_reject_job_with_reason():
     assert updated_state.focus_mode != "self_programming"
 
 
+def test_reject_job_triggers_persona_rejected_emotion():
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    persona_service = PersonaService(repository=InMemoryPersonaRepository())
+    job = SelfProgrammingJob(
+        id="job-reject-emotion",
+        target_area="executor",
+        reason="性能优化",
+        spec="缓存结果",
+        status=SelfProgrammingStatus.PENDING_APPROVAL,
+        created_at=datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc),
+    )
+    store.set(store.get().model_copy(update={"self_programming_job": job}))
+    app.state.state_store = store
+
+    def override_persona_service():
+        return persona_service
+
+    app.dependency_overrides[get_persona_service] = override_persona_service
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            "/self-programming/job-reject-emotion/reject",
+            json={"reason": "改动范围太大，需要拆分"},
+        )
+        assert resp.status_code == 200
+        assert persona_service.get_profile().emotion.primary_emotion == EmotionType.SADNESS
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_reject_job_default_reason():
     """POST /{job_id}/reject — 不提供原因时使用默认值。"""
 
@@ -370,6 +408,7 @@ def test_reject_start_records_rejection_and_returns_to_drafted():
             update={
                 "focus_mode": "self_programming",
                 "self_programming_job": job,
+                "current_thought": "我刚把候选方案列完。",
             }
         )
     )
@@ -383,6 +422,8 @@ def test_reject_start_records_rejection_and_returns_to_drafted():
     assert updated.status == "drafted"
     assert updated.rejection_phase == "start"
     assert updated.rejection_reason == "方向不清晰"
+    assert "刚才我还在想" in store.get().current_thought
+    assert "方向不清晰" in store.get().current_thought
 
 
 def test_delegate_requires_queued_status():
@@ -410,6 +451,107 @@ def test_delegate_requires_queued_status():
     resp = client.post("/self-programming/delegate-blocked/delegate", json={})
     assert resp.status_code == 409
     assert "queued" in resp.json()["detail"]
+
+
+def test_promote_job_triggers_persona_applied_emotion():
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    persona_service = PersonaService(repository=InMemoryPersonaRepository())
+    job = SelfProgrammingJob(
+        id="promote-emotion-ok",
+        target_area="agent",
+        reason="测试",
+        spec="测试",
+        status=SelfProgrammingStatus.APPLIED,
+        created_at=datetime.now(tz=timezone.utc),
+    )
+    store.set(
+        store.get().model_copy(
+            update={
+                "focus_mode": "self_programming",
+                "self_programming_job": job,
+                "current_thought": "我要先盯住验证波动。",
+            }
+        )
+    )
+    app.state.state_store = store
+
+    def override_persona_service():
+        return persona_service
+
+    app.dependency_overrides[get_persona_service] = override_persona_service
+    try:
+        client = TestClient(app)
+        resp = client.post("/self-programming/promote-emotion-ok/promote", json={})
+        assert resp.status_code == 200
+        assert persona_service.get_profile().emotion.primary_emotion == EmotionType.PROUD
+        assert "刚才我还在想" in store.get().current_thought
+        assert "稳定性" in store.get().current_thought
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_manual_rollback_updates_reflective_thought_and_failed_emotion():
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    persona_service = PersonaService(repository=InMemoryPersonaRepository())
+    job = SelfProgrammingJob(
+        id="rollback-emotion-ok",
+        target_area="agent",
+        reason="测试",
+        spec="测试",
+        status=SelfProgrammingStatus.VERIFYING,
+        created_at=datetime.now(tz=timezone.utc),
+    )
+    store.set(
+        store.get().model_copy(
+            update={
+                "focus_mode": "self_programming",
+                "self_programming_job": job,
+                "current_thought": "我准备继续观察这个补丁。",
+            }
+        )
+    )
+    app.state.state_store = store
+
+    class _Executor:
+        def smart_rollback(self, *_args, **_kwargs):
+            plan = RollbackPlan(
+                job_id=job.id,
+                reason=RollbackReason.MANUAL_REQUEST,
+                reason_detail="manual rollback",
+            )
+            return RollbackResult(
+                status=RollbackStatus.SUCCESS,
+                plan=plan,
+                restored_files=["app/agent/loop.py"],
+            )
+
+    class _SelfProgrammingService:
+        executor = _Executor()
+
+    class _AutonomyLoop:
+        self_programming_service = _SelfProgrammingService()
+
+    app.state.autonomy_loop = _AutonomyLoop()
+
+    def override_persona_service():
+        return persona_service
+
+    app.dependency_overrides[get_persona_service] = override_persona_service
+    try:
+        client = TestClient(app)
+        resp = client.post("/self-programming/rollback-emotion-ok/rollback", json={"reason": "手动回滚"})
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["success"] is True
+
+        updated_state = store.get()
+        assert updated_state.self_programming_job is not None
+        assert updated_state.self_programming_job.status == SelfProgrammingStatus.FAILED
+        assert "刚才我还在想" in updated_state.current_thought
+        assert "回滚摘要" in updated_state.current_thought
+        assert persona_service.get_profile().emotion.primary_emotion == EmotionType.FRUSTRATED
+    finally:
+        app.dependency_overrides.clear()
 
 
 # ═══════════════════════════════════════════════════

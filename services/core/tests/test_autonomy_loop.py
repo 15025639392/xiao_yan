@@ -95,6 +95,48 @@ def test_tick_once_respects_proactive_cooldown():
     assert [event.role for event in recent] == ["user"]
 
 
+def test_tick_once_can_emit_reflective_checkin_without_new_user_message_after_interval():
+    now = datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc)
+    store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            last_proactive_at=now - timedelta(minutes=11),
+        )
+    )
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="inner", content="我还在整理刚才的思路。"))
+    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
+
+    state = loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+    assistant_events = [event for event in recent if event.kind == "chat" and event.role == "assistant"]
+
+    assert state.current_thought is not None
+    assert len(assistant_events) == 1
+    assert assistant_events[0].content == state.current_thought
+    assert state.last_proactive_at == now
+
+
+def test_tick_once_does_not_emit_reflective_checkin_before_interval():
+    now = datetime(2026, 4, 4, 10, 0, tzinfo=timezone.utc)
+    store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            last_proactive_at=now - timedelta(minutes=5),
+        )
+    )
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="inner", content="我还在整理刚才的思路。"))
+    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
+
+    state = loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+    assistant_events = [event for event in recent if event.kind == "chat" and event.role == "assistant"]
+
+    assert state.current_thought is not None
+    assert assistant_events == []
+
+
 def test_tick_once_generates_time_aware_proactive_message():
     now = datetime(2026, 4, 4, 22, 0, tzinfo=timezone.utc)
     store = StateStore(BeingState(mode=WakeMode.AWAKE))

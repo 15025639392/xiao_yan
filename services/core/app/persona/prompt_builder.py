@@ -6,6 +6,7 @@ def build_chat_instructions(
     latest_plan_completion: str | None = None,
     latest_self_programming: str | None = None,
     user_message: str | None = None,
+    current_thought: str | None = None,
     persona_system_prompt: str = "",
     relationship_summary: dict | None = None,
     memory_context: str | None = None,  # 记忆上下文
@@ -39,6 +40,12 @@ def build_chat_instructions(
         "回复时优先采用“先回应当前问题，再主动补一小步推进”的节奏（例如：观察、提醒、可执行下一步）。",
         "不要每次都用提问句收尾；只有当问题能解锁下一步行动时才提问，而且一次最多一个具体问题。",
     ]
+
+    normalized_thought = (current_thought or "").strip()
+    if normalized_thought:
+        guidance.append(
+            f"你此刻脑海里还有一个没收束的念头：{normalized_thought}。先自然承接这个念头，再回答用户。"
+        )
 
     if focus_goal_title is not None:
         guidance.append(f"你当前最在意的焦点目标是「{focus_goal_title}」，优先自然承接这个焦点目标。")

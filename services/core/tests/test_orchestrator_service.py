@@ -103,7 +103,13 @@ def test_generate_plan_contains_required_fields(orchestrator_service: Orchestrat
     assert planned.status.value == "pending_plan_approval"
     assert planned.plan.objective == "进入主控，梳理启动链路"
     assert planned.plan.definition_of_done
-    assert [task.kind.value for task in planned.plan.tasks] == ["analyze", "implement", "verify", "summarize"]
+    task_kinds = [task.kind.value for task in planned.plan.tasks]
+    assert task_kinds[0] == "analyze"
+    assert task_kinds[-2:] == ["verify", "summarize"]
+    assert task_kinds.count("implement") >= 1
+    implement_ids = [task.task_id for task in planned.plan.tasks if task.kind.value == "implement"]
+    verify_task = next(task for task in planned.plan.tasks if task.kind.value == "verify")
+    assert verify_task.depends_on == implement_ids
     delegate_request = build_delegate_request(
         goal=planned.goal,
         project_path=planned.project_path,
@@ -118,6 +124,117 @@ def test_generate_plan_contains_required_fields(orchestrator_service: Orchestrat
         "stderr",
         "duration_ms",
     ]
+
+
+def test_generate_plan_splits_implementation_tasks_for_tauri_project(tmp_path: Path) -> None:
+    project = tmp_path / "demo-tauri-project"
+    (project / "src").mkdir(parents=True)
+    (project / "src-tauri" / "src").mkdir(parents=True)
+    (project / "src" / "main.ts").write_text("console.log('frontend')\n", encoding="utf-8")
+    (project / "src-tauri" / "Cargo.toml").write_text(
+        "[package]\nname = \"demo-tauri\"\nversion = \"0.1.0\"\n",
+        encoding="utf-8",
+    )
+    (project / "package.json").write_text(
+        json.dumps({"name": "demo-tauri-project", "scripts": {"build": "vite build"}}),
+        encoding="utf-8",
+    )
+
+    config = get_runtime_config()
+    config.set_folder_permission(str(project), "full_access")
+    state_store = StateStore(
+        initial_state=BeingState(mode=WakeMode.AWAKE),
+        memory_repository=InMemoryMemoryRepository(),
+    )
+    service = OrchestratorService(
+        repository=OrchestratorSessionRepository(in_memory=True),
+        state_store=state_store,
+        verification_runner=lambda _path, commands: OrchestratorVerification(commands=commands, passed=True),
+    )
+
+    session = service.create_session("进入主控，升级当前项目", str(project))
+    planned = service.generate_plan(session.session_id)
+    assert planned.plan is not None
+
+    implement_tasks = [task for task in planned.plan.tasks if task.kind.value == "implement"]
+    assert len(implement_tasks) >= 2
+    flattened_scope = {path for task in implement_tasks for path in task.scope_paths}
+    assert "src" in flattened_scope
+    assert "src-tauri" in flattened_scope
+
+
+def test_summarize_task_is_completed_locally_without_delegate(
+    orchestrator_service: OrchestratorService,
+    project_dir: Path,
+) -> None:
+    session = orchestrator_service.create_session("进入主控，升级当前项目", str(project_dir))
+    session = orchestrator_service.generate_plan(session.session_id)
+    session = orchestrator_service.approve_plan(session.session_id)
+
+    while session.status.value not in {"completed", "failed"}:
+        session = orchestrator_service.dispatch(session.session_id)
+        assert session.plan is not None
+        running_tasks = [task for task in session.plan.tasks if task.status.value == "running"]
+        if not running_tasks:
+            break
+        running_task = running_tasks[0]
+        changed_files = ["src/main.ts"] if running_task.kind.value == "implement" else []
+        session = orchestrator_service.complete_delegate(
+            OrchestratorDelegateCompletionPayload(
+                session_id=session.session_id,
+                task_id=running_task.task_id,
+                delegate_run_id=running_task.delegate_run_id or "",
+                result=OrchestratorDelegateResult(
+                    status="succeeded",
+                    summary=f"{running_task.title} 完成",
+                    changed_files=changed_files,
+                ),
+            )
+        )
+
+    assert session.plan is not None
+    summarize = next(task for task in session.plan.tasks if task.kind.value == "summarize")
+    assert summarize.status.value == "succeeded"
+    assert summarize.delegate_run_id is None
+    assert all(item.task_id != summarize.task_id for item in session.delegates)
+
+
+def test_dispatch_blocks_high_risk_implement_until_secondary_approval(
+    orchestrator_service: OrchestratorService,
+    project_dir: Path,
+) -> None:
+    session = orchestrator_service.create_session("进入主控，升级当前项目", str(project_dir))
+    session = orchestrator_service.generate_plan(session.session_id)
+    session = orchestrator_service.apply_directive(session.session_id, "把 scope 限制在 当前项目")
+    session = orchestrator_service.approve_plan(session.session_id)
+
+    session = orchestrator_service.dispatch(session.session_id)
+    analyze_task = next(task for task in session.plan.tasks if task.status.value == "running")
+    session = orchestrator_service.complete_delegate(
+        OrchestratorDelegateCompletionPayload(
+            session_id=session.session_id,
+            task_id=analyze_task.task_id,
+            delegate_run_id=analyze_task.delegate_run_id or "",
+            result=OrchestratorDelegateResult(
+                status="succeeded",
+                summary="分析完成",
+                changed_files=[],
+            ),
+        )
+    )
+
+    blocked = orchestrator_service.dispatch(session.session_id)
+    assert blocked.status.value == "dispatching"
+    assert blocked.coordination is not None
+    assert "高风险" in (blocked.coordination.waiting_reason or "")
+    blocked_implement = next(task for task in blocked.plan.tasks if task.kind.value == "implement")
+    assert blocked_implement.status.value == "queued"
+
+    approved = orchestrator_service.apply_directive(blocked.session_id, "批准高风险任务并继续")
+    assert "高风险任务" in (approved.summary or "")
+    approved_implement = next(task for task in approved.plan.tasks if task.kind.value == "implement")
+    assert approved_implement.status.value == "pending"
+    assert approved_implement.artifacts.get("secondary_approval_granted") is True
 
 
 def test_dispatch_requires_plan_approval(orchestrator_service: OrchestratorService, project_dir: Path) -> None:

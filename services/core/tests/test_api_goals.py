@@ -12,7 +12,9 @@ from app.goals.admission import (
 from app.goals.models import Goal, GoalStatus
 from app.goals.repository import InMemoryGoalRepository
 from app.memory.models import MemoryEvent
-from app.main import app, get_goal_admission_service, get_goal_repository, get_state_store
+from app.main import app, get_goal_admission_service, get_goal_repository, get_persona_service, get_state_store
+from app.persona.models import EmotionType
+from app.persona.service import InMemoryPersonaRepository, PersonaService
 from app.runtime import StateStore
 
 
@@ -98,6 +100,62 @@ def test_post_completed_goal_keeps_focus_until_autonomy_acknowledges_it():
         assert body["status"] == "completed"
         assert repository.get_goal(goal.id).status == GoalStatus.COMPLETED
         assert state_store.get().active_goal_ids == [goal.id]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_completed_goal_triggers_persona_proud_emotion():
+    repository = InMemoryGoalRepository()
+    goal = repository.save_goal(Goal(title="继续理解用户的睡眠作息"))
+    state_store = StateStore(BeingState(mode=WakeMode.AWAKE, active_goal_ids=[goal.id]))
+    persona_service = PersonaService(repository=InMemoryPersonaRepository())
+
+    def override_goal_repository():
+        return repository
+
+    def override_state_store():
+        return state_store
+
+    def override_persona_service():
+        return persona_service
+
+    app.dependency_overrides[get_goal_repository] = override_goal_repository
+    app.dependency_overrides[get_state_store] = override_state_store
+    app.dependency_overrides[get_persona_service] = override_persona_service
+
+    try:
+        client = TestClient(app)
+        response = client.post(f"/goals/{goal.id}/status", json={"status": "completed"})
+        assert response.status_code == 200
+        assert persona_service.get_profile().emotion.primary_emotion == EmotionType.PROUD
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_reactivated_goal_triggers_persona_engaged_emotion():
+    repository = InMemoryGoalRepository()
+    goal = repository.save_goal(Goal(title="继续理解用户的睡眠作息", status=GoalStatus.PAUSED))
+    state_store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    persona_service = PersonaService(repository=InMemoryPersonaRepository())
+
+    def override_goal_repository():
+        return repository
+
+    def override_state_store():
+        return state_store
+
+    def override_persona_service():
+        return persona_service
+
+    app.dependency_overrides[get_goal_repository] = override_goal_repository
+    app.dependency_overrides[get_state_store] = override_state_store
+    app.dependency_overrides[get_persona_service] = override_persona_service
+
+    try:
+        client = TestClient(app)
+        response = client.post(f"/goals/{goal.id}/status", json={"status": "active"})
+        assert response.status_code == 200
+        assert persona_service.get_profile().emotion.primary_emotion == EmotionType.ENGAGED
     finally:
         app.dependency_overrides.clear()
 
