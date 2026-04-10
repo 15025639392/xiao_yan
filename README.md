@@ -183,11 +183,24 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 服务将在 `http://127.0.0.1:8000` 启动。
 
+如果需要通过局域网 IP 访问（例如手机或其他电脑）：
+
+```bash
+cd services/core
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
 #### 启动前端应用
 
 ```bash
 cd apps/desktop
 npm run dev
+```
+
+如需连接非默认后端地址，可在 `apps/desktop/.env.local` 中配置：
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
 桌面应用将在 `http://localhost:5173` 启动。

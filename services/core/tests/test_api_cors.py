@@ -21,6 +21,11 @@ def test_cors_preflight_allows_localhost_any_port():
     assert status == 200
 
 
+def test_cors_preflight_allows_private_network_ip_origin():
+    status, _ = _preflight("http://192.168.1.23:5173")
+    assert status == 200
+
+
 def test_cors_preflight_allows_null_origin_for_desktop_webview():
     status, _ = _preflight("null")
     assert status == 200

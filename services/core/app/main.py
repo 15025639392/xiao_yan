@@ -35,7 +35,14 @@ app.add_middleware(
         "http://localhost:5173",
     ],
     allow_origin_regex=(
-        r"(^https?://(localhost|127\.0\.0\.1)(:\d+)?$)"
+        r"(^https?://("
+        r"localhost"
+        r"|127\.0\.0\.1"
+        r"|0\.0\.0\.0"
+        r"|10(?:\.\d{1,3}){3}"
+        r"|192\.168(?:\.\d{1,3}){2}"
+        r"|172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}"
+        r")(:\d+)?$)"
         r"|(^null$)"
         r"|(^tauri://localhost$)"
         r"|(^capacitor://localhost$)"

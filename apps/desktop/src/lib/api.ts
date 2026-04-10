@@ -522,7 +522,24 @@ export type AutobioResponse = {
   entries: string[];
 };
 
-export const BASE_URL = "http://127.0.0.1:8000";
+const DEFAULT_BASE_URL = "http://127.0.0.1:8000";
+
+function normalizeBaseUrl(value: string | undefined | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.replace(/\/+$/, "");
+}
+
+export function resolveApiBaseUrl(configuredBaseUrl: string | undefined | null = import.meta.env.VITE_API_BASE_URL): string {
+  return normalizeBaseUrl(configuredBaseUrl) ?? DEFAULT_BASE_URL;
+}
+
+export const BASE_URL = resolveApiBaseUrl();
 
 async function buildHttpError(response: Response): Promise<Error> {
   let detail = "";

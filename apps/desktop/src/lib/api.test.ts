@@ -9,6 +9,7 @@ import {
   fetchChatFolderPermissions,
   removeChatFolderPermission,
   rollbackGoalAdmissionConfig,
+  resolveApiBaseUrl,
   resetPersona,
   updateConfig,
   updateGoalAdmissionConfig,
@@ -217,5 +218,12 @@ describe("persona api methods", () => {
         method: "POST",
       }),
     );
+  });
+
+  test("resolves API base url with fallback and normalization", () => {
+    expect(resolveApiBaseUrl(undefined)).toBe("http://127.0.0.1:8000");
+    expect(resolveApiBaseUrl("https://api.example.com/")).toBe("https://api.example.com");
+    expect(resolveApiBaseUrl("  https://api.example.com/v1//  ")).toBe("https://api.example.com/v1");
+    expect(resolveApiBaseUrl("   ")).toBe("http://127.0.0.1:8000");
   });
 });
