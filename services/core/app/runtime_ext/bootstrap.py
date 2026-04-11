@@ -22,15 +22,19 @@ from app.config import (
     get_orchestrator_storage_path,
     get_goal_wip_limit,
     is_goal_admission_world_enabled,
-    get_memory_storage_path,
+    get_mempalace_palace_path,
+    get_mempalace_results_limit,
+    get_mempalace_room,
+    get_mempalace_wing,
     get_persona_storage_path,
     get_state_storage_path,
     get_world_storage_path,
 )
 from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
 from app.goals.repository import FileGoalRepository
-from app.memory.repository import FileMemoryRepository
+from app.memory.mempalace_repository import MemPalaceMemoryRepository
 from app.memory.service import MemoryService
+from app.memory.mempalace_adapter import MemPalaceAdapter
 from app.orchestrator.conversation_repository import OrchestratorConversationRepository
 from app.orchestrator.conversation_service import OrchestratorConversationService
 from app.orchestrator.repository import OrchestratorSessionRepository
@@ -41,14 +45,7 @@ from app.runtime import StateStore
 from app.runtime_ext.mac_console_bootstrap import maybe_bootstrap_mac_console_environment
 from app.runtime_ext.snapshot import (
     build_app_snapshot,
-    build_chat_messages,
-    build_memory_payload,
-    build_persona_payload,
-    build_runtime_payload,
     build_world_state,
-    deduplicate_entries,
-    find_latest_today_plan_completion,
-    find_recent_autobio,
 )
 from app.self_programming.history_store import SelfProgrammingHistory
 from app.world.repository import FileWorldRepository
@@ -63,7 +60,19 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
 
     target_app.state.mac_console_bootstrap_status = maybe_bootstrap_mac_console_environment()
 
-    memory_repository = FileMemoryRepository(get_memory_storage_path())
+    mempalace_adapter = MemPalaceAdapter(
+        enabled=True,
+        palace_path=get_mempalace_palace_path(),
+        results_limit=get_mempalace_results_limit(),
+        wing=get_mempalace_wing(),
+        room=get_mempalace_room(),
+    )
+    memory_repository = MemPalaceMemoryRepository(
+        palace_path=mempalace_adapter.palace_path,
+        wing=mempalace_adapter.wing,
+        room=f"{mempalace_adapter.room}_events",
+        chat_room=mempalace_adapter.room,
+    )
     state_store = StateStore(
         memory_repository=memory_repository,
         storage_path=get_state_storage_path(),
@@ -144,6 +153,7 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.world_repository = world_repository
     target_app.state.persona_service = persona_service
     target_app.state.memory_service = memory_service
+    target_app.state.mempalace_adapter = mempalace_adapter
     target_app.state.stop_event = stop_event
     target_app.state.autonomy_thread = worker
     target_app.state.autonomy_loop = loop

@@ -100,9 +100,9 @@ def test_runtime_initialization_builds_world_snapshot_immediately(
     tmp_path: Path, monkeypatch
 ):
     state_path = tmp_path / "state.json"
-    memory_path = tmp_path / "memory.jsonl"
     goal_path = tmp_path / "goals.json"
     world_path = tmp_path / "world.json"
+    palace_path = tmp_path / "mempalace"
     state_path.write_text(
         json.dumps(
             BeingState(
@@ -116,9 +116,9 @@ def test_runtime_initialization_builds_world_snapshot_immediately(
         encoding="utf-8",
     )
     monkeypatch.setenv("STATE_STORAGE_PATH", str(state_path))
-    monkeypatch.setenv("MEMORY_STORAGE_PATH", str(memory_path))
     monkeypatch.setenv("GOAL_STORAGE_PATH", str(goal_path))
     monkeypatch.setenv("WORLD_STORAGE_PATH", str(world_path))
+    monkeypatch.setenv("MEMPALACE_PALACE_PATH", str(palace_path))
 
     target_app = FastAPI()
     _ensure_runtime_initialized(target_app)

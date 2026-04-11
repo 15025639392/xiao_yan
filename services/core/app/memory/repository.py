@@ -1,22 +1,20 @@
-import json
-from pathlib import Path
 from typing import Callable
 from typing import Protocol
 
 from app.memory.models import MemoryEvent
 from app.memory.search_utils import (
-    score_event as _score_event,
     search_relevant_events as _search_relevant_events,
-    tokenize_text as _tokenize_text,
 )
-from pydantic import ValidationError
 
 
 class MemoryRepository(Protocol):
     def save_event(self, event: MemoryEvent) -> None:
         ...
 
-    def list_recent(self, limit: int) -> list[MemoryEvent]:
+    def list_recent(self, limit: int, offset: int = 0) -> list[MemoryEvent]:
+        ...
+
+    def list_recent_chat(self, limit: int, offset: int = 0) -> list[MemoryEvent]:
         ...
 
     def search_relevant(self, query: str, limit: int) -> list[MemoryEvent]:
@@ -44,8 +42,12 @@ class InMemoryMemoryRepository:
         self._events.append(event)
         self._notify_change()
 
-    def list_recent(self, limit: int) -> list[MemoryEvent]:
-        return list(reversed(self._events[-limit:]))
+    def list_recent(self, limit: int, offset: int = 0) -> list[MemoryEvent]:
+        return _slice_recent(self._events, limit=limit, offset=offset)
+
+    def list_recent_chat(self, limit: int, offset: int = 0) -> list[MemoryEvent]:
+        chat_events = [event for event in self._events if event.kind == "chat" and event.role in {"user", "assistant"}]
+        return _slice_recent(chat_events, limit=limit, offset=offset)
 
     def search_relevant(self, query: str, limit: int) -> list[MemoryEvent]:
         return _search_relevant_events(self._events, query, limit)
@@ -74,16 +76,10 @@ class InMemoryMemoryRepository:
 
     def clear_all(self) -> int:
         """清空所有记忆事件，返回已清除的数量"""
-        if not self.storage_path.exists():
-            return 0
-
-        events = self._read_all_events()
-        count = len(events)
-
+        count = len(self._events)
         if count > 0:
-            self.storage_path.write_text("", encoding="utf-8")
+            self._events = []
             self._notify_change()
-
         return count
 
     def _notify_change(self) -> None:
@@ -91,131 +87,14 @@ class InMemoryMemoryRepository:
             self._on_change()
 
 
-class FileMemoryRepository:
-    def __init__(self, storage_path: Path, on_change: Callable[[], None] | None = None) -> None:
-        self.storage_path = storage_path
-        self._on_change = on_change
+def _slice_recent(events: list[MemoryEvent], *, limit: int, offset: int = 0) -> list[MemoryEvent]:
+    if limit <= 0:
+        return []
 
-    def save_event(self, event: MemoryEvent) -> None:
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.storage_path.open("a", encoding="utf-8") as handle:
-            handle.write(event.model_dump_json())
-            handle.write("\n")
-        self._notify_change()
+    safe_offset = max(0, offset)
+    end = len(events) - safe_offset
+    if end <= 0:
+        return []
 
-    def list_recent(self, limit: int) -> list[MemoryEvent]:
-        if not self.storage_path.exists():
-            return []
-
-        events = self._read_all_events()
-        events = events[-limit:]
-        return list(reversed(events))
-
-    def search_relevant(self, query: str, limit: int) -> list[MemoryEvent]:
-        return _search_relevant_events(self._read_all_events(), query, limit)
-
-    def delete_event(self, event_id: str) -> bool:
-        """通过重写文件删除指定 ID 的记忆事件
-
-        event_id 是 MemoryEntry.id（如 mem_20260405123456_1a），
-        通过 MemoryEvent.entry_id 字段进行精确匹配。
-        """
-        if not self.storage_path.exists():
-            return False
-
-        events = self._read_all_events()
-
-        # 通过 entry_id 精确匹配
-        filtered = []
-        deleted = False
-        for e in events:
-            if not deleted and e.entry_id == event_id:
-                deleted = True
-                continue
-            filtered.append(e)
-
-        if deleted:
-            self._write_all_events(filtered)
-            self._notify_change()
-
-        return deleted
-
-    def update_event(self, event_id: str, **kwargs) -> bool:
-        """更新指定 ID 的事件字段，通过重写文件实现"""
-        if not self.storage_path.exists():
-            return False
-
-        events = self._read_all_events()
-        updated = False
-
-        for i, e in enumerate(events):
-            # 通过 entry_id 精确匹配
-            if not updated and e.entry_id == event_id:
-                events[i] = e.model_copy(update=kwargs)
-                updated = True
-                break
-
-        if updated:
-            self._write_all_events(events)
-            self._notify_change()
-
-        return updated
-
-    def _read_all_events(self) -> list[MemoryEvent]:
-        if not self.storage_path.exists():
-            return []
-
-        with self.storage_path.open("r", encoding="utf-8") as handle:
-            lines = [line.strip() for line in handle.readlines() if line.strip()]
-
-        events: list[MemoryEvent] = []
-        seen_entry_ids: set[str] = set()
-        needs_rewrite = False
-
-        for line in lines:
-            try:
-                payload = json.loads(line)
-                event = MemoryEvent.model_validate(payload)
-            except (json.JSONDecodeError, ValidationError):
-                needs_rewrite = True
-                continue
-
-            if event.entry_id in seen_entry_ids:
-                needs_rewrite = True
-                continue
-
-            seen_entry_ids.add(event.entry_id)
-            events.append(event)
-
-        if needs_rewrite:
-            self._write_all_events(events)
-
-        return events
-
-    def _write_all_events(self, events: list[MemoryEvent]) -> None:
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.storage_path.open("w", encoding="utf-8") as handle:
-            for event in events:
-                handle.write(event.model_dump_json())
-                handle.write("\n")
-
-    def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
-        self._on_change = callback
-
-    def clear_all(self) -> int:
-        """清空所有记忆事件，返回已清除的数量"""
-        if not self.storage_path.exists():
-            return 0
-
-        events = self._read_all_events()
-        count = len(events)
-
-        if count > 0:
-            self.storage_path.write_text("", encoding="utf-8")
-            self._notify_change()
-
-        return count
-
-    def _notify_change(self) -> None:
-        if self._on_change is not None:
-            self._on_change()
+    start = max(0, end - limit)
+    return list(reversed(events[start:end]))

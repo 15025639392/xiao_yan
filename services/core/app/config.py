@@ -217,15 +217,6 @@ def get_service_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def get_memory_storage_path() -> Path:
-    load_local_env()
-    configured = os.getenv("MEMORY_STORAGE_PATH")
-    if configured:
-        return Path(configured).expanduser()
-
-    return get_service_root() / ".data" / "memory.jsonl"
-
-
 def get_goal_storage_path() -> Path:
     load_local_env()
     configured = os.getenv("GOAL_STORAGE_PATH")
@@ -454,3 +445,41 @@ def get_chat_model() -> str:
 
     legacy_model = os.getenv("OPENAI_MODEL", "").strip()
     return legacy_model or "gpt-5.4"
+
+
+def get_mempalace_enabled() -> bool:
+    # Chat memory has fully switched to MemPalace.
+    # Keep the helper for compatibility with existing callers.
+    return True
+
+
+def get_mempalace_palace_path() -> str:
+    load_local_env()
+    configured = os.getenv("MEMPALACE_PALACE_PATH", "").strip()
+    if configured:
+        return str(Path(configured).expanduser())
+    return str(Path("~/.mempalace/palace").expanduser())
+
+
+def get_mempalace_results_limit() -> int:
+    load_local_env()
+    configured = os.getenv("MEMPALACE_RESULTS_LIMIT", "").strip()
+    if configured:
+        try:
+            value = int(configured)
+            return max(1, min(10, value))
+        except ValueError:
+            pass
+    return 3
+
+
+def get_mempalace_wing() -> str:
+    load_local_env()
+    configured = os.getenv("MEMPALACE_WING", "").strip()
+    return configured or "wing_xiaoyan"
+
+
+def get_mempalace_room() -> str:
+    load_local_env()
+    configured = os.getenv("MEMPALACE_ROOM", "").strip()
+    return configured or "chat_exchange"

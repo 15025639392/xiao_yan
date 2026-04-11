@@ -2259,7 +2259,7 @@ OPENAI_API_KEY=your_api_key_here
 OPENAI_MODEL=gpt-3.5-turbo
 
 # 存储路径
-MEMORY_STORAGE_PATH=.data/memory.jsonl
+MEMPALACE_PALACE_PATH=.data/mempalace
 GOAL_STORAGE_PATH=.data/goals.json
 PERSONA_STORAGE_PATH=.data/persona.json
 
@@ -2334,7 +2334,7 @@ def migrate_memory_to_sqlite(
 
 if __name__ == "__main__":
     migrate_memory_to_sqlite(
-        ".data/memory.jsonl",
+        ".data/mempalace",
         ".data/memories.db"
     )
 ```

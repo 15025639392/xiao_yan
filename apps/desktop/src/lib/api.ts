@@ -1164,7 +1164,7 @@ export function updateMemory(
     subject?: string | null;
   },
 ): Promise<{ success: boolean; entry: MemoryEntryDisplay | null }> {
-  return post<{ success: boolean; entry: MemoryEntryDisplay | null }>(
+  return put<{ success: boolean; entry: MemoryEntryDisplay | null }>(
     `/memory/${encodeURIComponent(memoryId)}`,
     data,
   );

@@ -5,12 +5,20 @@ from collections.abc import Generator
 import httpx
 from fastapi import Request
 
-from app.config import get_chat_provider, get_llm_provider_configs
+from app.config import (
+    get_chat_provider,
+    get_llm_provider_configs,
+    get_mempalace_palace_path,
+    get_mempalace_results_limit,
+    get_mempalace_room,
+    get_mempalace_wing,
+)
 from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.gateway import ChatGateway
 from app.memory.repository import MemoryRepository
 from app.memory.service import MemoryService
+from app.memory.mempalace_adapter import MemPalaceAdapter
 from app.orchestrator.conversation_service import OrchestratorConversationService
 from app.orchestrator.service import OrchestratorService
 from app.persona.service import InMemoryPersonaRepository, PersonaService
@@ -36,6 +44,21 @@ def get_persona_service(request: Request) -> PersonaService:
 def get_memory_service(request: Request) -> MemoryService:
     ensure_runtime_initialized(request.app)
     return request.app.state.memory_service  # type: ignore[attr-defined]
+
+
+def get_mempalace_adapter(request: Request) -> MemPalaceAdapter:
+    ensure_runtime_initialized(request.app)
+    adapter = getattr(request.app.state, "mempalace_adapter", None)
+    if adapter is None:
+        adapter = MemPalaceAdapter(
+            enabled=True,
+            palace_path=get_mempalace_palace_path(),
+            results_limit=get_mempalace_results_limit(),
+            wing=get_mempalace_wing(),
+            room=get_mempalace_room(),
+        )
+        request.app.state.mempalace_adapter = adapter
+    return adapter
 
 
 def get_chat_gateway() -> Generator[ChatGateway, None, None]:

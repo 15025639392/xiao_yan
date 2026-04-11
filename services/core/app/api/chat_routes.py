@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from logging import getLogger
 from pathlib import Path
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,7 +12,7 @@ from app.api.deps import (
     get_chat_gateway,
     get_goal_repository,
     get_memory_repository,
-    get_memory_service,
+    get_mempalace_adapter,
     get_persona_service,
     get_state_store,
 )
@@ -25,13 +26,13 @@ from app.llm.schemas import (
     ChatResumeRequest,
     ChatSubmissionResult,
 )
+from app.memory.mempalace_adapter import MemPalaceAdapter
 from app.memory.repository import MemoryRepository
-from app.memory.service import MemoryService
+from app.memory.models import MemoryEvent
 from app.persona.expression_mapper import ExpressionStyleMapper
 from app.persona.prompt_builder import build_chat_instructions
 from app.persona.service import PersonaService
 from app.runtime import StateStore
-from app.runtime_ext.bootstrap import build_chat_messages, find_latest_today_plan_completion
 from app.runtime_ext.runtime_config import FolderAccessLevel, get_runtime_config
 
 CHAT_FILE_TOOL_DEFINITIONS = [
@@ -95,6 +96,8 @@ CHAT_FILE_TOOL_DEFINITIONS = [
         },
     },
 ]
+
+logger = getLogger(__name__)
 
 
 class FolderPermissionEntry(BaseModel):
@@ -162,6 +165,34 @@ def build_chat_router() -> APIRouter:
         if assistant_snippet:
             return f"我刚顺着“{topic}”回应了你，脑子里还停着这句：{assistant_snippet}"
         return f"我刚顺着“{topic}”回应了你，接下来想把它再往前推一小步。"
+
+    def _mirror_exchange_to_memory_repository(
+        *,
+        memory_repository: MemoryRepository,
+        user_message: str,
+        assistant_response: str,
+        assistant_session_id: str,
+    ) -> None:
+        user_text = (user_message or "").strip()
+        assistant_text = (assistant_response or "").strip()
+        if not user_text or not assistant_text:
+            return
+
+        memory_repository.save_event(
+            MemoryEvent(
+                kind="chat",
+                content=user_text,
+                role="user",
+            )
+        )
+        memory_repository.save_event(
+            MemoryEvent(
+                kind="chat",
+                content=assistant_text,
+                role="assistant",
+                session_id=assistant_session_id,
+            )
+        )
 
     def _should_fallback_to_stream_without_tools(exception: Exception) -> bool:
         if not isinstance(exception, httpx.HTTPStatusError):
@@ -278,6 +309,33 @@ def build_chat_router() -> APIRouter:
             allowed_base_path=workspace,
             folder_permissions=granted_folders,
         )
+
+    def _resolve_mempalace_chat_context(
+        *,
+        user_message: str,
+        mempalace_adapter: MemPalaceAdapter,
+        context_limit: int,
+    ) -> tuple[list[ChatMessage], str]:
+        memory_context = ""
+        try:
+            memory_context = mempalace_adapter.search_context(user_message)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("MemPalace search_context raised unexpectedly: %s", exc)
+            memory_context = ""
+
+        try:
+            chat_messages = mempalace_adapter.build_chat_messages(
+                user_message,
+                limit=context_limit,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("MemPalace build_chat_messages raised unexpectedly: %s", exc)
+            chat_messages = [ChatMessage(role="user", content=user_message)]
+
+        if not chat_messages:
+            chat_messages = [ChatMessage(role="user", content=user_message)]
+
+        return chat_messages, memory_context
 
     def _execute_file_tool_call(file_tools, tool_name: str, arguments: dict) -> str:
         def _try_dispatch(tool: str, args: dict) -> str | None:
@@ -749,26 +807,19 @@ def build_chat_router() -> APIRouter:
         request_body: ChatRequest,
         request: Request,
         gateway: ChatGateway = Depends(get_chat_gateway),
-        memory_repository: MemoryRepository = Depends(get_memory_repository),
         state_store: StateStore = Depends(get_state_store),
         goal_repository: GoalRepository = Depends(get_goal_repository),
+        memory_repository: MemoryRepository = Depends(get_memory_repository),
         persona_service: PersonaService = Depends(get_persona_service),
-        memory_service: MemoryService = Depends(get_memory_service),
+        mempalace_adapter: MemPalaceAdapter = Depends(get_mempalace_adapter),
     ) -> ChatSubmissionResult:
         state = state_store.get()
         focus_goal = None if not state.active_goal_ids else goal_repository.get_goal(state.active_goal_ids[0])
-        latest_plan_completion = find_latest_today_plan_completion(memory_repository)
+        latest_plan_completion = None
         latest_self_programming = _summarize_latest_self_programming(state)
 
         persona_service.infer_chat_emotion(request_body.message)
         persona_system_prompt = persona_service.build_system_prompt()
-
-        memory_context = memory_service.build_memory_prompt_context(
-            user_message=request_body.message,
-            max_chars=600,
-            persona_values=persona_service.profile.values,
-        )
-        relationship_summary = memory_service.get_relationship_summary()
 
         current_emotion = persona_service.profile.emotion
         style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
@@ -777,12 +828,10 @@ def build_chat_router() -> APIRouter:
 
         config = get_runtime_config()
         gateway.model = config.chat_model
-        chat_messages = build_chat_messages(
-            memory_repository,
-            state_store,
-            goal_repository,
-            request_body.message,
-            limit=config.chat_context_limit,
+        chat_messages, memory_context = _resolve_mempalace_chat_context(
+            user_message=request_body.message,
+            mempalace_adapter=mempalace_adapter,
+            context_limit=config.chat_context_limit,
         )
         instructions = build_chat_instructions(
             focus_goal_title=None if focus_goal is None else focus_goal.title,
@@ -791,7 +840,7 @@ def build_chat_router() -> APIRouter:
             user_message=request_body.message,
             current_thought=state.current_thought,
             persona_system_prompt=persona_system_prompt,
-            relationship_summary=relationship_summary,
+            relationship_summary=None,
             memory_context=memory_context or None,
             expression_style_context=expression_style_context or None,
             folder_permissions=config.list_folder_permissions(),
@@ -806,13 +855,23 @@ def build_chat_router() -> APIRouter:
             assistant_message_id=assistant_message_id,
         )
 
-        extracted = memory_service.extract_from_conversation(
-            user_message=request_body.message,
-            assistant_response=output_text,
-            assistant_session_id=assistant_message_id,
-        )
-        for entry in extracted:
-            memory_service.save(entry)
+        try:
+            mempalace_adapter.record_exchange(
+                request_body.message,
+                output_text,
+                assistant_message_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("MemPalace record_exchange raised unexpectedly: %s", exc)
+        try:
+            _mirror_exchange_to_memory_repository(
+                memory_repository=memory_repository,
+                user_message=request_body.message,
+                assistant_response=output_text,
+                assistant_session_id=assistant_message_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("mirror exchange to memory repository failed: %s", exc)
         latest_state = state_store.get()
         next_thought = _build_post_chat_thought(request_body.message, output_text)
         state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))
@@ -824,25 +883,19 @@ def build_chat_router() -> APIRouter:
         request_body: ChatResumeRequest,
         request: Request,
         gateway: ChatGateway = Depends(get_chat_gateway),
-        memory_repository: MemoryRepository = Depends(get_memory_repository),
         state_store: StateStore = Depends(get_state_store),
         goal_repository: GoalRepository = Depends(get_goal_repository),
+        memory_repository: MemoryRepository = Depends(get_memory_repository),
         persona_service: PersonaService = Depends(get_persona_service),
-        memory_service: MemoryService = Depends(get_memory_service),
+        mempalace_adapter: MemPalaceAdapter = Depends(get_mempalace_adapter),
     ) -> ChatSubmissionResult:
         state = state_store.get()
         focus_goal = None if not state.active_goal_ids else goal_repository.get_goal(state.active_goal_ids[0])
-        latest_plan_completion = find_latest_today_plan_completion(memory_repository)
+        latest_plan_completion = None
         latest_self_programming = _summarize_latest_self_programming(state)
 
         persona_service.infer_chat_emotion(request_body.message)
         persona_system_prompt = persona_service.build_system_prompt()
-        memory_context = memory_service.build_memory_prompt_context(
-            user_message=request_body.message,
-            max_chars=600,
-            persona_values=persona_service.profile.values,
-        )
-        relationship_summary = memory_service.get_relationship_summary()
         current_emotion = persona_service.profile.emotion
         style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
         style_override = style_mapper.map_from_state(current_emotion)
@@ -850,12 +903,10 @@ def build_chat_router() -> APIRouter:
 
         config = get_runtime_config()
         gateway.model = config.chat_model
-        chat_messages = build_chat_messages(
-            memory_repository,
-            state_store,
-            goal_repository,
-            request_body.message,
-            limit=config.chat_context_limit,
+        chat_messages, memory_context = _resolve_mempalace_chat_context(
+            user_message=request_body.message,
+            mempalace_adapter=mempalace_adapter,
+            context_limit=config.chat_context_limit,
         )
         instructions = build_chat_instructions(
             focus_goal_title=None if focus_goal is None else focus_goal.title,
@@ -864,7 +915,7 @@ def build_chat_router() -> APIRouter:
             user_message=request_body.message,
             current_thought=state.current_thought,
             persona_system_prompt=persona_system_prompt,
-            relationship_summary=relationship_summary,
+            relationship_summary=None,
             memory_context=memory_context or None,
             expression_style_context=expression_style_context or None,
             folder_permissions=config.list_folder_permissions(),
@@ -880,13 +931,23 @@ def build_chat_router() -> APIRouter:
             initial_output_text=request_body.partial_content,
         )
 
-        extracted = memory_service.extract_from_conversation(
-            user_message=request_body.message,
-            assistant_response=output_text,
-            assistant_session_id=request_body.assistant_message_id,
-        )
-        for entry in extracted:
-            memory_service.save(entry)
+        try:
+            mempalace_adapter.record_exchange(
+                request_body.message,
+                output_text,
+                request_body.assistant_message_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("MemPalace record_exchange raised unexpectedly: %s", exc)
+        try:
+            _mirror_exchange_to_memory_repository(
+                memory_repository=memory_repository,
+                user_message=request_body.message,
+                assistant_response=output_text,
+                assistant_session_id=request_body.assistant_message_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("mirror exchange to memory repository failed: %s", exc)
         latest_state = state_store.get()
         next_thought = _build_post_chat_thought(request_body.message, output_text)
         state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))

@@ -140,12 +140,17 @@ pip install -e .
 创建 `.env.local` 文件（可选）：
 
 ```bash
-# 存储路径配置（可选，默认使用 .data 目录）
-MEMORY_STORAGE_PATH=/path/to/memory.jsonl
+# 核心存储路径配置（可选，默认使用 .data 目录）
 GOAL_STORAGE_PATH=/path/to/goals.json
 WORLD_STORAGE_PATH=/path/to/world.json
 STATE_STORAGE_PATH=/path/to/state.json
 PERSONA_STORAGE_PATH=/path/to/persona.json
+
+# MemPalace 记忆存储（聊天与结构化记忆统一使用）
+MEMPALACE_PALACE_PATH=~/.mempalace/palace
+MEMPALACE_RESULTS_LIMIT=3
+MEMPALACE_WING=wing_xiaoyan
+MEMPALACE_ROOM=chat_exchange
 
 # 晨间计划 LLM 功能开关（可选）
 MORNING_PLAN_LLM_ENABLED=true
