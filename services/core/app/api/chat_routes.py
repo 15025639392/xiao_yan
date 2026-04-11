@@ -324,7 +324,12 @@ def build_chat_router() -> APIRouter:
     ) -> tuple[list[ChatMessage], str]:
         memory_context = ""
         try:
-            memory_context = mempalace_adapter.search_context(user_message)
+            # Long-term retrieval should avoid the live chat room to prevent
+            # duplicating content that is already injected via recent messages.
+            memory_context = mempalace_adapter.search_context(
+                user_message,
+                exclude_current_room=True,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("MemPalace search_context raised unexpectedly: %s", exc)
             memory_context = ""

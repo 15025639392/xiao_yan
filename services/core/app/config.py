@@ -403,7 +403,7 @@ def is_morning_plan_llm_enabled() -> bool:
 
 
 def get_chat_context_limit() -> int:
-    """获取聊天上下文中相关事件的数量限制"""
+    """获取聊天上下文轮次基线（会在运行时映射为消息上限和 token 预算）。"""
     load_local_env()
     configured = os.getenv("CHAT_CONTEXT_LIMIT")
     if configured:
@@ -412,7 +412,7 @@ def get_chat_context_limit() -> int:
             return max(1, min(20, value))  # 限制在 1-20 之间
         except ValueError:
             pass
-    return 6  # 默认值
+    return 6  # 默认轮次基线
 
 
 def get_chat_read_timeout_seconds() -> int:

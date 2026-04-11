@@ -39,7 +39,7 @@ class MemPalaceAdapter:
         self._search_backend = search_backend
         self._write_backend = write_backend
 
-    def search_context(self, query: str) -> str:
+    def search_context(self, query: str, *, exclude_current_room: bool = False) -> str:
         normalized = (query or "").strip()
         if not normalized:
             return ""
@@ -59,6 +59,19 @@ class MemPalaceAdapter:
         raw_hits = payload.get("results")
         if not isinstance(raw_hits, list) or not raw_hits:
             return ""
+
+        if exclude_current_room:
+            filtered_hits: list[dict] = []
+            for raw_hit in raw_hits:
+                if not isinstance(raw_hit, dict):
+                    continue
+                hit_room = str(raw_hit.get("room") or "").strip()
+                if hit_room == self.room:
+                    continue
+                filtered_hits.append(raw_hit)
+            raw_hits = filtered_hits
+            if not raw_hits:
+                return ""
 
         lines = ["【长期记忆检索】"]
         for raw_hit in raw_hits[: self.results_limit]:
@@ -116,8 +129,29 @@ class MemPalaceAdapter:
         if not normalized:
             return []
 
-        recent = self.list_recent_chat_messages(limit=max(limit, 1), offset=0)
-        ordered_history = list(reversed(recent))
+        # Treat limit as a turn baseline instead of a raw event count.
+        # This keeps enough nearby dialogue while bounding prompt growth.
+        turn_limit = max(1, int(limit))
+        max_history_messages = turn_limit * 2
+        candidate_limit = min(120, max(max_history_messages * 4, 12))
+        token_budget = max(400, min(8000, turn_limit * 300))
+
+        recent = self.list_recent_chat_messages(limit=candidate_limit, offset=0)
+        selected_latest_first: list[dict] = []
+        consumed_tokens = 0
+        for item in recent:
+            if len(selected_latest_first) >= max_history_messages:
+                break
+
+            message_text = str(item.get("content") or "")
+            message_tokens = _estimate_tokens(message_text)
+            if selected_latest_first and consumed_tokens + message_tokens > token_budget:
+                break
+
+            selected_latest_first.append(item)
+            consumed_tokens += message_tokens
+
+        ordered_history = list(reversed(selected_latest_first))
         messages = [ChatMessage(role=item["role"], content=item["content"]) for item in ordered_history]
         messages.append(ChatMessage(role="user", content=normalized))
         return messages
@@ -215,28 +249,31 @@ class MemPalaceAdapter:
         metadatas = payload.get("metadatas") or []
         ids = payload.get("ids") or []
 
-        rows: list[tuple[str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str, str | None]] = []
         for index, raw_document in enumerate(documents):
             if not isinstance(raw_document, str):
                 continue
             metadata = metadatas[index] if index < len(metadatas) and isinstance(metadatas[index], dict) else {}
             drawer_id = ids[index] if index < len(ids) and isinstance(ids[index], str) else f"row_{index}"
             filed_at = str(metadata.get("filed_at") or "")
+            raw_session_id = metadata.get("session_id")
+            session_id = str(raw_session_id).strip() if raw_session_id is not None else ""
+            normalized_session_id = session_id or None
 
             user_text, assistant_text = _parse_exchange_document(raw_document)
             if user_text:
-                rows.append((filed_at, drawer_id, "user", user_text))
+                rows.append((filed_at, drawer_id, "user", user_text, normalized_session_id))
             if assistant_text:
-                rows.append((filed_at, drawer_id, "assistant", assistant_text))
+                rows.append((filed_at, drawer_id, "assistant", assistant_text, normalized_session_id))
 
             if not user_text and not assistant_text:
                 compact = " ".join(raw_document.split())
                 if compact:
-                    rows.append((filed_at, drawer_id, "assistant", compact))
+                    rows.append((filed_at, drawer_id, "assistant", compact, normalized_session_id))
 
         rows.sort(key=lambda item: item[0])
         events: list[dict] = []
-        for filed_at, drawer_id, role, content in rows:
+        for filed_at, drawer_id, role, content, session_id in rows:
             message_id = f"{drawer_id}:{role}:{len(events)}"
             events.append(
                 {
@@ -244,7 +281,7 @@ class MemPalaceAdapter:
                     "role": role,
                     "content": content,
                     "created_at": filed_at or None,
-                    "session_id": None,
+                    "session_id": session_id,
                 }
             )
         return events
@@ -289,6 +326,14 @@ def _is_mempalace_dependency_available() -> bool:
     except Exception:  # noqa: BLE001
         return False
     return True
+
+
+def _estimate_tokens(text: str) -> int:
+    compact = " ".join((text or "").split())
+    if not compact:
+        return 1
+    # Rough estimate for mixed CJK/English text.
+    return max(1, int(len(compact) / 1.8))
 
 
 def _parse_exchange_document(document: str) -> tuple[str, str]:

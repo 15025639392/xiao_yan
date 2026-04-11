@@ -370,6 +370,7 @@ class StubMemPalaceAdapter:
         self.raise_on_search = raise_on_search
         self.raise_on_record = raise_on_record
         self.search_queries: list[str] = []
+        self.search_exclude_current_room_flags: list[bool] = []
         self.record_calls: list[tuple[str, str, str | None]] = []
         self.record_attempts = 0
         self.chat_history = [
@@ -383,8 +384,9 @@ class StubMemPalaceAdapter:
             for index, item in enumerate(chat_history or [])
         ]
 
-    def search_context(self, query: str) -> str:
+    def search_context(self, query: str, *, exclude_current_room: bool = False) -> str:
         self.search_queries.append(query)
+        self.search_exclude_current_room_flags.append(exclude_current_room)
         if self.raise_on_search:
             raise RuntimeError("search boom")
         return self.search_context_text
@@ -1225,7 +1227,7 @@ def test_post_chat_updates_current_thought_after_reply():
 
 def test_post_chat_can_override_mempalace_adapter_dependency():
     class _StubMemPalaceAdapter:
-        def search_context(self, query: str) -> str:
+        def search_context(self, query: str, *, exclude_current_room: bool = False) -> str:
             return ""
 
         def build_chat_messages(self, user_message: str, *, limit: int) -> list[ChatMessage]:
@@ -1366,6 +1368,7 @@ def test_chat_still_returns_200_when_mempalace_search_raises():
         response = client.post("/chat", json={"message": "hello"})
         assert response.status_code == 200
         assert mempalace_adapter.search_queries == ["hello"]
+        assert mempalace_adapter.search_exclude_current_room_flags == [True]
     finally:
         app.dependency_overrides.clear()
 
