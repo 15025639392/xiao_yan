@@ -507,7 +507,9 @@ def test_gateway_from_env_supports_minimax_key_and_chat_default():
         os.environ.pop("OPENAI_WIRE_API", None)
         os.environ["OPENAI_MODEL"] = "MiniMax-M2.7"
         os.environ["NVIDIA_API_KEY"] = ""
-        os.environ.pop("CHAT_PROVIDER", None)
+        # Keep an explicit empty value so load_local_env() does not re-inject
+        # CHAT_PROVIDER from local .env files via os.environ.setdefault().
+        os.environ["CHAT_PROVIDER"] = ""
 
         gateway = ChatGateway.from_env()
         assert gateway.api_key == "minimax-key"

@@ -391,6 +391,15 @@ export type ChatHistoryMessage = {
 
 export type ChatHistoryResponse = {
   messages: ChatHistoryMessage[];
+  limit?: number | null;
+  offset?: number | null;
+  has_more?: boolean | null;
+  next_offset?: number | null;
+};
+
+export type ChatMessagesPageParams = {
+  limit?: number;
+  offset?: number;
 };
 
 export type Goal = {
@@ -758,8 +767,17 @@ export function fetchMacConsoleStatus(): Promise<MacConsoleBootstrapStatus> {
   return get<MacConsoleBootstrapStatus>("/environment/mac-console");
 }
 
-export function fetchMessages(): Promise<ChatHistoryResponse> {
-  return get<ChatHistoryResponse>("/messages");
+export function fetchMessages(params?: ChatMessagesPageParams): Promise<ChatHistoryResponse> {
+  const query = new URLSearchParams();
+  if (typeof params?.limit === "number") {
+    query.set("limit", String(params.limit));
+  }
+  if (typeof params?.offset === "number") {
+    query.set("offset", String(params.offset));
+  }
+  const suffix = query.toString();
+  const path = suffix ? `/messages?${suffix}` : "/messages";
+  return get<ChatHistoryResponse>(path);
 }
 
 export function fetchGoals(): Promise<GoalsResponse> {

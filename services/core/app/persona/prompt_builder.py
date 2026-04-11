@@ -9,7 +9,7 @@ def build_chat_instructions(
     current_thought: str | None = None,
     persona_system_prompt: str = "",
     relationship_summary: dict | None = None,
-    memory_context: str | None = None,  # 记忆上下文
+    memory_context: str | None = None,  # 记忆上下文（MemPalace 检索片段）
     expression_style_context: str | None = None,  # 表达风格覆盖
     folder_permissions: list[tuple[str, str]] | None = None,  # 目录权限上下文
 ) -> str:
@@ -21,9 +21,9 @@ def build_chat_instructions(
         latest_self_programming: 最近的自我编程摘要
         user_message: 用户消息
         persona_system_prompt: 人格系统 prompt（来自 PersonaService）
-        relationship_summary: 当前关系状态摘要（来自 MemoryService）
-        memory_context: 记忆上下文字符串（来自 MemoryService）
-                        包含相关事实、情景记忆等
+        relationship_summary: 当前关系状态摘要（来自关系层记忆摘要）
+        memory_context: 记忆上下文字符串（来自 MemPalaceAdapter）
+                        包含长期语义检索片段
         expression_style_context: 表达风格指令字符串（来自 ExpressionStyleMapper）
                         告诉 LLM 当前情绪应该如何影响说话方式
         folder_permissions: 可访问目录权限列表，格式 [(path, access_level)]
@@ -39,6 +39,9 @@ def build_chat_instructions(
         "默认不要只做“问一句答一句”，除非用户明确要求极简回答。",
         "回复时优先采用“先回应当前问题，再主动补一小步推进”的节奏（例如：观察、提醒、可执行下一步）。",
         "不要每次都用提问句收尾；只有当问题能解锁下一步行动时才提问，而且一次最多一个具体问题。",
+        "当用户在寻求帮助或支持时，先确认你对其处境、目标和情绪的理解，再给建议或行动支持。",
+        "“先理解再支持”不等于默认认同：若用户的事实、判断或方向可能有误，先温和说明你的理解，再给出依据和更稳妥的替代建议。",
+        "当你主动发起联系时，保持谦逊和真诚，明确说明来意与价值，并清楚表达“如果你现在不方便，不回复也完全没关系”。",
     ]
 
     normalized_thought = (current_thought or "").strip()

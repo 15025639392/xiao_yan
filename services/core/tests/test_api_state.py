@@ -1,7 +1,9 @@
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_mempalace_adapter
 from app.domain.models import BeingState, FocusMode, WakeMode
-from app.main import app, get_state_store
+from app.main import app, get_memory_repository, get_state_store
+from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore
 
 
@@ -67,3 +69,39 @@ def test_get_mac_console_environment_status_returns_bootstrap_snapshot():
     assert isinstance(body["healthy"], bool)
     assert isinstance(body["platform"], str)
     assert isinstance(body["summary"], str)
+
+
+def test_get_memory_backends_includes_mempalace_snapshot():
+    class _StubMemPalaceAdapter:
+        def status_snapshot(self) -> dict:
+            return {
+                "enabled": True,
+                "palace_path": "/tmp/palace",
+                "palace_exists": False,
+                "dependency_available": True,
+                "results_limit": 3,
+                "wing": "wing_xiaoyan",
+                "room": "chat_exchange",
+            }
+
+    memory_repository = InMemoryMemoryRepository()
+    mempalace_adapter = _StubMemPalaceAdapter()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.get("/memory/backends")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["chat_memory"]["enabled"] is True
+        assert payload["chat_memory"]["palace_path"] == "/tmp/palace"
+    finally:
+        app.dependency_overrides.clear()

@@ -17,7 +17,8 @@ from app.goals.repository import GoalRepository
 from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
-from app.runtime_ext.bootstrap import build_world_state, find_recent_autobio
+from app.runtime_ext.bootstrap import build_world_state
+from app.runtime_ext.snapshot import find_recent_autobio
 from app.usecases.lifecycle import wake_up
 from app.world.repository import WorldRepository
 from app.world.service import WorldStateService

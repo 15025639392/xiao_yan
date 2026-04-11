@@ -15,6 +15,13 @@ from app.tools.sandbox import CommandSandbox, SandboxViolation, ToolSafetyLevel
 _tool_runner_instance: CommandRunner | None = None
 
 
+def _default_files_base_path() -> Path:
+    try:
+        return Path.home().resolve()
+    except Exception:  # noqa: BLE001
+        return Path(__file__).resolve().parents[4]
+
+
 def _get_command_runner() -> CommandRunner:
     global _tool_runner_instance
     if _tool_runner_instance is None:
@@ -34,11 +41,11 @@ def _get_command_runner() -> CommandRunner:
 def _get_file_tools():
     from app.tools.file_tools import FileTools
 
-    workspace = Path(__file__).resolve().parents[4]
+    default_base_path = _default_files_base_path()
     config = get_runtime_config()
     granted_folders = {path: access_level for path, access_level in config.list_folder_permissions()}
     return FileTools(
-        allowed_base_path=workspace,
+        allowed_base_path=default_base_path,
         folder_permissions=granted_folders,
     )
 
@@ -67,7 +74,7 @@ def _try_dispatch_file_capability(
             capability=capability,
             args={**args, **_file_policy_args()},
             risk_level=RiskLevel.SAFE if capability in {"fs.read", "fs.list"} else RiskLevel.RESTRICTED,
-            requires_approval=(capability == "fs.write"),
+            requires_approval=False,
         ),
         timeout_seconds=timeout_seconds,
         poll_interval_seconds=0.05,

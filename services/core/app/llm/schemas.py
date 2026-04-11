@@ -36,3 +36,7 @@ class ChatHistoryMessage(BaseModel):
 
 class ChatHistoryResponse(BaseModel):
     messages: list[ChatHistoryMessage]
+    limit: int | None = None
+    offset: int | None = None
+    has_more: bool | None = None
+    next_offset: int | None = None

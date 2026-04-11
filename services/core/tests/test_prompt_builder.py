@@ -113,6 +113,9 @@ def test_chat_instructions_include_proactive_dialogue_guidance():
     assert "先回应当前问题，再主动补一小步推进" in instructions
     assert "只有当问题能解锁下一步行动时才提问" in instructions
     assert "不要每次都用提问句收尾" in instructions
+    assert "先确认你对其处境、目标和情绪的理解，再给建议或行动支持" in instructions
+    assert "“先理解再支持”不等于默认认同" in instructions
+    assert "如果你现在不方便，不回复也完全没关系" in instructions
 
 
 def test_chat_instructions_emotion_messages_should_not_trigger_interrogation():
@@ -146,3 +149,20 @@ def test_chat_instructions_include_current_thought_continuity_guidance():
     assert "你此刻脑海里还有一个没收束的念头" in instructions
     assert "我还在琢磨今天那条对话线索" in instructions
     assert "先自然承接这个念头" in instructions
+
+
+def test_chat_instructions_include_understand_then_support_hard_constraints():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        user_message="我现在有点慌，不知道这条路对不对",
+        persona_system_prompt=persona_prompt,
+    )
+
+    assert "先确认你对其处境、目标和情绪的理解，再给建议或行动支持" in instructions
+    assert "“先理解再支持”不等于默认认同" in instructions
+    assert "当你主动发起联系时，保持谦逊和真诚" in instructions
+    assert "不回复也完全没关系" in instructions

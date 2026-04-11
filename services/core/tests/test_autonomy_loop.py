@@ -861,9 +861,78 @@ def test_tick_once_enforce_mode_blocks_low_score_user_topic_goal_creation():
     )
 
     state = loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+    assistant_events = [event for event in recent if event.kind == "chat" and event.role == "assistant"]
 
     assert goals.list_active_goals() == []
     assert state.active_goal_ids == []
+    assert len(assistant_events) == 1
+    assert assistant_events[0].content == state.current_thought
+    assert "不回复也没关系" in assistant_events[0].content
+
+
+def test_tick_once_enforce_mode_defer_checkin_can_split_into_two_messages_for_emotional_context():
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="我最近挺累的，感觉做什么都提不起劲"))
+    goals = InMemoryGoalRepository()
+    admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+        min_score=0.99,
+        defer_score=0.0,
+    )
+    loop = AutonomyLoop(
+        store,
+        repo,
+        goals,
+        now_provider=lambda: now,
+        goal_admission_service=admission_service,
+    )
+
+    state = loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+    assistant_events = [event for event in recent if event.kind == "chat" and event.role == "assistant"]
+
+    assert goals.list_active_goals() == []
+    assert state.active_goal_ids == []
+    assert len(assistant_events) == 2
+    assert "我最近挺累的" in assistant_events[0].content
+    assert "你要是现在不想展开也没关系" in assistant_events[1].content
+    assert state.current_thought == assistant_events[-1].content
+
+
+def test_tick_once_enforce_mode_defer_checkin_can_merge_into_single_message_for_short_emotional_context():
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    store = StateStore(BeingState(mode=WakeMode.AWAKE))
+    repo = InMemoryMemoryRepository()
+    repo.save_event(MemoryEvent(kind="chat", role="user", content="好累"))
+    goals = InMemoryGoalRepository()
+    admission_service = GoalAdmissionService(
+        store=GoalAdmissionStore.in_memory(),
+        mode="enforce",
+        min_score=0.99,
+        defer_score=0.0,
+    )
+    loop = AutonomyLoop(
+        store,
+        repo,
+        goals,
+        now_provider=lambda: now,
+        goal_admission_service=admission_service,
+    )
+
+    state = loop.tick_once()
+    recent = list(reversed(repo.list_recent(limit=5)))
+    assistant_events = [event for event in recent if event.kind == "chat" and event.role == "assistant"]
+
+    assert goals.list_active_goals() == []
+    assert state.active_goal_ids == []
+    assert len(assistant_events) == 1
+    assert "好累" in assistant_events[0].content
+    assert "你要是现在不想展开也没关系" in assistant_events[0].content
+    assert state.current_thought == assistant_events[0].content
 
 
 def test_tick_once_enforce_mode_converts_admit_to_defer_when_wip_full():

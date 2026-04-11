@@ -13,10 +13,19 @@ use std::{
 };
 use tauri::{Emitter, Manager};
 
-#[derive(Default)]
 struct FsAccessState {
     allowed_dir: Option<PathBuf>,
     allowed_dir_canonical: Option<PathBuf>,
+}
+
+impl Default for FsAccessState {
+    fn default() -> Self {
+        let default_dir = default_allowed_directory();
+        Self {
+            allowed_dir: default_dir.clone(),
+            allowed_dir_canonical: default_dir,
+        }
+    }
 }
 
 type SharedFsAccessState = Mutex<FsAccessState>;
@@ -91,6 +100,16 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+}
+
+fn default_allowed_directory() -> Option<PathBuf> {
+    let home = home_dir()?;
+    let canonical = home.canonicalize().ok()?;
+    if canonical.is_dir() {
+        Some(canonical)
+    } else {
+        None
+    }
 }
 
 fn common_gui_bin_dirs() -> Vec<PathBuf> {
@@ -815,9 +834,12 @@ fn fs_clear_allowed_directory(
     state: tauri::State<SharedFsAccessState>,
 ) -> Result<AllowedDirResponse, String> {
     let mut guard = state.lock().map_err(|_| "state poisoned".to_string())?;
-    guard.allowed_dir = None;
-    guard.allowed_dir_canonical = None;
-    Ok(AllowedDirResponse { allowed_dir: None })
+    let default_dir = default_allowed_directory();
+    guard.allowed_dir = default_dir.clone();
+    guard.allowed_dir_canonical = default_dir.clone();
+    Ok(AllowedDirResponse {
+        allowed_dir: default_dir.map(|p| p.to_string_lossy().to_string()),
+    })
 }
 
 #[tauri::command]

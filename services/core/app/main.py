@@ -74,6 +74,7 @@ from app.api.deps import (  # noqa: E402
     get_goal_repository,
     get_memory_repository,
     get_memory_service,
+    get_mempalace_adapter,
     get_orchestrator_conversation_service,
     get_orchestrator_service,
     get_morning_plan_draft_generator,

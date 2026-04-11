@@ -214,9 +214,9 @@ CAPABILITY_DESCRIPTORS: list[CapabilityDescriptor] = [
     CapabilityDescriptor(
         name=CapabilityName.FS_WRITE,
         default_risk_level=RiskLevel.RESTRICTED,
-        default_requires_approval=True,
+        default_requires_approval=False,
         description="Write text content to an allowed path.",
-        current_binding="chat file tool: write_file (requires full_access folder permission)",
+        current_binding="chat file tool: write_file / tools files write endpoint",
     ),
     CapabilityDescriptor(
         name=CapabilityName.SHELL_RUN,

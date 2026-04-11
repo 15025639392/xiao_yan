@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   clearOrchestratorMessages,
   fetchConfig,
+  fetchMessages,
   fetchGoalAdmissionConfig,
   fetchGoalAdmissionConfigHistory,
   fetchChatModels,
@@ -225,5 +226,26 @@ describe("persona api methods", () => {
     expect(resolveApiBaseUrl("https://api.example.com/")).toBe("https://api.example.com");
     expect(resolveApiBaseUrl("  https://api.example.com/v1//  ")).toBe("https://api.example.com/v1");
     expect(resolveApiBaseUrl("   ")).toBe("http://127.0.0.1:8000");
+  });
+
+  test("fetches chat messages with pagination query params", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          messages: [],
+          has_more: true,
+          next_offset: 80,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchMessages({ limit: 80, offset: 0 });
+
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8000/messages?limit=80&offset=0");
   });
 });

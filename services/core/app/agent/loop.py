@@ -8,6 +8,7 @@ from app.agent.loop_helpers import (
     build_chain_consolidation as _build_chain_consolidation,
     build_chain_progress as _build_chain_progress,
     build_chain_transition as _build_chain_transition,
+    build_defer_checkin_messages as _build_defer_checkin_messages,
     build_goal_completion as _build_goal_completion,
     build_goal_focus as _build_goal_focus,
     build_goal_focus_summary as _build_goal_focus_summary,
@@ -313,12 +314,27 @@ class AutonomyLoop:
             recent_events=recent_events,
         )
         if admission.applied_decision != AdmissionDecision.ADMIT:
-            next_state = state.model_copy(
-                update={
-                    "last_proactive_source": latest_user_event.content,
-                    "last_proactive_at": now,
-                }
-            )
+            updates: dict[str, object] = {
+                "last_proactive_source": latest_user_event.content,
+                "last_proactive_at": now,
+            }
+            if admission.applied_decision == AdmissionDecision.DEFER:
+                world_state = self._world_state_for(state, now)
+                defer_messages = _build_defer_checkin_messages(
+                    latest_user_event.content,
+                    now,
+                    world_state,
+                )
+                for message in defer_messages:
+                    entry = MemoryEntry.create(
+                        kind=MemoryKind.CHAT_RAW,
+                        content=message,
+                        role="assistant",
+                    )
+                    self.memory_repository.save_event(MemoryEvent.from_entry(entry))
+                updates["current_thought"] = defer_messages[-1]
+
+            next_state = state.model_copy(update=updates)
             return self.state_store.set(next_state)
 
         goal_world_state = self.world_state_service.bootstrap(

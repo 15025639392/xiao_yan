@@ -6,13 +6,15 @@ from fastapi import FastAPI
 
 from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
-from app.llm.schemas import ChatHistoryMessage, ChatMessage
+from app.llm.schemas import ChatHistoryMessage
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
 from app.runtime_ext.runtime_config import get_runtime_config
 from app.world.models import WorldState
 from app.world.repository import WorldRepository
 from app.world.service import WorldStateService
+
+RUNTIME_CHAT_MESSAGES_LIMIT = 80
 
 
 def _compose_world_state(
@@ -55,59 +57,6 @@ def build_world_state(
     return world_repository.save_world_state(world_state)
 
 
-def build_chat_messages(
-    memory_repository: MemoryRepository,
-    state_store: StateStore,
-    goal_repository: GoalRepository,
-    user_message: str,
-    *,
-    limit: int,
-) -> list[ChatMessage]:
-    relevant_events = memory_repository.search_relevant(user_message, limit=limit)
-    state = state_store.get()
-    focus_goal = None if not state.active_goal_ids else goal_repository.get_goal(state.active_goal_ids[0])
-    focus_messages = (
-        []
-        if focus_goal is None
-        else [ChatMessage(role="system", content=f"你当前最在意的焦点目标：{focus_goal.title}。")]
-    )
-    latest_plan_completion = find_latest_today_plan_completion(memory_repository)
-    completion_messages = (
-        []
-        if latest_plan_completion is None
-        else [ChatMessage(role="system", content=f"你今天刚完成的一件事：{latest_plan_completion}")]
-    )
-    world_messages = [
-        ChatMessage(role="system", content=f"最近你的世界事件：{event.content}")
-        for event in relevant_events
-        if event.kind == "world"
-    ]
-    inner_messages = [
-        ChatMessage(role="system", content=f"最近你的内在阶段记忆：{event.content}")
-        for event in relevant_events
-        if event.kind == "inner"
-    ]
-    autobio_messages = [
-        ChatMessage(role="system", content=f"最近你的自传式回顾：{event.content}")
-        for event in relevant_events
-        if event.kind == "autobio"
-    ]
-    messages = [
-        ChatMessage(role=event.role, content=event.content)
-        for event in relevant_events
-        if event.kind == "chat" and event.role in {"user", "assistant"}
-    ]
-    messages.append(ChatMessage(role="user", content=user_message))
-    return [
-        *focus_messages,
-        *completion_messages,
-        *world_messages,
-        *inner_messages,
-        *autobio_messages,
-        *messages,
-    ]
-
-
 def deduplicate_entries(entries: list[str]) -> list[str]:
     unique_entries: list[str] = []
     seen: set[str] = set()
@@ -124,35 +73,43 @@ def find_recent_autobio(memory_repository: MemoryRepository) -> str | None:
     return next((event.content for event in recent_events if event.kind == "autobio"), None)
 
 
-def find_latest_today_plan_completion(memory_repository: MemoryRepository) -> str | None:
-    recent_events = memory_repository.list_recent(limit=20)
-    return next(
-        (
-            event.content
-            for event in recent_events
-            if event.kind == "autobio" and "今天的计划" in event.content
-        ),
-        None,
-    )
-
-
 def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
     state_store: StateStore = target_app.state.state_store
     memory_repository: MemoryRepository = target_app.state.memory_repository
     goal_repository: GoalRepository = target_app.state.goal_repository
     goal_admission_service: GoalAdmissionService | None = getattr(target_app.state, "goal_admission_service", None)
-
-    messages = [
-        ChatHistoryMessage(
-            id=event.entry_id,
-            role=event.role,
-            content=event.content,
-            created_at=event.created_at.isoformat() if event.created_at else None,
-            session_id=event.session_id,
-        ).model_dump()
-        for event in reversed(memory_repository.list_recent(limit=20))
-        if event.kind == "chat" and event.role in {"user", "assistant"}
-    ]
+    mempalace_adapter = getattr(target_app.state, "mempalace_adapter", None)
+    messages: list[dict[str, Any]]
+    if mempalace_adapter is not None and hasattr(mempalace_adapter, "list_recent_chat_messages"):
+        try:
+            recent_chat_messages = mempalace_adapter.list_recent_chat_messages(
+                limit=RUNTIME_CHAT_MESSAGES_LIMIT,
+                offset=0,
+            )
+        except Exception:  # noqa: BLE001
+            recent_chat_messages = []
+        messages = [
+            ChatHistoryMessage(
+                id=str(event.get("id") or ""),
+                role=str(event.get("role") or "assistant"),
+                content=str(event.get("content") or ""),
+                created_at=event.get("created_at"),
+                session_id=event.get("session_id"),
+            ).model_dump()
+            for event in reversed(recent_chat_messages)
+            if isinstance(event, dict)
+        ]
+    else:
+        messages = [
+            ChatHistoryMessage(
+                id=event.entry_id,
+                role=event.role,
+                content=event.content,
+                created_at=event.created_at.isoformat() if event.created_at else None,
+                session_id=event.session_id,
+            ).model_dump()
+            for event in reversed(memory_repository.list_recent_chat(limit=RUNTIME_CHAT_MESSAGES_LIMIT))
+        ]
     autobio_entries = [
         event.content
         for event in reversed(memory_repository.list_recent(limit=20))

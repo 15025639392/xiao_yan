@@ -75,6 +75,23 @@ def build_proactive_message(content: str, now: datetime, world_state) -> str:
     )
 
 
+def build_defer_checkin_messages(content: str, now: datetime, world_state) -> list[str]:
+    prefix = f"{_time_prefix(now)}{_world_tone(world_state)}"
+    normalized = content.strip()
+
+    if _looks_emotional(normalized):
+        first = f"{prefix}我记着你刚才那句“{normalized}”。"
+        second = "你要是现在不想展开也没关系，等你方便时我们再聊。"
+        return _deliver_as_split_or_single(first, second, normalized, world_state)
+
+    if _looks_stuck(normalized):
+        first = f"{prefix}我记着你刚才提到的“{normalized}”。"
+        second = "这会儿不着急做决定，你想好了再继续就行。"
+        return _deliver_as_split_or_single(first, second, normalized, world_state)
+
+    return [f"{prefix}我记着你刚才提到的“{normalized}”，如果你现在不方便，不回复也没关系。"]
+
+
 def build_goal_focus(
     goal: str,
     now: datetime,
@@ -371,3 +388,25 @@ def _looks_relational_or_memory_cue(content: str) -> bool:
         "之前",
     )
     return any(pattern in content for pattern in patterns)
+
+
+def _deliver_as_split_or_single(
+    first: str,
+    second: str,
+    content: str,
+    world_state,
+) -> list[str]:
+    if _prefer_split_delivery(content, world_state):
+        return [first, second]
+    return [f"{first}{second}"]
+
+
+def _prefer_split_delivery(content: str, world_state) -> bool:
+    # 语境更重、更复杂时，拆分两条可以更自然也更易读；轻量语境则合并一条避免刷屏。
+    if len(content) >= 16:
+        return True
+    if "，" in content or "。" in content or "？" in content or "!" in content or "！" in content:
+        return True
+    if world_state.focus_tension == "high":
+        return True
+    return False

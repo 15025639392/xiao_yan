@@ -117,6 +117,12 @@ class FolderPermissionListResponse(BaseModel):
 def build_chat_router() -> APIRouter:
     router = APIRouter()
 
+    def _default_files_base_path() -> Path:
+        try:
+            return Path.home().resolve()
+        except Exception:  # noqa: BLE001
+            return Path(__file__).resolve().parents[4]
+
     def _summarize_latest_self_programming(state) -> str | None:
         job = state.self_programming_job
         if job is None:
@@ -302,11 +308,11 @@ def build_chat_router() -> APIRouter:
     def _build_chat_file_tools():
         from app.tools.file_tools import FileTools
 
-        workspace = Path(__file__).resolve().parents[4]
+        default_base_path = _default_files_base_path()
         config = get_runtime_config()
         granted_folders = {path: access_level for path, access_level in config.list_folder_permissions()}
         return FileTools(
-            allowed_base_path=workspace,
+            allowed_base_path=default_base_path,
             folder_permissions=granted_folders,
         )
 
@@ -346,7 +352,7 @@ def build_chat_router() -> APIRouter:
                 "read_file": ("fs.read", RiskLevel.SAFE, False),
                 "list_directory": ("fs.list", RiskLevel.SAFE, False),
                 "search_files": ("fs.search", RiskLevel.RESTRICTED, False),
-                "write_file": ("fs.write", RiskLevel.RESTRICTED, True),
+                "write_file": ("fs.write", RiskLevel.RESTRICTED, False),
             }
             mapping = capability_map.get(tool)
             if mapping is None:
