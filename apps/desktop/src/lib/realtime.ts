@@ -63,10 +63,19 @@ export type AppChatDeltaPayload = {
   timestamp_ms?: number;
 };
 
+export type AppKnowledgeReferencePayload = {
+  source: string;
+  wing: string;
+  room: string;
+  similarity: number | null;
+  excerpt: string;
+};
+
 export type AppChatCompletedPayload = {
   assistant_message_id: string;
   response_id: string | null;
   content: string;
+  knowledge_references?: AppKnowledgeReferencePayload[];
   session_id?: string;
   sequence?: number;
   timestamp_ms?: number;

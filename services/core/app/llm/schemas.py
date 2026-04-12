@@ -1,13 +1,24 @@
-from pydantic import BaseModel
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+
+class ChatAttachment(BaseModel):
+    type: Literal["folder", "file", "image"]
+    path: str
+    name: str | None = None
+    mime_type: str | None = None
 
 
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    content: str | list[dict[str, Any] | str]
 
 
 class ChatRequest(BaseModel):
     message: str
+    attachments: list[ChatAttachment] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
 
 
 class ChatResumeRequest(BaseModel):

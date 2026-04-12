@@ -2,12 +2,12 @@
 
 use serde::Deserialize;
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fs,
     io::Read,
     path::{Component, Path, PathBuf},
-    process::{Command, Stdio},
-    sync::Mutex,
+    process::{Child, Command, Stdio},
+    sync::{Arc, Mutex},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -29,6 +29,7 @@ impl Default for FsAccessState {
 }
 
 type SharedFsAccessState = Mutex<FsAccessState>;
+type SharedDelegateProcessRegistry = Arc<Mutex<HashMap<String, Child>>>;
 
 #[derive(serde::Serialize)]
 struct AllowedDirResponse {
@@ -79,6 +80,21 @@ struct CodexDelegateRunResponse {
     exit_code: i32,
     success: bool,
     timed_out: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexDelegateStopRequest {
+    run_id: String,
+    reason: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct CodexDelegateStopResponse {
+    run_id: String,
+    status: String,
+    stopped: bool,
+    message: String,
 }
 
 const SHELL_MAX_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
@@ -982,6 +998,7 @@ fn shell_run(
 
 fn run_codex_delegate_blocking(
     request: CodexDelegateRunRequest,
+    delegate_registry: SharedDelegateProcessRegistry,
 ) -> Result<CodexDelegateRunResponse, String> {
     let project_dir = resolve_working_directory(Some(request.project_path.as_str()))?
         .ok_or_else(|| "project_path is required".to_string())?;
@@ -1048,32 +1065,81 @@ fn run_codex_delegate_blocking(
     let stdout_reader = read_stream_tail(stdout_pipe, CODEX_STREAM_CAPTURE_MAX_BYTES);
     let stderr_reader = read_stream_tail(stderr_pipe, CODEX_STREAM_CAPTURE_MAX_BYTES);
 
+    {
+        let mut registry = delegate_registry
+            .lock()
+            .map_err(|_| "delegate registry poisoned".to_string())?;
+        if registry.contains_key(&request.run_id) {
+            return Err(format!(
+                "delegate run id already exists in registry: {}",
+                request.run_id
+            ));
+        }
+        registry.insert(request.run_id.clone(), child);
+    }
+
     let mut timed_out = false;
+    let mut exited_status: Option<std::process::ExitStatus> = None;
     loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) => {
+        let poll_result = {
+            let mut registry = delegate_registry
+                .lock()
+                .map_err(|_| "delegate registry poisoned".to_string())?;
+            let Some(child_ref) = registry.get_mut(&request.run_id) else {
+                break;
+            };
+            child_ref
+                .try_wait()
+                .map_err(|e| format!("codex wait failed: {e}"))?
+        };
+
+        match poll_result {
+            Some(status) => {
+                exited_status = Some(status);
+                break;
+            }
+            None => {
                 if start.elapsed() >= Duration::from_secs(timeout) {
                     timed_out = true;
-                    let _ = child.kill();
+                    if let Ok(mut registry) = delegate_registry.lock() {
+                        if let Some(child_ref) = registry.get_mut(&request.run_id) {
+                            let _ = child_ref.kill();
+                        }
+                    }
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            Err(e) => return Err(format!("codex wait failed: {e}")),
         }
     }
 
-    let status = child
-        .wait()
-        .map_err(|e| format!("codex output failed: {e}"))?;
+    let mut child = {
+        let mut registry = delegate_registry
+            .lock()
+            .map_err(|_| "delegate registry poisoned".to_string())?;
+        registry.remove(&request.run_id)
+    };
+    let externally_stopped = child.is_none() && exited_status.is_none() && !timed_out;
+    let process_status = if let Some(status) = exited_status {
+        Some(status)
+    } else if let Some(child_ref) = child.as_mut() {
+        Some(
+            child_ref
+                .wait()
+                .map_err(|e| format!("codex output failed: {e}"))?,
+        )
+    } else {
+        None
+    };
     let stdout_bytes = join_stream_tail(stdout_reader, "stdout")?;
     let stderr_bytes = join_stream_tail(stderr_reader, "stderr")?;
     let stdout_full = String::from_utf8_lossy(&stdout_bytes).to_string();
     let stderr_full = String::from_utf8_lossy(&stderr_bytes).to_string();
     let (stdout, _) = decode_tail_and_truncate(&stdout_bytes, SHELL_MAX_OUTPUT_BYTES);
     let (stderr, _) = decode_tail_and_truncate(&stderr_bytes, SHELL_MAX_OUTPUT_BYTES);
-    let exit_code = status.code().unwrap_or(if timed_out { -1 } else { 1 });
+    let exit_code = process_status
+        .and_then(|item| item.code())
+        .unwrap_or(if timed_out || externally_stopped { -1 } else { 1 });
 
     let after_git = git_changed_files(&project_dir);
     let mut changed_files = after_git
@@ -1178,6 +1244,9 @@ fn run_codex_delegate_blocking(
     if timed_out && error.is_none() {
         error = Some(format!("codex delegate timed out after {timeout}s"));
     }
+    if externally_stopped && error.is_none() {
+        error = Some("codex delegate was stopped by orchestrator".to_string());
+    }
     if error.is_some() {
         status = "failed".to_string();
     }
@@ -1200,10 +1269,74 @@ fn run_codex_delegate_blocking(
 #[tauri::command]
 async fn codex_run_delegate(
     request: CodexDelegateRunRequest,
+    delegate_registry: tauri::State<'_, SharedDelegateProcessRegistry>,
 ) -> Result<CodexDelegateRunResponse, String> {
-    tauri::async_runtime::spawn_blocking(move || run_codex_delegate_blocking(request))
+    let registry = Arc::clone(delegate_registry.inner());
+    tauri::async_runtime::spawn_blocking(move || run_codex_delegate_blocking(request, registry))
         .await
         .map_err(|e| format!("codex delegate join failed: {e}"))?
+}
+
+#[tauri::command]
+async fn stop_codex_delegate(
+    request: CodexDelegateStopRequest,
+    delegate_registry: tauri::State<'_, SharedDelegateProcessRegistry>,
+) -> Result<CodexDelegateStopResponse, String> {
+    let run_id = request.run_id.trim().to_string();
+    if run_id.is_empty() {
+        return Err("run_id is required".to_string());
+    }
+    let reason = request.reason.unwrap_or_default().trim().to_string();
+
+    let child = {
+        let mut registry = delegate_registry
+            .lock()
+            .map_err(|_| "delegate registry poisoned".to_string())?;
+        registry.remove(&run_id)
+    };
+    let Some(mut child) = child else {
+        return Ok(CodexDelegateStopResponse {
+            run_id,
+            status: "not_found".to_string(),
+            stopped: false,
+            message: "delegate process not found (already exited or never started)".to_string(),
+        });
+    };
+
+    match child.try_wait() {
+        Ok(Some(_)) => Ok(CodexDelegateStopResponse {
+            run_id,
+            status: "already_exited".to_string(),
+            stopped: false,
+            message: "delegate process already exited".to_string(),
+        }),
+        Ok(None) => match child.kill() {
+            Ok(()) => {
+                let _ = child.wait();
+                let message = if reason.is_empty() {
+                    "delegate process stopped".to_string()
+                } else {
+                    format!("delegate process stopped: {reason}")
+                };
+                Ok(CodexDelegateStopResponse {
+                    run_id,
+                    status: "stopped".to_string(),
+                    stopped: true,
+                    message,
+                })
+            }
+            Err(error) => {
+                let _ = child.wait();
+                Ok(CodexDelegateStopResponse {
+                    run_id,
+                    status: "already_exited".to_string(),
+                    stopped: false,
+                    message: format!("delegate already exited while stopping: {error}"),
+                })
+            }
+        },
+        Err(error) => Err(format!("check delegate process status failed: {error}")),
+    }
 }
 
 // ===== Pet (Desktop Pet) Commands =====
@@ -1342,6 +1475,7 @@ fn main() {
 
     tauri::Builder::default()
         .manage(Mutex::new(FsAccessState::default()))
+        .manage(Arc::new(Mutex::new(HashMap::<String, Child>::new())))
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             // FS commands
@@ -1353,6 +1487,7 @@ fn main() {
             fs_list_dir,
             shell_run,
             codex_run_delegate,
+            stop_codex_delegate,
             // Pet commands
             pet_show,
             pet_hide,

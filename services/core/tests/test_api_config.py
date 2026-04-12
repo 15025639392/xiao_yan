@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import httpx
+from types import SimpleNamespace
 
 import app.api.config_routes as config_routes
 from app.config import LLMProviderConfig
@@ -625,3 +626,106 @@ def test_update_capability_file_policy_rejects_empty_patch():
     response = client.put("/config/capabilities/file-policy", json={})
     assert response.status_code == 400
     assert response.json()["detail"] == "at least one file-policy field is required"
+
+
+def test_get_data_environment_returns_snapshot(monkeypatch):
+    monkeypatch.setattr(
+        config_routes,
+        "get_data_environment_snapshot",
+        lambda: SimpleNamespace(
+            testing_mode=False,
+            mempalace_palace_path="/tmp/palace-default",
+            mempalace_wing="wing_xiaoyan",
+            mempalace_room="chat_exchange",
+            default_backup_directory="/tmp/backups",
+        ),
+    )
+
+    client = TestClient(app)
+    response = client.get("/config/data-environment")
+    assert response.status_code == 200
+    assert response.json() == {
+        "testing_mode": False,
+        "mempalace_palace_path": "/tmp/palace-default",
+        "mempalace_wing": "wing_xiaoyan",
+        "mempalace_room": "chat_exchange",
+        "default_backup_directory": "/tmp/backups",
+        "switch_backup_path": None,
+    }
+
+
+def test_update_data_environment_switches_mode_with_auto_backup(monkeypatch):
+    calls: dict[str, object] = {"testing_mode": False}
+
+    def stub_snapshot():
+        return SimpleNamespace(
+            testing_mode=bool(calls["testing_mode"]),
+            mempalace_palace_path="/tmp/palace-testing" if calls["testing_mode"] else "/tmp/palace-default",
+            mempalace_wing="wing_xiaoyan",
+            mempalace_room="chat_exchange_testing" if calls["testing_mode"] else "chat_exchange",
+            default_backup_directory="/tmp/backups",
+        )
+
+    def stub_apply(testing_mode: bool) -> None:
+        calls["testing_mode"] = testing_mode
+
+    monkeypatch.setattr(config_routes, "get_data_environment_snapshot", stub_snapshot)
+    monkeypatch.setattr(config_routes, "is_testing_data_mode_enabled", lambda: False)
+    monkeypatch.setattr(
+        config_routes,
+        "create_data_backup_archive",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            backup_path="/tmp/backups/switch.zip",
+            created_at="2026-04-12T00:00:00+00:00",
+            restored_keys=["state"],
+        ),
+    )
+    monkeypatch.setattr(config_routes, "apply_testing_data_mode", stub_apply)
+    monkeypatch.setattr(config_routes, "reload_runtime", lambda _app: calls.update({"reloaded": True}))
+
+    client = TestClient(app)
+    response = client.put("/config/data-environment", json={"testing_mode": True, "backup_before_switch": True})
+    assert response.status_code == 200
+    assert response.json() == {
+        "testing_mode": True,
+        "mempalace_palace_path": "/tmp/palace-testing",
+        "mempalace_wing": "wing_xiaoyan",
+        "mempalace_room": "chat_exchange_testing",
+        "default_backup_directory": "/tmp/backups",
+        "switch_backup_path": "/tmp/backups/switch.zip",
+    }
+    assert calls["testing_mode"] is True
+    assert calls.get("reloaded") is True
+
+
+def test_import_data_backup_endpoint_creates_safety_backup_and_reloads(monkeypatch):
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        config_routes,
+        "create_data_backup_archive",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            backup_path="/tmp/backups/pre-import.zip",
+            created_at="2026-04-12T00:00:00+00:00",
+            restored_keys=["state"],
+        ),
+    )
+    monkeypatch.setattr(
+        config_routes,
+        "import_data_backup_archive",
+        lambda path: ["state", "goals"] if path == "/tmp/backups/source.zip" else [],
+    )
+    monkeypatch.setattr(config_routes, "reload_runtime", lambda _app: calls.update({"reloaded": True}))
+
+    client = TestClient(app)
+    response = client.post(
+        "/config/data-backup/import",
+        json={"backup_path": "/tmp/backups/source.zip", "make_pre_import_backup": True},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "imported_from": "/tmp/backups/source.zip",
+        "restored_keys": ["state", "goals"],
+        "pre_import_backup_path": "/tmp/backups/pre-import.zip",
+    }
+    assert calls.get("reloaded") is True

@@ -38,14 +38,30 @@ class MemPalaceAdapter:
         self.room = room
         self._search_backend = search_backend
         self._write_backend = write_backend
+        self._cross_room_scan_cached_at: datetime | None = None
+        self._cross_room_scan_result: bool = False
 
-    def search_context(self, query: str, *, exclude_current_room: bool = False) -> str:
+    def search_context(
+        self,
+        query: str,
+        *,
+        exclude_current_room: bool = False,
+        max_hits: int | None = None,
+        retrieval_weight: float | None = None,
+    ) -> str:
         normalized = (query or "").strip()
         if not normalized:
             return ""
 
+        if retrieval_weight is not None and _clamp_weight(retrieval_weight, fallback=0.0) <= 0:
+            return ""
+
+        search_limit = self._resolve_search_limit(max_hits)
+        if search_limit <= 0:
+            return ""
+
         try:
-            payload = self._search(normalized)
+            payload = self._search(normalized, limit=search_limit)
         except Exception as exc:  # noqa: BLE001
             logger.warning("MemPalace search failed: %s", exc)
             return ""
@@ -74,7 +90,7 @@ class MemPalaceAdapter:
                 return ""
 
         lines = ["【长期记忆检索】"]
-        for raw_hit in raw_hits[: self.results_limit]:
+        for raw_hit in raw_hits[:search_limit]:
             if not isinstance(raw_hit, dict):
                 continue
             text = _compact_text(raw_hit.get("text") or "", 160)
@@ -124,14 +140,18 @@ class MemPalaceAdapter:
             "room": self.room,
         }
 
-    def build_chat_messages(self, user_message: str, *, limit: int) -> list[ChatMessage]:
+    def build_chat_messages(self, user_message: str, *, limit: int, recent_weight: float | None = None) -> list[ChatMessage]:
         normalized = (user_message or "").strip()
         if not normalized:
             return []
 
         # Treat limit as a turn baseline instead of a raw event count.
         # This keeps enough nearby dialogue while bounding prompt growth.
-        turn_limit = max(1, int(limit))
+        total_turn_limit = max(1, int(limit))
+        if recent_weight is None:
+            turn_limit = total_turn_limit
+        else:
+            turn_limit = max(1, int(round(total_turn_limit * _clamp_weight(recent_weight, fallback=1.0))))
         max_history_messages = turn_limit * 2
         candidate_limit = min(120, max(max_history_messages * 4, 12))
         token_budget = max(400, min(8000, turn_limit * 300))
@@ -173,17 +193,70 @@ class MemPalaceAdapter:
         start = max(0, end - safe_limit)
         return list(reversed(events[start:end]))
 
-    def _search(self, query: str) -> dict:
+    def _search(self, query: str, *, limit: int) -> dict:
         if self._search_backend is not None:
-            return self._search_backend(query, self.palace_path, self.results_limit)
+            return self._search_backend(query, self.palace_path, limit)
 
         from mempalace.searcher import search_memories
 
         return search_memories(
             query,
             palace_path=self.palace_path,
-            n_results=self.results_limit,
+            n_results=limit,
         )
+
+    def _resolve_search_limit(self, max_hits: int | None) -> int:
+        if max_hits is None:
+            return self.results_limit
+        try:
+            parsed = int(max_hits)
+        except (TypeError, ValueError):
+            return self.results_limit
+        if parsed <= 0:
+            return 0
+        return max(1, min(self.results_limit, parsed))
+
+    def has_cross_room_long_term_sources(self, *, cache_seconds: int = 30) -> bool:
+        """Returns whether non-current-room long-term sources are available.
+
+        We intentionally ignore the mirrored event room (`*_events`) because it is
+        operational chat mirroring data, not curated long-term knowledge.
+        """
+
+        now = datetime.now(timezone.utc)
+        ttl = max(1, int(cache_seconds))
+        if (
+            self._cross_room_scan_cached_at is not None
+            and (now - self._cross_room_scan_cached_at).total_seconds() < ttl
+        ):
+            return self._cross_room_scan_result
+
+        has_sources = False
+        collection = self._get_collection(create=False)
+        if collection is not None:
+            try:
+                payload = collection.get(
+                    where={"wing": self.wing},
+                    include=["metadatas"],
+                    limit=5000,
+                )
+                metadatas = payload.get("metadatas") if isinstance(payload, dict) else None
+                if isinstance(metadatas, list):
+                    ignored_rooms = {self.room, f"{self.room}_events"}
+                    for metadata in metadatas:
+                        if not isinstance(metadata, dict):
+                            continue
+                        room = str(metadata.get("room") or "").strip()
+                        if not room or room in ignored_rooms:
+                            continue
+                        has_sources = True
+                        break
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("MemPalace cross-room source scan failed: %s", exc)
+
+        self._cross_room_scan_cached_at = now
+        self._cross_room_scan_result = has_sources
+        return has_sources
 
     def _write(
         self,
@@ -334,6 +407,14 @@ def _estimate_tokens(text: str) -> int:
         return 1
     # Rough estimate for mixed CJK/English text.
     return max(1, int(len(compact) / 1.8))
+
+
+def _clamp_weight(value: float, *, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(0.0, min(1.0, parsed))
 
 
 def _parse_exchange_document(document: str) -> tuple[str, str]:

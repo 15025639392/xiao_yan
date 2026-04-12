@@ -180,19 +180,20 @@ class AppRealtimeHub:
         response_id: str | None,
         content: str,
         session_id: str | None = None,
+        knowledge_references: list[dict[str, Any]] | None = None,
     ) -> None:
         seq = self._get_next_sequence(session_id or assistant_message_id)
-        self._schedule_payload(
-            "chat_completed",
-            {
-                "assistant_message_id": assistant_message_id,
-                "response_id": response_id,
-                "content": content,
-                "session_id": session_id or assistant_message_id,
-                "sequence": seq,
-                "timestamp_ms": _current_timestamp_ms(),
-            },
-        )
+        payload = {
+            "assistant_message_id": assistant_message_id,
+            "response_id": response_id,
+            "content": content,
+            "session_id": session_id or assistant_message_id,
+            "sequence": seq,
+            "timestamp_ms": _current_timestamp_ms(),
+        }
+        if knowledge_references:
+            payload["knowledge_references"] = knowledge_references
+        self._schedule_payload("chat_completed", payload)
 
     def publish_chat_failed(
         self,

@@ -1,0 +1,5 @@
+:root {
+  --orchestrator-panel-bg: color-mix(in srgb, var(--bg-surface) 92%, rgba(255, 248, 240, 0.68));
+  --orchestrator-panel-border: color-mix(in srgb, var(--border-subtle) 86%, rgba(255, 255, 255, 0.25));
+  --orchestrator-panel-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}

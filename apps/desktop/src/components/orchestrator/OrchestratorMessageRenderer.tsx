@@ -108,37 +108,26 @@ function OrchestratorBlockCard(props: OrchestratorBlockCardProps) {
       </section>
     );
   }
+  if (block.type === "next_action_card") {
+    return <NextActionCard block={block} onSendQuickMessage={props.onSendQuickMessage} />;
+  }
+  if (block.type === "stall_followup_card") {
+    return <StallFollowupCard block={block} onSendQuickMessage={props.onSendQuickMessage} />;
+  }
   if (block.type === "session_status_card") {
     const statusSession = block.session ?? props.session;
-    return (
-      <section className="orchestrator-inline-card">
-        <div className="orchestrator-inline-card__label">会话状态</div>
-        <div className="orchestrator-inline-card__pills">
-          <span className={`orchestrator-pill orchestrator-pill--${statusSession.status}`}>{renderSessionStatus(statusSession.status)}</span>
-          <span className="orchestrator-pill">{statusSession.project_name}</span>
-          {statusSession.coordination?.queue_position ? (
-            <span className="orchestrator-pill">队列 #{statusSession.coordination.queue_position}</span>
-          ) : null}
-        </div>
-        <p>{block.summary || statusSession.coordination?.waiting_reason || "主控会话正在等待下一步。"}</p>
-        <div className="orchestrator-inline-card__actions">
-          {statusSession.status === "failed" || statusSession.status === "cancelled" ? (
-            <AsyncActionButton
-              className="chat-page__action-btn"
-              label={statusSession.coordination?.failure_category === "verification_failure" ? "重跑验收阶段" : "恢复推进"}
-              pendingLabel="处理中..."
-              onAction={() => props.onResumeSession(statusSession.session_id)}
-            />
-          ) : null}
-          {statusSession.status === "pending_plan_approval" ? (
-            <AsyncActionButton
-              className="chat-page__action-btn"
-              label="解释这份计划"
-              pendingLabel="发送中..."
-              onAction={() => props.onSendQuickMessage("先解释一下这份计划为什么这么拆")}
-            />
-          ) : null}
-          {statusSession.coordination?.preempted_by_session_id ? (
+    const primaryAction =
+      statusSession.status === "failed" || statusSession.status === "cancelled"
+        ? (
+          <AsyncActionButton
+            className="chat-page__action-btn"
+            label={statusSession.coordination?.failure_category === "verification_failure" ? "重跑验收阶段" : "恢复推进"}
+            pendingLabel="处理中..."
+            onAction={() => props.onResumeSession(statusSession.session_id)}
+          />
+        )
+        : statusSession.coordination?.preempted_by_session_id
+          ? (
             <AsyncActionButton
               className="chat-page__action-btn"
               label="查看抢占会话"
@@ -147,8 +136,29 @@ function OrchestratorBlockCard(props: OrchestratorBlockCardProps) {
                 props.onActivateSession(statusSession.coordination?.preempted_by_session_id || statusSession.session_id)
               }
             />
+          )
+          : statusSession.status === "pending_plan_approval"
+            ? (
+              <AsyncActionButton
+                className="chat-page__action-btn"
+                label="解释这份计划"
+                pendingLabel="发送中..."
+                onAction={() => props.onSendQuickMessage("先解释一下这份计划为什么这么拆")}
+              />
+            )
+            : null;
+
+    return (
+      <section className="orchestrator-inline-card">
+        <div className="orchestrator-inline-card__label">会话状态</div>
+        <div className="orchestrator-inline-card__pills">
+          <span className={`orchestrator-pill orchestrator-pill--${statusSession.status}`}>{renderSessionStatus(statusSession.status)}</span>
+          {statusSession.coordination?.queue_position ? (
+            <span className="orchestrator-pill">队列 #{statusSession.coordination.queue_position}</span>
           ) : null}
         </div>
+        <p>{block.summary || statusSession.coordination?.waiting_reason || "主控会话正在等待下一步。"}</p>
+        {primaryAction ? <div className="orchestrator-inline-card__actions">{primaryAction}</div> : null}
       </section>
     );
   }
@@ -190,28 +200,65 @@ function AsyncActionButton({
 }
 
 function PlanCard({ plan }: { plan: NonNullable<OrchestratorMessageBlock["plan"]> }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const primaryDefinition = plan.definition_of_done[0] ?? null;
+  const hiddenDefinitionCount = Math.max(0, plan.definition_of_done.length - (primaryDefinition ? 1 : 0));
+  const hasExpandableDetails = hiddenDefinitionCount > 0 || plan.tasks.length > 0 || plan.constraints.length > 0;
+
   return (
     <section className="orchestrator-inline-card">
       <div className="orchestrator-inline-card__label">执行计划</div>
       <strong>{plan.objective}</strong>
-      <div className="orchestrator-inline-card__section">
-        <span>Definition of done</span>
-        <ul>
-          {plan.definition_of_done.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
+      {primaryDefinition ? <p>关键验收: {primaryDefinition}</p> : null}
+      <div className="orchestrator-inline-card__pills">
+        <span className="orchestrator-pill">任务 {plan.tasks.length}</span>
+        {plan.constraints.length > 0 ? <span className="orchestrator-pill">约束 {plan.constraints.length}</span> : null}
       </div>
-      <div className="orchestrator-inline-card__section">
-        <span>任务拆解</span>
-        <ol>
-          {plan.tasks.map((task) => (
-            <li key={task.task_id}>
-              {task.kind.toUpperCase()} · {task.title}
-            </li>
-          ))}
-        </ol>
-      </div>
+      {hasExpandableDetails ? (
+        <button
+          className="chat-page__action-btn orchestrator-inline-card__toggle"
+          type="button"
+          onClick={() => setShowDetails((current) => !current)}
+        >
+          {showDetails ? "收起完整计划" : "查看完整计划"}
+        </button>
+      ) : null}
+      {showDetails ? (
+        <>
+          {plan.constraints.length > 0 ? (
+            <div className="orchestrator-inline-card__details">
+              <span>约束条件</span>
+              <ul>
+                {plan.constraints.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {plan.definition_of_done.length > 0 ? (
+            <div className="orchestrator-inline-card__details">
+              <span>Definition of done</span>
+              <ul>
+                {plan.definition_of_done.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {plan.tasks.length > 0 ? (
+            <div className="orchestrator-inline-card__details">
+              <span>任务拆解</span>
+              <ol>
+                {plan.tasks.map((task) => (
+                  <li key={task.task_id}>
+                    {task.kind.toUpperCase()} · {task.title}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -220,34 +267,46 @@ function ApprovalCard({
   session,
   onApprovePlan,
   onRejectPlan,
-  onSendQuickMessage,
 }: OrchestratorBlockCardProps) {
   const pending = session.status === "pending_plan_approval";
+  const [showMoreActions, setShowMoreActions] = useState(false);
+
+  const moreActionId = `approval-more-${session.session_id}`;
+
   return (
     <section className="orchestrator-inline-card">
       <div className="orchestrator-inline-card__label">待审批</div>
       <p>{pending ? "当前计划等待你批准后开工。" : "当前没有待审批事项。"}</p>
       {pending ? (
-        <div className="orchestrator-inline-card__actions">
-          <AsyncActionButton
-            className="btn btn--primary btn--sm"
-            label="批准并开工"
-            pendingLabel="批准中..."
-            onAction={() => onApprovePlan(session.session_id)}
-          />
-          <AsyncActionButton
-            className="btn btn--secondary btn--sm"
-            label="拒绝计划"
-            pendingLabel="拒绝中..."
-            onAction={() => onRejectPlan(session.session_id)}
-          />
-          <AsyncActionButton
-            className="chat-page__action-btn"
-            label="先解释计划"
-            pendingLabel="发送中..."
-            onAction={() => onSendQuickMessage("先解释一下这份计划为什么这么拆")}
-          />
-        </div>
+        <>
+          <div className="orchestrator-inline-card__actions">
+            <AsyncActionButton
+              className="btn btn--primary btn--sm"
+              label="批准并开工"
+              pendingLabel="批准中..."
+              onAction={() => onApprovePlan(session.session_id)}
+            />
+            <button
+              type="button"
+              className="chat-page__action-btn orchestrator-inline-card__toggle"
+              aria-expanded={showMoreActions}
+              aria-controls={moreActionId}
+              onClick={() => setShowMoreActions((current) => !current)}
+            >
+              {showMoreActions ? "收起更多操作" : "更多操作"}
+            </button>
+          </div>
+          {showMoreActions ? (
+            <div id={moreActionId} className="orchestrator-inline-card__details">
+              <AsyncActionButton
+                className="btn btn--secondary btn--sm"
+                label="拒绝计划"
+                pendingLabel="拒绝中..."
+                onAction={() => onRejectPlan(session.session_id)}
+              />
+            </div>
+          ) : null}
+        </>
       ) : null}
     </section>
   );
@@ -264,6 +323,23 @@ function TaskCard({
   onResumeSession: (sessionId: string) => Promise<void>;
   onSendQuickMessage: (message: string) => Promise<void> | void;
 }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const engineerLabel = resolveEngineerLabel(task);
+  const detailRows: string[] = [];
+  if (engineerLabel) {
+    detailRows.push(`执行人: ${engineerLabel}`);
+  }
+  if (task.delegate_run_id) {
+    detailRows.push(`run: ${task.delegate_run_id.slice(0, 12)}`);
+  }
+  if (task.scope_paths.length > 0) {
+    detailRows.push(`Scope: ${task.scope_paths.join(" · ")}`);
+  }
+  if (task.acceptance_commands.length > 0) {
+    detailRows.push(`验收: ${task.acceptance_commands.join(" | ")}`);
+  }
+  const hasDetails = detailRows.length > 0;
+
   return (
     <section className="orchestrator-inline-card">
       <div className="orchestrator-inline-card__label">任务状态</div>
@@ -273,25 +349,32 @@ function TaskCard({
       </div>
       <strong>{task.title}</strong>
       <p>{task.result_summary || task.error || "等待进一步推进。"}</p>
-      {task.scope_paths.length > 0 ? <p>Scope: {task.scope_paths.join(" · ")}</p> : null}
-      {task.acceptance_commands.length > 0 ? <p>验收: {task.acceptance_commands.join(" | ")}</p> : null}
-      {task.delegate_run_id ? <code className="orchestrator-task__runid">run: {task.delegate_run_id.slice(0, 12)}</code> : null}
+      {hasDetails ? (
+        <>
+          <button
+            className="chat-page__action-btn orchestrator-inline-card__toggle"
+            type="button"
+            onClick={() => setShowDetails((current) => !current)}
+          >
+            {showDetails ? "收起详情" : "查看详情"}
+          </button>
+          {showDetails ? (
+            <ul className="orchestrator-inline-card__details">
+              {detailRows.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
       <div className="orchestrator-inline-card__actions">
         {task.status === "failed" ? (
-          <>
-            <AsyncActionButton
-              className="chat-page__action-btn"
-              label={session.coordination?.failure_category === "verification_failure" ? "重跑验收阶段" : "重派失败环节"}
-              pendingLabel="处理中..."
-              onAction={() => onResumeSession(session.session_id)}
-            />
-            <AsyncActionButton
-              className="chat-page__action-btn"
-              label="解释失败原因"
-              pendingLabel="发送中..."
-              onAction={() => onSendQuickMessage(`解释一下任务「${task.title}」为什么失败，以及下一步建议`)}
-            />
-          </>
+          <AsyncActionButton
+            className="chat-page__action-btn"
+            label={session.coordination?.failure_category === "verification_failure" ? "重跑验收阶段" : "重派失败环节"}
+            pendingLabel="处理中..."
+            onAction={() => onResumeSession(session.session_id)}
+          />
         ) : null}
         {task.status === "running" ? (
           <AsyncActionButton
@@ -334,31 +417,15 @@ function VerificationCard({
         </span>
       </div>
       <p>{verification.summary || "暂无验收摘要"}</p>
-      {verification.commands.length > 0 ? (
-        <ul className="orchestrator-command-list">
-          {verification.commands.map((command) => (
-            <li key={command}>
-              <code>{command}</code>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {verification.commands.length > 0 ? <VerificationDetails commands={verification.commands} /> : null}
       <div className="orchestrator-inline-card__actions">
         {!verification.passed ? (
-          <>
-            <AsyncActionButton
-              className="chat-page__action-btn"
-              label="重跑验收阶段"
-              pendingLabel="处理中..."
-              onAction={() => onResumeSession(session.session_id)}
-            />
-            <AsyncActionButton
-              className="chat-page__action-btn"
-              label="解释验收失败"
-              pendingLabel="发送中..."
-              onAction={() => onSendQuickMessage("解释一下这次统一验收为什么失败，以及最小修复路径")}
-            />
-          </>
+          <AsyncActionButton
+            className="chat-page__action-btn"
+            label="重跑验收阶段"
+            pendingLabel="处理中..."
+            onAction={() => onResumeSession(session.session_id)}
+          />
         ) : (
           <AsyncActionButton
             className="chat-page__action-btn"
@@ -369,6 +436,171 @@ function VerificationCard({
         )}
       </div>
     </section>
+  );
+}
+
+function NextActionCard({
+  block,
+  onSendQuickMessage,
+}: {
+  block: OrchestratorMessageBlock;
+  onSendQuickMessage: (message: string) => Promise<void> | void;
+}) {
+  const suggestionItems = Array.isArray(block.details?.suggestions)
+    ? block.details.suggestions
+      .map((item) => {
+        if (item == null || typeof item !== "object") {
+          return null;
+        }
+        const candidate = item as Record<string, unknown>;
+        const command = typeof candidate.command === "string" ? candidate.command.trim() : "";
+        if (!command) {
+          return null;
+        }
+        const priority = candidate.priority === "recommended" ? "recommended" : "alternative";
+        const reason = typeof candidate.reason === "string" ? candidate.reason.trim() : "";
+        const confidenceValue = typeof candidate.confidence === "number" ? candidate.confidence : null;
+        const confidence =
+          confidenceValue == null
+            ? null
+            : Math.min(1, Math.max(0, confidenceValue));
+        return {
+          command,
+          priority,
+          reason,
+          confidence,
+        };
+      })
+      .filter((item): item is { command: string; priority: "recommended" | "alternative"; reason: string; confidence: number | null } => item !== null)
+    : [];
+  const queueLine = typeof block.details?.queue_line === "string" ? block.details.queue_line : "";
+  const nextAction = typeof block.details?.next_action === "string" ? block.details.next_action : "";
+  const suggestedCommand = typeof block.details?.suggested_command === "string" ? block.details.suggested_command : "";
+  const suggestedCommands = Array.isArray(block.details?.suggested_commands)
+    ? block.details.suggested_commands.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  const commandOptions = suggestionItems.length > 0
+    ? suggestionItems
+    : (
+      suggestedCommands.length > 0
+        ? suggestedCommands.map((command, index) => ({
+          command,
+          priority: index === 0 ? "recommended" : "alternative",
+          reason: "",
+          confidence: null,
+        }))
+        : (suggestedCommand
+            ? [{ command: suggestedCommand, priority: "recommended", reason: "", confidence: null }]
+            : [])
+    );
+
+  const primaryOption = commandOptions.find((item) => item.priority === "recommended") ?? commandOptions[0] ?? null;
+  const summaryLine = block.summary || nextAction || queueLine || "主控已生成下一步建议。";
+
+  return (
+    <section className="orchestrator-inline-card orchestrator-next-action-card">
+      <div className="orchestrator-inline-card__label">下一步建议</div>
+      <p>{summaryLine}</p>
+      {primaryOption ? (
+        <div className="orchestrator-next-action-card__group">
+          <code className="orchestrator-task__runid">{primaryOption.command}</code>
+          <AsyncActionButton
+            className="chat-page__action-btn"
+            label={`执行建议`}
+            pendingLabel="发送中..."
+            onAction={() => onSendQuickMessage(primaryOption.command)}
+          />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function StallFollowupCard({
+  block,
+  onSendQuickMessage,
+}: {
+  block: OrchestratorMessageBlock;
+  onSendQuickMessage: (message: string) => Promise<void> | void;
+}) {
+  const managerSummary = typeof block.details?.manager_summary === "string"
+    ? block.details.manager_summary
+    : (block.summary || "主控检测到任务卡点，已发起追问。");
+  const engineerPrompt = typeof block.details?.engineer_prompt === "string" ? block.details.engineer_prompt : "";
+  const hasLevelDetail = typeof block.details?.level === "string";
+  const level = typeof block.details?.level === "string" ? block.details.level : "soft_ping";
+  const elapsedMinutes = typeof block.details?.elapsed_minutes === "number" ? block.details.elapsed_minutes : null;
+  const suggestions = Array.isArray(block.details?.suggestions)
+    ? block.details.suggestions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  const followupCommand = typeof block.details?.followup_command === "string" ? block.details.followup_command.trim() : "";
+  const [showDetails, setShowDetails] = useState(false);
+  const hasDetails = hasLevelDetail || elapsedMinutes != null || engineerPrompt || suggestions.length > 0;
+
+  return (
+    <section className="orchestrator-inline-card orchestrator-stall-followup-card">
+      <div className="orchestrator-inline-card__label">主控介入追问</div>
+      <p>{managerSummary}</p>
+      {followupCommand ? (
+        <div className="orchestrator-inline-card__actions">
+          <AsyncActionButton
+            className="chat-page__action-btn"
+            label="立即追问工程师"
+            pendingLabel="发送中..."
+            onAction={() => onSendQuickMessage(followupCommand)}
+          />
+        </div>
+      ) : null}
+      {hasDetails ? (
+        <>
+          <button
+            className="chat-page__action-btn orchestrator-inline-card__toggle"
+            type="button"
+            onClick={() => setShowDetails((current) => !current)}
+          >
+            {showDetails ? "收起介入细节" : "查看介入细节"}
+          </button>
+          {showDetails ? (
+            <div className="orchestrator-inline-card__details">
+              {hasLevelDetail ? <p>介入级别: {renderStallLevel(level)}</p> : null}
+              {elapsedMinutes != null ? <p>已运行时长: 约 {Math.max(1, Math.floor(elapsedMinutes / 60))} 小时</p> : null}
+              {engineerPrompt ? <p>追问话术: {engineerPrompt}</p> : null}
+              {suggestions.length > 0 ? (
+                <ul>
+                  {suggestions.map((item, index) => (
+                    <li key={`${item}-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function VerificationDetails({ commands }: { commands: string[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        className="chat-page__action-btn orchestrator-inline-card__toggle"
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+      >
+        {open ? "收起验收命令" : "查看验收命令"}
+      </button>
+      {open ? (
+        <ul className="orchestrator-command-list">
+          {commands.map((command) => (
+            <li key={command}>
+              <code>{command}</code>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
   );
 }
 
@@ -391,4 +623,20 @@ function renderTaskStatus(status: OrchestratorTask["status"]): string {
   if (status === "succeeded") return "已完成";
   if (status === "failed") return "失败";
   return "已取消";
+}
+
+function resolveEngineerLabel(task: OrchestratorTask): string | null {
+  if (typeof task.engineer_label === "string" && task.engineer_label.trim().length > 0) {
+    return task.engineer_label.trim();
+  }
+  if (typeof task.engineer_id === "number" && task.engineer_id > 0) {
+    return `工程师${task.engineer_id}号(codex)`;
+  }
+  return null;
+}
+
+function renderStallLevel(level: string): string {
+  if (level === "hard_intervention") return "硬介入";
+  if (level === "manual_followup") return "手动追问";
+  return "软追问";
 }

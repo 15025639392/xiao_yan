@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from logging import getLogger
 from typing import TYPE_CHECKING
+from typing import Literal
 
 from app.memory.models import (
     MemoryCollection,
@@ -85,14 +86,18 @@ class MemoryCRUDMixin:
             logger.warning("Cannot delete memory %s: no repository", memory_id)
             return False
 
-        result = self.repository.delete_event(memory_id)
+        soft_delete = getattr(self.repository, "soft_delete_event", None)
+        if callable(soft_delete):
+            result = bool(soft_delete(memory_id))
+        else:
+            result = self.repository.delete_event(memory_id)
         if result:
             logger.info("Deleted memory %s", memory_id)
         else:
             logger.warning("Failed to delete memory %s: not found", memory_id)
         return result
 
-    def delete_many(self: "MemoryService", memory_ids: list[str]) -> dict[str, int]:
+    def delete_many(self: "MemoryService", memory_ids: list[str], *, hard: bool = False) -> dict[str, int]:
         if self.repository is None:
             logger.warning("Cannot delete memories: no repository")
             return {"deleted": 0, "failed": len(memory_ids)}
@@ -100,8 +105,16 @@ class MemoryCRUDMixin:
         deleted_count = 0
         failed_count = 0
 
+        soft_delete = getattr(self.repository, "soft_delete_event", None)
         for memory_id in memory_ids:
-            if self.repository.delete_event(memory_id):
+            if hard:
+                success = self.repository.delete_event(memory_id)
+            elif callable(soft_delete):
+                success = bool(soft_delete(memory_id))
+            else:
+                success = self.repository.delete_event(memory_id)
+
+            if success:
                 deleted_count += 1
             else:
                 failed_count += 1
@@ -160,7 +173,7 @@ class MemoryCRUDMixin:
     def get_by_id(self: "MemoryService", memory_id: str) -> MemoryEntry | None:
         if self.repository is None:
             return None
-        recent = self.list_recent(limit=500)
+        recent = self.list_recent(limit=500, status="all")
         for entry in recent.entries:
             if entry.id == memory_id:
                 return entry
@@ -169,12 +182,26 @@ class MemoryCRUDMixin:
     def list_recent(
         self: "MemoryService",
         limit: int = 20,
+        offset: int = 0,
         kinds: list[MemoryKind] | None = None,
+        status: Literal["active", "deleted", "all"] = "active",
+        namespace: str | None = None,
+        visibility: Literal["internal", "user"] | None = None,
+        query: str | None = None,
     ) -> MemoryCollection:
         if self.repository is None:
             return MemoryCollection(entries=[], total_count=0)
 
-        events = self.repository.list_recent(limit * 3)
+        filter_kind = kinds[0].value if kinds and len(kinds) == 1 else None
+        events = self.repository.list_recent(
+            limit=limit * 3,
+            offset=offset,
+            status=status,
+            kind=filter_kind,
+            namespace=namespace,
+            visibility=visibility,
+            query=query,
+        )
         entries = [e.to_entry() for e in events]
 
         if kinds:
@@ -187,6 +214,32 @@ class MemoryCRUDMixin:
             total_count=len(entries),
             query_summary=f"最近 {limit} 条记录",
         )
+
+    def restore(self: "MemoryService", memory_id: str) -> bool:
+        if self.repository is None:
+            logger.warning("Cannot restore memory %s: no repository", memory_id)
+            return False
+        restore_event = getattr(self.repository, "restore_event", None)
+        if not callable(restore_event):
+            logger.warning("Cannot restore memory %s: repository does not support restore", memory_id)
+            return False
+        result = bool(restore_event(memory_id))
+        if result:
+            logger.info("Restored memory %s", memory_id)
+        else:
+            logger.warning("Failed to restore memory %s: not found", memory_id)
+        return result
+
+    def purge(self: "MemoryService", memory_id: str) -> bool:
+        if self.repository is None:
+            logger.warning("Cannot purge memory %s: no repository", memory_id)
+            return False
+        result = self.repository.delete_event(memory_id)
+        if result:
+            logger.info("Purged memory %s", memory_id)
+        else:
+            logger.warning("Failed to purge memory %s: not found", memory_id)
+        return result
 
     def search(
         self: "MemoryService",
@@ -210,4 +263,3 @@ class MemoryCRUDMixin:
             total_count=len(entries),
             query_summary=f"搜索「{query[:20]}」的结果",
         )
-

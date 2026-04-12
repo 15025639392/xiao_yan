@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { ChatPanel } from "./components/ChatPanel";
@@ -7,6 +7,8 @@ import { PersonaPanel } from "./components/PersonaPanel";
 import { ToolPanel } from "./components/ToolPanel";
 import type {
   BeingState,
+  ChatAttachment,
+  ChatRequestBody,
   Goal,
   InnerWorldState,
   MacConsoleBootstrapStatus,
@@ -22,10 +24,9 @@ import {
   approveOrchestratorPlan,
   cancelOrchestratorSession,
   chat,
-  chatWithOrchestrator,
-  clearOrchestratorMessages,
   completeOrchestratorDelegate,
   createOrchestratorSession,
+  deleteOrchestratorSession,
   fetchOrchestratorMessages,
   fetchOrchestratorScheduler,
   fetchOrchestratorSessions,
@@ -37,9 +38,11 @@ import {
   generateOrchestratorPlan,
   rejectOrchestratorPlan,
   removeChatFolderPermission,
+  runOrchestratorConsoleCommand,
   resumeOrchestratorSession,
   resumeChat,
   sleep,
+  stopOrchestratorDelegate,
   tickOrchestratorScheduler,
   upsertChatFolderPermission,
   updateGoalStatus,
@@ -60,7 +63,7 @@ import { OverviewPanel } from "./pages/OverviewPage";
 import { MemoryPage } from "./pages/MemoryPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { CapabilitiesPage } from "./pages/CapabilitiesPage";
-import { OrchestratorPage } from "./pages/OrchestratorPage";
+import { OrchestratorPage, type StopDelegateTaskRequest } from "./pages/OrchestratorPage";
 import {
   addImportedProject,
   buildFolderPermissionPlan,
@@ -72,12 +75,13 @@ import {
   type ImportedProjectRegistry,
 } from "./lib/projects";
 import { buildDelegateDebugInfo } from "./lib/orchestratorDelegateDebug";
-import { runCodexDelegate } from "./lib/tauri/codexDelegate";
+import { runCodexDelegate, stopCodexDelegate } from "./lib/tauri/codexDelegate";
 import {
   fsClearAllowedDirectory,
   fsSetAllowedDirectory,
   isTauriRuntime,
   pickDirectory,
+  pickFiles,
 } from "./lib/tauri";
 import {
   appendOrchestratorDelta,
@@ -86,6 +90,23 @@ import {
   mergeOrchestratorMessages,
   upsertOrchestratorStreamingMessage,
 } from "./lib/orchestratorMessages";
+import {
+  createOrchestratorSendGuardState,
+  getOrchestratorSendBlockReason,
+  markOrchestratorSendFinish,
+  markOrchestratorSendStart,
+} from "./lib/orchestratorSendGuard";
+import {
+  createInitialOrchestratorConsoleState,
+  orchestratorConsoleReducer,
+  resolveActiveSessionId,
+  resolveActiveTabDraft,
+  resolveActiveWorkbenchTab,
+} from "./lib/orchestratorConsoleState";
+import {
+  createEmptySessionHistoryFilter,
+  type SessionHistoryFilter,
+} from "./lib/orchestratorWorkbench";
 
 type AppRoute =
   | "overview"
@@ -137,6 +158,17 @@ const DELEGATE_TIMEOUT_SECONDS_MIN = 30;
 const DELEGATE_TIMEOUT_SECONDS_MAX = 60 * 60;
 const DELEGATE_TIMEOUT_SECONDS_FALLBACK = 20 * 60;
 
+type OrchestratorUIAction =
+  | {
+      type: "send_message";
+      message: string;
+      clearDraft: boolean;
+    }
+  | {
+      type: "stop_task";
+      payload: StopDelegateTaskRequest;
+    };
+
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => resolveRoute(window.location.hash));
   const [state, setState] = useState<BeingState>(initialState);
@@ -146,6 +178,10 @@ export default function App() {
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [orchestratorSessions, setOrchestratorSessions] = useState<OrchestratorSession[]>([]);
+  const [orchestratorHistoryFilter, setOrchestratorHistoryFilter] = useState<SessionHistoryFilter>(() =>
+    createEmptySessionHistoryFilter(),
+  );
+  const [orchestratorHistorySessions, setOrchestratorHistorySessions] = useState<OrchestratorSession[]>([]);
   const [orchestratorScheduler, setOrchestratorScheduler] = useState<OrchestratorSchedulerSnapshot>(
     defaultOrchestratorScheduler,
   );
@@ -157,9 +193,17 @@ export default function App() {
   const [projectControlError, setProjectControlError] = useState("");
   const [persona, setPersona] = useState<PersonaProfile | null>(null);
   const [draft, setDraft] = useState("");
-  const [orchestratorDraft, setOrchestratorDraft] = useState("");
+  const [attachedFolders, setAttachedFolders] = useState<string[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [orchestratorConsoleState, dispatchOrchestratorConsole] = useReducer(
+    orchestratorConsoleReducer,
+    undefined,
+    createInitialOrchestratorConsoleState,
+  );
   const [isSending, setIsSending] = useState(false);
   const [isOrchestratorSending, setIsOrchestratorSending] = useState(false);
+  const [orchestratorSendNotice, setOrchestratorSendNotice] = useState("");
   const [error, setError] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">(() => loadThemePreference());
   const [showBrandMenu, setShowBrandMenu] = useState(false);
@@ -169,15 +213,27 @@ export default function App() {
   const schedulerTickInFlightRef = useRef(false);
   const delegateRunIdsRef = useRef(new Set<string>());
   const orchestratorFeedbackPollInFlightRef = useRef(false);
+  const orchestratorSendGuardRef = useRef(createOrchestratorSendGuardState());
+  const orchestratorSendNoticeTimerRef = useRef<number | null>(null);
   const hasAttemptedImportedProjectRestoreRef = useRef(false);
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
   const assistantName = persona?.name?.trim() || "小晏";
   const assistantIdentity = persona?.identity?.trim() || "AI Agent Desktop";
   const sessionList = normalizeOrchestratorSessions(orchestratorSessions);
-  const activeOrchestratorSessionId = state.orchestrator_session?.session_id ?? sessionList[0]?.session_id ?? null;
+  const activeOrchestratorTab = resolveActiveWorkbenchTab(orchestratorConsoleState);
+  const activeOrchestratorSessionId = resolveActiveSessionId(orchestratorConsoleState);
+  const orchestratorDraft = resolveActiveTabDraft(orchestratorConsoleState);
   const activeOrchestratorMessages =
     activeOrchestratorSessionId == null ? [] : orchestratorMessagesBySession[activeOrchestratorSessionId] ?? [];
   const activeImportedProjectPath = importedProjectRegistry.active_project_path;
+
+  useEffect(() => {
+    dispatchOrchestratorConsole({
+      type: "sync_sessions",
+      sessionIds: sessionList.map((session) => session.session_id),
+      preferredSessionId: state.orchestrator_session?.session_id ?? null,
+    });
+  }, [sessionList, state.orchestrator_session?.session_id]);
 
   useEffect(() => {
     if (hasAttemptedImportedProjectRestoreRef.current) {
@@ -235,7 +291,9 @@ export default function App() {
         setGoals(nextGoals.goals);
         setWorld(nextWorld);
         setAutobioEntries(nextAutobio.entries);
-        setOrchestratorSessions(normalizeOrchestratorSessions(nextOrchestratorSessions));
+        const normalizedSessions = normalizeOrchestratorSessions(nextOrchestratorSessions);
+        setOrchestratorSessions(normalizedSessions);
+        setOrchestratorHistorySessions(normalizedSessions);
         setOrchestratorScheduler(normalizeOrchestratorScheduler(nextOrchestratorScheduler));
       } catch (err) {
         if (!cancelled) {
@@ -288,6 +346,7 @@ export default function App() {
             event.payload.assistant_message_id,
             event.payload.content,
             event.payload.sequence,
+            event.payload.knowledge_references,
           );
           return updated;
         });
@@ -369,6 +428,9 @@ export default function App() {
         setOrchestratorSessions((current) =>
           upsertOrchestratorSession(normalizeOrchestratorSessions(current), event.payload),
         );
+        void refreshOrchestratorSessionHistory().catch(() => {
+          // Ignore history refresh errors in realtime path.
+        });
         void refreshOrchestratorScheduler();
         return;
       }
@@ -578,127 +640,137 @@ export default function App() {
       if (!session.plan) {
         continue;
       }
-      const runningTask = session.plan.tasks.find(
+      const runningTasks = session.plan.tasks.filter(
         (task) => task.status === "running" && typeof task.delegate_run_id === "string" && task.delegate_run_id.length > 0,
       );
-      if (!runningTask?.delegate_run_id) {
-        continue;
-	      }
-	      if (delegateRunIdsRef.current.has(runningTask.delegate_run_id)) {
-	        continue;
-	      }
+      for (const runningTask of runningTasks) {
+        if (!runningTask.delegate_run_id) {
+          continue;
+        }
+        if (delegateRunIdsRef.current.has(runningTask.delegate_run_id)) {
+          continue;
+        }
 
-	      const delegateRunId = runningTask.delegate_run_id;
+        const delegateRunId = runningTask.delegate_run_id;
+        delegateRunIdsRef.current.add(delegateRunId);
 
-		      delegateRunIdsRef.current.add(delegateRunId);
-		      void (async () => {
-	        try {
-          const delegateRequest = extractDelegateRequest(runningTask);
-          const delegatePrompt = extractDelegatePrompt(runningTask, delegateRequest, session);
-          const delegateTimeoutSeconds = resolveDelegateTimeoutSeconds(runningTask);
-	          const delegateResult = await runCodexDelegate({
-	            prompt: delegatePrompt,
-	            projectPath: session.project_path,
-	            runId: delegateRunId,
-	            outputSchema: delegateRequest.output_schema,
-	            timeoutSeconds: delegateTimeoutSeconds,
-	          });
+        void (async () => {
+          try {
+            const delegateRequest = extractDelegateRequest(runningTask);
+            const delegatePrompt = extractDelegatePrompt(runningTask, delegateRequest, session);
+            const delegateTimeoutSeconds = resolveDelegateTimeoutSeconds(runningTask);
+            const delegateResult = await runCodexDelegate({
+              prompt: delegatePrompt,
+              projectPath: session.project_path,
+              runId: delegateRunId,
+              outputSchema: delegateRequest.output_schema,
+              timeoutSeconds: delegateTimeoutSeconds,
+            });
 
-		          try {
-		            await completeOrchestratorDelegate({
-		              session_id: session.session_id,
-		              task_id: runningTask.task_id,
-		              delegate_run_id: delegateRunId,
-		              result: {
-		                status: delegateResult.status,
-		                summary: delegateResult.summary,
-		                changed_files: delegateResult.changed_files,
-		                command_results: delegateResult.command_results.map((item) => ({
-		                  command: item.command,
-		                  success: item.success,
-		                  exit_code: item.exit_code,
-		                  stdout: item.stdout,
-		                  stderr: item.stderr,
-		                  duration_ms: item.duration_ms,
-		                })),
-		                followup_needed: delegateResult.followup_needed,
-		                error: delegateResult.error ?? null,
-		                debug: buildDelegateDebugInfo(delegateResult.stdout, delegateResult.stderr) ?? null,
-		              },
-		            });
-		          } catch (completeError) {
-		            if (isRecoverableDelegateCompletionConflict(completeError)) {
-			              await Promise.all([
-                      refreshRuntimeState(),
-                      refreshOrchestratorSessions(),
-                      refreshOrchestratorScheduler(),
-                      refreshOrchestratorMessages(session.session_id),
-                    ]);
-			              return;
-			            }
-			            throw completeError;
-			          }
-			          await Promise.all([
-                    refreshRuntimeState(),
-                    refreshOrchestratorSessions(),
-                    refreshOrchestratorScheduler(),
-                    refreshOrchestratorMessages(session.session_id),
-                  ]);
-		        } catch (err) {
-		          if (isRecoverableDelegateCompletionConflict(err)) {
-		            await Promise.all([
-                    refreshRuntimeState(),
-                    refreshOrchestratorSessions(),
-                    refreshOrchestratorScheduler(),
-                    refreshOrchestratorMessages(session.session_id),
-                  ]);
-		            return;
-		          }
-	          const message = err instanceof Error ? err.message : "Codex delegate 执行失败";
-	          try {
-		            await completeOrchestratorDelegate({
-	              session_id: session.session_id,
-	              task_id: runningTask.task_id,
-	              delegate_run_id: delegateRunId,
-	              result: {
-                status: "failed",
-                summary: "Codex delegate 执行失败",
-                changed_files: [],
-                command_results: [],
-                followup_needed: [],
-                error: message,
-		              },
-		            });
-	            await Promise.all([
-                refreshRuntimeState(),
-                refreshOrchestratorSessions(),
-                refreshOrchestratorScheduler(),
-                refreshOrchestratorMessages(session.session_id),
-              ]);
-	          } catch (completeError) {
-	            if (isRecoverableDelegateCompletionConflict(completeError)) {
-	              await Promise.all([
+            try {
+              await completeOrchestratorDelegate({
+                session_id: session.session_id,
+                task_id: runningTask.task_id,
+                delegate_run_id: delegateRunId,
+                result: {
+                  status: delegateResult.status,
+                  summary: delegateResult.summary,
+                  changed_files: delegateResult.changed_files,
+                  command_results: delegateResult.command_results.map((item) => ({
+                    command: item.command,
+                    success: item.success,
+                    exit_code: item.exit_code,
+                    stdout: item.stdout,
+                    stderr: item.stderr,
+                    duration_ms: item.duration_ms,
+                  })),
+                  followup_needed: delegateResult.followup_needed,
+                  error: delegateResult.error ?? null,
+                  debug: buildDelegateDebugInfo(delegateResult.stdout, delegateResult.stderr) ?? null,
+                },
+              });
+            } catch (completeError) {
+              if (isRecoverableDelegateCompletionConflict(completeError)) {
+                await Promise.all([
                   refreshRuntimeState(),
                   refreshOrchestratorSessions(),
                   refreshOrchestratorScheduler(),
                   refreshOrchestratorMessages(session.session_id),
                 ]);
-	              return;
-	            }
-	            const merged =
-	              completeError instanceof Error
-	                ? `${message}; ${completeError.message}`
-                : message;
-            setError(merged);
-            return;
+                return;
+              }
+              throw completeError;
+            }
+            await Promise.all([
+              refreshRuntimeState(),
+              refreshOrchestratorSessions(),
+              refreshOrchestratorScheduler(),
+              refreshOrchestratorMessages(session.session_id),
+            ]);
+          } catch (err) {
+            if (isRecoverableDelegateCompletionConflict(err)) {
+              await Promise.all([
+                refreshRuntimeState(),
+                refreshOrchestratorSessions(),
+                refreshOrchestratorScheduler(),
+                refreshOrchestratorMessages(session.session_id),
+              ]);
+              return;
+            }
+            const message = err instanceof Error ? err.message : "Codex delegate 执行失败";
+            try {
+              await completeOrchestratorDelegate({
+                session_id: session.session_id,
+                task_id: runningTask.task_id,
+                delegate_run_id: delegateRunId,
+                result: {
+                  status: "failed",
+                  summary: "Codex delegate 执行失败",
+                  changed_files: [],
+                  command_results: [],
+                  followup_needed: [],
+                  error: message,
+                },
+              });
+              await Promise.all([
+                refreshRuntimeState(),
+                refreshOrchestratorSessions(),
+                refreshOrchestratorScheduler(),
+                refreshOrchestratorMessages(session.session_id),
+              ]);
+            } catch (completeError) {
+              if (isRecoverableDelegateCompletionConflict(completeError)) {
+                await Promise.all([
+                  refreshRuntimeState(),
+                  refreshOrchestratorSessions(),
+                  refreshOrchestratorScheduler(),
+                  refreshOrchestratorMessages(session.session_id),
+                ]);
+                return;
+              }
+              const merged =
+                completeError instanceof Error
+                  ? `${message}; ${completeError.message}`
+                  : message;
+              setError(merged);
+              return;
+            }
+            setError(message);
+          } finally {
+            delegateRunIdsRef.current.delete(delegateRunId);
           }
-          setError(message);
-        } finally {
-	          delegateRunIdsRef.current.delete(delegateRunId);
-	        }
-	      })();
+        })();
+      }
     }
   }, [sessionList]);
+
+  useEffect(() => {
+    return () => {
+      if (orchestratorSendNoticeTimerRef.current != null) {
+        window.clearTimeout(orchestratorSendNoticeTimerRef.current);
+      }
+    };
+  }, []);
 
   async function handleWake() {
     try {
@@ -749,25 +821,11 @@ export default function App() {
     setError("");
     setDraft("");
     setIsSending(true);
+    let pendingUserMessageId: string | null = null;
 
     try {
       if (isExplicitOrchestratorEntry(content)) {
-        if (!activeImportedProjectPath) {
-          throw new Error("进入主控前需要先在主控工作台导入并激活一个项目");
-        }
-
-        await ensureOrchestratorProjectPermission(activeImportedProjectPath);
-        const session = await createOrchestratorSession({
-          goal: content,
-          project_path: activeImportedProjectPath,
-        });
-        await generateOrchestratorPlan(session.session_id);
-        await Promise.all([
-          refreshRuntimeState(),
-          refreshOrchestratorSessions(),
-          refreshOrchestratorScheduler(),
-          refreshOrchestratorMessages(session.session_id),
-        ]);
+        await createAndOpenOrchestratorSession(content);
         handleNavigate("orchestrator");
         return;
       }
@@ -777,18 +835,95 @@ export default function App() {
         role: "user",
         content,
       };
+      pendingUserMessageId = userMessage.id;
 
-      setMessages((current) => [...current, userMessage]);
+      const normalizedAttachedFolders = normalizeAttachedPaths(attachedFolders);
+      const normalizedAttachedFiles = normalizeAttachedPaths(attachedFiles);
+      const normalizedAttachedImages = normalizeAttachedPaths(attachedImages);
+      const attachments = buildChatAttachments(
+        normalizedAttachedFolders,
+        normalizedAttachedFiles,
+        normalizedAttachedImages,
+      );
+      const requestBody: ChatRequestBody =
+        attachments.length > 0 ? { message: content, attachments } : { message: content };
+      setMessages((current) => [...current, { ...userMessage, retryRequestBody: requestBody }]);
       pendingRequestMessageRef.current = content;
-      await chat(content);
+      await chat(requestBody);
+      setAttachedFiles([]);
+      setAttachedImages([]);
+      setAttachedFolders([]);
     } catch (err) {
+      if (pendingUserMessageId) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === pendingUserMessageId ? { ...message, state: "failed" } : message,
+          ),
+        );
+      }
       setError(err instanceof Error ? err.message : "发送失败");
     } finally {
       setIsSending(false);
     }
   }
 
-  async function handleResume(message: ChatEntry) {
+  async function createAndOpenOrchestratorSession(goal: string) {
+    const normalizedGoal = goal.trim();
+    if (!normalizedGoal) {
+      throw new Error("会话目标不能为空");
+    }
+    if (!activeImportedProjectPath) {
+      throw new Error("进入主控前需要先在主控工作台导入并激活一个项目");
+    }
+
+    await ensureOrchestratorProjectPermission(activeImportedProjectPath);
+    const session = await createOrchestratorSession({
+      goal: normalizedGoal,
+      project_path: activeImportedProjectPath,
+    });
+    dispatchOrchestratorConsole({
+      type: "ensure_session_tab",
+      sessionId: session.session_id,
+      activate: true,
+    });
+    await generateOrchestratorPlan(session.session_id);
+    await Promise.all([
+      refreshRuntimeState(),
+      refreshOrchestratorSessions(),
+      refreshOrchestratorScheduler(),
+      refreshOrchestratorMessages(session.session_id),
+    ]);
+  }
+
+  const handleRetry = useCallback(async (message: ChatEntry) => {
+    if (message.role !== "user") {
+      return;
+    }
+
+    const requestBody: ChatRequestBody = message.retryRequestBody ?? { message: message.content };
+    setError("");
+    setIsSending(true);
+    setMessages((current) =>
+      current.map((entry) => (entry.id === message.id ? { ...entry, state: undefined } : entry)),
+    );
+
+    try {
+      pendingRequestMessageRef.current = requestBody.message;
+      await chat(requestBody);
+      setAttachedFiles([]);
+      setAttachedImages([]);
+      setAttachedFolders([]);
+    } catch (err) {
+      setMessages((current) =>
+        current.map((entry) => (entry.id === message.id ? { ...entry, state: "failed" } : entry)),
+      );
+      setError(err instanceof Error ? err.message : "发送失败");
+    } finally {
+      setIsSending(false);
+    }
+  }, []);
+
+  const handleResume = useCallback(async (message: ChatEntry) => {
     if (message.role !== "assistant" || !message.requestMessage) {
       return;
     }
@@ -808,7 +943,7 @@ export default function App() {
     } finally {
       setIsSending(false);
     }
-  }
+  }, []);
 
   async function handleUpdateGoalStatus(goalId: string, status: Goal["status"]) {
     try {
@@ -851,8 +986,15 @@ export default function App() {
     }
   }
 
+  async function refreshOrchestratorSessionHistory(filter: SessionHistoryFilter = orchestratorHistoryFilter) {
+    const historySessions = await fetchOrchestratorSessions(toOrchestratorSessionListFilters(filter));
+    setOrchestratorHistorySessions(normalizeOrchestratorSessions(historySessions));
+  }
+
   async function refreshOrchestratorSessions() {
-    setOrchestratorSessions(normalizeOrchestratorSessions(await fetchOrchestratorSessions()));
+    const allSessions = normalizeOrchestratorSessions(await fetchOrchestratorSessions());
+    setOrchestratorSessions(allSessions);
+    await refreshOrchestratorSessionHistory();
   }
 
   async function refreshOrchestratorScheduler() {
@@ -866,6 +1008,51 @@ export default function App() {
       ...current,
       [sessionId]: mergeOrchestratorMessages(current[sessionId] ?? [], refreshedMessages),
     }));
+  }
+
+  function handleOrchestratorHistoryFilterChange(next: SessionHistoryFilter) {
+    setOrchestratorHistoryFilter(next);
+  }
+
+  async function handleApplyOrchestratorHistoryFilter(next: SessionHistoryFilter) {
+    try {
+      setError("");
+      setOrchestratorHistoryFilter(next);
+      await refreshOrchestratorSessionHistory(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "会话历史筛选失败");
+    }
+  }
+
+  function handleOrchestratorDraftChange(value: string) {
+    if (!activeOrchestratorTab) {
+      return;
+    }
+    dispatchOrchestratorConsole({
+      type: "set_draft",
+      tabId: activeOrchestratorTab.tab_id,
+      draft: value,
+    });
+  }
+
+  function handleActivateOrchestratorTab(tabId: string) {
+    dispatchOrchestratorConsole({
+      type: "activate_tab",
+      tabId,
+    });
+  }
+
+  function handleCloseOrchestratorTab(tabId: string) {
+    dispatchOrchestratorConsole({
+      type: "close_tab",
+      tabId,
+    });
+  }
+
+  function handleCreateBlankOrchestratorTab() {
+    dispatchOrchestratorConsole({
+      type: "add_blank_tab",
+    });
   }
 
   async function handleApproveOrchestratorPlan(sessionId: string) {
@@ -913,6 +1100,11 @@ export default function App() {
     try {
       setError("");
       await activateOrchestratorSession(sessionId);
+      dispatchOrchestratorConsole({
+        type: "ensure_session_tab",
+        sessionId,
+        activate: true,
+      });
       await Promise.all([
         refreshRuntimeState(),
         refreshOrchestratorSessions(),
@@ -929,6 +1121,11 @@ export default function App() {
     try {
       setError("");
       await resumeOrchestratorSession(sessionId);
+      dispatchOrchestratorConsole({
+        type: "ensure_session_tab",
+        sessionId,
+        activate: true,
+      });
       await Promise.all([
         refreshRuntimeState(),
         refreshOrchestratorSessions(),
@@ -938,6 +1135,47 @@ export default function App() {
       handleNavigate("orchestrator");
     } catch (err) {
       setError(err instanceof Error ? err.message : "恢复主控会话失败");
+    }
+  }
+
+  async function handleCreateOrchestratorSession(goal: string) {
+    try {
+      setError("");
+      dispatchOrchestratorConsole({
+        type: "add_blank_tab",
+        draft: goal || "进入主控，处理当前项目",
+      });
+      handleNavigate("orchestrator");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "创建主控会话失败");
+    }
+  }
+
+  async function handleDeleteOrchestratorSession(sessionId: string) {
+    const confirmed = window.confirm("确认删除该历史会话吗？会同时清空该会话的消息记录。");
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError("");
+      await deleteOrchestratorSession(sessionId);
+      dispatchOrchestratorConsole({
+        type: "remove_session_tabs",
+        sessionId,
+      });
+      setOrchestratorMessagesBySession((current) => {
+        const next = { ...current };
+        delete next[sessionId];
+        return next;
+      });
+      await Promise.all([
+        refreshRuntimeState(),
+        refreshOrchestratorSessions(),
+        refreshOrchestratorScheduler(),
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除主控会话失败");
     }
   }
 
@@ -1055,43 +1293,189 @@ export default function App() {
     }
   }
 
-  function handleClearOrchestratorConsole() {
-    const sessionId = activeOrchestratorSessionId;
-    if (!sessionId) {
+  async function handlePickChatFolder() {
+    if (!isTauriRuntime()) {
+      setError("当前环境不是 Tauri 宿主，无法选择文件夹。");
       return;
     }
 
-    void (async () => {
-      try {
-        setError("");
-        await clearOrchestratorMessages(sessionId);
-        setOrchestratorMessagesBySession((current) => ({
-          ...current,
-          [sessionId]: [],
-        }));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "清空主控控制台失败");
+    setError("");
+    try {
+      const selected = await pickDirectory();
+      if (!selected) {
+        return;
       }
-    })();
+
+      const normalizedPath = normalizeProjectPath(selected);
+      await upsertChatFolderPermission(normalizedPath, "read_only");
+      setAttachedFolders((current) => (current.includes(normalizedPath) ? current : [...current, normalizedPath]));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "添加文件夹失败");
+    }
+  }
+
+  async function handlePickChatFiles() {
+    if (!isTauriRuntime()) {
+      setError("当前环境不是 Tauri 宿主，无法选择文件。");
+      return;
+    }
+
+    setError("");
+    try {
+      const selected = await pickFiles({
+        title: "选择附件文件",
+        filters: [
+          {
+            name: "文档与代码",
+            extensions: ["txt", "md", "markdown", "json", "yaml", "yml", "toml", "csv", "log", "pdf", "py", "ts", "tsx", "js", "jsx"],
+          },
+        ],
+        multiple: true,
+      });
+      if (selected.length === 0) {
+        return;
+      }
+
+      const normalized = normalizeAttachedPaths(selected);
+      const parentFolders = new Set(
+        normalized
+          .map((path) => resolveParentDirectory(path))
+          .filter((path): path is string => Boolean(path)),
+      );
+      for (const folderPath of parentFolders) {
+        await upsertChatFolderPermission(folderPath, "read_only");
+      }
+      setAttachedFiles((current) => mergeUniquePaths(current, normalized));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "添加文件失败");
+    }
+  }
+
+  async function handlePickChatImages() {
+    if (!isTauriRuntime()) {
+      setError("当前环境不是 Tauri 宿主，无法选择图片。");
+      return;
+    }
+
+    setError("");
+    try {
+      const selected = await pickFiles({
+        title: "选择图片附件",
+        filters: [
+          {
+            name: "图片",
+            extensions: ["png", "jpg", "jpeg", "webp", "gif"],
+          },
+        ],
+        multiple: true,
+      });
+      if (selected.length === 0) {
+        return;
+      }
+
+      const normalized = normalizeAttachedPaths(selected);
+      const parentFolders = new Set(
+        normalized
+          .map((path) => resolveParentDirectory(path))
+          .filter((path): path is string => Boolean(path)),
+      );
+      for (const folderPath of parentFolders) {
+        await upsertChatFolderPermission(folderPath, "read_only");
+      }
+      setAttachedImages((current) => mergeUniquePaths(current, normalized));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "添加图片失败");
+    }
+  }
+
+  function handleRemoveAttachedFolder(path: string) {
+    setAttachedFolders((current) => current.filter((item) => item !== path));
+  }
+
+  function handleRemoveAttachedFile(path: string) {
+    setAttachedFiles((current) => current.filter((item) => item !== path));
+  }
+
+  function handleRemoveAttachedImage(path: string) {
+    setAttachedImages((current) => current.filter((item) => item !== path));
+  }
+
+  function scheduleOrchestratorSendNotice(message: string) {
+    setOrchestratorSendNotice(message);
+    if (orchestratorSendNoticeTimerRef.current != null) {
+      window.clearTimeout(orchestratorSendNoticeTimerRef.current);
+    }
+    orchestratorSendNoticeTimerRef.current = window.setTimeout(() => {
+      setOrchestratorSendNotice("");
+      orchestratorSendNoticeTimerRef.current = null;
+    }, 1800);
   }
 
   async function sendOrchestratorMessage(
     content: string,
     options: { clearDraft: boolean },
   ): Promise<void> {
-    const sessionId = activeOrchestratorSessionId;
-    if (!sessionId || !content) {
+    const activeTab = activeOrchestratorTab;
+    const normalizedContent = content.trim();
+    if (!activeTab || !normalizedContent) {
       return;
     }
+    const guardScopeId = activeTab.type === "session" ? activeTab.session_id : activeTab.tab_id;
+
+    const nowMs = Date.now();
+    const blockReason = getOrchestratorSendBlockReason(
+      orchestratorSendGuardRef.current,
+      guardScopeId,
+      normalizedContent,
+      nowMs,
+    );
+    if (blockReason === "duplicate_inflight") {
+      scheduleOrchestratorSendNotice("同一条主控指令正在发送中，已为你拦截重复点击。");
+      return;
+    }
+    if (blockReason === "duplicate_cooldown") {
+      scheduleOrchestratorSendNotice("刚发送过同一条主控指令，已拦截重复提交。");
+      return;
+    }
+    if (blockReason !== null) {
+      return;
+    }
+    markOrchestratorSendStart(orchestratorSendGuardRef.current, guardScopeId, normalizedContent, nowMs);
 
     setError("");
+    setOrchestratorSendNotice("");
     if (options.clearDraft) {
-      setOrchestratorDraft("");
+      dispatchOrchestratorConsole({
+        type: "set_draft",
+        tabId: activeTab.tab_id,
+        draft: "",
+      });
     }
     setIsOrchestratorSending(true);
 
     try {
-      await chatWithOrchestrator(sessionId, content);
+      if (activeTab.type === "blank" && !activeImportedProjectPath) {
+        throw new Error("主控项目未激活，请先在会话历史侧栏设置主控项目。");
+      }
+      const response = await runOrchestratorConsoleCommand({
+        message: normalizedContent,
+        session_id: activeTab.type === "session" ? activeTab.session_id : undefined,
+        project_path: activeTab.type === "blank" ? activeImportedProjectPath : undefined,
+      });
+      const sessionId = response.session.session_id;
+      if (activeTab.type === "blank") {
+        dispatchOrchestratorConsole({
+          type: "convert_blank_to_session",
+          tabId: activeTab.tab_id,
+          sessionId,
+        });
+      } else {
+        dispatchOrchestratorConsole({
+          type: "ensure_session_tab",
+          sessionId,
+          activate: false,
+        });
+      }
       await Promise.all([
         refreshOrchestratorSessions(),
         refreshOrchestratorScheduler(),
@@ -1099,20 +1483,80 @@ export default function App() {
       ]);
     } catch (err) {
       if (options.clearDraft) {
-        setOrchestratorDraft(content);
+        dispatchOrchestratorConsole({
+          type: "set_draft",
+          tabId: activeTab.tab_id,
+          draft: normalizedContent,
+        });
       }
       setError(err instanceof Error ? err.message : "主控消息发送失败");
     } finally {
+      markOrchestratorSendFinish(orchestratorSendGuardRef.current, guardScopeId, normalizedContent);
       setIsOrchestratorSending(false);
     }
   }
 
+  async function handleStopOrchestratorDelegateTask(payload: StopDelegateTaskRequest): Promise<void> {
+    const stopReason = "主控手动停止运行任务";
+    try {
+      setError("");
+      try {
+        await stopCodexDelegate(payload.runId, stopReason);
+      } catch (tauriStopError) {
+        if (!isIgnorableLocalStopError(tauriStopError)) {
+          throw tauriStopError;
+        }
+      }
+      await stopOrchestratorDelegate({
+        session_id: payload.sessionId,
+        task_id: payload.taskId,
+        delegate_run_id: payload.runId,
+        reason: stopReason,
+      });
+      await Promise.all([
+        refreshRuntimeState(),
+        refreshOrchestratorSessions(),
+        refreshOrchestratorScheduler(),
+        refreshOrchestratorMessages(payload.sessionId),
+      ]);
+    } catch (err) {
+      if (isRecoverableDelegateStopConflict(err)) {
+        await Promise.all([
+          refreshRuntimeState(),
+          refreshOrchestratorSessions(),
+          refreshOrchestratorScheduler(),
+          refreshOrchestratorMessages(payload.sessionId),
+        ]);
+        return;
+      }
+      const message = err instanceof Error ? err.message : "停止 delegate 任务失败";
+      setError(message);
+      throw err;
+    }
+  }
+
+  async function dispatchOrchestratorAction(action: OrchestratorUIAction): Promise<void> {
+    if (action.type === "send_message") {
+      await sendOrchestratorMessage(action.message.trim(), { clearDraft: action.clearDraft });
+      return;
+    }
+    await handleStopOrchestratorDelegateTask(action.payload);
+  }
+
   async function handleSendOrchestratorMessage() {
-    await sendOrchestratorMessage(orchestratorDraft.trim(), { clearDraft: true });
+    await dispatchOrchestratorAction({
+      type: "send_message",
+      message: orchestratorDraft,
+      clearDraft: true,
+    });
   }
 
   async function handleSendOrchestratorQuickMessage(message: string) {
-    await sendOrchestratorMessage(message.trim(), { clearDraft: false });
+    await dispatchOrchestratorAction({
+      type: "send_message",
+      message,
+      clearDraft: false,
+    });
   }
 
   async function handleRollback(jobId: string) {
@@ -1333,6 +1777,9 @@ export default function App() {
             {error}
           </div>
         ) : null}
+        {route === "orchestrator" && orchestratorSendNotice ? (
+          <div className="notice-banner">{orchestratorSendNotice}</div>
+        ) : null}
 
         {route === "chat" ? (
           <ChatPanel
@@ -1342,12 +1789,22 @@ export default function App() {
             focusModeLabel={renderFocusModeLabel(state.focus_mode)}
             isSending={isSending}
             messages={messages}
+            attachedFolders={attachedFolders}
+            attachedFiles={attachedFiles}
+            attachedImages={attachedImages}
             modeLabel={isAwake ? "运行中" : "休眠中"}
             todayPlan={state.today_plan}
             activeGoals={goals.filter(g => g.status === "active")}
             onDraftChange={setDraft}
             onSend={handleSend}
+            onPickFolder={handlePickChatFolder}
+            onPickFile={handlePickChatFiles}
+            onPickImage={handlePickChatImages}
+            onRemoveAttachedFolder={handleRemoveAttachedFolder}
+            onRemoveAttachedFile={handleRemoveAttachedFile}
+            onRemoveAttachedImage={handleRemoveAttachedImage}
             onResume={handleResume}
+            onRetry={handleRetry}
             onCompleteGoal={(goalId) => handleUpdateGoalStatus(goalId, "completed")}
           />
         ) : route === "persona" ? (
@@ -1367,21 +1824,37 @@ export default function App() {
         ) : route === "orchestrator" ? (
           <OrchestratorPage
             sessions={sessionList}
+            historySessions={orchestratorHistorySessions}
+            workbenchTabs={orchestratorConsoleState.tabs}
+            activeWorkbenchTabId={orchestratorConsoleState.activeTabId}
             scheduler={orchestratorScheduler}
             messages={activeOrchestratorMessages}
             activeSessionId={activeOrchestratorSessionId}
             activeProjectPath={activeImportedProjectPath}
             draft={orchestratorDraft}
             isSending={isOrchestratorSending}
-            onDraftChange={setOrchestratorDraft}
+            historyFilter={orchestratorHistoryFilter}
+            onHistoryFilterChange={handleOrchestratorHistoryFilterChange}
+            onApplyHistoryFilter={handleApplyOrchestratorHistoryFilter}
+            onActivateWorkbenchTab={handleActivateOrchestratorTab}
+            onCloseWorkbenchTab={handleCloseOrchestratorTab}
+            onCreateBlankTab={handleCreateBlankOrchestratorTab}
+            onDraftChange={handleOrchestratorDraftChange}
             onSendMessage={handleSendOrchestratorMessage}
             onActivateSession={handleActivateOrchestratorSession}
             onApprovePlan={handleApproveOrchestratorPlan}
             onRejectPlan={handleRejectOrchestratorPlan}
             onResumeSession={handleResumeOrchestratorSession}
             onCancelSession={handleCancelOrchestrator}
+            onCreateSession={handleCreateOrchestratorSession}
+            onDeleteSession={handleDeleteOrchestratorSession}
             onSendQuickMessage={handleSendOrchestratorQuickMessage}
-            onClearConsole={handleClearOrchestratorConsole}
+            onStopDelegateTask={(payload) =>
+              dispatchOrchestratorAction({
+                type: "stop_task",
+                payload,
+              })
+            }
             projectRegistry={importedProjectRegistry}
             isUpdatingProjects={isUpdatingProjects}
             projectError={projectControlError}
@@ -1467,6 +1940,53 @@ async function restoreImportedProjectsToCore(registry: ReturnType<typeof loadImp
   for (const permission of permissionPlan) {
     await upsertChatFolderPermission(permission.path, permission.access_level);
   }
+}
+
+function normalizeAttachedPaths(paths: string[]): string[] {
+  const normalized: string[] = [];
+  for (const path of paths) {
+    const trimmed = path.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const normalizedPath = normalizeProjectPath(trimmed);
+    if (!normalized.includes(normalizedPath)) {
+      normalized.push(normalizedPath);
+    }
+  }
+  return normalized;
+}
+
+function mergeUniquePaths(current: string[], incoming: string[]): string[] {
+  const merged = [...current];
+  for (const path of incoming) {
+    if (!merged.includes(path)) {
+      merged.push(path);
+    }
+  }
+  return merged;
+}
+
+function buildChatAttachments(
+  folders: string[],
+  files: string[],
+  images: string[],
+): ChatAttachment[] {
+  return [
+    ...folders.map((path) => ({ type: "folder" as const, path })),
+    ...files.map((path) => ({ type: "file" as const, path })),
+    ...images.map((path) => ({ type: "image" as const, path })),
+  ];
+}
+
+function resolveParentDirectory(path: string): string | null {
+  const normalized = normalizeProjectPath(path);
+  const slashIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  if (slashIndex <= 0) {
+    return null;
+  }
+  const parent = normalized.slice(0, slashIndex);
+  return parent ? normalizeProjectPath(parent) : null;
 }
 
 function resolveRoute(hash: string): AppRoute {
@@ -1590,10 +2110,71 @@ function isRecoverableDelegateCompletionConflict(error: unknown): boolean {
     return false;
   }
   const message = error.message.toLowerCase();
-  if (!message.includes("request failed: 409")) {
+  if (message.includes("request failed: 409")) {
+    return true;
+  }
+  if (!message.includes("request failed: 400")) {
     return false;
   }
-  return true;
+  return (
+    message.includes("delegate task is not running")
+    || message.includes("delegate run id mismatch")
+    || message.includes("task is not running")
+  );
+}
+
+function isRecoverableDelegateStopConflict(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  if (message.includes("request failed: 409")) {
+    return true;
+  }
+  if (!message.includes("request failed: 400")) {
+    return false;
+  }
+  return (
+    message.includes("delegate task is not running")
+    || message.includes("delegate run id mismatch")
+    || message.includes("task is not running")
+  );
+}
+
+function toOrchestratorSessionListFilters(filter: SessionHistoryFilter): Parameters<typeof fetchOrchestratorSessions>[0] {
+  const statuses = filter.status.filter((item) => item.trim().length > 0);
+  return {
+    status: statuses.length > 0 ? statuses : undefined,
+    project: filter.project.trim() || undefined,
+    keyword: filter.keyword.trim() || undefined,
+    from: normalizeHistoryDateFilter(filter.from),
+    to: normalizeHistoryDateFilter(filter.to),
+  };
+}
+
+function normalizeHistoryDateFilter(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+  return parsed.toISOString();
+}
+
+function isIgnorableLocalStopError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("tauri runtime not detected")
+    || message.includes("当前环境不是 tauri 宿主")
+    || message.includes("delegate process not found")
+    || message.includes("already exited")
+  );
 }
 
 function upsertOrchestratorSession(

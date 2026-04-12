@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+import pytest
+from pydantic import ValidationError
+
 from app.memory.mempalace_repository import MemPalaceMemoryRepository
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
@@ -80,6 +83,21 @@ def test_repository_saves_event_and_returns_recent_items():
     assert recent[0].entry_id == event.entry_id
 
 
+def test_memory_event_defaults_knowledge_schema_fields():
+    event = MemoryEvent(kind="semantic", content="她学会了新的知识点")
+
+    assert event.namespace == "knowledge"
+    assert event.visibility == "internal"
+    assert event.knowledge_type is None
+    assert event.source_ref is None
+    assert event.version_tag is None
+
+
+def test_memory_event_rejects_invalid_namespace():
+    with pytest.raises(ValidationError):
+        MemoryEvent(kind="chat", role="user", content="hello", namespace="invalid_namespace")
+
+
 def test_mempalace_repository_persists_events_across_instances():
     collection = _FakeCollection()
 
@@ -130,6 +148,65 @@ def test_mempalace_repository_update_and_delete_event():
     deleted = repo.delete_event(event.entry_id)
     assert deleted is True
     assert repo.list_recent(limit=10) == []
+
+
+def test_in_memory_repository_soft_delete_filters_active_and_deleted_views():
+    repo = InMemoryMemoryRepository()
+    active = MemoryEvent(kind="chat", role="user", content="活跃记忆")
+    deleted = MemoryEvent(kind="chat", role="assistant", content="将被软删除")
+    repo.save_event(active)
+    repo.save_event(deleted)
+
+    assert repo.soft_delete_event(deleted.entry_id) is True
+
+    active_recent = repo.list_recent(limit=10, status="active")
+    deleted_recent = repo.list_recent(limit=10, status="deleted")
+    all_recent = repo.list_recent(limit=10, status="all")
+
+    assert [event.entry_id for event in active_recent] == [active.entry_id]
+    assert [event.entry_id for event in deleted_recent] == [deleted.entry_id]
+    assert {event.entry_id for event in all_recent} == {active.entry_id, deleted.entry_id}
+
+
+def test_mempalace_repository_soft_delete_and_restore():
+    collection = _FakeCollection()
+    repo = _build_mempalace_repo(collection)
+
+    event = MemoryEvent(kind="semantic", content="可恢复记忆")
+    repo.save_event(event)
+
+    assert repo.soft_delete_event(event.entry_id) is True
+    assert [item.entry_id for item in repo.list_recent(limit=10)] == []
+    assert [item.entry_id for item in repo.list_recent(limit=10, status="deleted")] == [event.entry_id]
+
+    assert repo.restore_event(event.entry_id) is True
+    assert [item.entry_id for item in repo.list_recent(limit=10)] == [event.entry_id]
+
+
+def test_mempalace_repository_persists_namespace_and_visibility_metadata():
+    collection = _FakeCollection()
+    repo = _build_mempalace_repo(collection)
+
+    event = MemoryEvent(
+        kind="semantic",
+        content="用户偏好晨间计划结构化输出",
+        knowledge_type="preference",
+        knowledge_tags=["preference", "user-profile"],
+        source_ref="conversation://2026-04-12/session-1",
+        version_tag="v1",
+        visibility="user",
+    )
+    repo.save_event(event)
+
+    payload = collection.get(ids=[f"memory_event:{event.entry_id}"], include=["metadatas"])
+    metadata = payload["metadatas"][0]
+
+    assert metadata["memory_namespace"] == "knowledge"
+    assert metadata["visibility"] == "user"
+    assert metadata["knowledge_type"] == "preference"
+    assert metadata["knowledge_tags"] == "preference,user-profile"
+    assert metadata["source_ref"] == "conversation://2026-04-12/session-1"
+    assert metadata["version_tag"] == "v1"
 
 
 def test_mempalace_repository_clear_all_removes_event_room_and_chat_room_rows():

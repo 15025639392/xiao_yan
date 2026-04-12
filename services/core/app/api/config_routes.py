@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_goal_admission_service
@@ -14,6 +14,14 @@ from app.capabilities.file_policy import (
 from app.config import LLMProviderConfig, get_llm_provider_configs
 from app.goals.admission import GoalAdmissionService
 from app.llm.gateway import ChatGateway
+from app.runtime_ext.bootstrap import reload_runtime
+from app.runtime_ext.data_backup import (
+    apply_testing_data_mode,
+    create_data_backup_archive,
+    get_data_environment_snapshot,
+    import_data_backup_archive,
+    is_testing_data_mode_enabled,
+)
 from app.runtime_ext.runtime_config import get_runtime_config
 
 MINIMAX_FALLBACK_MODELS = [
@@ -175,6 +183,41 @@ class ChatModelsResponse(BaseModel):
     current_model: str
 
 
+class DataEnvironmentResponse(BaseModel):
+    testing_mode: bool
+    mempalace_palace_path: str
+    mempalace_wing: str
+    mempalace_room: str
+    default_backup_directory: str
+    switch_backup_path: str | None = None
+
+
+class DataEnvironmentUpdateRequest(BaseModel):
+    testing_mode: bool
+    backup_before_switch: bool = True
+
+
+class DataBackupCreateRequest(BaseModel):
+    backup_path: str | None = None
+
+
+class DataBackupCreateResponse(BaseModel):
+    backup_path: str
+    created_at: str
+    included_keys: list[str]
+
+
+class DataBackupImportRequest(BaseModel):
+    backup_path: str = Field(..., min_length=1)
+    make_pre_import_backup: bool = True
+
+
+class DataBackupImportResponse(BaseModel):
+    imported_from: str
+    restored_keys: list[str]
+    pre_import_backup_path: str | None = None
+
+
 def build_config_router() -> APIRouter:
     router = APIRouter()
 
@@ -207,6 +250,17 @@ def build_config_router() -> APIRouter:
 
     def _capability_file_policy_response(payload: dict) -> CapabilityFilePolicyResponse:
         return CapabilityFilePolicyResponse.model_validate(payload)
+
+    def _data_environment_response(*, switch_backup_path: str | None = None) -> DataEnvironmentResponse:
+        snapshot = get_data_environment_snapshot()
+        return DataEnvironmentResponse(
+            testing_mode=snapshot.testing_mode,
+            mempalace_palace_path=snapshot.mempalace_palace_path,
+            mempalace_wing=snapshot.mempalace_wing,
+            mempalace_room=snapshot.mempalace_room,
+            default_backup_directory=snapshot.default_backup_directory,
+            switch_backup_path=switch_backup_path,
+        )
 
     @router.get("/config")
     def get_config() -> ConfigResponse:
@@ -504,6 +558,63 @@ def build_config_router() -> APIRouter:
             providers=provider_items,
             current_provider=config.chat_provider,
             current_model=config.chat_model,
+        )
+
+    @router.get("/config/data-environment")
+    def get_data_environment() -> DataEnvironmentResponse:
+        return _data_environment_response()
+
+    @router.put("/config/data-environment")
+    def update_data_environment(
+        request_body: DataEnvironmentUpdateRequest,
+        request: Request,
+    ) -> DataEnvironmentResponse:
+        current_mode = is_testing_data_mode_enabled()
+        if request_body.testing_mode == current_mode:
+            return _data_environment_response()
+
+        switch_backup_path: str | None = None
+        if request_body.backup_before_switch:
+            backup = create_data_backup_archive()
+            switch_backup_path = backup.backup_path
+
+        apply_testing_data_mode(request_body.testing_mode)
+        reload_runtime(request.app)
+        return _data_environment_response(switch_backup_path=switch_backup_path)
+
+    @router.post("/config/data-backup")
+    def create_data_backup(
+        request_body: DataBackupCreateRequest,
+    ) -> DataBackupCreateResponse:
+        backup = create_data_backup_archive(request_body.backup_path)
+        return DataBackupCreateResponse(
+            backup_path=backup.backup_path,
+            created_at=backup.created_at,
+            included_keys=backup.restored_keys,
+        )
+
+    @router.post("/config/data-backup/import")
+    def import_data_backup(
+        request_body: DataBackupImportRequest,
+        request: Request,
+    ) -> DataBackupImportResponse:
+        pre_import_backup_path: str | None = None
+        if request_body.make_pre_import_backup:
+            pre_import = create_data_backup_archive()
+            pre_import_backup_path = pre_import.backup_path
+
+        try:
+            restored_keys = import_data_backup_archive(request_body.backup_path)
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+        reload_runtime(request.app)
+        return DataBackupImportResponse(
+            imported_from=request_body.backup_path,
+            restored_keys=restored_keys,
+            pre_import_backup_path=pre_import_backup_path,
         )
 
     return router

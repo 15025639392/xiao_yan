@@ -182,6 +182,28 @@ export type OrchestratorTask = {
   result_summary?: string | null;
   artifacts?: Record<string, unknown>;
   delegate_run_id?: string | null;
+  assignment_source?: string | null;
+  assignment_directive?: string | null;
+  assignment_requested_objective?: string | null;
+  assignment_scope_override?: string[] | null;
+  assignment_resolved_scope_override?: string[] | null;
+  assignment_acceptance_override?: string[] | null;
+  assignment_priority_override?: number | null;
+  engineer_id?: number | null;
+  engineer_label?: string | null;
+  assigned_at?: string | null;
+  stall_level?: string | null;
+  stall_followup?: {
+    level?: string | null;
+    elapsed_minutes?: number | null;
+    manager_summary?: string | null;
+    engineer_prompt?: string | null;
+    suggestions?: string[];
+    followup_command?: string | null;
+  } | null;
+  last_stall_followup_at?: string | null;
+  last_intervened_at?: string | null;
+  intervention_suggestions?: string[];
   error?: string | null;
 };
 
@@ -235,9 +257,40 @@ export type OrchestratorChatSubmissionResult = {
   assistant_message_id: string;
 };
 
+export type OrchestratorConsoleCommandRequest = {
+  message: string;
+  session_id?: string | null;
+  project_path?: string | null;
+};
+
+export type OrchestratorConsoleCommandResponse = {
+  session: OrchestratorSession;
+  assistant_message_id: string;
+  created_session: boolean;
+};
+
 export type OrchestratorMessagesDeleteResponse = {
   session_id: string;
   deleted_count: number;
+};
+
+export type OrchestratorBlankTab = {
+  tab_id: string;
+  type: "blank";
+};
+
+export type OrchestratorSessionTab = {
+  tab_id: string;
+  type: "session";
+  session_id: string;
+};
+
+export type WorkbenchTab = OrchestratorBlankTab | OrchestratorSessionTab;
+
+export type OrchestratorSessionDeleteResponse = {
+  session_id: string;
+  deleted: boolean;
+  cleared_messages: number;
 };
 
 export type OrchestratorDelegateRun = {
@@ -247,6 +300,13 @@ export type OrchestratorDelegateRun = {
   status: string;
   started_at: string;
   completed_at?: string | null;
+};
+
+export type OrchestratorDelegateStopRequest = {
+  session_id: string;
+  task_id: string;
+  delegate_run_id: string;
+  reason?: string | null;
 };
 
 export type OrchestratorSessionCoordination = {
@@ -282,6 +342,14 @@ export type OrchestratorSession = {
   summary?: string | null;
   entered_at: string;
   updated_at: string;
+};
+
+export type OrchestratorSessionListFilters = {
+  status?: OrchestratorSession["status"][];
+  project?: string;
+  from?: string;
+  to?: string;
+  keyword?: string;
 };
 
 export type OrchestratorVerificationRollup = {
@@ -362,6 +430,18 @@ export type MacConsoleBootstrapStatus = {
 export type ChatSubmissionResult = {
   response_id: string | null;
   assistant_message_id: string;
+};
+
+export type ChatAttachment = {
+  type: "folder" | "file" | "image";
+  path: string;
+  name?: string | null;
+  mime_type?: string | null;
+};
+
+export type ChatRequestBody = {
+  message: string;
+  attachments?: ChatAttachment[];
 };
 
 export type FolderAccessLevel = "read_only" | "full_access";
@@ -627,8 +707,11 @@ export function sleep(): Promise<BeingState> {
   return post<BeingState>("/lifecycle/sleep");
 }
 
-export function chat(message: string): Promise<ChatSubmissionResult> {
-  return post<ChatSubmissionResult>("/chat", { message });
+export function chat(messageOrBody: string | ChatRequestBody): Promise<ChatSubmissionResult> {
+  if (typeof messageOrBody === "string") {
+    return post<ChatSubmissionResult>("/chat", { message: messageOrBody });
+  }
+  return post<ChatSubmissionResult>("/chat", messageOrBody);
 }
 
 export function createOrchestratorSession(body: {
@@ -638,8 +721,25 @@ export function createOrchestratorSession(body: {
   return post<OrchestratorSession>("/orchestrator/sessions", body);
 }
 
-export function fetchOrchestratorSessions(): Promise<OrchestratorSession[]> {
-  return get<OrchestratorSession[]>("/orchestrator/sessions");
+export function fetchOrchestratorSessions(filters?: OrchestratorSessionListFilters): Promise<OrchestratorSession[]> {
+  const params = new URLSearchParams();
+  for (const status of filters?.status ?? []) {
+    params.append("status", status);
+  }
+  if (filters?.project?.trim()) {
+    params.set("project", filters.project.trim());
+  }
+  if (filters?.from?.trim()) {
+    params.set("from", filters.from.trim());
+  }
+  if (filters?.to?.trim()) {
+    params.set("to", filters.to.trim());
+  }
+  if (filters?.keyword?.trim()) {
+    params.set("keyword", filters.keyword.trim());
+  }
+  const query = params.toString();
+  return get<OrchestratorSession[]>(query ? `/orchestrator/sessions?${query}` : "/orchestrator/sessions");
 }
 
 export function fetchOrchestratorScheduler(): Promise<OrchestratorSchedulerSnapshot> {
@@ -715,11 +815,23 @@ export function clearOrchestratorMessages(
   return del<OrchestratorMessagesDeleteResponse>(`/orchestrator/sessions/${sessionId}/messages`);
 }
 
+export function deleteOrchestratorSession(
+  sessionId: string,
+): Promise<OrchestratorSessionDeleteResponse> {
+  return del<OrchestratorSessionDeleteResponse>(`/orchestrator/sessions/${sessionId}`);
+}
+
 export function chatWithOrchestrator(
   sessionId: string,
   message: string,
 ): Promise<OrchestratorChatSubmissionResult> {
   return post<OrchestratorChatSubmissionResult>(`/orchestrator/sessions/${sessionId}/chat`, { message });
+}
+
+export function runOrchestratorConsoleCommand(
+  body: OrchestratorConsoleCommandRequest,
+): Promise<OrchestratorConsoleCommandResponse> {
+  return post<OrchestratorConsoleCommandResponse>("/orchestrator/console/command", body);
 }
 
 export function completeOrchestratorDelegate(body: {
@@ -729,6 +841,12 @@ export function completeOrchestratorDelegate(body: {
   result: OrchestratorDelegateResult;
 }): Promise<OrchestratorSession> {
   return post<OrchestratorSession>("/orchestrator/delegates/complete", body);
+}
+
+export function stopOrchestratorDelegate(
+  body: OrchestratorDelegateStopRequest,
+): Promise<OrchestratorSession> {
+  return post<OrchestratorSession>("/orchestrator/delegates/stop", body);
 }
 
 export function fetchChatFolderPermissions(): Promise<ChatFolderPermissionsResponse> {
@@ -1434,6 +1552,41 @@ export type AppConfig = {
   chat_read_timeout_seconds: number;
 };
 
+export type DataEnvironmentStatus = {
+  testing_mode: boolean;
+  mempalace_palace_path: string;
+  mempalace_wing: string;
+  mempalace_room: string;
+  default_backup_directory: string;
+  switch_backup_path?: string | null;
+};
+
+export type DataEnvironmentUpdatePayload = {
+  testing_mode: boolean;
+  backup_before_switch?: boolean;
+};
+
+export type DataBackupCreatePayload = {
+  backup_path?: string | null;
+};
+
+export type DataBackupCreateResponse = {
+  backup_path: string;
+  created_at: string;
+  included_keys: string[];
+};
+
+export type DataBackupImportPayload = {
+  backup_path: string;
+  make_pre_import_backup?: boolean;
+};
+
+export type DataBackupImportResponse = {
+  imported_from: string;
+  restored_keys: string[];
+  pre_import_backup_path?: string | null;
+};
+
 export type ChatModelProviderItem = {
   provider_id: string;
   provider_name: string;
@@ -1477,4 +1630,26 @@ export function updateConfig(data: Partial<AppConfig>): Promise<AppConfig> {
 /** 获取可选聊天模型列表 */
 export function fetchChatModels(): Promise<ChatModelsResponse> {
   return get<ChatModelsResponse>("/config/chat-models");
+}
+
+export function fetchDataEnvironmentStatus(): Promise<DataEnvironmentStatus> {
+  return get<DataEnvironmentStatus>("/config/data-environment");
+}
+
+export function updateDataEnvironmentStatus(
+  payload: DataEnvironmentUpdatePayload,
+): Promise<DataEnvironmentStatus> {
+  return put<DataEnvironmentStatus>("/config/data-environment", payload);
+}
+
+export function createDataBackup(
+  payload: DataBackupCreatePayload = {},
+): Promise<DataBackupCreateResponse> {
+  return post<DataBackupCreateResponse>("/config/data-backup", payload);
+}
+
+export function importDataBackup(
+  payload: DataBackupImportPayload,
+): Promise<DataBackupImportResponse> {
+  return post<DataBackupImportResponse>("/config/data-backup/import", payload);
 }

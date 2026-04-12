@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 import { OrchestratorPage } from "./OrchestratorPage";
 import type { OrchestratorPageProps } from "./OrchestratorPage";
+import { createEmptySessionHistoryFilter } from "../lib/orchestratorWorkbench";
 
 function buildProps(overrides: Partial<OrchestratorPageProps> = {}): OrchestratorPageProps {
   return {
@@ -12,7 +13,7 @@ function buildProps(overrides: Partial<OrchestratorPageProps> = {}): Orchestrato
         project_path: "/tmp/demo-project",
         project_name: "demo-project",
         goal: "进入主控，梳理 Tauri 启动链路",
-        status: "pending_plan_approval",
+        status: "running",
         plan: {
           objective: "进入主控，梳理 Tauri 启动链路",
           constraints: [],
@@ -38,18 +39,36 @@ function buildProps(overrides: Partial<OrchestratorPageProps> = {}): Orchestrato
               acceptance_commands: [],
               depends_on: [],
               delegate_target: "codex",
-              status: "pending",
+              status: "running",
+              delegate_run_id: "run-1",
+              engineer_id: 1,
+              engineer_label: "工程师1号(codex)",
+              assigned_at: "2026-04-08T12:00:00.000Z",
+              artifacts: {
+                engineer_id: 1,
+                engineer_label: "工程师1号(codex)",
+                assigned_at: "2026-04-08T12:00:00.000Z",
+              },
+              result_summary: "工程师1号(codex) 已接单，正在执行。",
             },
           ],
         },
-        delegates: [],
+        delegates: [
+          {
+            task_id: "task-analyze",
+            delegate_run_id: "run-1",
+            provider: "codex",
+            status: "running",
+            started_at: "2026-04-08T12:00:00.000Z",
+          },
+        ],
         coordination: {
-          mode: "idle",
+          mode: "running",
           priority_score: 101,
-          waiting_reason: "计划已生成，等待计划级审批。",
+          waiting_reason: "正在执行中",
         },
         verification: null,
-        summary: "等待审批",
+        summary: "推进中",
         entered_at: "2026-04-08T12:00:00.000Z",
         updated_at: "2026-04-08T12:10:00.000Z",
       },
@@ -73,13 +92,34 @@ function buildProps(overrides: Partial<OrchestratorPageProps> = {}): Orchestrato
         updated_at: "2026-04-08T13:10:00.000Z",
       },
     ],
+    historySessions: [
+      {
+        session_id: "session-2",
+        project_path: "/tmp/demo-project-2",
+        project_name: "demo-project-2",
+        goal: "进入主控，修复失败任务",
+        status: "failed",
+        plan: null,
+        delegates: [],
+        coordination: {
+          mode: "failed",
+          priority_score: 40,
+          waiting_reason: "delegate failed",
+          failure_category: "delegate_failure",
+        },
+        verification: null,
+        summary: "delegate failed",
+        entered_at: "2026-04-08T13:00:00.000Z",
+        updated_at: "2026-04-08T13:10:00.000Z",
+      },
+    ],
     scheduler: {
       max_parallel_sessions: 2,
-      running_sessions: 0,
-      available_slots: 2,
+      running_sessions: 1,
+      available_slots: 1,
       queued_sessions: 0,
       active_session_id: "session-1",
-      running_session_ids: [],
+      running_session_ids: ["session-1"],
       queued_session_ids: [],
       verification_rollup: {
         total_sessions: 2,
@@ -96,55 +136,27 @@ function buildProps(overrides: Partial<OrchestratorPageProps> = {}): Orchestrato
         role: "assistant",
         state: "completed",
         created_at: "2026-04-08T12:10:00.000Z",
-        blocks: [
-          {
-            type: "markdown",
-            text: "主控计划已经整理好了。",
-          },
-          {
-            type: "plan_card",
-            plan: {
-              objective: "进入主控，梳理 Tauri 启动链路",
-              constraints: [],
-              definition_of_done: ["说明入口链路", "给出改造建议"],
-              project_snapshot: {
-                project_path: "/tmp/demo-project",
-                project_name: "demo-project",
-                repository_root: "/tmp/demo-project",
-                languages: ["TypeScript", "Rust"],
-                package_manager: "pnpm",
-                framework: "tauri",
-                entry_files: ["src/main.ts", "src-tauri/src/main.rs"],
-                test_commands: ["pnpm test"],
-                build_commands: ["pnpm build"],
-                key_directories: ["src", "src-tauri"],
-              },
-              tasks: [
-                {
-                  task_id: "task-analyze",
-                  title: "梳理启动链路",
-                  kind: "analyze",
-                  scope_paths: ["src", "src-tauri"],
-                  acceptance_commands: [],
-                  depends_on: [],
-                  delegate_target: "codex",
-                  status: "pending",
-                },
-              ],
-            },
-          },
-          {
-            type: "approval_card",
-            summary: "计划待审批",
-            details: { status: "pending_plan_approval", can_approve: true },
-          },
-        ],
+        blocks: [{ type: "markdown", text: "主控计划已经整理好了。" }],
       },
     ],
+    workbenchTabs: [
+      {
+        tab_id: "session-session-1",
+        type: "session",
+        session_id: "session-1",
+      },
+    ],
+    activeWorkbenchTabId: "session-session-1",
     activeSessionId: "session-1",
     activeProjectPath: "/tmp/demo-project",
     draft: "",
     isSending: false,
+    historyFilter: createEmptySessionHistoryFilter(),
+    onHistoryFilterChange: vi.fn(),
+    onApplyHistoryFilter: vi.fn().mockResolvedValue(undefined),
+    onActivateWorkbenchTab: vi.fn(),
+    onCloseWorkbenchTab: vi.fn(),
+    onCreateBlankTab: vi.fn(),
     onDraftChange: vi.fn(),
     onSendMessage: vi.fn().mockResolvedValue(undefined),
     onActivateSession: vi.fn().mockResolvedValue(undefined),
@@ -152,19 +164,16 @@ function buildProps(overrides: Partial<OrchestratorPageProps> = {}): Orchestrato
     onRejectPlan: vi.fn().mockResolvedValue(undefined),
     onResumeSession: vi.fn().mockResolvedValue(undefined),
     onCancelSession: vi.fn().mockResolvedValue(undefined),
+    onCreateSession: vi.fn().mockResolvedValue(undefined),
+    onDeleteSession: vi.fn().mockResolvedValue(undefined),
     onSendQuickMessage: vi.fn().mockResolvedValue(undefined),
-    onClearConsole: vi.fn(),
+    onStopDelegateTask: vi.fn().mockResolvedValue(undefined),
     projectRegistry: {
       projects: [
         {
           path: "/tmp/demo-project",
           name: "demo-project",
           imported_at: "2026-04-08T10:00:00.000Z",
-        },
-        {
-          path: "/tmp/demo-project-2",
-          name: "demo-project-2",
-          imported_at: "2026-04-08T11:00:00.000Z",
         },
       ],
       active_project_path: "/tmp/demo-project",
@@ -179,367 +188,126 @@ function buildProps(overrides: Partial<OrchestratorPageProps> = {}): Orchestrato
   };
 }
 
-test("renders lite orchestrator workspace by default", () => {
+test("renders chat-first orchestrator workspace by default", () => {
   render(<OrchestratorPage {...buildProps()} />);
 
   expect(screen.getByText("主控计划已经整理好了。", { exact: false })).toBeInTheDocument();
-  expect(screen.getByText("执行计划")).toBeInTheDocument();
-  expect(screen.getAllByText("待审批").length).toBeGreaterThan(0);
   expect(screen.getByRole("textbox", { name: "主控输入" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "展开高级信息" })).toBeInTheDocument();
-  expect(screen.queryByRole("tab", { name: "计划" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("tab", { name: "会话池" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("tab", { name: "任务编排" })).not.toBeInTheDocument();
 });
 
-test("expands advanced info to show context and side tabs", () => {
+test("opens control drawer with auto-focused executor panel when execution is active", () => {
   render(<OrchestratorPage {...buildProps()} />);
 
   fireEvent.click(screen.getByRole("button", { name: "展开高级信息" }));
 
-  expect(screen.getByRole("button", { name: "收起高级信息" })).toBeInTheDocument();
-  expect(screen.getByText("当前焦点")).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: "项目主控" })).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: "计划" })).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: "会话池" })).toBeInTheDocument();
+  expect(screen.getByText("当前最需要关注")).toBeInTheDocument();
+  expect(screen.getByText("执行者")).toBeInTheDocument();
+  expect(screen.getByText("执行者 1 位")).toBeInTheDocument();
+  expect(screen.queryByRole("tab", { name: "执行者" })).not.toBeInTheDocument();
 });
 
-test("clears console content from chat-first header", () => {
-  const onClearConsole = vi.fn();
-  render(<OrchestratorPage {...buildProps({ onClearConsole })} />);
-
-  fireEvent.click(screen.getByRole("button", { name: "清空控制台内容" }));
-
-  expect(onClearConsole).toHaveBeenCalledTimes(1);
-});
-
-test("manages imported projects in orchestrator sidebar", async () => {
-  const onImportProject = vi.fn().mockResolvedValue(undefined);
-  const onActivateProject = vi.fn().mockResolvedValue(undefined);
-  const onRemoveProject = vi.fn().mockResolvedValue(undefined);
-  render(
-    <OrchestratorPage
-      {...buildProps({
-        onImportProject,
-        onActivateProject,
-        onRemoveProject,
-      })}
-    />,
-  );
+test("forwards stop action from executor panel", async () => {
+  const onStopDelegateTask = vi.fn().mockResolvedValue(undefined);
+  render(<OrchestratorPage {...buildProps({ onStopDelegateTask })} />);
 
   fireEvent.click(screen.getByRole("button", { name: "展开高级信息" }));
-  fireEvent.click(screen.getByRole("tab", { name: "项目主控" }));
-  fireEvent.click(screen.getByRole("button", { name: "导入项目" }));
-  fireEvent.click(screen.getAllByRole("button", { name: "移除" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: "停止任务" }));
 
   await waitFor(() => {
-    expect(onImportProject).toHaveBeenCalledTimes(1);
-    expect(onRemoveProject).toHaveBeenCalledTimes(1);
-  });
-
-  fireEvent.click(screen.getAllByRole("button", { name: "设为主控" })[1]);
-  await waitFor(() => {
-    expect(onActivateProject).toHaveBeenCalledWith("/tmp/demo-project-2");
+    expect(onStopDelegateTask).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      taskId: "task-analyze",
+      runId: "run-1",
+    });
   });
 });
 
-test("forwards approve action from chat-first header", () => {
-  const onApprovePlan = vi.fn().mockResolvedValue(undefined);
-  render(<OrchestratorPage {...buildProps({ onApprovePlan })} />);
-
-  fireEvent.click(screen.getAllByRole("button", { name: "批准并开工" })[0]);
-
-  expect(onApprovePlan).toHaveBeenCalledWith("session-1");
-});
-
-test("submits orchestrator chat input", async () => {
-  const onDraftChange = vi.fn();
-  const onSendMessage = vi.fn().mockResolvedValue(undefined);
-  render(<OrchestratorPage {...buildProps({ draft: "先解释当前推进到哪一步", onDraftChange, onSendMessage })} />);
-
-  fireEvent.click(screen.getByRole("button", { name: "发送主控消息" }));
-
-  await waitFor(() => {
-    expect(onSendMessage).toHaveBeenCalled();
-  });
-});
-
-test("fires inline quick action from message card", async () => {
-  const onSendQuickMessage = vi.fn().mockResolvedValue(undefined);
-  render(<OrchestratorPage {...buildProps({ onSendQuickMessage })} />);
-
-  fireEvent.click(screen.getByRole("button", { name: "先解释计划" }));
-
-  await waitFor(() => {
-    expect(onSendQuickMessage).toHaveBeenCalledWith("先解释一下这份计划为什么这么拆");
-  });
-});
-
-test("locks inline message quick action while sending", async () => {
-  let resolveSend: (() => void) | null = null;
-  const sendPromise = new Promise<void>((resolve) => {
-    resolveSend = resolve;
-  });
-  const onSendQuickMessage = vi.fn(() => sendPromise);
-  render(<OrchestratorPage {...buildProps({ onSendQuickMessage })} />);
-
-  fireEvent.click(screen.getByRole("button", { name: "先解释计划" }));
-  expect(onSendQuickMessage).toHaveBeenCalledTimes(1);
-  expect(onSendQuickMessage).toHaveBeenCalledWith("先解释一下这份计划为什么这么拆");
-  expect(screen.getByRole("button", { name: "发送中..." })).toBeDisabled();
-
-  fireEvent.click(screen.getByRole("button", { name: "发送中..." }));
-  expect(onSendQuickMessage).toHaveBeenCalledTimes(1);
-
-  resolveSend?.();
-
-  await waitFor(() => {
-    expect(screen.getByRole("button", { name: "先解释计划" })).not.toBeDisabled();
-  });
-});
-
-test("fires quick send from preset chips", async () => {
-  const onSendQuickMessage = vi.fn().mockResolvedValue(undefined);
-  render(<OrchestratorPage {...buildProps({ onSendQuickMessage })} />);
-
-  fireEvent.click(screen.getByRole("button", { name: "批准计划并开工" }));
-
-  await waitFor(() => {
-    expect(onSendQuickMessage).toHaveBeenCalledWith("批准计划并开工");
-  });
-});
-
-test("renders failed task recovery actions inline", async () => {
-  const onResumeSession = vi.fn().mockResolvedValue(undefined);
-  const onSendQuickMessage = vi.fn().mockResolvedValue(undefined);
+test("applies session history filters", async () => {
+  const onApplyHistoryFilter = vi.fn().mockResolvedValue(undefined);
   render(
     <OrchestratorPage
       {...buildProps({
-        activeSessionId: "session-2",
-        messages: [
+        onApplyHistoryFilter,
+        sessions: [
           {
-            message_id: "msg-failed-task",
             session_id: "session-2",
-            role: "assistant",
-            state: "completed",
-            created_at: "2026-04-08T13:10:00.000Z",
-            related_task_id: "task-implement",
-            blocks: [
-              {
-                type: "task_card",
-                task: {
-                  task_id: "task-implement",
-                  title: "修复 delegate 失败",
-                  kind: "implement",
-                  scope_paths: ["apps/desktop"],
-                  acceptance_commands: ["pnpm vitest run src/pages/OrchestratorPage.test.tsx"],
-                  depends_on: [],
-                  delegate_target: "codex",
-                  status: "failed",
-                  result_summary: "delegate failed",
-                  error: "codex did not produce a final output payload",
-                },
-              },
-            ],
-          },
-        ],
-        onResumeSession,
-        onSendQuickMessage,
-      })}
-    />,
-  );
-
-  fireEvent.click(screen.getByRole("button", { name: "重派失败环节" }));
-  fireEvent.click(screen.getByRole("button", { name: "解释失败原因" }));
-
-  await waitFor(() => {
-    expect(onResumeSession).toHaveBeenCalledWith("session-2");
-    expect(onSendQuickMessage).toHaveBeenCalledWith("解释一下任务「修复 delegate 失败」为什么失败，以及下一步建议");
-  });
-});
-
-test("renders dispatching live status with skeleton feedback", () => {
-  render(
-    <OrchestratorPage
-      {...buildProps({
-        messages: [],
-        sessions: [
-          {
-            ...buildProps().sessions[0],
-            status: "dispatching",
-            summary: "正在派发 analyze 与 implement 任务",
+            project_path: "/tmp/demo-project-2",
+            project_name: "demo-project-2",
+            goal: "进入主控，修复失败任务",
+            status: "completed",
+            plan: null,
+            delegates: [],
             coordination: {
-              mode: "ready",
-              priority_score: 101,
-              waiting_reason: "正在把可执行任务分配给 delegate。",
-              dispatch_slot: 1,
-            },
-          },
-          buildProps().sessions[1],
-        ],
-      })}
-    />,
-  );
-
-  expect(screen.getByText("正在派发任务")).toBeInTheDocument();
-  expect(screen.getByText("整理本轮可执行任务")).toBeInTheDocument();
-  expect(screen.getByText("等待 Codex delegate 接管")).toBeInTheDocument();
-});
-
-test("renders verifying live status with acceptance skeleton feedback", () => {
-  render(
-    <OrchestratorPage
-      {...buildProps({
-        messages: [],
-        sessions: [
-          {
-            ...buildProps().sessions[0],
-            status: "verifying",
-            summary: "正在统一验收当前计划",
-            coordination: {
-              mode: "verifying",
-              priority_score: 101,
-              waiting_reason: "统一验收已开始，正在执行计划内命令。",
-              dispatch_slot: 1,
-            },
-          },
-          buildProps().sessions[1],
-        ],
-      })}
-    />,
-  );
-
-  expect(screen.getByText("正在统一验收")).toBeInTheDocument();
-  expect(screen.getByText("执行计划内验收命令")).toBeInTheDocument();
-  expect(screen.getByText("准备最终摘要")).toBeInTheDocument();
-});
-
-test("renders preempted live status and can jump to blocking session", async () => {
-  let resolveActivate: (() => void) | null = null;
-  const activatePromise = new Promise<void>((resolve) => {
-    resolveActivate = resolve;
-  });
-  const onActivateSession = vi.fn(() => activatePromise);
-  render(
-    <OrchestratorPage
-      {...buildProps({
-        activeSessionId: "session-1",
-        onActivateSession,
-        sessions: [
-          {
-            ...buildProps().sessions[0],
-            status: "dispatching",
-            coordination: {
-              mode: "preempted",
+              mode: "completed",
               priority_score: 20,
-              waiting_reason: "当前会话被更高优先级项目抢占，等待执行槽位释放。",
-              queue_position: 2,
-              preempted_by_session_id: "session-2",
+              waiting_reason: "已完成",
             },
+            verification: null,
+            summary: "完成",
+            entered_at: "2026-04-08T13:00:00.000Z",
+            updated_at: "2026-04-08T13:10:00.000Z",
           },
-          buildProps().sessions[1],
         ],
-      })}
-    />,
-  );
-
-  const liveStatus = within(screen.getByLabelText("主控实时状态"));
-  expect(liveStatus.getByText("当前会话暂未占用执行槽位")).toBeInTheDocument();
-  expect(liveStatus.getByText("队列位置 #2")).toBeInTheDocument();
-  expect(liveStatus.getByText("预计等待原因")).toBeInTheDocument();
-  expect(liveStatus.getAllByText("当前会话被更高优先级项目抢占，等待执行槽位释放。").length).toBeGreaterThan(0);
-  expect(liveStatus.getByText("恢复后优先执行")).toBeInTheDocument();
-  expect(liveStatus.getByText("ANALYZE · 梳理启动链路")).toBeInTheDocument();
-
-  fireEvent.click(liveStatus.getByRole("button", { name: "查看抢占会话" }));
-  expect(onActivateSession).toHaveBeenCalledTimes(1);
-  expect(onActivateSession).toHaveBeenCalledWith("session-2");
-  expect(liveStatus.getByRole("button", { name: "切换中..." })).toBeDisabled();
-
-  fireEvent.click(liveStatus.getByRole("button", { name: "切换中..." }));
-  expect(onActivateSession).toHaveBeenCalledTimes(1);
-
-  resolveActivate?.();
-
-  await waitFor(() => {
-    expect(liveStatus.getByRole("button", { name: "查看抢占会话" })).not.toBeDisabled();
-  });
-});
-
-test("renders queued live status with next step preview", async () => {
-  let resolveSend: (() => void) | null = null;
-  const sendPromise = new Promise<void>((resolve) => {
-    resolveSend = resolve;
-  });
-  const onSendQuickMessage = vi.fn(() => sendPromise);
-  render(
-    <OrchestratorPage
-      {...buildProps({
-        messages: [],
-        onSendQuickMessage,
-        sessions: [
+        historySessions: [
           {
-            ...buildProps().sessions[0],
-            status: "dispatching",
+            session_id: "session-2",
+            project_path: "/tmp/demo-project-2",
+            project_name: "demo-project-2",
+            goal: "进入主控，修复失败任务",
+            status: "completed",
+            plan: null,
+            delegates: [],
             coordination: {
-              mode: "queued",
-              priority_score: 55,
-              waiting_reason: "当前并行上限已满，需要等待其他项目释放执行槽位。",
-              queue_position: 3,
+              mode: "completed",
+              priority_score: 20,
+              waiting_reason: "已完成",
             },
+            verification: null,
+            summary: "完成",
+            entered_at: "2026-04-08T13:00:00.000Z",
+            updated_at: "2026-04-08T13:10:00.000Z",
           },
-          buildProps().sessions[1],
         ],
+        scheduler: {
+          max_parallel_sessions: 2,
+          running_sessions: 0,
+          available_slots: 2,
+          queued_sessions: 0,
+          active_session_id: "session-2",
+          running_session_ids: [],
+          queued_session_ids: [],
+          verification_rollup: {
+            total_sessions: 1,
+            passed_sessions: 1,
+            failed_sessions: 0,
+            pending_sessions: 0,
+          },
+          policy_note: "最多并行 2 个项目会话",
+        },
+        workbenchTabs: [
+          {
+            tab_id: "session-session-2",
+            type: "session",
+            session_id: "session-2",
+          },
+        ],
+        activeWorkbenchTabId: "session-session-2",
+        activeSessionId: "session-2",
       })}
     />,
   );
-
-  const liveStatus = within(screen.getByLabelText("主控实时状态"));
-  expect(liveStatus.getByText("当前会话正在队列中等待")).toBeInTheDocument();
-  expect(liveStatus.getByText("队列位置 #3")).toBeInTheDocument();
-  expect(liveStatus.getByText("预计等待原因")).toBeInTheDocument();
-  expect(liveStatus.getAllByText("当前并行上限已满，需要等待其他项目释放执行槽位。").length).toBeGreaterThan(0);
-  expect(liveStatus.getByText("恢复后优先执行")).toBeInTheDocument();
-  expect(liveStatus.getByText("ANALYZE · 梳理启动链路")).toBeInTheDocument();
-
-  fireEvent.click(liveStatus.getByRole("button", { name: "继续推进这个任务" }));
-  expect(onSendQuickMessage).toHaveBeenCalledTimes(1);
-  expect(onSendQuickMessage).toHaveBeenCalledWith("继续推进任务「梳理启动链路」，并告诉我你准备怎么做");
-  expect(liveStatus.getByRole("button", { name: "推进中..." })).toBeDisabled();
-
-  fireEvent.click(liveStatus.getByRole("button", { name: "推进中..." }));
-  expect(onSendQuickMessage).toHaveBeenCalledTimes(1);
-
-  resolveSend?.();
-
-  await waitFor(() => {
-    expect(liveStatus.getByRole("button", { name: "继续推进这个任务" })).not.toBeDisabled();
-  });
-});
-
-test("switches to session pool and activates another session", async () => {
-  const onActivateSession = vi.fn().mockResolvedValue(undefined);
-  render(<OrchestratorPage {...buildProps({ onActivateSession })} />);
 
   fireEvent.click(screen.getByRole("button", { name: "展开高级信息" }));
-  fireEvent.click(screen.getByRole("tab", { name: "会话池" }));
-  fireEvent.click(screen.getByRole("button", { name: /demo-project-2/ }));
+  fireEvent.click(screen.getByRole("button", { name: "筛选" }));
 
   await waitFor(() => {
-    expect(onActivateSession).toHaveBeenCalledWith("session-2");
+    expect(onApplyHistoryFilter).toHaveBeenCalled();
   });
 });
 
-test("renders empty state before entering orchestrator", () => {
-  render(
-    <OrchestratorPage
-      {...buildProps({
-        sessions: [],
-        messages: [],
-        activeSessionId: null,
-        activeProjectPath: null,
-      })}
-    />,
-  );
-
-  expect(screen.getByText("等待显式进入主控模式")).toBeInTheDocument();
+test("does not render clear-console button in simplified header", () => {
+  render(<OrchestratorPage {...buildProps()} />);
+  expect(screen.queryByRole("button", { name: "清空控制台内容" })).not.toBeInTheDocument();
 });

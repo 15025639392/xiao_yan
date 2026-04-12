@@ -172,10 +172,15 @@ class OrchestratorConversationService:
         hub: AppRealtimeHub | None = None,
     ) -> None:
         summary = task.result_summary or task.error or task.title
+        blocks = [OrchestratorMessageBlock(type="task_card", task=task)]
+        stall_followup_block = self._build_stall_followup_block(task)
+        if stall_followup_block is not None:
+            blocks.append(stall_followup_block)
+        blocks.append(self.build_session_status_block(session))
         self.append_system_event(
             session,
             summary=f"{phase}：{summary}",
-            blocks=[OrchestratorMessageBlock(type="task_card", task=task), self.build_session_status_block(session)],
+            blocks=blocks,
             related_task_id=task.task_id,
             hub=hub,
         )
@@ -222,6 +227,49 @@ class OrchestratorConversationService:
             type="verification_card",
             verification=verification,
             summary=verification.summary,
+        )
+
+    def _build_stall_followup_block(self, task: OrchestratorTask) -> OrchestratorMessageBlock | None:
+        raw = task.stall_followup.model_dump(mode="json") if task.stall_followup is not None else task.artifacts.get("stall_followup")
+        if not isinstance(raw, dict):
+            return None
+
+        manager_summary = raw.get("manager_summary")
+        if not isinstance(manager_summary, str) or not manager_summary.strip():
+            manager_summary = "主控检测到该任务长时间无回执，已发起追问。"
+        level = raw.get("level")
+        if not isinstance(level, str) or not level.strip():
+            level = "soft_ping"
+        engineer_prompt = raw.get("engineer_prompt")
+        if not isinstance(engineer_prompt, str):
+            engineer_prompt = ""
+        suggestions = raw.get("suggestions")
+        if not isinstance(suggestions, list):
+            suggestions = []
+        normalized_suggestions = [item for item in suggestions if isinstance(item, str) and item.strip()]
+        followup_command = raw.get("followup_command")
+        if not isinstance(followup_command, str):
+            followup_command = ""
+        elapsed_minutes = raw.get("elapsed_minutes")
+        if not isinstance(elapsed_minutes, int):
+            elapsed_minutes = None
+        last_intervened_at = task.last_intervened_at.isoformat() if task.last_intervened_at is not None else None
+        stable_suggestions = [item for item in task.intervention_suggestions if item.strip()]
+
+        return OrchestratorMessageBlock(
+            type="stall_followup_card",
+            summary=manager_summary,
+            details={
+                "task_id": task.task_id,
+                "level": level,
+                "manager_summary": manager_summary,
+                "engineer_prompt": engineer_prompt.strip(),
+                "suggestions": normalized_suggestions,
+                "followup_command": followup_command.strip(),
+                "elapsed_minutes": elapsed_minutes,
+                "last_intervened_at": last_intervened_at,
+                "intervention_suggestions": stable_suggestions or normalized_suggestions,
+            },
         )
 
     def stream_assistant_reply(

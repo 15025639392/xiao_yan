@@ -415,6 +415,51 @@
   gap: var(--space-2);
 }
 
+.config-panel__backup-box {
+  margin-top: var(--space-3);
+}
+
+.config-panel__backup-input {
+  width: 100%;
+  padding: 8px var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.config-panel__backup-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-muted);
+}
+
+.config-panel__backup-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.config-panel__backup-actions {
+  margin-top: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.config-panel__backup-picker-actions {
+  margin-top: var(--space-2);
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.config-panel__backup-hint {
+  margin-top: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
 .config-panel__fs-btn {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
@@ -535,6 +580,24 @@
 }
 
 .config-panel__error-icon {
+  font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.config-panel__success-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--radius-md);
+  color: #10b981;
+  font-size: 0.8125rem;
+}
+
+.config-panel__success-icon {
   font-size: 0.875rem;
   flex-shrink: 0;
 }

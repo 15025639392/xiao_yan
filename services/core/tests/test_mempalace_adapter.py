@@ -111,6 +111,32 @@ def test_mempalace_adapter_search_context_returns_empty_when_only_current_room_h
     assert adapter.search_context("测试", exclude_current_room=True) == ""
 
 
+def test_mempalace_adapter_search_context_respects_max_hits_override():
+    captured_limits: list[int] = []
+
+    def _stub_search(query: str, palace_path: str, limit: int) -> dict:
+        captured_limits.append(limit)
+        return {
+            "results": [
+                {"text": "记忆A", "wing": "wing_xiaoyan", "room": "knowledge", "similarity": 0.9},
+                {"text": "记忆B", "wing": "wing_xiaoyan", "room": "knowledge", "similarity": 0.8},
+            ]
+        }
+
+    adapter = MemPalaceAdapter(
+        enabled=True,
+        palace_path="/tmp/palace",
+        results_limit=5,
+        search_backend=_stub_search,
+    )
+
+    rendered = adapter.search_context("测试", max_hits=1)
+
+    assert captured_limits == [1]
+    assert "记忆A" in rendered
+    assert "记忆B" not in rendered
+
+
 def test_mempalace_adapter_build_chat_messages_uses_turn_based_history_limit():
     adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace")
     latest_first_history = [
@@ -150,6 +176,26 @@ def test_mempalace_adapter_build_chat_messages_stops_when_budget_reached():
 
     # limit=2 -> max 4 historical messages, but token budget (600) keeps only 3.
     assert len(messages) == 4
+    assert messages[-1].content == "new"
+
+
+def test_mempalace_adapter_build_chat_messages_applies_recent_weight():
+    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace")
+    latest_first_history = [
+        {"id": "a4", "role": "assistant", "content": "a4", "created_at": None, "session_id": None},
+        {"id": "u4", "role": "user", "content": "u4", "created_at": None, "session_id": None},
+        {"id": "a3", "role": "assistant", "content": "a3", "created_at": None, "session_id": None},
+        {"id": "u3", "role": "user", "content": "u3", "created_at": None, "session_id": None},
+        {"id": "a2", "role": "assistant", "content": "a2", "created_at": None, "session_id": None},
+        {"id": "u2", "role": "user", "content": "u2", "created_at": None, "session_id": None},
+        {"id": "a1", "role": "assistant", "content": "a1", "created_at": None, "session_id": None},
+        {"id": "u1", "role": "user", "content": "u1", "created_at": None, "session_id": None},
+    ]
+    adapter.list_recent_chat_messages = lambda *, limit, offset=0: latest_first_history[:limit]  # type: ignore[method-assign]
+
+    messages = adapter.build_chat_messages("new", limit=6, recent_weight=0.5)
+
+    assert [message.content for message in messages[:-1]] == ["u2", "a2", "u3", "a3", "u4", "a4"]
     assert messages[-1].content == "new"
 
 
@@ -225,3 +271,35 @@ def test_mempalace_adapter_list_recent_chat_messages_keeps_session_id_from_metad
     assert recent[0]["session_id"] == "assistant_abc123"
     assert recent[1]["role"] == "user"
     assert recent[1]["session_id"] == "assistant_abc123"
+
+
+def test_mempalace_adapter_cross_room_source_probe_ignores_event_room():
+    class _FakeCollection:
+        def get(self, *, where=None, include=None, limit=None):
+            return {
+                "metadatas": [
+                    {"wing": "wing_xiaoyan", "room": "chat_exchange"},
+                    {"wing": "wing_xiaoyan", "room": "chat_exchange_events"},
+                ]
+            }
+
+    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace", room="chat_exchange")
+    adapter._get_collection = lambda create: _FakeCollection()  # type: ignore[method-assign]
+
+    assert adapter.has_cross_room_long_term_sources(cache_seconds=1) is False
+
+
+def test_mempalace_adapter_cross_room_source_probe_detects_non_event_room():
+    class _FakeCollection:
+        def get(self, *, where=None, include=None, limit=None):
+            return {
+                "metadatas": [
+                    {"wing": "wing_xiaoyan", "room": "chat_exchange"},
+                    {"wing": "wing_xiaoyan", "room": "knowledge"},
+                ]
+            }
+
+    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace", room="chat_exchange")
+    adapter._get_collection = lambda create: _FakeCollection()  # type: ignore[method-assign]
+
+    assert adapter.has_cross_room_long_term_sources(cache_seconds=1) is True

@@ -241,6 +241,15 @@ class OrchestratorDelegateResult(BaseModel):
     debug: OrchestratorDelegateDebugInfo | None = None
 
 
+class OrchestratorTaskStallFollowup(BaseModel):
+    level: str = "soft_ping"
+    elapsed_minutes: int | None = None
+    manager_summary: str | None = None
+    engineer_prompt: str | None = None
+    suggestions: list[str] = Field(default_factory=list)
+    followup_command: str | None = None
+
+
 class OrchestratorTask(BaseModel):
     task_id: str
     title: str
@@ -253,6 +262,21 @@ class OrchestratorTask(BaseModel):
     result_summary: str | None = None
     artifacts: dict[str, Any] = Field(default_factory=dict)
     delegate_run_id: str | None = None
+    assignment_source: str | None = None
+    assignment_directive: str | None = None
+    assignment_requested_objective: str | None = None
+    assignment_scope_override: list[str] | None = None
+    assignment_resolved_scope_override: list[str] | None = None
+    assignment_acceptance_override: list[str] | None = None
+    assignment_priority_override: int | None = None
+    engineer_id: int | None = None
+    engineer_label: str | None = None
+    assigned_at: datetime | None = None
+    stall_level: str | None = None
+    stall_followup: OrchestratorTaskStallFollowup | None = None
+    last_stall_followup_at: datetime | None = None
+    last_intervened_at: datetime | None = None
+    intervention_suggestions: list[str] = Field(default_factory=list)
     error: str | None = None
 
 
@@ -304,6 +328,13 @@ class OrchestratorDelegateCompletionPayload(BaseModel):
     task_id: str
     delegate_run_id: str
     result: OrchestratorDelegateResult
+
+
+class OrchestratorDelegateStopPayload(BaseModel):
+    session_id: str
+    task_id: str
+    delegate_run_id: str
+    reason: str | None = None
 
 
 class OrchestratorVerificationRollup(BaseModel):

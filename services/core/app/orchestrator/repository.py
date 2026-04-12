@@ -29,6 +29,14 @@ class OrchestratorSessionRepository:
             sessions = [session.model_copy(deep=True) for session in self._sessions.values()]
         return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
 
+    def delete(self, session_id: str) -> bool:
+        with self._lock:
+            removed = self._sessions.pop(session_id, None)
+            if removed is None:
+                return False
+            self._persist_locked()
+            return True
+
     def _load_sessions(self) -> dict[str, OrchestratorSession]:
         if self._storage_path is None or not self._storage_path.exists():
             return {}

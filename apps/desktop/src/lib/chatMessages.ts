@@ -28,8 +28,11 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
       incomingSessionId,
     );
     if (sessionMatchIndex >= 0) {
+      const currentEntry = merged[sessionMatchIndex];
+      const keepStreamingId = currentEntry.state === "streaming" || currentEntry.state === "failed";
       merged[sessionMatchIndex] = {
-        ...merged[sessionMatchIndex],
+        ...currentEntry,
+        id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
         role: message.role,
         content: message.content,
       };
@@ -62,8 +65,11 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
       previousIncomingUserContent,
     );
     if (inFlightMatchIndex >= 0) {
+      const currentEntry = merged[inFlightMatchIndex];
+      const keepStreamingId = currentEntry.state === "streaming" || currentEntry.state === "failed";
       merged[inFlightMatchIndex] = {
-        ...merged[inFlightMatchIndex],
+        ...currentEntry,
+        id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
         role: message.role,
         content: message.content,
       };
@@ -122,7 +128,24 @@ function findInFlightAssistantMatchIndex(
     if (matchedIndexes.has(index)) {
       continue;
     }
-    if (entry.role !== "assistant" || (entry.state !== "streaming" && entry.state !== "failed")) {
+    if (entry.role !== "assistant") {
+      continue;
+    }
+    const isInFlight = entry.state === "streaming" || entry.state === "failed";
+
+    // Runtime snapshots may arrive after local streaming is already finalized.
+    // If this assistant bubble is still a local one tied to the same request,
+    // reconcile it instead of appending a duplicate assistant reply.
+    if (
+      previousIncomingUserContent != null &&
+      entry.requestMessage != null &&
+      entry.requestMessage === previousIncomingUserContent &&
+      (isInFlight || entry.id.startsWith("assistant_"))
+    ) {
+      return index;
+    }
+
+    if (!isInFlight) {
       continue;
     }
     if (
@@ -147,6 +170,7 @@ export function upsertAssistantMessage(
   state?: ChatEntry["state"],
   requestMessage?: string,
   sequence?: number,
+  knowledgeReferences?: ChatEntry["knowledgeReferences"],
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (existing) {
@@ -157,6 +181,7 @@ export function upsertAssistantMessage(
             content: content || message.content,
             state,
             requestMessage: requestMessage ?? message.requestMessage,
+            knowledgeReferences: knowledgeReferences ?? message.knowledgeReferences,
             streamSequence: maxStreamSequence(message.streamSequence, sequence),
           }
         : message,
@@ -171,6 +196,7 @@ export function upsertAssistantMessage(
       content,
       state,
       requestMessage,
+      knowledgeReferences,
       streamSequence: sequence,
     },
   ];
@@ -244,6 +270,7 @@ export function finalizeAssistantMessage(
   assistantMessageId: string,
   content: string,
   sequence?: number,
+  knowledgeReferences?: ChatEntry["knowledgeReferences"],
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (existing) {
@@ -258,13 +285,22 @@ export function finalizeAssistantMessage(
             ...message,
             content: content || message.content,
             state: undefined,
+            knowledgeReferences: knowledgeReferences ?? message.knowledgeReferences,
             streamSequence: maxStreamSequence(message.streamSequence, sequence),
           }
         : message,
     );
   }
 
-  return upsertAssistantMessage(current, assistantMessageId, content, undefined, undefined, sequence);
+  return upsertAssistantMessage(
+    current,
+    assistantMessageId,
+    content,
+    undefined,
+    undefined,
+    sequence,
+    knowledgeReferences,
+  );
 }
 
 export function markAssistantMessageFailed(
@@ -309,4 +345,3 @@ function maxStreamSequence(currentSequence?: number, incomingSequence?: number):
   }
   return Math.max(currentSequence, incomingSequence);
 }
-

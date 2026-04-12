@@ -74,6 +74,61 @@
   line-height: 1.4;
 }
 
+.chat-message__knowledge-references {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.chat-message__knowledge-title {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  margin-bottom: var(--space-2);
+}
+
+.chat-message__knowledge-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chat-message__knowledge-item {
+  padding: var(--space-2);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.chat-message__knowledge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: 4px;
+}
+
+.chat-message__knowledge-source {
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.chat-message__knowledge-score {
+  color: var(--primary);
+  font-size: 0.75rem;
+}
+
+.chat-message__knowledge-excerpt {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
 /* Loading dots */
 .chat-message__dots {
   display: flex;

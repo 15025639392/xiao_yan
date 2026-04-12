@@ -1,4 +1,12 @@
-import type { MemoryEntryDisplay } from "../../lib/api";
+import type { ChatRequestBody, MemoryEntryDisplay } from "../../lib/api";
+
+export type KnowledgeReference = {
+  source: string;
+  wing: string;
+  room: string;
+  similarity: number | null;
+  excerpt: string;
+};
 
 export type ChatEntry = {
   id: string;
@@ -6,7 +14,8 @@ export type ChatEntry = {
   content: string;
   state?: "streaming" | "failed";
   requestMessage?: string;
+  retryRequestBody?: ChatRequestBody;
   relatedMemories?: MemoryEntryDisplay[];
+  knowledgeReferences?: KnowledgeReference[];
   streamSequence?: number;
 };
-

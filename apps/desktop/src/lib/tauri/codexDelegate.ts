@@ -33,6 +33,13 @@ export type CodexDelegateResponse = {
   timed_out: boolean;
 };
 
+export type CodexDelegateStopResponse = {
+  run_id: string;
+  status: "stopped" | "already_exited" | "not_found" | string;
+  stopped: boolean;
+  message: string;
+};
+
 function normalizeCodexDelegateInvokeError(raw: string): string {
   const message = raw.trim();
   if (!message) {
@@ -60,6 +67,19 @@ export async function runCodexDelegate(request: CodexDelegateRequest): Promise<C
         runId: request.runId,
         outputSchema: request.outputSchema,
         timeoutSeconds: request.timeoutSeconds,
+      },
+    });
+  } catch (error) {
+    throw new Error(normalizeCodexDelegateInvokeError(toTauriErrorMessage(error)));
+  }
+}
+
+export async function stopCodexDelegate(runId: string, reason?: string): Promise<CodexDelegateStopResponse> {
+  try {
+    return await invoke<CodexDelegateStopResponse>("stop_codex_delegate", {
+      request: {
+        runId,
+        reason,
       },
     });
   } catch (error) {

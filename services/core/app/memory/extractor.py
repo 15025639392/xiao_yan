@@ -3,15 +3,15 @@
 从对话中自动提取关键信息，生成结构化记忆
 """
 
-from datetime import datetime, timezone
-from typing import Optional, List
 import re
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from app.memory.models import (
+    MemoryEmotion,
     MemoryEntry,
     MemoryEvent,
     MemoryKind,
-    MemoryEmotion,
     MemoryStrength,
 )
 from app.memory.value_signals import extract_commitments, extract_user_boundaries
@@ -68,54 +68,75 @@ class MemoryExtractor:
         # 1. 识别用户偏好
         boundaries = extract_user_boundaries(content)
         for boundary in boundaries:
-            events.append(MemoryEvent(
-                kind=MemoryKind.FACT.value,
-                content=f"用户边界：{boundary}",
-                role="user",
-                created_at=datetime.now(timezone.utc),
-                source_context="value_signal:boundary",
-            ))
+            events.append(
+                self._build_event(
+                    kind=MemoryKind.FACT.value,
+                    content=f"用户边界：{boundary}",
+                    role="user",
+                    context=context,
+                    source_context="value_signal:boundary",
+                    knowledge_type="boundary",
+                    knowledge_tags=["boundary", "value-signal"],
+                )
+            )
 
         # 1. 识别用户偏好
         preferences = self._extract_preferences(content)
         for pref in preferences:
-            events.append(MemoryEvent(
-                kind=MemoryKind.SEMANTIC.value,
-                content=f"用户偏好：{pref}",
-                role="user",
-                created_at=datetime.now(timezone.utc),
-            ))
+            events.append(
+                self._build_event(
+                    kind=MemoryKind.SEMANTIC.value,
+                    content=f"用户偏好：{pref}",
+                    role="user",
+                    context=context,
+                    knowledge_type="preference",
+                    knowledge_tags=["preference", "user-profile"],
+                )
+            )
 
         # 2. 识别用户习惯
         habits = self._extract_habits(content)
         for habit in habits:
-            events.append(MemoryEvent(
-                kind=MemoryKind.SEMANTIC.value,
-                content=f"用户习惯：{habit}",
-                role="user",
-                created_at=datetime.now(timezone.utc),
-            ))
+            events.append(
+                self._build_event(
+                    kind=MemoryKind.SEMANTIC.value,
+                    content=f"用户习惯：{habit}",
+                    role="user",
+                    context=context,
+                    knowledge_type="habit",
+                    knowledge_tags=["habit", "user-profile"],
+                )
+            )
 
         # 3. 识别重要事件
         important_events = self._extract_important_events(content)
         for event_info in important_events:
-            events.append(MemoryEvent(
-                kind=MemoryKind.EPISODIC.value,
-                content=event_info['description'],
-                role="user",
-                created_at=datetime.now(timezone.utc),
-                source_context=f"emotion:{event_info.get('emotion', 'neutral')}",
-            ))
+            emotion = event_info.get("emotion", "neutral")
+            events.append(
+                self._build_event(
+                    kind=MemoryKind.EPISODIC.value,
+                    content=event_info["description"],
+                    role="user",
+                    context=context,
+                    source_context=f"emotion:{emotion}",
+                    knowledge_type="experience",
+                    knowledge_tags=["episodic", f"emotion:{emotion}"],
+                )
+            )
 
         # 4. 识别事实信息
         facts = self._extract_facts(content)
         for fact in facts:
-            events.append(MemoryEvent(
-                kind=MemoryKind.FACT.value,
-                content=fact,
-                role="user",
-                created_at=datetime.now(timezone.utc),
-            ))
+            events.append(
+                self._build_event(
+                    kind=MemoryKind.FACT.value,
+                    content=fact,
+                    role="user",
+                    context=context,
+                    knowledge_type="profile_fact",
+                    knowledge_tags=["profile", "fact"],
+                )
+            )
 
         return events
 
@@ -131,23 +152,31 @@ class MemoryExtractor:
         # 识别承诺和计划
         commitments = self._extract_commitments(content)
         for commitment in commitments:
-            events.append(MemoryEvent(
-                kind=MemoryKind.EPISODIC.value,
-                content=f"承诺/计划：{commitment}",
-                role="assistant",
-                created_at=datetime.now(timezone.utc),
-                source_context="value_signal:commitment",
-            ))
+            events.append(
+                self._build_event(
+                    kind=MemoryKind.EPISODIC.value,
+                    content=f"承诺/计划：{commitment}",
+                    role="assistant",
+                    context=context,
+                    source_context="value_signal:commitment",
+                    knowledge_type="commitment",
+                    knowledge_tags=["commitment", "assistant"],
+                )
+            )
 
         # 识别学习到的知识
         knowledge = self._extract_knowledge(content)
         for item in knowledge:
-            events.append(MemoryEvent(
-                kind=MemoryKind.SEMANTIC.value,
-                content=f"学习：{item}",
-                role="assistant",
-                created_at=datetime.now(timezone.utc),
-            ))
+            events.append(
+                self._build_event(
+                    kind=MemoryKind.SEMANTIC.value,
+                    content=f"学习：{item}",
+                    role="assistant",
+                    context=context,
+                    knowledge_type="learned_knowledge",
+                    knowledge_tags=["learning", "assistant"],
+                )
+            )
 
         return events
 
@@ -331,18 +360,24 @@ class MemoryExtractor:
 
     def _deduplicate_events(self, events: List[MemoryEvent]) -> List[MemoryEvent]:
         """去重"""
-        seen = set()
-        unique_events = []
+        unique_map: dict[tuple[str, str, str], MemoryEvent] = {}
 
         for event in events:
             content_key = event.content.strip()
             # 结合kind和内容作为唯一键
-            unique_key = (event.kind, content_key)
-            if unique_key not in seen:
-                seen.add(unique_key)
-                unique_events.append(event)
+            unique_key = (event.kind, content_key, event.role or "")
+            existing = unique_map.get(unique_key)
+            if existing is None:
+                unique_map[unique_key] = event
+                continue
 
-        return unique_events
+            better = self._pick_richer_event(existing, event)
+            merged_tags = self._normalize_tags((existing.knowledge_tags or []) + (event.knowledge_tags or []))
+            if merged_tags != better.knowledge_tags:
+                better = better.model_copy(update={"knowledge_tags": merged_tags})
+            unique_map[unique_key] = better
+
+        return list(unique_map.values())
 
     def _assess_importance(self, events: List[MemoryEvent]) -> List[MemoryEvent]:
         """评估重要性"""
@@ -370,3 +405,88 @@ class MemoryExtractor:
             # 由于MemoryEvent模型没有importance字段，这里暂时不实际应用
 
         return events
+
+    def _build_event(
+        self,
+        *,
+        kind: str,
+        content: str,
+        role: str,
+        context: Optional[dict],
+        source_context: str | None = None,
+        knowledge_type: str | None = None,
+        knowledge_tags: list[str] | None = None,
+    ) -> MemoryEvent:
+        source_ref, version_tag, visibility, normalized_tags = self._resolve_metadata(
+            context=context,
+            role=role,
+            knowledge_tags=knowledge_tags or [],
+        )
+        return MemoryEvent(
+            kind=kind,
+            content=content,
+            role=role,
+            created_at=datetime.now(timezone.utc),
+            source_context=source_context,
+            knowledge_type=knowledge_type,
+            knowledge_tags=normalized_tags,
+            source_ref=source_ref,
+            version_tag=version_tag,
+            visibility=visibility,
+        )
+
+    def _resolve_metadata(
+        self,
+        *,
+        context: Optional[dict],
+        role: str,
+        knowledge_tags: list[str],
+    ) -> tuple[str, str, str, list[str]]:
+        context = context or {}
+
+        raw_source_ref = context.get("source_ref")
+        source_ref = str(raw_source_ref).strip() if raw_source_ref else ""
+        if not source_ref:
+            source_ref = self._default_source_ref(context=context)
+
+        raw_version_tag = context.get("version_tag")
+        version_tag = str(raw_version_tag).strip() if raw_version_tag else "v1"
+
+        raw_visibility = str(context.get("visibility") or "").strip().lower()
+        visibility = raw_visibility if raw_visibility in {"internal", "user"} else "internal"
+
+        context_tags: list[str] = [f"role:{role}"]
+        topic = context.get("topic")
+        if topic:
+            context_tags.append(f"topic:{str(topic).strip()}")
+
+        normalized_tags = self._normalize_tags(knowledge_tags + context_tags)
+        return source_ref, version_tag, visibility, normalized_tags
+
+    def _default_source_ref(self, *, context: dict) -> str:
+        timestamp = str(context.get("timestamp") or "").strip()
+        if timestamp:
+            return f"dialogue://{timestamp}"
+        return "dialogue://runtime"
+
+    def _normalize_tags(self, tags: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw_tag in tags:
+            tag = str(raw_tag).strip().lower()
+            if not tag:
+                continue
+            if tag not in normalized:
+                normalized.append(tag)
+        return normalized
+
+    def _pick_richer_event(self, left: MemoryEvent, right: MemoryEvent) -> MemoryEvent:
+        def score(event: MemoryEvent) -> int:
+            return (
+                int(bool(event.source_ref))
+                + int(bool(event.source_context))
+                + int(bool(event.knowledge_type))
+                + len(event.knowledge_tags or [])
+                + int(bool(event.version_tag))
+            )
+
+        return right if score(right) > score(left) else left

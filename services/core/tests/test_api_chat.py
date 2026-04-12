@@ -1,7 +1,10 @@
+import base64
+import os
 import time
 import tempfile
 from pathlib import Path
 from threading import Thread
+from unittest.mock import patch
 
 import httpx
 from fastapi.testclient import TestClient
@@ -20,6 +23,7 @@ from app.main import (
     get_state_store,
 )
 from app.memory.models import MemoryEvent
+from app.memory.observability import KnowledgeObservabilityTracker
 from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore
 from app.runtime_ext.runtime_config import get_runtime_config
@@ -357,6 +361,29 @@ class RecursiveToolLoopGateway(StubGateway):
         }
 
 
+class ImageAwareStubGateway(StubGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.wire_api = "responses"
+
+    def stream_response(self, messages, instructions=None):
+        self.last_messages = list(messages)
+        self.last_instructions = instructions
+        yield {
+            "type": "response_started",
+            "response_id": "resp_image_test",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "已读取图片。",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_image_test",
+            "output_text": "已读取图片。",
+        }
+
+
 class StubMemPalaceAdapter:
     def __init__(
         self,
@@ -364,13 +391,19 @@ class StubMemPalaceAdapter:
         search_context_text: str = "",
         raise_on_search: bool = False,
         raise_on_record: bool = False,
+        has_cross_room_long_term_sources_value: bool = True,
         chat_history: list[dict[str, str | None]] | None = None,
     ) -> None:
         self.search_context_text = search_context_text
         self.raise_on_search = raise_on_search
         self.raise_on_record = raise_on_record
+        self.has_cross_room_long_term_sources_value = has_cross_room_long_term_sources_value
         self.search_queries: list[str] = []
         self.search_exclude_current_room_flags: list[bool] = []
+        self.search_max_hits: list[int | None] = []
+        self.search_retrieval_weights: list[float | None] = []
+        self.cross_room_probe_calls = 0
+        self.build_limits: list[int] = []
         self.record_calls: list[tuple[str, str, str | None]] = []
         self.record_attempts = 0
         self.chat_history = [
@@ -384,14 +417,29 @@ class StubMemPalaceAdapter:
             for index, item in enumerate(chat_history or [])
         ]
 
-    def search_context(self, query: str, *, exclude_current_room: bool = False) -> str:
+    def search_context(
+        self,
+        query: str,
+        *,
+        exclude_current_room: bool = False,
+        max_hits: int | None = None,
+        retrieval_weight: float | None = None,
+    ) -> str:
         self.search_queries.append(query)
         self.search_exclude_current_room_flags.append(exclude_current_room)
+        self.search_max_hits.append(max_hits)
+        self.search_retrieval_weights.append(retrieval_weight)
         if self.raise_on_search:
             raise RuntimeError("search boom")
         return self.search_context_text
 
+    def has_cross_room_long_term_sources(self, *, cache_seconds: int = 30) -> bool:
+        _ = cache_seconds
+        self.cross_room_probe_calls += 1
+        return self.has_cross_room_long_term_sources_value
+
     def build_chat_messages(self, user_message: str, *, limit: int) -> list[ChatMessage]:
+        self.build_limits.append(limit)
         recent = self.list_recent_chat_messages(limit=max(1, int(limit)), offset=0)
         messages = [ChatMessage(role=item["role"], content=item["content"]) for item in reversed(recent)]
         messages.append(ChatMessage(role="user", content=user_message))
@@ -586,6 +634,183 @@ def test_post_chat_streams_reply_over_realtime_socket():
         assert response.json()["assistant_message_id"] == started_event["payload"]["assistant_message_id"]
     finally:
         app.dependency_overrides.clear()
+
+
+def test_post_chat_streams_knowledge_references_when_long_term_context_exists():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter(
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/knowledge (相似度 0.88) 你喜欢结构化输出。"
+    )
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+    try:
+        client = TestClient(app)
+        with client.websocket_connect("/ws/app") as websocket:
+            assert websocket.receive_json()["type"] == "snapshot"
+
+            response_box: dict[str, object] = {}
+
+            def receive_until(event_type: str) -> dict:
+                while True:
+                    event = websocket.receive_json()
+                    if event["type"] == event_type:
+                        return event
+
+            def submit_chat() -> None:
+                response_box["response"] = client.post("/chat", json={"message": "继续按我的偏好来"})
+
+            worker = Thread(target=submit_chat)
+            worker.start()
+
+            started_event = receive_until("chat_started")
+            receive_until("chat_delta")
+            receive_until("chat_delta")
+            completed_event = receive_until("chat_completed")
+
+            worker.join(timeout=5)
+            response = response_box["response"]
+
+        assert started_event["payload"]["assistant_message_id"].startswith("assistant_")
+        assert completed_event["payload"]["knowledge_references"] == [
+            {
+                "source": "wing_xiaoyan/knowledge",
+                "wing": "wing_xiaoyan",
+                "room": "knowledge",
+                "similarity": 0.88,
+                "excerpt": "你喜欢结构化输出。",
+            }
+        ]
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_updates_knowledge_observability_metrics():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter(
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/knowledge (相似度 0.88) 你喜欢结构化输出。"
+    )
+    tracker = KnowledgeObservabilityTracker(max_samples=32)
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    original_tracker = getattr(app.state, "knowledge_observability_tracker", None)
+    try:
+        with TestClient(app) as client:
+            app.state.knowledge_observability_tracker = tracker
+            response = client.post("/chat", json={"message": "继续按我的偏好来"})
+            assert response.status_code == 200
+
+            snapshot = tracker.snapshot()
+            assert snapshot["latency"]["retrieval_ms"]["count"] == 1
+            assert snapshot["latency"]["chat_ms"]["count"] == 1
+            assert snapshot["quality"]["queries"] == 1
+            assert snapshot["quality"]["hit_queries"] == 1
+            assert snapshot["quality"]["avg_similarity"] == 0.88
+            assert snapshot["write"]["attempts"] == 1
+            assert snapshot["write"]["failures"] == 0
+    finally:
+        app.dependency_overrides.clear()
+        if original_tracker is None:
+            delattr(app.state, "knowledge_observability_tracker")
+        else:
+            app.state.knowledge_observability_tracker = original_tracker
+
+
+def test_post_chat_skips_cross_room_retrieval_when_no_long_term_sources():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter(
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/knowledge (相似度 0.88) 你喜欢结构化输出。",
+        has_cross_room_long_term_sources_value=False,
+    )
+    tracker = KnowledgeObservabilityTracker(max_samples=32)
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    original_tracker = getattr(app.state, "knowledge_observability_tracker", None)
+    try:
+        with TestClient(app) as client:
+            app.state.knowledge_observability_tracker = tracker
+            response = client.post("/chat", json={"message": "继续按我的偏好来"})
+            assert response.status_code == 200
+
+        assert mempalace_adapter.cross_room_probe_calls == 1
+        assert mempalace_adapter.search_queries == []
+        snapshot = tracker.snapshot()
+        assert snapshot["latency"]["retrieval_ms"]["count"] == 0
+        assert snapshot["quality"]["queries"] == 0
+    finally:
+        app.dependency_overrides.clear()
+        if original_tracker is None:
+            delattr(app.state, "knowledge_observability_tracker")
+        else:
+            app.state.knowledge_observability_tracker = original_tracker
+
+
+def test_knowledge_observability_alerts_require_min_samples():
+    tracker = KnowledgeObservabilityTracker(max_samples=64)
+
+    for _ in range(12):
+        tracker.record_retrieval(latency_ms=500.0, hit_count=0, failed=False)
+        tracker.record_chat_latency(3000.0)
+        tracker.record_write(success=True)
+
+    small_sample_snapshot = tracker.snapshot()
+    assert small_sample_snapshot["alerts"] == []
+
+    for _ in range(8):
+        tracker.record_retrieval(latency_ms=500.0, hit_count=0, failed=False)
+        tracker.record_chat_latency(3000.0)
+        tracker.record_write(success=True)
+
+    large_sample_snapshot = tracker.snapshot()
+    assert "retrieval_p95_above_120ms" in large_sample_snapshot["alerts"]
+    assert "chat_p95_above_1500ms" in large_sample_snapshot["alerts"]
+    assert "retrieval_hit_rate_below_40pct" in large_sample_snapshot["alerts"]
 
 
 def test_post_chat_resume_reuses_original_assistant_message_id_and_continues_stream():
@@ -924,6 +1149,46 @@ def test_post_chat_prefers_relevant_memory_over_only_recent_memory():
         app.dependency_overrides.clear()
 
 
+def test_post_chat_splits_recent_and_long_term_context_budget():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter(
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/knowledge (相似度 0.88) 你喜欢结构化输出。"
+    )
+    runtime_config = get_runtime_config()
+    original_context_limit = runtime_config.chat_context_limit
+    runtime_config.chat_context_limit = 10
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "继续按我的偏好来"})
+        assert response.status_code == 200
+
+        assert mempalace_adapter.build_limits == [7]
+        assert mempalace_adapter.search_max_hits == [3]
+        assert mempalace_adapter.search_retrieval_weights == [0.3]
+        assert mempalace_adapter.search_exclude_current_room_flags == [True]
+    finally:
+        runtime_config.chat_context_limit = original_context_limit
+        app.dependency_overrides.clear()
+
+
 def test_post_chat_includes_relevant_world_event_as_system_context():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
@@ -1227,7 +1492,14 @@ def test_post_chat_updates_current_thought_after_reply():
 
 def test_post_chat_can_override_mempalace_adapter_dependency():
     class _StubMemPalaceAdapter:
-        def search_context(self, query: str, *, exclude_current_room: bool = False) -> str:
+        def search_context(
+            self,
+            query: str,
+            *,
+            exclude_current_room: bool = False,
+            max_hits: int | None = None,
+            retrieval_weight: float | None = None,
+        ) -> str:
             return ""
 
         def build_chat_messages(self, user_message: str, *, limit: int) -> list[ChatMessage]:
@@ -1862,6 +2134,228 @@ def test_post_chat_write_file_tool_respects_read_only_folder_permission():
         config.clear_folder_permissions()
 
 
+def test_post_chat_attached_folder_is_added_to_permissions_and_prompt_context():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+    config = get_runtime_config()
+    original_permissions = config.list_folder_permissions()
+    config.clear_folder_permissions()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            attached_folder = str(Path(temp_dir).resolve())
+
+            client = TestClient(app)
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "帮我先看看这个项目目录",
+                    "attachments": [
+                        {
+                            "type": "folder",
+                            "path": attached_folder,
+                        }
+                    ],
+                },
+            )
+
+            assert response.status_code == 200
+            assert gateway.last_instructions is not None
+            assert "本轮用户附加了这些文件夹上下文" in gateway.last_instructions
+            assert f"- {attached_folder}" in gateway.last_instructions
+            assert "read_only（只读）" in gateway.last_instructions
+            assert (attached_folder, "read_only") in config.list_folder_permissions()
+    finally:
+        app.dependency_overrides.clear()
+        config.clear_folder_permissions()
+        for folder_path, access_level in original_permissions:
+            config.set_folder_permission(folder_path, access_level)
+
+
+def test_post_chat_attached_file_is_injected_into_user_context():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+    config = get_runtime_config()
+    original_permissions = config.list_folder_permissions()
+    config.clear_folder_permissions()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            attached_file = Path(temp_dir).resolve() / "notes.md"
+            attached_file.write_text("这是文件里的关键内容。", encoding="utf-8")
+
+            client = TestClient(app)
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "请基于附件回答",
+                    "attachments": [
+                        {
+                            "type": "file",
+                            "path": str(attached_file),
+                        }
+                    ],
+                },
+            )
+
+            assert response.status_code == 200
+            assert gateway.last_messages
+            last_content = gateway.last_messages[-1].content
+            assert isinstance(last_content, str)
+            assert "[用户附加文件内容摘录]" in last_content
+            assert "这是文件里的关键内容。" in last_content
+            assert (str(attached_file.parent), "read_only") in config.list_folder_permissions()
+    finally:
+        app.dependency_overrides.clear()
+        config.clear_folder_permissions()
+        for folder_path, access_level in original_permissions:
+            config.set_folder_permission(folder_path, access_level)
+
+
+def test_post_chat_rejects_image_attachment_for_nvidia_provider():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    config = get_runtime_config()
+    original_provider = config.chat_provider
+    original_model = config.chat_model
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+
+    try:
+        config.chat_provider = "nvidia"
+        config.chat_model = "meta/llama-3.1-70b-instruct"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir).resolve() / "sample.png"
+            image_path.write_bytes(
+                base64.b64decode(
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6XgnQAAAAASUVORK5CYII="
+                )
+            )
+
+            client = TestClient(app)
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "看下这张图",
+                    "attachments": [
+                        {
+                            "type": "image",
+                            "path": str(image_path),
+                        }
+                    ],
+                },
+            )
+
+            assert response.status_code == 400
+            assert "does not support image attachments" in response.json()["detail"]
+    finally:
+        config.chat_provider = original_provider
+        config.chat_model = original_model
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_accepts_image_attachment_for_supported_model():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = ImageAwareStubGateway()
+    config = get_runtime_config()
+    original_provider = config.chat_provider
+    original_model = config.chat_model
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+
+    try:
+        config.chat_provider = "openai"
+        config.chat_model = "gpt-5.4"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir).resolve() / "sample.png"
+            image_path.write_bytes(
+                base64.b64decode(
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6XgnQAAAAASUVORK5CYII="
+                )
+            )
+
+            client = TestClient(app)
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "看下这张图",
+                    "attachments": [
+                        {
+                            "type": "image",
+                            "path": str(image_path),
+                        }
+                    ],
+                },
+            )
+
+            assert response.status_code == 200
+            assert gateway.last_messages
+            last_content = gateway.last_messages[-1].content
+            assert isinstance(last_content, list)
+            assert any(
+                isinstance(item, dict) and item.get("type") == "input_image"
+                for item in last_content
+            )
+    finally:
+        config.chat_provider = original_provider
+        config.chat_model = original_model
+        app.dependency_overrides.clear()
+
+
 def test_post_chat_uses_chat_model_from_runtime_config():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
@@ -1888,4 +2382,127 @@ def test_post_chat_uses_chat_model_from_runtime_config():
         assert gateway.model == "gpt-5.4-mini"
     finally:
         config.chat_model = original_model
+        app.dependency_overrides.clear()
+
+
+def test_get_chat_skills_returns_discovered_skills():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        skill_root = Path(temp_dir).resolve()
+        skill_dir = skill_root / "requirement-workflow"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: requirement-workflow\n"
+            "description: 需求分析工作流\n"
+            "---\n\n"
+            "# Requirement Workflow\n"
+            "先做需求澄清再输出方案。\n",
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {"CHAT_SKILL_ROOTS": str(skill_root)}):
+            client = TestClient(app)
+            response = client.get("/chat/skills")
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["skills"]
+            matched = next((item for item in payload["skills"] if item["name"] == "requirement-workflow"), None)
+            assert matched is not None
+            assert matched["description"] == "需求分析工作流"
+            assert matched["path"] == str((skill_dir / "SKILL.md").resolve())
+            assert "需求:" in matched["trigger_prefixes"]
+
+
+def test_post_chat_injects_skill_instructions_when_message_mentions_skill():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            skill_root = Path(temp_dir).resolve()
+            skill_dir = skill_root / "requirement-workflow"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\n"
+                "name: requirement-workflow\n"
+                "description: 需求分析工作流\n"
+                "---\n\n"
+                "# Requirement Workflow\n"
+                "必须先澄清约束，再给方案。\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"CHAT_SKILL_ROOTS": str(skill_root)}):
+                client = TestClient(app)
+                response = client.post("/chat", json={"message": "请用 $requirement-workflow 分析这个需求"})
+                assert response.status_code == 200
+                assert gateway.last_instructions is not None
+                assert "[Skills]" in gateway.last_instructions
+                assert "[Skill: requirement-workflow]" in gateway.last_instructions
+                assert "必须先澄清约束，再给方案。" in gateway.last_instructions
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_injects_skill_instructions_when_message_matches_prefix_trigger():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            skill_root = Path(temp_dir).resolve()
+            skill_dir = skill_root / "requirement-workflow"
+            skill_dir.mkdir(parents=True, exist_ok=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\n"
+                "name: requirement-workflow\n"
+                "description: 需求分析工作流\n"
+                "---\n\n"
+                "# Requirement Workflow\n"
+                "先确认目标，再拆解范围。\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"CHAT_SKILL_ROOTS": str(skill_root)}):
+                client = TestClient(app)
+                response = client.post("/chat", json={"message": "需求: 帮我拆解地图知识库方案"})
+                assert response.status_code == 200
+                assert gateway.last_instructions is not None
+                assert "[Skill: requirement-workflow]" in gateway.last_instructions
+                assert "先确认目标，再拆解范围。" in gateway.last_instructions
+    finally:
         app.dependency_overrides.clear()

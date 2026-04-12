@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import type { RelationshipSummary } from "../../lib/api";
 import { MarkdownMessage } from "../MarkdownMessage";
 import type { ChatEntry } from "./chatTypes";
@@ -12,10 +13,11 @@ type ChatMessagesProps = {
   showMemoryContext: Set<string>;
   onToggleMemoryContext: (messageId: string) => void;
   onResume?: (message: ChatEntry) => void;
+  onRetry?: (message: ChatEntry) => void;
   onDraftChange: (value: string) => void;
 };
 
-export function ChatMessages({
+export const ChatMessages = memo(function ChatMessages({
   assistantName,
   messages,
   relationship,
@@ -23,11 +25,16 @@ export function ChatMessages({
   showMemoryContext,
   onToggleMemoryContext,
   onResume,
+  onRetry,
   onDraftChange,
 }: ChatMessagesProps) {
-  const latestAssistantMessageId = [...messages]
-    .reverse()
-    .find((message) => message.role === "assistant" && message.state !== "failed")?.id;
+  const latestAssistantMessageId = useMemo(
+    () =>
+      [...messages]
+        .reverse()
+        .find((message) => message.role === "assistant" && message.state !== "failed")?.id,
+    [messages],
+  );
 
   if (messages.length === 0) {
     return (
@@ -76,6 +83,32 @@ export function ChatMessages({
             {message.role === "assistant" && message.id === latestAssistantMessageId ? (
               <ChatMessageResponseReference relationship={relationship} />
             ) : null}
+
+            {message.role === "assistant" &&
+            message.knowledgeReferences &&
+            message.knowledgeReferences.length > 0 ? (
+              <div className="chat-message__knowledge-references" aria-label="知识来源">
+                <span className="chat-message__knowledge-title">知识来源</span>
+                <ul className="chat-message__knowledge-list">
+                  {message.knowledgeReferences.map((reference, index) => (
+                    <li
+                      key={`${message.id}-knowledge-reference-${index}`}
+                      className="chat-message__knowledge-item"
+                    >
+                      <div className="chat-message__knowledge-head">
+                        <span className="chat-message__knowledge-source">{reference.source}</span>
+                        {typeof reference.similarity === "number" ? (
+                          <span className="chat-message__knowledge-score">
+                            相似度 {reference.similarity.toFixed(2)}
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="chat-message__knowledge-excerpt">{reference.excerpt}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           {message.role === "assistant" &&
@@ -98,6 +131,17 @@ export function ChatMessages({
               继续生成
             </button>
           ) : null}
+
+          {message.role === "user" && message.state === "failed" ? (
+            <button
+              className="chat-page__action-btn"
+              onClick={() => onRetry?.(message)}
+              type="button"
+              disabled={isSending}
+            >
+              重发
+            </button>
+          ) : null}
         </article>
       ))}
 
@@ -114,4 +158,6 @@ export function ChatMessages({
       ) : null}
     </>
   );
-}
+});
+
+ChatMessages.displayName = "ChatMessages";

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from logging import getLogger
 from pathlib import Path
+from typing import Literal
 from typing import Callable
 
 from app.memory.models import MemoryEvent
@@ -35,15 +37,16 @@ class MemPalaceMemoryRepository:
         self._fallback_events: dict[str, MemoryEvent] = {}
 
     def save_event(self, event: MemoryEvent) -> None:
+        normalized_event = MemoryEvent.model_validate(event.model_dump())
         collection = self._get_collection(create=True)
         if collection is None:
-            self._fallback_events[event.entry_id] = event
+            self._fallback_events[normalized_event.entry_id] = normalized_event
             self._notify_change()
             return
 
-        doc_id = self._doc_id(event.entry_id)
-        payload = event.model_dump_json()
-        metadata = self._build_metadata(event)
+        doc_id = self._doc_id(normalized_event.entry_id)
+        payload = normalized_event.model_dump_json()
+        metadata = self._build_metadata(normalized_event)
 
         collection.upsert(
             ids=[doc_id],
@@ -52,18 +55,38 @@ class MemPalaceMemoryRepository:
         )
         self._notify_change()
 
-    def list_recent(self, limit: int, offset: int = 0) -> list[MemoryEvent]:
-        events = self._read_all_events()
+    def list_recent(
+        self,
+        limit: int,
+        offset: int = 0,
+        *,
+        status: Literal["active", "deleted", "all"] = "active",
+        kind: str | None = None,
+        namespace: str | None = None,
+        visibility: Literal["internal", "user"] | None = None,
+        query: str | None = None,
+    ) -> list[MemoryEvent]:
+        events = self._filter_events(
+            self._read_all_events(),
+            status=status,
+            kind=kind,
+            namespace=namespace,
+            visibility=visibility,
+            query=query,
+        )
         return _slice_recent(events, limit=limit, offset=offset)
 
     def list_recent_chat(self, limit: int, offset: int = 0) -> list[MemoryEvent]:
         chat_events = [
-            event for event in self._read_all_events() if event.kind == "chat" and event.role in {"user", "assistant"}
+            event
+            for event in self._read_all_events()
+            if event.deleted_at is None and event.kind == "chat" and event.role in {"user", "assistant"}
         ]
         return _slice_recent(chat_events, limit=limit, offset=offset)
 
     def search_relevant(self, query: str, limit: int) -> list[MemoryEvent]:
-        return _search_relevant_events(self._read_all_events(), query, limit)
+        active_events = [event for event in self._read_all_events() if event.deleted_at is None]
+        return _search_relevant_events(active_events, query, limit)
 
     def delete_event(self, event_id: str) -> bool:
         collection = self._get_collection(create=False)
@@ -89,7 +112,8 @@ class MemPalaceMemoryRepository:
             current = self._fallback_events.get(event_id)
             if current is None:
                 return False
-            self._fallback_events[event_id] = current.model_copy(update=kwargs)
+            updated = current.model_copy(update=kwargs)
+            self._fallback_events[event_id] = MemoryEvent.model_validate(updated.model_dump())
             self._notify_change()
             return True
 
@@ -109,10 +133,11 @@ class MemPalaceMemoryRepository:
             return False
 
         updated = event.model_copy(update=kwargs)
+        normalized_updated = MemoryEvent.model_validate(updated.model_dump())
         collection.upsert(
             ids=[doc_id],
-            documents=[updated.model_dump_json()],
-            metadatas=[self._build_metadata(updated)],
+            documents=[normalized_updated.model_dump_json()],
+            metadatas=[self._build_metadata(normalized_updated)],
         )
         self._notify_change()
         return True
@@ -141,6 +166,12 @@ class MemPalaceMemoryRepository:
         collection.delete(ids=ids)
         self._notify_change()
         return len(ids)
+
+    def soft_delete_event(self, event_id: str) -> bool:
+        return self.update_event(event_id, deleted_at=datetime.now(timezone.utc))
+
+    def restore_event(self, event_id: str) -> bool:
+        return self.update_event(event_id, deleted_at=None)
 
     def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
         self._on_change = callback
@@ -184,10 +215,17 @@ class MemPalaceMemoryRepository:
             "room": self.room,
             "entry_id": event.entry_id,
             "kind": event.kind,
+            "memory_namespace": event.namespace or "",
+            "visibility": event.visibility,
+            "knowledge_type": event.knowledge_type or "",
+            "knowledge_tags": ",".join(event.knowledge_tags),
+            "source_ref": event.source_ref or "",
+            "version_tag": event.version_tag or "",
             "role": event.role or "",
             "session_id": event.session_id or "",
             "source_context": event.source_context or "",
             "created_at": event.created_at.isoformat(),
+            "deleted_at": event.deleted_at.isoformat() if event.deleted_at is not None else "",
         }
 
     def _where_filter(self) -> dict:
@@ -232,3 +270,34 @@ class MemPalaceMemoryRepository:
     def _notify_change(self) -> None:
         if self._on_change is not None:
             self._on_change()
+
+    def _filter_events(
+        self,
+        events: list[MemoryEvent],
+        *,
+        status: Literal["active", "deleted", "all"],
+        kind: str | None,
+        namespace: str | None,
+        visibility: Literal["internal", "user"] | None,
+        query: str | None,
+    ) -> list[MemoryEvent]:
+        normalized_kind = (kind or "").strip().lower()
+        normalized_namespace = (namespace or "").strip().lower()
+        normalized_query = (query or "").strip().lower()
+
+        filtered: list[MemoryEvent] = []
+        for event in events:
+            if status == "active" and event.deleted_at is not None:
+                continue
+            if status == "deleted" and event.deleted_at is None:
+                continue
+            if normalized_kind and event.kind.strip().lower() != normalized_kind:
+                continue
+            if normalized_namespace and (event.namespace or "").strip().lower() != normalized_namespace:
+                continue
+            if visibility is not None and event.visibility != visibility:
+                continue
+            if normalized_query and normalized_query not in event.content.lower():
+                continue
+            filtered.append(event)
+        return filtered

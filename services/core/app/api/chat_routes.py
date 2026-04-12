@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import base64
 import json
+import mimetypes
+import os
+import re
 from logging import getLogger
 from pathlib import Path
+from time import perf_counter
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
 import httpx
@@ -21,12 +26,14 @@ from app.capabilities.models import CapabilityDispatchRequest, RiskLevel
 from app.capabilities.runtime import dispatch_and_wait, has_recent_capability_executor
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import (
+    ChatAttachment,
     ChatMessage,
     ChatRequest,
     ChatResumeRequest,
     ChatSubmissionResult,
 )
 from app.memory.mempalace_adapter import MemPalaceAdapter
+from app.memory.observability import KnowledgeObservabilityTracker
 from app.memory.repository import MemoryRepository
 from app.memory.models import MemoryEvent
 from app.persona.expression_mapper import ExpressionStyleMapper
@@ -98,6 +105,23 @@ CHAT_FILE_TOOL_DEFINITIONS = [
 ]
 
 logger = getLogger(__name__)
+RECENT_CONTEXT_WEIGHT = 0.7
+LONG_TERM_CONTEXT_WEIGHT = 0.3
+LONG_TERM_REFERENCE_LINE_PATTERN = re.compile(
+    r"^-\s+(?P<source>\S+)(?:\s+\(相似度\s+(?P<similarity>[0-9]+(?:\.[0-9]+)?)\))?\s*(?P<excerpt>.*)$"
+)
+CHAT_SKILL_MENTION_PATTERN = re.compile(r"\$(?P<name>[A-Za-z0-9][A-Za-z0-9._-]{0,127})")
+CHAT_SKILL_PREFIX_TRIGGERS: dict[str, tuple[str, ...]] = {
+    "bugfix-workflow": ("bugfix:", "修复:", "bug:", "修复bug:"),
+    "requirement-workflow": ("需求:", "req:"),
+    "refactor-workflow": ("重构:",),
+    "migration-workflow": ("迁移:",),
+    "render-performance-workflow": ("性能:", "渲染优化:"),
+    "map-visual-enhancement": ("视觉增强:", "visual:"),
+    "clear": ("clear:",),
+}
+CHAT_SKILL_MAX_PROMPT_CHARS_PER_SKILL = 8_000
+CHAT_SKILL_MAX_PROMPT_TOTAL_CHARS = 20_000
 
 
 class FolderPermissionEntry(BaseModel):
@@ -114,8 +138,41 @@ class FolderPermissionListResponse(BaseModel):
     permissions: list[FolderPermissionEntry]
 
 
+class ChatSkillEntry(BaseModel):
+    name: str
+    description: str | None = None
+    path: str
+    trigger_prefixes: list[str] = Field(default_factory=list)
+
+
+class ChatSkillListResponse(BaseModel):
+    skills: list[ChatSkillEntry]
+
+
 def build_chat_router() -> APIRouter:
     router = APIRouter()
+    supported_text_file_extensions = {
+        ".txt",
+        ".md",
+        ".markdown",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".csv",
+        ".log",
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+    }
+    supported_image_mime_types = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+    max_attached_file_bytes = 512 * 1024
+    max_attached_image_bytes = 4 * 1024 * 1024
+    max_attached_files = 6
+    max_attached_images = 4
+    max_total_file_context_chars = 16_000
 
     def _default_files_base_path() -> Path:
         try:
@@ -155,6 +212,449 @@ def build_chat_router() -> APIRouter:
             "不要重复已经说过的文字，不要重开话题，不要改写前文。\n\n"
             f"已输出内容：\n{partial_content}"
         )
+
+    def _resolve_attachment_paths(attachments: list[ChatAttachment], attachment_type: str) -> list[str]:
+        resolved_paths: list[str] = []
+        seen: set[str] = set()
+        for attachment in attachments:
+            if attachment.type != attachment_type:
+                continue
+            path = Path(attachment.path).expanduser()
+            if not path.is_absolute():
+                raise HTTPException(status_code=400, detail=f"attached {attachment_type} path must be absolute")
+            resolved = path.resolve()
+            if not resolved.exists():
+                raise HTTPException(status_code=404, detail=f"attached {attachment_type} not found")
+            if attachment_type == "folder" and not resolved.is_dir():
+                raise HTTPException(status_code=400, detail="attached folder path is not a directory")
+            if attachment_type in {"file", "image"} and not resolved.is_file():
+                raise HTTPException(status_code=400, detail=f"attached {attachment_type} path is not a file")
+            normalized = str(resolved)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            resolved_paths.append(normalized)
+        return resolved_paths
+
+    def _supports_image_attachments(provider_id: str, model: str) -> bool:
+        normalized_provider = (provider_id or "").strip().lower()
+        normalized_model = (model or "").strip().lower()
+        if normalized_provider == "nvidia":
+            return False
+        if normalized_provider == "openai":
+            return any(
+                normalized_model.startswith(prefix)
+                for prefix in ("gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4")
+            )
+        if normalized_provider == "deepseek":
+            return ("vl" in normalized_model) or ("vision" in normalized_model)
+        if normalized_provider == "minimaxi":
+            return any(token in normalized_model for token in ("vl", "vision", "omni", "image"))
+        return any(token in normalized_model for token in ("vl", "vision", "omni", "image"))
+
+    def _resolve_image_mime_type(path: Path, attachment: ChatAttachment) -> str:
+        declared = (attachment.mime_type or "").strip().lower()
+        if declared:
+            mime_type = declared
+        else:
+            guessed, _ = mimetypes.guess_type(path.name)
+            mime_type = (guessed or "").lower()
+        if mime_type == "image/jpg":
+            mime_type = "image/jpeg"
+        if mime_type not in supported_image_mime_types:
+            raise HTTPException(status_code=400, detail=f"unsupported image mime type: {mime_type or 'unknown'}")
+        return mime_type
+
+    def _read_text_attachment_content(path: Path) -> str:
+        suffix = path.suffix.lower()
+        if suffix == ".pdf":
+            try:
+                from pypdf import PdfReader  # type: ignore[import-not-found]
+            except Exception:
+                return f"[PDF 附件] {path}\n当前运行环境未安装 pypdf，暂时无法自动提取 PDF 文本。"
+            try:
+                reader = PdfReader(str(path))
+                pages = reader.pages[:8]
+                extracted = "\n".join(page.extract_text() or "" for page in pages).strip()
+                if not extracted:
+                    return f"[PDF 附件] {path}\n未提取到可读文本。"
+                return extracted
+            except Exception as exception:  # noqa: BLE001
+                return f"[PDF 附件] {path}\n解析失败：{exception}"
+
+        if suffix not in supported_text_file_extensions:
+            raise HTTPException(status_code=400, detail=f"unsupported file type: {suffix or path.name}")
+
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+            if len(content) > max_attached_file_bytes:
+                return content[:max_attached_file_bytes]
+            return content
+        except Exception as exception:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=f"failed to read attached file: {exception}") from exception
+
+    def _build_file_attachment_context(file_paths: list[str]) -> str:
+        if not file_paths:
+            return ""
+        if len(file_paths) > max_attached_files:
+            raise HTTPException(status_code=400, detail=f"too many file attachments (max {max_attached_files})")
+
+        remaining = max_total_file_context_chars
+        sections: list[str] = []
+        for file_path in file_paths:
+            if remaining <= 0:
+                break
+            resolved = Path(file_path)
+            content = _read_text_attachment_content(resolved).strip()
+            if not content:
+                continue
+            clipped = content[:remaining]
+            remaining -= len(clipped)
+            sections.append(f"[附件文件] {file_path}\n{clipped}")
+        return "\n\n".join(sections)
+
+    def _build_image_content_parts(
+        *,
+        attachments: list[ChatAttachment],
+        image_paths: list[str],
+        provider_id: str,
+        model: str,
+        wire_api: str,
+    ) -> list[dict]:
+        if not image_paths:
+            return []
+        if len(image_paths) > max_attached_images:
+            raise HTTPException(status_code=400, detail=f"too many image attachments (max {max_attached_images})")
+        if not _supports_image_attachments(provider_id, model):
+            raise HTTPException(
+                status_code=400,
+                detail=f"current model does not support image attachments: {provider_id}/{model}",
+            )
+
+        by_path: dict[str, ChatAttachment] = {}
+        for attachment in attachments:
+            if attachment.type != "image":
+                continue
+            resolved = str(Path(attachment.path).expanduser().resolve())
+            by_path.setdefault(resolved, attachment)
+
+        parts: list[dict] = []
+        for image_path in image_paths:
+            resolved = Path(image_path)
+            attachment = by_path.get(image_path, ChatAttachment(type="image", path=image_path))
+            mime_type = _resolve_image_mime_type(resolved, attachment)
+            image_size = resolved.stat().st_size
+            if image_size > max_attached_image_bytes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"image too large (> {max_attached_image_bytes} bytes): {image_path}",
+                )
+            raw = resolved.read_bytes()
+            data_url = f"data:{mime_type};base64,{base64.b64encode(raw).decode('ascii')}"
+
+            if wire_api == "responses":
+                parts.append({"type": "input_image", "image_url": data_url})
+            else:
+                parts.append({"type": "image_url", "image_url": {"url": data_url}})
+        return parts
+
+    def _append_attachment_context(
+        instructions: str,
+        *,
+        folder_paths: list[str],
+        file_paths: list[str],
+        image_paths: list[str],
+    ) -> str:
+        lines: list[str] = []
+        if folder_paths:
+            lines.append("本轮用户附加了这些文件夹上下文（优先在这些目录中查找，不要臆造不存在的文件内容）：")
+            lines.extend(f"- {folder_path}" for folder_path in folder_paths)
+        if file_paths:
+            lines.append("本轮用户附加了这些文件（必要时可继续用工具读取原文）：")
+            lines.extend(f"- {file_path}" for file_path in file_paths)
+        if image_paths:
+            lines.append("本轮用户附加了这些图片（请结合图片内容与文本一起回答）：")
+            lines.extend(f"- {image_path}" for image_path in image_paths)
+        if not lines:
+            return instructions
+        return f"{instructions}\n\n" + "\n".join(lines)
+
+    def _resolve_chat_skill_roots() -> list[Path]:
+        configured_roots = os.getenv("CHAT_SKILL_ROOTS", "").strip()
+        if configured_roots:
+            roots: list[Path] = []
+            for raw_path in configured_roots.split(os.pathsep):
+                normalized = raw_path.strip()
+                if not normalized:
+                    continue
+                roots.append(Path(normalized).expanduser().resolve())
+            return roots
+
+        try:
+            home = Path.home().resolve()
+        except Exception:  # noqa: BLE001
+            home = _default_files_base_path()
+
+        return [
+            home / ".codex" / "skills",
+            home / ".codex" / "superpowers" / "skills",
+            home / ".agents" / "skills",
+        ]
+
+    def _iter_skill_definition_paths(skill_root: Path) -> list[Path]:
+        if not skill_root.exists() or not skill_root.is_dir():
+            return []
+
+        paths: list[Path] = []
+        root_skill_file = skill_root / "SKILL.md"
+        if root_skill_file.is_file():
+            paths.append(root_skill_file.resolve())
+
+        try:
+            children = sorted(skill_root.iterdir(), key=lambda item: item.name.casefold())
+        except Exception:  # noqa: BLE001
+            return paths
+
+        for child in children:
+            if not child.is_dir():
+                continue
+
+            direct_skill_file = child / "SKILL.md"
+            if direct_skill_file.is_file():
+                paths.append(direct_skill_file.resolve())
+                continue
+
+            if not child.name.startswith("."):
+                continue
+
+            try:
+                nested_children = sorted(child.iterdir(), key=lambda item: item.name.casefold())
+            except Exception:  # noqa: BLE001
+                continue
+            for nested_child in nested_children:
+                if not nested_child.is_dir():
+                    continue
+                nested_skill_file = nested_child / "SKILL.md"
+                if nested_skill_file.is_file():
+                    paths.append(nested_skill_file.resolve())
+
+        return paths
+
+    def _parse_skill_frontmatter(skill_content: str) -> tuple[str | None, str | None]:
+        lines = skill_content.splitlines()
+        if len(lines) < 3 or lines[0].strip() != "---":
+            return None, None
+
+        end_index: int | None = None
+        for index in range(1, len(lines)):
+            if lines[index].strip() == "---":
+                end_index = index
+                break
+        if end_index is None:
+            return None, None
+
+        name: str | None = None
+        description: str | None = None
+        for line in lines[1:end_index]:
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            normalized_key = key.strip().lower()
+            normalized_value = value.strip().strip('"').strip("'")
+            if normalized_key == "name" and normalized_value:
+                name = normalized_value
+            elif normalized_key == "description" and normalized_value:
+                description = normalized_value
+        return name, description
+
+    def _strip_skill_frontmatter(skill_content: str) -> str:
+        lines = skill_content.splitlines()
+        if len(lines) < 3 or lines[0].strip() != "---":
+            return skill_content
+
+        for index in range(1, len(lines)):
+            if lines[index].strip() != "---":
+                continue
+            return "\n".join(lines[index + 1 :])
+        return skill_content
+
+    def _discover_chat_skills() -> list[dict[str, object]]:
+        discovered: list[dict[str, object]] = []
+        seen_names: set[str] = set()
+        for root in _resolve_chat_skill_roots():
+            for skill_file in _iter_skill_definition_paths(root):
+                try:
+                    raw_content = skill_file.read_text(encoding="utf-8", errors="replace")
+                except Exception:  # noqa: BLE001
+                    continue
+
+                parsed_name, parsed_description = _parse_skill_frontmatter(raw_content)
+                skill_name = (parsed_name or skill_file.parent.name or "").strip()
+                if not skill_name:
+                    continue
+
+                skill_key = skill_name.casefold()
+                if skill_key in seen_names:
+                    continue
+                seen_names.add(skill_key)
+
+                discovered.append(
+                    {
+                        "name": skill_name,
+                        "description": parsed_description,
+                        "path": str(skill_file.resolve()),
+                        "content": _strip_skill_frontmatter(raw_content).strip(),
+                        "trigger_prefixes": list(CHAT_SKILL_PREFIX_TRIGGERS.get(skill_key, ())),
+                    }
+                )
+
+        discovered.sort(key=lambda item: str(item.get("name", "")).casefold())
+        return discovered
+
+    def _build_skill_aliases(skill_name: str) -> list[str]:
+        normalized = skill_name.casefold().strip()
+        if not normalized:
+            return []
+        aliases = {normalized, normalized.replace("_", "-"), normalized.replace("-", "_")}
+        for suffix in ("-workflow", "-skill"):
+            if normalized.endswith(suffix):
+                trimmed = normalized[: -len(suffix)].strip("-_ ")
+                if trimmed:
+                    aliases.add(trimmed)
+        return sorted(alias for alias in aliases if alias)
+
+    def _select_chat_skills(user_message: str, requested_skills: list[str] | None = None) -> list[dict[str, object]]:
+        discovered = _discover_chat_skills()
+        if not discovered:
+            return []
+
+        by_key: dict[str, dict[str, object]] = {
+            str(skill["name"]).casefold(): skill
+            for skill in discovered
+        }
+        alias_to_key: dict[str, str] = {}
+        for skill in discovered:
+            name = str(skill["name"])
+            key = name.casefold()
+            for alias in _build_skill_aliases(name):
+                alias_to_key.setdefault(alias, key)
+
+        selected_keys: list[str] = []
+        seen: set[str] = set()
+
+        def _append_by_identifier(identifier: str) -> None:
+            normalized = identifier.strip().casefold()
+            if not normalized:
+                return
+            resolved_key = alias_to_key.get(normalized, normalized)
+            if resolved_key not in by_key or resolved_key in seen:
+                return
+            seen.add(resolved_key)
+            selected_keys.append(resolved_key)
+
+        for requested in requested_skills or []:
+            _append_by_identifier(requested)
+
+        for matched in CHAT_SKILL_MENTION_PATTERN.finditer(user_message or ""):
+            skill_token = matched.group("name")
+            if isinstance(skill_token, str) and skill_token:
+                _append_by_identifier(skill_token)
+
+        normalized_message = (user_message or "").strip().replace("：", ":").casefold()
+        if normalized_message:
+            for skill_key, prefixes in CHAT_SKILL_PREFIX_TRIGGERS.items():
+                if skill_key not in by_key:
+                    continue
+                if any(normalized_message.startswith(prefix.casefold()) for prefix in prefixes):
+                    _append_by_identifier(skill_key)
+
+        return [by_key[key] for key in selected_keys]
+
+    def _build_skill_instruction_context(
+        user_message: str,
+        requested_skills: list[str] | None = None,
+    ) -> str:
+        selected_skills = _select_chat_skills(user_message, requested_skills=requested_skills)
+        if not selected_skills:
+            return ""
+
+        summary_lines = [
+            "[Skills]",
+            "本轮任务请优先遵循以下技能工作流；若多个技能冲突，按下面顺序执行并明确说明取舍依据。",
+        ]
+        for skill in selected_skills:
+            name = str(skill.get("name", "")).strip()
+            if not name:
+                continue
+            description = str(skill.get("description") or "").strip()
+            if description:
+                summary_lines.append(f"- {name}: {description}")
+            else:
+                summary_lines.append(f"- {name}")
+
+        sections: list[str] = ["\n".join(summary_lines)]
+        remaining = CHAT_SKILL_MAX_PROMPT_TOTAL_CHARS
+        for skill in selected_skills:
+            name = str(skill.get("name", "")).strip()
+            content = str(skill.get("content") or "").strip()
+            if not name or not content:
+                continue
+
+            clipped_content = content
+            if len(clipped_content) > CHAT_SKILL_MAX_PROMPT_CHARS_PER_SKILL:
+                clipped_content = (
+                    clipped_content[: CHAT_SKILL_MAX_PROMPT_CHARS_PER_SKILL - 1].rstrip()
+                    + "…\n[skill 内容已截断]"
+                )
+
+            section = f"[Skill: {name}]\n{clipped_content}"
+            if len(section) > remaining:
+                if remaining <= 32:
+                    break
+                section = section[: remaining - 1].rstrip() + "…"
+            sections.append(section)
+            remaining -= len(section)
+            if remaining <= 0:
+                break
+
+        return "\n\n".join(sections)
+
+    def _append_skill_context(
+        instructions: str,
+        *,
+        user_message: str,
+        requested_skills: list[str] | None = None,
+    ) -> str:
+        skill_context = _build_skill_instruction_context(user_message, requested_skills=requested_skills)
+        if not skill_context:
+            return instructions
+        return f"{instructions}\n\n{skill_context}"
+
+    def _build_attachment_permission_paths(
+        *,
+        folder_paths: list[str],
+        file_paths: list[str],
+        image_paths: list[str],
+    ) -> list[str]:
+        granted: set[str] = set(folder_paths)
+        for file_path in file_paths:
+            granted.add(str(Path(file_path).parent))
+        for image_path in image_paths:
+            granted.add(str(Path(image_path).parent))
+        return sorted(granted)
+
+    def _apply_user_content_to_messages(
+        messages: list[ChatMessage],
+        *,
+        user_content: str | list[dict],
+    ) -> list[ChatMessage]:
+        patched = [message.model_copy(deep=True) for message in messages]
+        for index in range(len(patched) - 1, -1, -1):
+            if patched[index].role == "user":
+                patched[index] = ChatMessage(role="user", content=user_content)
+                return patched
+        patched.append(ChatMessage(role="user", content=user_content))
+        return patched
 
     def _compact_text(text: str | None, *, limit: int) -> str:
         if not text:
@@ -224,6 +724,33 @@ def build_chat_router() -> APIRouter:
         config = get_runtime_config()
         return {"file_policy": config.get_capability_file_policy()}
 
+    def _get_observability_tracker(request: Request) -> KnowledgeObservabilityTracker | None:
+        tracker = getattr(request.app.state, "knowledge_observability_tracker", None)
+        if isinstance(tracker, KnowledgeObservabilityTracker):
+            return tracker
+        return None
+
+    def _record_retrieval_observability(
+        *,
+        tracker: KnowledgeObservabilityTracker | None,
+        latency_ms: float,
+        references: list[dict[str, str | float | None]],
+        failed: bool,
+    ) -> None:
+        if tracker is None:
+            return
+        similarity_scores: list[float] = []
+        for reference in references:
+            similarity = reference.get("similarity")
+            if isinstance(similarity, (int, float)):
+                similarity_scores.append(float(similarity))
+        tracker.record_retrieval(
+            latency_ms=latency_ms,
+            hit_count=len(references),
+            similarity_scores=similarity_scores,
+            failed=failed,
+        )
+
     def _run_chat_submission(
         *,
         request: Request,
@@ -233,6 +760,7 @@ def build_chat_router() -> APIRouter:
         assistant_message_id: str,
         initial_output_text: str = "",
         suppress_started_event: bool = False,
+        knowledge_references: list[dict[str, str | float | None]] | None = None,
     ) -> tuple[ChatSubmissionResult, str]:
         response_id: str | None = None
         output_text = initial_output_text
@@ -295,7 +823,12 @@ def build_chat_router() -> APIRouter:
         if hub is not None and not started and not suppress_started_event:
             hub.publish_chat_started(assistant_message_id, response_id=response_id)
         if hub is not None:
-            hub.publish_chat_completed(assistant_message_id, response_id, output_text)
+            hub.publish_chat_completed(
+                assistant_message_id,
+                response_id,
+                output_text,
+                knowledge_references=knowledge_references,
+            )
 
         return (
             ChatSubmissionResult(
@@ -321,23 +854,39 @@ def build_chat_router() -> APIRouter:
         user_message: str,
         mempalace_adapter: MemPalaceAdapter,
         context_limit: int,
-    ) -> tuple[list[ChatMessage], str]:
+    ) -> tuple[list[ChatMessage], str, bool, bool]:
+        recent_turn_limit, long_term_hits = _split_context_budget(context_limit)
         memory_context = ""
+        search_failed = False
+        retrieval_attempted = False
+        should_search_cross_room = True
+        supports_cross_room_probe = hasattr(mempalace_adapter, "has_cross_room_long_term_sources")
+        if supports_cross_room_probe:
+            try:
+                should_search_cross_room = bool(mempalace_adapter.has_cross_room_long_term_sources())
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("MemPalace has_cross_room_long_term_sources raised unexpectedly: %s", exc)
+                should_search_cross_room = True
         try:
-            # Long-term retrieval should avoid the live chat room to prevent
-            # duplicating content that is already injected via recent messages.
-            memory_context = mempalace_adapter.search_context(
-                user_message,
-                exclude_current_room=True,
-            )
+            if should_search_cross_room:
+                retrieval_attempted = True
+                # Long-term retrieval should avoid the live chat room to prevent
+                # duplicating content that is already injected via recent messages.
+                memory_context = mempalace_adapter.search_context(
+                    user_message,
+                    exclude_current_room=True,
+                    max_hits=long_term_hits,
+                    retrieval_weight=LONG_TERM_CONTEXT_WEIGHT,
+                )
         except Exception as exc:  # noqa: BLE001
             logger.warning("MemPalace search_context raised unexpectedly: %s", exc)
             memory_context = ""
+            search_failed = True
 
         try:
             chat_messages = mempalace_adapter.build_chat_messages(
                 user_message,
-                limit=context_limit,
+                limit=recent_turn_limit,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("MemPalace build_chat_messages raised unexpectedly: %s", exc)
@@ -346,7 +895,53 @@ def build_chat_router() -> APIRouter:
         if not chat_messages:
             chat_messages = [ChatMessage(role="user", content=user_message)]
 
-        return chat_messages, memory_context
+        return chat_messages, memory_context, search_failed, retrieval_attempted
+
+    def _split_context_budget(context_limit: int) -> tuple[int, int]:
+        total = max(1, int(context_limit))
+        long_term_hits = max(1, int(round(total * LONG_TERM_CONTEXT_WEIGHT)))
+        recent_turn_limit = max(1, int(round(total * RECENT_CONTEXT_WEIGHT)))
+        return recent_turn_limit, long_term_hits
+
+    def _extract_knowledge_references(memory_context: str) -> list[dict[str, str | float | None]]:
+        if not memory_context:
+            return []
+
+        references: list[dict[str, str | float | None]] = []
+        for line in memory_context.splitlines():
+            match = LONG_TERM_REFERENCE_LINE_PATTERN.match(line.strip())
+            if match is None:
+                continue
+
+            source = (match.group("source") or "").strip()
+            excerpt = (match.group("excerpt") or "").strip()
+            if not source or not excerpt:
+                continue
+
+            wing = source
+            room = ""
+            if "/" in source:
+                wing, room = source.split("/", 1)
+
+            similarity: float | None = None
+            similarity_text = match.group("similarity")
+            if similarity_text:
+                try:
+                    similarity = round(float(similarity_text), 4)
+                except ValueError:
+                    similarity = None
+
+            references.append(
+                {
+                    "source": source,
+                    "wing": wing,
+                    "room": room,
+                    "similarity": similarity,
+                    "excerpt": excerpt,
+                }
+            )
+
+        return references
 
     def _execute_file_tool_call(file_tools, tool_name: str, arguments: dict) -> str:
         def _try_dispatch(tool: str, args: dict) -> str | None:
@@ -619,6 +1214,7 @@ def build_chat_router() -> APIRouter:
         instructions: str,
         assistant_message_id: str,
         initial_output_text: str = "",
+        knowledge_references: list[dict[str, str | float | None]] | None = None,
     ) -> tuple[ChatSubmissionResult, str]:
         create_with_tools = getattr(gateway, "create_response_with_tools", None)
         if not callable(create_with_tools):
@@ -629,6 +1225,7 @@ def build_chat_router() -> APIRouter:
                 instructions=instructions,
                 assistant_message_id=assistant_message_id,
                 initial_output_text=initial_output_text,
+                knowledge_references=knowledge_references,
             )
 
         hub = getattr(request.app.state, "realtime_hub", None)
@@ -660,6 +1257,7 @@ def build_chat_router() -> APIRouter:
                 assistant_message_id=assistant_message_id,
                 initial_output_text=initial_output_text,
                 suppress_started_event=started,
+                knowledge_references=knowledge_references,
             )
 
         try:
@@ -684,6 +1282,7 @@ def build_chat_router() -> APIRouter:
                             instructions=instructions,
                             assistant_message_id=assistant_message_id,
                             initial_output_text=initial_output_text,
+                            knowledge_references=knowledge_references,
                         )
                     raise
                 if not isinstance(response_payload, dict):
@@ -714,6 +1313,7 @@ def build_chat_router() -> APIRouter:
                             instructions=instructions,
                             assistant_message_id=assistant_message_id,
                             initial_output_text=initial_output_text,
+                            knowledge_references=knowledge_references,
                         )
 
                     if not output_text:
@@ -726,7 +1326,12 @@ def build_chat_router() -> APIRouter:
                     if hub is not None and output_text:
                         hub.publish_chat_delta(assistant_message_id, output_text)
                     if hub is not None:
-                        hub.publish_chat_completed(assistant_message_id, response_id, output_text)
+                        hub.publish_chat_completed(
+                            assistant_message_id,
+                            response_id,
+                            output_text,
+                            knowledge_references=knowledge_references,
+                        )
 
                     return (
                         ChatSubmissionResult(
@@ -792,6 +1397,29 @@ def build_chat_router() -> APIRouter:
     def get_folder_permissions() -> FolderPermissionListResponse:
         return _build_folder_permission_response()
 
+    @router.get("/chat/skills")
+    def get_chat_skills() -> ChatSkillListResponse:
+        return ChatSkillListResponse(
+            skills=[
+                ChatSkillEntry(
+                    name=str(skill.get("name", "")),
+                    description=(
+                        str(skill.get("description"))
+                        if skill.get("description") is not None
+                        else None
+                    ),
+                    path=str(skill.get("path", "")),
+                    trigger_prefixes=[
+                        str(prefix)
+                        for prefix in (skill.get("trigger_prefixes") or [])
+                        if isinstance(prefix, str)
+                    ],
+                )
+                for skill in _discover_chat_skills()
+                if str(skill.get("name", "")).strip() and str(skill.get("path", "")).strip()
+            ]
+        )
+
     @router.put("/chat/folder-permissions")
     def upsert_folder_permission(request_body: FolderPermissionRequest) -> FolderPermissionListResponse:
         folder_path = _normalize_folder_path(request_body.path)
@@ -839,10 +1467,64 @@ def build_chat_router() -> APIRouter:
 
         config = get_runtime_config()
         gateway.model = config.chat_model
-        chat_messages, memory_context = _resolve_mempalace_chat_context(
+        attached_folder_paths = _resolve_attachment_paths(request_body.attachments, "folder")
+        attached_file_paths = _resolve_attachment_paths(request_body.attachments, "file")
+        attached_image_paths = _resolve_attachment_paths(request_body.attachments, "image")
+
+        for folder_path in _build_attachment_permission_paths(
+            folder_paths=attached_folder_paths,
+            file_paths=attached_file_paths,
+            image_paths=attached_image_paths,
+        ):
+            config.set_folder_permission(folder_path, "read_only")
+
+        file_context = _build_file_attachment_context(attached_file_paths)
+        effective_user_message = request_body.message
+        if file_context:
+            effective_user_message = (
+                f"{request_body.message}\n\n"
+                "[用户附加文件内容摘录]\n"
+                f"{file_context}"
+            )
+
+        tracker = _get_observability_tracker(request)
+        retrieval_started_at = perf_counter()
+        chat_messages, memory_context, retrieval_failed, retrieval_attempted = _resolve_mempalace_chat_context(
             user_message=request_body.message,
             mempalace_adapter=mempalace_adapter,
             context_limit=config.chat_context_limit,
+        )
+        knowledge_references = _extract_knowledge_references(memory_context)
+        if retrieval_attempted:
+            _record_retrieval_observability(
+                tracker=tracker,
+                latency_ms=(perf_counter() - retrieval_started_at) * 1000.0,
+                references=knowledge_references,
+                failed=retrieval_failed,
+            )
+        image_parts = _build_image_content_parts(
+            attachments=request_body.attachments,
+            image_paths=attached_image_paths,
+            provider_id=config.chat_provider,
+            model=config.chat_model,
+            wire_api=getattr(gateway, "wire_api", "responses"),
+        )
+        if image_parts:
+            if getattr(gateway, "wire_api", "responses") == "responses":
+                user_content: str | list[dict] = [
+                    {"type": "input_text", "text": effective_user_message},
+                    *image_parts,
+                ]
+            else:
+                user_content = [
+                    {"type": "text", "text": effective_user_message},
+                    *image_parts,
+                ]
+        else:
+            user_content = effective_user_message
+        chat_messages = _apply_user_content_to_messages(
+            chat_messages,
+            user_content=user_content,
         )
         instructions = build_chat_instructions(
             focus_goal_title=None if focus_goal is None else focus_goal.title,
@@ -856,24 +1538,55 @@ def build_chat_router() -> APIRouter:
             expression_style_context=expression_style_context or None,
             folder_permissions=config.list_folder_permissions(),
         )
-
-        assistant_message_id = f"assistant_{uuid4().hex}"
-        submission, output_text = _run_chat_submission_with_tools(
-            request=request,
-            gateway=gateway,
-            chat_messages=chat_messages,
-            instructions=instructions,
-            assistant_message_id=assistant_message_id,
+        instructions = _append_attachment_context(
+            instructions,
+            folder_paths=attached_folder_paths,
+            file_paths=attached_file_paths,
+            image_paths=attached_image_paths,
+        )
+        instructions = _append_skill_context(
+            instructions,
+            user_message=request_body.message,
+            requested_skills=request_body.skills,
         )
 
+        assistant_message_id = f"assistant_{uuid4().hex}"
+        chat_started_at = perf_counter()
+        if image_parts:
+            submission, output_text = _run_chat_submission(
+                request=request,
+                gateway=gateway,
+                chat_messages=chat_messages,
+                instructions=instructions,
+                assistant_message_id=assistant_message_id,
+                knowledge_references=knowledge_references,
+            )
+        else:
+            submission, output_text = _run_chat_submission_with_tools(
+                request=request,
+                gateway=gateway,
+                chat_messages=chat_messages,
+                instructions=instructions,
+                assistant_message_id=assistant_message_id,
+                knowledge_references=knowledge_references,
+            )
+        if tracker is not None:
+            tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
+
+        write_success = False
         try:
-            mempalace_adapter.record_exchange(
-                request_body.message,
-                output_text,
-                assistant_message_id,
+            write_success = bool(
+                mempalace_adapter.record_exchange(
+                    request_body.message,
+                    output_text,
+                    assistant_message_id,
+                )
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("MemPalace record_exchange raised unexpectedly: %s", exc)
+        finally:
+            if tracker is not None:
+                tracker.record_write(success=write_success)
         try:
             _mirror_exchange_to_memory_repository(
                 memory_repository=memory_repository,
@@ -914,11 +1627,21 @@ def build_chat_router() -> APIRouter:
 
         config = get_runtime_config()
         gateway.model = config.chat_model
-        chat_messages, memory_context = _resolve_mempalace_chat_context(
+        tracker = _get_observability_tracker(request)
+        retrieval_started_at = perf_counter()
+        chat_messages, memory_context, retrieval_failed, retrieval_attempted = _resolve_mempalace_chat_context(
             user_message=request_body.message,
             mempalace_adapter=mempalace_adapter,
             context_limit=config.chat_context_limit,
         )
+        knowledge_references = _extract_knowledge_references(memory_context)
+        if retrieval_attempted:
+            _record_retrieval_observability(
+                tracker=tracker,
+                latency_ms=(perf_counter() - retrieval_started_at) * 1000.0,
+                references=knowledge_references,
+                failed=retrieval_failed,
+            )
         instructions = build_chat_instructions(
             focus_goal_title=None if focus_goal is None else focus_goal.title,
             latest_plan_completion=latest_plan_completion,
@@ -932,7 +1655,12 @@ def build_chat_router() -> APIRouter:
             folder_permissions=config.list_folder_permissions(),
         )
         instructions = f"{instructions}\n\n{_build_resume_instruction(request_body.partial_content)}"
+        instructions = _append_skill_context(
+            instructions,
+            user_message=request_body.message,
+        )
 
+        chat_started_at = perf_counter()
         submission, output_text = _run_chat_submission_with_tools(
             request=request,
             gateway=gateway,
@@ -940,16 +1668,25 @@ def build_chat_router() -> APIRouter:
             instructions=instructions,
             assistant_message_id=request_body.assistant_message_id,
             initial_output_text=request_body.partial_content,
+            knowledge_references=knowledge_references,
         )
+        if tracker is not None:
+            tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
 
+        write_success = False
         try:
-            mempalace_adapter.record_exchange(
-                request_body.message,
-                output_text,
-                request_body.assistant_message_id,
+            write_success = bool(
+                mempalace_adapter.record_exchange(
+                    request_body.message,
+                    output_text,
+                    request_body.assistant_message_id,
+                )
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("MemPalace record_exchange raised unexpectedly: %s", exc)
+        finally:
+            if tracker is not None:
+                tracker.record_write(success=write_success)
         try:
             _mirror_exchange_to_memory_repository(
                 memory_repository=memory_repository,

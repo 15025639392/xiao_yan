@@ -182,8 +182,7 @@ npm install
 #### 启动后端服务
 
 ```bash
-cd services/core
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+./services/core/scripts/start_dev_server.sh
 ```
 
 服务将在 `http://127.0.0.1:8000` 启动。
@@ -191,8 +190,7 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 如果需要通过局域网 IP 访问（例如手机或其他电脑）：
 
 ```bash
-cd services/core
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+HOST=0.0.0.0 PORT=8000 ./services/core/scripts/start_dev_server.sh
 ```
 
 #### 启动前端应用

@@ -14,13 +14,23 @@ type ChatPanelProps = {
   focusGoalTitle?: string | null;
   focusModeLabel: string;
   messages: ChatEntry[];
+  attachedFolders?: string[];
+  attachedFiles?: string[];
+  attachedImages?: string[];
   isSending: boolean;
   todayPlan?: TodayPlan | null;
   activeGoals?: Goal[];
   modeLabel: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;
+  onPickFolder?: () => void;
+  onPickFile?: () => void;
+  onPickImage?: () => void;
+  onRemoveAttachedFolder?: (path: string) => void;
+  onRemoveAttachedFile?: (path: string) => void;
+  onRemoveAttachedImage?: (path: string) => void;
   onResume?: (message: ChatEntry) => void;
+  onRetry?: (message: ChatEntry) => void;
   onCompleteGoal?: (goalId: string) => Promise<void>;
 };
 
@@ -29,12 +39,22 @@ export function ChatPanel({
   draft,
   focusGoalTitle,
   messages,
+  attachedFolders = [],
+  attachedFiles = [],
+  attachedImages = [],
   isSending,
   todayPlan,
   activeGoals,
   onDraftChange,
   onSend,
+  onPickFolder,
+  onPickFile,
+  onPickImage,
+  onRemoveAttachedFolder,
+  onRemoveAttachedFile,
+  onRemoveAttachedImage,
   onResume,
+  onRetry,
   onCompleteGoal,
 }: ChatPanelProps) {
   const {
@@ -52,11 +72,20 @@ export function ChatPanel({
     folderPermissionsError,
     chatModelProviders,
     chatModelsError,
+    dataEnvironment,
+    isUpdatingDataEnvironment,
+    isCreatingDataBackup,
+    isImportingDataBackup,
+    dataEnvironmentError,
+    dataOperationMessage,
     toggleMemoryContext,
     toggleConfigPanel,
     closeConfigPanel,
     handleAddOrUpdateFolderPermission,
     handleRemoveFolderPermission,
+    handleToggleTestingMode,
+    handleCreateDataBackup,
+    handleImportDataBackup,
     handleKeyDown,
     handleSubmit,
     handleUpdateConfig,
@@ -82,8 +111,17 @@ export function ChatPanel({
           folderPermissionsError={folderPermissionsError}
           chatModelProviders={chatModelProviders}
           chatModelsError={chatModelsError}
+          dataEnvironment={dataEnvironment}
+          isUpdatingDataEnvironment={isUpdatingDataEnvironment}
+          isCreatingDataBackup={isCreatingDataBackup}
+          isImportingDataBackup={isImportingDataBackup}
+          dataEnvironmentError={dataEnvironmentError}
+          dataOperationMessage={dataOperationMessage}
           onAddOrUpdateFolderPermission={handleAddOrUpdateFolderPermission}
           onRemoveFolderPermission={handleRemoveFolderPermission}
+          onToggleTestingMode={handleToggleTestingMode}
+          onCreateDataBackup={handleCreateDataBackup}
+          onImportDataBackup={handleImportDataBackup}
           onUpdate={handleUpdateConfig}
           onClose={closeConfigPanel}
         />
@@ -98,6 +136,7 @@ export function ChatPanel({
           showMemoryContext={showMemoryContext}
           onToggleMemoryContext={toggleMemoryContext}
           onResume={onResume}
+          onRetry={onRetry}
           onDraftChange={onDraftChange}
         />
         <div ref={messagesEndRef} />
@@ -106,9 +145,18 @@ export function ChatPanel({
       <ChatInputForm
         draft={draft}
         isSending={isSending}
+        attachedFolders={attachedFolders}
+        attachedFiles={attachedFiles}
+        attachedImages={attachedImages}
         relationship={relationship}
         textareaRef={textareaRef}
         onDraftChange={onDraftChange}
+        onPickFolder={onPickFolder}
+        onPickFile={onPickFile}
+        onPickImage={onPickImage}
+        onRemoveAttachedFolder={onRemoveAttachedFolder}
+        onRemoveAttachedFile={onRemoveAttachedFile}
+        onRemoveAttachedImage={onRemoveAttachedImage}
         onKeyDown={handleKeyDown}
         onSubmit={handleSubmit}
       />

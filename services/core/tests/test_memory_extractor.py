@@ -416,6 +416,32 @@ class TestDeduplication:
         # 应该保留两个
         assert len(deduplicated) == 2
 
+    def test_deduplicate_prefers_richer_metadata(self, extractor):
+        from app.memory.models import MemoryEvent
+
+        plain = MemoryEvent(
+            kind="semantic",
+            content="用户偏好：喝茶",
+            role="user",
+        )
+        rich = MemoryEvent(
+            kind="semantic",
+            content="用户偏好：喝茶",
+            role="user",
+            knowledge_type="preference",
+            knowledge_tags=["preference", "user-profile"],
+            source_ref="conversation://session-42",
+            version_tag="v2",
+            visibility="user",
+        )
+
+        deduplicated = extractor._deduplicate_events([plain, rich])
+
+        assert len(deduplicated) == 1
+        assert deduplicated[0].knowledge_type == "preference"
+        assert deduplicated[0].source_ref == "conversation://session-42"
+        assert "preference" in deduplicated[0].knowledge_tags
+
 
 # ═══════════════════════════════════════════════════
 # 9. 重要性评估测试
@@ -590,3 +616,29 @@ class TestIntegration:
 
         # 应该处理所有消息
         assert len(events) >= 1
+
+    def test_pipeline_adds_source_metadata_and_tags(self, extractor):
+        dialogue = [
+            ChatMessage(
+                role="user",
+                content="我喜欢喝茶",
+            ),
+        ]
+        context = {
+            "source_ref": "conversation://session-100",
+            "version_tag": "v3",
+            "visibility": "user",
+            "topic": "用户偏好",
+        }
+
+        events = extractor.extract_from_dialogue(dialogue, context)
+        preference_events = [e for e in events if "用户偏好" in e.content]
+
+        assert len(preference_events) >= 1
+        target = preference_events[0]
+        assert target.source_ref == "conversation://session-100"
+        assert target.version_tag == "v3"
+        assert target.visibility == "user"
+        assert target.knowledge_type == "preference"
+        assert "preference" in target.knowledge_tags
+        assert any(tag.startswith("topic:") for tag in target.knowledge_tags)

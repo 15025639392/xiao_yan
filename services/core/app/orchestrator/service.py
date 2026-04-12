@@ -13,6 +13,7 @@ from app.domain.models import (
     FocusMode,
     OrchestratorCoordinationMode,
     OrchestratorDelegateCompletionPayload,
+    OrchestratorDelegateStopPayload,
     OrchestratorDelegateRun,
     OrchestratorDelegateResult,
     OrchestratorFailureCategory,
@@ -23,6 +24,7 @@ from app.domain.models import (
     OrchestratorSessionStatus,
     OrchestratorTask,
     OrchestratorTaskKind,
+    OrchestratorTaskStallFollowup,
     OrchestratorTaskStatus,
     OrchestratorVerification,
     OrchestratorVerificationRollup,
@@ -42,6 +44,9 @@ VerificationRunner = Callable[[str, list[str]], OrchestratorVerification]
 
 class OrchestratorService:
     _stuck_verifying_timeout = timedelta(minutes=15)
+    _default_delegate_soft_ping_timeout = timedelta(hours=2)
+    _default_delegate_no_receipt_timeout = timedelta(hours=6)
+    _default_delegate_stall_followup_interval = timedelta(minutes=30)
 
     def __init__(
         self,
@@ -52,6 +57,10 @@ class OrchestratorService:
         planner: OrchestratorPlanner | None = None,
         verification_runner: VerificationRunner | None = None,
         max_parallel_sessions: int = 2,
+        max_parallel_tasks_per_session: int = 2,
+        delegate_soft_ping_timeout: timedelta | None = None,
+        delegate_no_receipt_timeout: timedelta | None = None,
+        delegate_stall_followup_interval: timedelta | None = None,
         conversation_service: OrchestratorConversationService | None = None,
     ) -> None:
         self._repository = repository
@@ -60,6 +69,22 @@ class OrchestratorService:
         self._planner = planner or OrchestratorPlanner()
         self._verification_runner = verification_runner or self._run_verification_commands
         self._max_parallel_sessions = max(1, max_parallel_sessions)
+        self._max_parallel_tasks_per_session = max(1, max_parallel_tasks_per_session)
+        self._delegate_soft_ping_timeout = (
+            self._default_delegate_soft_ping_timeout
+            if delegate_soft_ping_timeout is None
+            else max(timedelta(minutes=1), delegate_soft_ping_timeout)
+        )
+        self._delegate_no_receipt_timeout = (
+            self._default_delegate_no_receipt_timeout
+            if delegate_no_receipt_timeout is None
+            else max(self._delegate_soft_ping_timeout, delegate_no_receipt_timeout)
+        )
+        self._delegate_stall_followup_interval = (
+            self._default_delegate_stall_followup_interval
+            if delegate_stall_followup_interval is None
+            else max(timedelta(minutes=1), delegate_stall_followup_interval)
+        )
         self._conversation_service = conversation_service
 
     def create_session(self, goal: str, project_path: str, *, hub: AppRealtimeHub | None = None) -> OrchestratorSession:
@@ -89,9 +114,31 @@ class OrchestratorService:
         self._publish_session_updated(saved, hub)
         return saved
 
-    def list_sessions(self) -> list[OrchestratorSession]:
+    def list_sessions(
+        self,
+        *,
+        statuses: list[OrchestratorSessionStatus] | None = None,
+        project: str | None = None,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+        keyword: str | None = None,
+    ) -> list[OrchestratorSession]:
         sessions = self._repository.list_sessions()
-        return [self._recover_stuck_verifying_session(session) for session in sessions]
+        recovered: list[OrchestratorSession] = []
+        for session in sessions:
+            next_session = self._recover_stuck_verifying_session(session)
+            next_session = self._recover_stalled_running_tasks(next_session)
+            next_session = self._normalize_session_task_runtime_fields(next_session)
+            if self._matches_session_filters(
+                next_session,
+                statuses=statuses,
+                project=project,
+                from_time=from_time,
+                to_time=to_time,
+                keyword=keyword,
+            ):
+                recovered.append(next_session)
+        return recovered
 
     def activate_session(self, session_id: str, *, hub: AppRealtimeHub | None = None) -> OrchestratorSession:
         session = self._get_session(session_id)
@@ -121,6 +168,8 @@ class OrchestratorService:
             or self._apply_acceptance_directive(session, normalized_message)
             or self._apply_secondary_approval_directive(session, normalized_message)
             or self._apply_priority_directive(session, normalized_message)
+            or self._apply_engineer_followup_directive(session, normalized_message)
+            or self._apply_task_assignment_directive(session, normalized_message)
         )
         if updated is None:
             raise ValueError("unsupported orchestrator directive")
@@ -129,6 +178,14 @@ class OrchestratorService:
         if self._is_active_session(saved.session_id):
             self._sync_state(saved, current_thought=f"已接收主控指令：{normalized_message}")
         if self._conversation_service is not None:
+            followup_task = self._find_task_for_followup_directive(saved, normalized_message)
+            if followup_task is not None:
+                self._conversation_service.append_task_update(
+                    saved,
+                    followup_task,
+                    phase="主控追问卡点",
+                    hub=hub,
+                )
             self._conversation_service.append_directive_applied(saved, normalized_message, hub=hub)
         self._publish_session_updated(saved, hub)
         return saved
@@ -219,11 +276,13 @@ class OrchestratorService:
             raise ValueError("session plan is not ready")
         if session.status not in {OrchestratorSessionStatus.DISPATCHING, OrchestratorSessionStatus.RUNNING}:
             raise ValueError("session is not dispatchable")
-        if self._has_running_task(session):
+        if self._count_running_tasks(session) >= self._max_parallel_tasks_per_session:
             return session
 
         next_task = self._find_next_dispatchable_task(session)
         if next_task is None:
+            if self._has_running_task(session):
+                return session
             raise ValueError("no dispatchable task available")
 
         if self._count_running_sessions(exclude_session_id=session.session_id) >= self._max_parallel_sessions:
@@ -240,30 +299,49 @@ class OrchestratorService:
         return self._dispatch_task(session, next_task, hub=hub)
 
     def run_scheduler_tick(self, *, hub: AppRealtimeHub | None = None) -> OrchestratorSchedulerSnapshot:
-        sessions = self._repository.list_sessions()
+        sessions: list[OrchestratorSession] = []
+        for session in self._repository.list_sessions():
+            recovered = self._recover_stuck_verifying_session(session)
+            recovered = self._recover_stalled_running_tasks(recovered, hub=hub)
+            sessions.append(recovered)
         active_session_id = self._active_session_id()
         running_sessions = [session for session in sessions if self._has_running_task(session)]
-        available_slots = max(0, self._max_parallel_sessions - len(running_sessions))
-        dispatchable_sessions = [
+        available_session_slots = max(0, self._max_parallel_sessions - len(running_sessions))
+        dispatch_candidates = [
             session
             for session in sessions
             if session.status in {OrchestratorSessionStatus.DISPATCHING, OrchestratorSessionStatus.RUNNING}
-            and not self._has_running_task(session)
+            and self._available_delegate_capacity(session) > 0
             and self._find_next_dispatchable_task(session) is not None
         ]
-        dispatchable_sessions.sort(key=self._dispatch_priority_key)
-        selected_ids = {session.session_id for session in dispatchable_sessions[:available_slots]}
-        queued_sessions = dispatchable_sessions[available_slots:]
+        dispatch_candidates.sort(key=self._dispatch_priority_key)
+
+        selected_sessions: list[OrchestratorSession] = []
+        queued_sessions: list[OrchestratorSession] = []
+        selected_ids: set[str] = set()
+        remaining_slots = available_session_slots
+        for session in dispatch_candidates:
+            if self._has_running_task(session):
+                selected_sessions.append(session)
+                selected_ids.add(session.session_id)
+                continue
+            if remaining_slots > 0:
+                selected_sessions.append(session)
+                selected_ids.add(session.session_id)
+                remaining_slots -= 1
+                continue
+            queued_sessions.append(session)
 
         saved_by_id: dict[str, OrchestratorSession] = {}
         for slot_index, session in enumerate(running_sessions, start=1):
+            running_task_count = self._count_running_tasks(session)
             updated = self._with_coordination(
                 session,
                 mode=OrchestratorCoordinationMode.RUNNING,
                 priority_score=self._priority_score(session),
                 dispatch_slot=slot_index,
                 queue_position=None,
-                waiting_reason="已占用并行槽，等待 delegate 回填。",
+                waiting_reason=f"已占用并行槽，当前有 {running_task_count} 个 delegate 运行中。",
                 preempted_by_session_id=None,
             )
             saved_by_id[updated.session_id] = self._save_if_changed(updated, hub=hub)
@@ -286,12 +364,17 @@ class OrchestratorService:
             )
             saved_by_id[updated.session_id] = self._save_if_changed(updated, hub=hub)
 
-        for session in dispatchable_sessions[:available_slots]:
+        for session in selected_sessions:
             current = saved_by_id.get(session.session_id, session)
-            next_dispatchable = self._find_next_dispatchable_task(current)
-            if next_dispatchable is None:
-                continue
-            saved_by_id[session.session_id] = self._dispatch_task(current, next_dispatchable, hub=hub)
+            while self._available_delegate_capacity(current) > 0:
+                next_dispatchable = self._find_next_dispatchable_task(current)
+                if next_dispatchable is None:
+                    break
+                before = current.model_dump(mode="json")
+                current = self._dispatch_task(current, next_dispatchable, hub=hub)
+                if current.model_dump(mode="json") == before:
+                    break
+            saved_by_id[session.session_id] = current
 
         return self.get_scheduler_snapshot()
 
@@ -355,6 +438,9 @@ class OrchestratorService:
             )
 
         delegate_run_id = uuid4().hex
+        engineer_id = self._next_engineer_id(session)
+        assigned_at = self._now()
+        engineer_label = f"工程师{engineer_id}号(codex)"
         delegate_request = build_delegate_request(goal=session.goal, project_path=session.project_path, task=next_task)
         delegate_prompt = build_delegate_prompt(delegate_request)
         updated_tasks: list[OrchestratorTask] = []
@@ -365,12 +451,30 @@ class OrchestratorService:
                         update={
                             "status": OrchestratorTaskStatus.RUNNING,
                             "delegate_run_id": delegate_run_id,
+                            "engineer_id": engineer_id,
+                            "engineer_label": engineer_label,
+                            "assigned_at": assigned_at,
+                            "stall_level": None,
+                            "stall_followup": None,
+                            "last_stall_followup_at": None,
+                            "last_intervened_at": None,
+                            "intervention_suggestions": [],
                             "artifacts": {
                                 **task.artifacts,
+                                "engineer_id": engineer_id,
+                                "engineer_label": engineer_label,
+                                "assigned_at": assigned_at.isoformat(),
+                                "stalled": False,
+                                "stall_level": None,
+                                "stalled_at": None,
+                                "stall_followup": None,
+                                "last_stall_followup_at": None,
+                                "last_followup_directive": None,
                                 "delegate_request": delegate_request.model_dump(mode="json"),
                                 "delegate_prompt": delegate_prompt,
                             },
                             "error": None,
+                            "result_summary": f"{engineer_label} 已接单，正在执行。",
                         }
                     )
                 )
@@ -395,7 +499,7 @@ class OrchestratorService:
                     mode=OrchestratorCoordinationMode.RUNNING,
                     priority_score=self._priority_score(session),
                     dispatch_slot=1,
-                    waiting_reason="已占用并行槽，等待 delegate 回填。",
+                    waiting_reason=f"已派发给 {engineer_label}，等待执行回填。",
                     failure_category=None,
                 ),
                 "updated_at": self._now(),
@@ -403,10 +507,15 @@ class OrchestratorService:
         )
         saved = self._repository.save(updated)
         if self._is_active_session(saved.session_id):
-            self._sync_state(saved, current_thought=f"主控已派发任务：{next_task.title}")
+            self._sync_state(saved, current_thought=f"主控已派发任务给 {engineer_label}：{next_task.title}")
         dispatched_task = self._get_task(saved, next_task.task_id)
         if self._conversation_service is not None:
-            self._conversation_service.append_task_update(saved, dispatched_task, phase="任务已派发", hub=hub)
+            self._conversation_service.append_task_update(
+                saved,
+                dispatched_task,
+                phase=f"任务已派发（{engineer_label}）",
+                hub=hub,
+            )
         self._publish_task_updated(saved, dispatched_task, hub)
         self._publish_session_updated(saved, hub)
         return saved
@@ -417,6 +526,30 @@ class OrchestratorService:
     def list_tasks(self, session_id: str) -> list[OrchestratorTask]:
         session = self._get_session(session_id)
         return [] if session.plan is None else [task.model_copy(deep=True) for task in session.plan.tasks]
+
+    def delete_session(self, session_id: str, *, hub: AppRealtimeHub | None = None) -> int:
+        session = self._get_session(session_id)
+        if session.status in {
+            OrchestratorSessionStatus.DISPATCHING,
+            OrchestratorSessionStatus.RUNNING,
+            OrchestratorSessionStatus.VERIFYING,
+        } or self._has_running_task(session):
+            raise ValueError("session is active; cancel session before deleting history")
+
+        deleted = self._repository.delete(session_id)
+        if not deleted:
+            raise ValueError("orchestrator session not found")
+
+        removed_messages = (
+            self._conversation_service.clear_messages(session_id)
+            if self._conversation_service is not None
+            else 0
+        )
+        if self._is_active_session(session_id):
+            self._clear_state(current_thought="主控历史会话已删除。")
+            if hub is not None:
+                hub.publish_runtime()
+        return removed_messages
 
     def cancel(self, session_id: str, *, hub: AppRealtimeHub | None = None) -> OrchestratorSession:
         session = self._get_session(session_id)
@@ -505,7 +638,12 @@ class OrchestratorService:
 
         normalized_changed_files = self._normalize_changed_files(session.project_path, payload.result)
         scope_error = self._validate_changed_files(task, normalized_changed_files)
-        final_error = scope_error or payload.result.error
+        changed_file_evidence_error = (
+            self._validate_expected_file_change_evidence(task, normalized_changed_files)
+            if payload.result.status == "succeeded"
+            else None
+        )
+        final_error = scope_error or changed_file_evidence_error or payload.result.error
         succeeded = payload.result.status == "succeeded" and final_error is None
 
         updated_tasks: list[OrchestratorTask] = []
@@ -516,6 +654,10 @@ class OrchestratorService:
                     update={
                         "status": OrchestratorTaskStatus.SUCCEEDED if succeeded else OrchestratorTaskStatus.FAILED,
                         "result_summary": payload.result.summary,
+                        "stall_level": None if succeeded else candidate.stall_level,
+                        "stall_followup": None if succeeded else candidate.stall_followup,
+                        "last_stall_followup_at": None if succeeded else candidate.last_stall_followup_at,
+                        "intervention_suggestions": [] if succeeded else candidate.intervention_suggestions,
                         "artifacts": {
                             **candidate.artifacts,
                             "delegate_result": payload.result.model_dump(mode="json"),
@@ -530,10 +672,26 @@ class OrchestratorService:
 
         updated_plan = session.plan.model_copy(update={"tasks": updated_tasks})
         updated_delegates = self._complete_delegate_record(session, task.task_id, payload.delegate_run_id, succeeded)
-        updated_status = OrchestratorSessionStatus.DISPATCHING if succeeded else OrchestratorSessionStatus.FAILED
         updated_summary = session.summary
         if not succeeded:
             updated_summary = final_error or payload.result.summary or f"任务失败：{task.title}"
+
+        next_running_count = sum(1 for item in updated_tasks if item.status == OrchestratorTaskStatus.RUNNING)
+        if succeeded:
+            if next_running_count > 0:
+                updated_status = OrchestratorSessionStatus.RUNNING
+                coordination_mode = OrchestratorCoordinationMode.RUNNING
+                waiting_reason = f"当前仍有 {next_running_count} 个任务执行中，等待 delegate 回填。"
+            else:
+                updated_status = OrchestratorSessionStatus.DISPATCHING
+                coordination_mode = OrchestratorCoordinationMode.READY
+                waiting_reason = "任务已回收，等待下一轮调度。"
+            failure_category = None
+        else:
+            updated_status = OrchestratorSessionStatus.FAILED
+            coordination_mode = OrchestratorCoordinationMode.FAILED
+            waiting_reason = final_error or payload.result.summary or f"任务失败：{task.title}"
+            failure_category = self._classify_failure_category(final_error)
 
         updated = session.model_copy(
             update={
@@ -541,22 +699,10 @@ class OrchestratorService:
                 "delegates": updated_delegates,
                 "status": updated_status,
                 "coordination": OrchestratorSessionCoordination(
-                    mode=(
-                        OrchestratorCoordinationMode.READY
-                        if succeeded
-                        else OrchestratorCoordinationMode.FAILED
-                    ),
+                    mode=coordination_mode,
                     priority_score=self._priority_score(session),
-                    waiting_reason=(
-                        "任务已回收，等待下一轮调度。"
-                        if succeeded
-                        else final_error or payload.result.summary or f"任务失败：{task.title}"
-                    ),
-                    failure_category=(
-                        None
-                        if succeeded
-                        else self._classify_failure_category(final_error)
-                    ),
+                    waiting_reason=waiting_reason,
+                    failure_category=failure_category,
                 ),
                 "summary": updated_summary,
                 "updated_at": self._now(),
@@ -587,6 +733,95 @@ class OrchestratorService:
 
         if self._all_tasks_succeeded(saved):
             return self._run_plan_verification(saved, hub=hub)
+        return saved
+
+    def stop_delegate(
+        self,
+        payload: OrchestratorDelegateStopPayload,
+        *,
+        hub: AppRealtimeHub | None = None,
+    ) -> OrchestratorSession:
+        session = self._get_session(payload.session_id)
+        if session.plan is None:
+            raise ValueError("session plan is not ready")
+
+        task = self._get_task(session, payload.task_id)
+        if task.delegate_run_id != payload.delegate_run_id:
+            raise ValueError("delegate run id mismatch")
+
+        if task.status != OrchestratorTaskStatus.RUNNING:
+            if self._is_task_already_stopped_by_orchestrator(task):
+                return session
+            raise ValueError("delegate task is not running")
+
+        reason = (payload.reason or "").strip()
+        summary = reason or f"主控已停止任务：{task.title}"
+        error_message = reason or "delegate stopped by orchestrator"
+
+        stopped_result = OrchestratorDelegateResult(
+            status="failed",
+            summary=summary,
+            changed_files=[],
+            command_results=[],
+            followup_needed=[],
+            error=error_message,
+        )
+
+        updated_tasks: list[OrchestratorTask] = []
+        updated_task: OrchestratorTask | None = None
+        for candidate in session.plan.tasks:
+            if candidate.task_id == task.task_id:
+                updated_task = candidate.model_copy(
+                    update={
+                        "status": OrchestratorTaskStatus.FAILED,
+                        "result_summary": summary,
+                        "last_intervened_at": self._now(),
+                        "artifacts": {
+                            **candidate.artifacts,
+                            "delegate_result": stopped_result.model_dump(mode="json"),
+                            "changed_files": [],
+                            "stopped_by_orchestrator": True,
+                            "stop_reason": reason or None,
+                            "stopped_at": self._now().isoformat(),
+                        },
+                        "error": error_message,
+                    }
+                )
+                updated_tasks.append(updated_task)
+            else:
+                updated_tasks.append(candidate)
+
+        updated_plan = session.plan.model_copy(update={"tasks": updated_tasks})
+        updated_delegates = self._complete_delegate_record(session, task.task_id, payload.delegate_run_id, False)
+        waiting_reason = summary
+        updated = session.model_copy(
+            update={
+                "plan": updated_plan,
+                "delegates": updated_delegates,
+                "status": OrchestratorSessionStatus.FAILED,
+                "coordination": OrchestratorSessionCoordination(
+                    mode=OrchestratorCoordinationMode.FAILED,
+                    priority_score=self._priority_score(session),
+                    waiting_reason=waiting_reason,
+                    failure_category=OrchestratorFailureCategory.DELEGATE_FAILURE,
+                ),
+                "summary": summary,
+                "updated_at": self._now(),
+            }
+        )
+        saved = self._repository.save(updated)
+        if self._is_active_session(saved.session_id):
+            self._sync_state(saved, current_thought=summary)
+        if updated_task is not None:
+            if self._conversation_service is not None:
+                self._conversation_service.append_task_update(
+                    saved,
+                    updated_task,
+                    phase="任务已停止",
+                    hub=hub,
+                )
+            self._publish_task_updated(saved, updated_task, hub)
+        self._publish_session_updated(saved, hub)
         return saved
 
     def _run_plan_verification(self, session: OrchestratorSession, *, hub: AppRealtimeHub | None = None) -> OrchestratorSession:
@@ -900,7 +1135,18 @@ class OrchestratorService:
 
     def _reset_task_for_resume(self, task: OrchestratorTask) -> OrchestratorTask:
         artifacts = dict(task.artifacts)
-        for key in ["delegate_request", "delegate_prompt", "delegate_result", "changed_files"]:
+        for key in [
+            "delegate_request",
+            "delegate_prompt",
+            "delegate_result",
+            "changed_files",
+            "stalled",
+            "stall_level",
+            "stalled_at",
+            "stall_followup",
+            "last_stall_followup_at",
+            "last_followup_directive",
+        ]:
             artifacts.pop(key, None)
         return task.model_copy(
             update={
@@ -908,6 +1154,14 @@ class OrchestratorService:
                 "result_summary": None,
                 "artifacts": artifacts,
                 "delegate_run_id": None,
+                "engineer_id": None,
+                "engineer_label": None,
+                "assigned_at": None,
+                "stall_level": None,
+                "stall_followup": None,
+                "last_stall_followup_at": None,
+                "last_intervened_at": None,
+                "intervention_suggestions": [],
                 "error": None,
             }
         )
@@ -920,7 +1174,51 @@ class OrchestratorService:
         return OrchestratorFailureCategory.DELEGATE_FAILURE
 
     def _has_running_task(self, session: OrchestratorSession) -> bool:
-        return session.plan is not None and any(task.status == OrchestratorTaskStatus.RUNNING for task in session.plan.tasks)
+        return self._count_running_tasks(session) > 0
+
+    def _count_running_tasks(self, session: OrchestratorSession) -> int:
+        if session.plan is None:
+            return 0
+        return sum(1 for task in session.plan.tasks if task.status == OrchestratorTaskStatus.RUNNING)
+
+    def _available_delegate_capacity(self, session: OrchestratorSession) -> int:
+        if session.plan is None:
+            return 0
+        return max(0, self._max_parallel_tasks_per_session - self._count_running_tasks(session))
+
+    def _next_engineer_id(self, session: OrchestratorSession) -> int:
+        in_use: set[int] = set()
+        if session.plan is not None:
+            for task in session.plan.tasks:
+                if task.status != OrchestratorTaskStatus.RUNNING:
+                    continue
+                engineer_id = task.engineer_id
+                if not isinstance(engineer_id, int) or engineer_id <= 0:
+                    engineer_id = task.artifacts.get("engineer_id")
+                if isinstance(engineer_id, int) and engineer_id > 0:
+                    in_use.add(engineer_id)
+        for candidate in range(1, self._max_parallel_tasks_per_session + 1):
+            if candidate not in in_use:
+                return candidate
+        return max(1, len(in_use) + 1)
+
+    def _resolve_engineer_identity(self, task: OrchestratorTask) -> tuple[int, str]:
+        engineer_id = task.engineer_id
+        if not isinstance(engineer_id, int) or engineer_id <= 0:
+            engineer_id = task.artifacts.get("engineer_id")
+        if not isinstance(engineer_id, int) or engineer_id <= 0:
+            engineer_id = 1
+        engineer_label = task.engineer_label
+        if not isinstance(engineer_label, str) or not engineer_label.strip():
+            engineer_label = task.artifacts.get("engineer_label")
+        if not isinstance(engineer_label, str) or not engineer_label.strip():
+            engineer_label = f"工程师{engineer_id}号(codex)"
+        else:
+            engineer_label = engineer_label.strip()
+        return engineer_id, engineer_label
+
+    def _build_engineer_followup_command(self, engineer_label: str) -> str:
+        return f"追问{engineer_label}卡点并给建议"
 
     def _count_running_sessions(self, *, exclude_session_id: str | None = None) -> int:
         count = 0
@@ -1171,6 +1469,48 @@ class OrchestratorService:
                 return f"delegate changed file outside approved scope: {changed_file}"
         return None
 
+    def _validate_expected_file_change_evidence(self, task: OrchestratorTask, changed_files: list[str]) -> str | None:
+        if not self._requires_file_change_evidence(task):
+            return None
+        if changed_files:
+            return None
+        return "delegate reported success but no changed files for a file-creation task"
+
+    def _requires_file_change_evidence(self, task: OrchestratorTask) -> bool:
+        if task.kind != OrchestratorTaskKind.IMPLEMENT:
+            return False
+
+        artifacts = task.artifacts or {}
+        text_parts = [task.title]
+        for value in [
+            task.assignment_requested_objective,
+            task.assignment_directive,
+            artifacts.get("requested_objective"),
+            artifacts.get("directive"),
+        ]:
+            if isinstance(value, str) and value.strip():
+                text_parts.append(value.strip())
+        merged_text = " ".join(text_parts)
+        if not merged_text:
+            return False
+
+        has_create_intent = bool(
+            re.search(
+                r"(创建|新建|新增|生成|写入|产出|create|add|write|generate|scaffold|bootstrap)",
+                merged_text,
+                flags=re.IGNORECASE,
+            )
+        )
+        if not has_create_intent:
+            return False
+        return bool(
+            re.search(
+                r"(文件|file|markdown|readme|文档|\.[a-z0-9]{1,8}\b)",
+                merged_text,
+                flags=re.IGNORECASE,
+            )
+        )
+
     def _complete_delegate_record(
         self,
         session: OrchestratorSession,
@@ -1200,7 +1540,9 @@ class OrchestratorService:
         session = self._repository.get(session_id)
         if session is None:
             raise ValueError("orchestrator session not found")
-        return self._recover_stuck_verifying_session(session)
+        recovered = self._recover_stuck_verifying_session(session)
+        recovered = self._recover_stalled_running_tasks(recovered)
+        return self._normalize_session_task_runtime_fields(recovered)
 
     def _recover_stuck_verifying_session(self, session: OrchestratorSession) -> OrchestratorSession:
         if session.status != OrchestratorSessionStatus.VERIFYING:
@@ -1239,6 +1581,457 @@ class OrchestratorService:
             )
         return saved
 
+    def _recover_stalled_running_tasks(
+        self,
+        session: OrchestratorSession,
+        *,
+        hub: AppRealtimeHub | None = None,
+    ) -> OrchestratorSession:
+        if session.plan is None:
+            return session
+        if session.status in self._terminal_statuses():
+            return session
+
+        now = self._now()
+        changed = False
+        followup_events: list[tuple[OrchestratorTask, str]] = []
+        updated_tasks: list[OrchestratorTask] = []
+
+        for task in session.plan.tasks:
+            if task.status != OrchestratorTaskStatus.RUNNING:
+                updated_tasks.append(task)
+                continue
+
+            assigned_at = task.assigned_at
+            if assigned_at is None:
+                assigned_at = self._parse_iso_datetime(task.artifacts.get("assigned_at"))
+            if assigned_at is None:
+                assigned_at = session.updated_at
+            if assigned_at.tzinfo is None:
+                assigned_at = assigned_at.replace(tzinfo=timezone.utc)
+
+            elapsed = now - assigned_at
+            if elapsed < self._delegate_soft_ping_timeout:
+                updated_tasks.append(task)
+                continue
+
+            last_followup_at = task.last_stall_followup_at
+            if last_followup_at is None:
+                last_followup_at = self._parse_iso_datetime(task.artifacts.get("last_stall_followup_at"))
+            if (
+                last_followup_at is not None
+                and now - last_followup_at < self._delegate_stall_followup_interval
+            ):
+                updated_tasks.append(task)
+                continue
+
+            _, engineer_label = self._resolve_engineer_identity(task)
+            level = "hard_intervention" if elapsed >= self._delegate_no_receipt_timeout else "soft_ping"
+            followup = self._build_stall_followup(
+                task,
+                engineer_label=engineer_label,
+                elapsed=elapsed,
+                level=level,
+            )
+            stalled_at = task.artifacts.get("stalled_at")
+            if level == "hard_intervention" and not isinstance(stalled_at, str):
+                stalled_at = now.isoformat()
+            updated_task = task.model_copy(
+                update={
+                    "result_summary": followup.manager_summary,
+                    "stall_level": level,
+                    "stall_followup": followup,
+                    "last_stall_followup_at": now,
+                    "last_intervened_at": now,
+                    "intervention_suggestions": [item for item in followup.suggestions if item.strip()],
+                    "artifacts": {
+                        **task.artifacts,
+                        "stalled": bool(task.artifacts.get("stalled")) or level == "hard_intervention",
+                        "stall_level": level,
+                        "stalled_at": stalled_at,
+                        "last_stall_followup_at": now.isoformat(),
+                        "last_followup_directive": None,
+                        "stall_followup": followup.model_dump(mode="json"),
+                    },
+                }
+            )
+            updated_tasks.append(updated_task)
+            phase = "主控主动介入排障" if level == "hard_intervention" else "主控追问卡点"
+            followup_events.append((updated_task, phase))
+            changed = True
+
+        if not changed:
+            return session
+
+        preferred_summary = next(
+            (
+                task.result_summary
+                for task, phase in followup_events
+                if phase == "主控主动介入排障" and task.result_summary
+            ),
+            None,
+        )
+        summary = (
+            preferred_summary
+            or followup_events[0][0].result_summary
+            or session.summary
+            or "主控检测到执行卡点，已主动介入。"
+        )
+        updated = session.model_copy(
+            update={
+                "plan": session.plan.model_copy(update={"tasks": updated_tasks}),
+                "summary": summary,
+                "coordination": self._copy_coordination(
+                    session,
+                    priority_score=self._priority_score(session),
+                ).model_copy(
+                    update={
+                        "mode": OrchestratorCoordinationMode.RUNNING,
+                        "waiting_reason": summary,
+                    }
+                ),
+                "updated_at": now,
+            }
+        )
+        saved = self._repository.save(updated)
+        if self._is_active_session(saved.session_id):
+            self._sync_state(saved, current_thought=summary)
+        if self._conversation_service is not None:
+            for followup_task, phase in followup_events:
+                self._conversation_service.append_task_update(
+                    saved,
+                    followup_task,
+                    phase=phase,
+                    hub=hub,
+                )
+        for followup_task, _ in followup_events:
+            self._publish_task_updated(saved, followup_task, hub)
+        self._publish_session_updated(saved, hub)
+        return saved
+
+    def _build_stall_followup(
+        self,
+        task: OrchestratorTask,
+        *,
+        engineer_label: str,
+        elapsed: timedelta,
+        level: str,
+    ) -> OrchestratorTaskStallFollowup:
+        elapsed_hours = max(1, int(elapsed.total_seconds() // 3600))
+        followup_command = self._build_engineer_followup_command(engineer_label)
+
+        if level == "hard_intervention":
+            manager_summary = (
+                f"{engineer_label} 执行任务「{task.title}」超过 {elapsed_hours} 小时未回执，"
+                "主控已介入排障并下发建议。"
+            )
+            engineer_prompt = (
+                f"{engineer_label}，请先反馈当前卡点（最近命令、错误日志、阻塞文件），"
+                "然后按建议顺序尝试最小修复路径。"
+            )
+        elif level == "manual_followup":
+            manager_summary = f"主控已按指令追问 {engineer_label} 的卡点并下发建议。"
+            engineer_prompt = (
+                f"{engineer_label}，请同步当前阻塞点、尝试过的方案与下一步计划，"
+                "优先给出可在 30 分钟内验证的最小行动。"
+            )
+        else:
+            manager_summary = (
+                f"{engineer_label} 执行任务「{task.title}」已持续 {elapsed_hours} 小时，"
+                "主控先发起进度追问并给出排障建议。"
+            )
+            engineer_prompt = (
+                f"{engineer_label}，请先回执当前进展与卡点；若已阻塞，"
+                "按建议执行最小定位与修复路径。"
+            )
+
+        suggestions = [
+            "先给出最近一次失败命令和错误摘要，明确是环境问题、依赖问题还是实现问题。",
+            "把改动范围缩到当前任务 scope，先提交最小可验证改动，再扩展。",
+            "先跑一条最小验收命令定位失败边界，再决定是否拆分子任务。",
+        ]
+        return OrchestratorTaskStallFollowup(
+            level=level,
+            elapsed_minutes=max(1, int(elapsed.total_seconds() // 60)),
+            manager_summary=manager_summary,
+            engineer_prompt=engineer_prompt,
+            suggestions=suggestions,
+            followup_command=followup_command,
+        )
+
+    def _parse_iso_datetime(self, value: object) -> datetime | None:
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def _normalize_session_task_runtime_fields(self, session: OrchestratorSession) -> OrchestratorSession:
+        if session.plan is None:
+            return session
+
+        changed = False
+        normalized_tasks: list[OrchestratorTask] = []
+        for task in session.plan.tasks:
+            normalized = self._normalize_task_runtime_fields(task)
+            normalized_tasks.append(normalized)
+            if normalized is not task:
+                changed = True
+        if not changed:
+            return session
+        return session.model_copy(
+            update={
+                "plan": session.plan.model_copy(update={"tasks": normalized_tasks}),
+            }
+        )
+
+    def _normalize_task_runtime_fields(self, task: OrchestratorTask) -> OrchestratorTask:
+        artifacts = task.artifacts or {}
+        has_update = False
+
+        assignment_source = task.assignment_source.strip() if isinstance(task.assignment_source, str) else None
+        if not assignment_source:
+            fallback_assignment_source = artifacts.get("source")
+            if isinstance(fallback_assignment_source, str) and fallback_assignment_source.strip():
+                assignment_source = fallback_assignment_source.strip()
+                has_update = True
+            else:
+                assignment_source = None
+
+        assignment_directive = task.assignment_directive.strip() if isinstance(task.assignment_directive, str) else None
+        if not assignment_directive:
+            fallback_assignment_directive = artifacts.get("directive")
+            if isinstance(fallback_assignment_directive, str) and fallback_assignment_directive.strip():
+                assignment_directive = fallback_assignment_directive.strip()
+                has_update = True
+            else:
+                assignment_directive = None
+
+        assignment_requested_objective = (
+            task.assignment_requested_objective.strip()
+            if isinstance(task.assignment_requested_objective, str)
+            else None
+        )
+        if not assignment_requested_objective:
+            fallback_assignment_objective = artifacts.get("requested_objective")
+            if isinstance(fallback_assignment_objective, str) and fallback_assignment_objective.strip():
+                assignment_requested_objective = fallback_assignment_objective.strip()
+                has_update = True
+            else:
+                assignment_requested_objective = None
+
+        assignment_scope_override = task.assignment_scope_override
+        if assignment_scope_override is None:
+            fallback_scope_override = artifacts.get("scope_override")
+            if isinstance(fallback_scope_override, list):
+                parsed_scope_override = [
+                    item.strip() for item in fallback_scope_override if isinstance(item, str) and item.strip()
+                ]
+                assignment_scope_override = parsed_scope_override
+                has_update = True
+
+        assignment_resolved_scope_override = task.assignment_resolved_scope_override
+        if assignment_resolved_scope_override is None:
+            fallback_resolved_scope_override = artifacts.get("resolved_scope_override")
+            if isinstance(fallback_resolved_scope_override, list):
+                parsed_resolved_scope = [
+                    item.strip()
+                    for item in fallback_resolved_scope_override
+                    if isinstance(item, str) and item.strip()
+                ]
+                assignment_resolved_scope_override = parsed_resolved_scope
+                has_update = True
+
+        assignment_acceptance_override = task.assignment_acceptance_override
+        if assignment_acceptance_override is None:
+            fallback_acceptance_override = artifacts.get("acceptance_override")
+            if isinstance(fallback_acceptance_override, list):
+                parsed_acceptance_override = [
+                    item.strip()
+                    for item in fallback_acceptance_override
+                    if isinstance(item, str) and item.strip()
+                ]
+                assignment_acceptance_override = parsed_acceptance_override
+                has_update = True
+
+        assignment_priority_override = task.assignment_priority_override
+        if assignment_priority_override is None:
+            fallback_priority_override = artifacts.get("priority_override")
+            if isinstance(fallback_priority_override, int):
+                assignment_priority_override = fallback_priority_override
+                has_update = True
+
+        engineer_id = task.engineer_id
+        if not isinstance(engineer_id, int) or engineer_id <= 0:
+            fallback_engineer_id = artifacts.get("engineer_id")
+            if isinstance(fallback_engineer_id, int) and fallback_engineer_id > 0:
+                engineer_id = fallback_engineer_id
+                has_update = True
+            else:
+                engineer_id = None
+
+        engineer_label = task.engineer_label.strip() if isinstance(task.engineer_label, str) else None
+        if not engineer_label:
+            fallback_engineer_label = artifacts.get("engineer_label")
+            if isinstance(fallback_engineer_label, str) and fallback_engineer_label.strip():
+                engineer_label = fallback_engineer_label.strip()
+                has_update = True
+            elif engineer_id is not None:
+                engineer_label = f"工程师{engineer_id}号(codex)"
+                has_update = True
+            else:
+                engineer_label = None
+
+        assigned_at = task.assigned_at
+        if assigned_at is None:
+            fallback_assigned_at = self._parse_iso_datetime(artifacts.get("assigned_at"))
+            if fallback_assigned_at is not None:
+                assigned_at = fallback_assigned_at
+                has_update = True
+
+        stall_level = task.stall_level.strip() if isinstance(task.stall_level, str) else None
+        if not stall_level:
+            fallback_stall_level = artifacts.get("stall_level")
+            if isinstance(fallback_stall_level, str) and fallback_stall_level.strip():
+                stall_level = fallback_stall_level.strip()
+                has_update = True
+            else:
+                stall_level = None
+
+        stall_followup = task.stall_followup
+        if stall_followup is None:
+            raw_stall_followup = artifacts.get("stall_followup")
+            if isinstance(raw_stall_followup, dict):
+                try:
+                    stall_followup = OrchestratorTaskStallFollowup.model_validate(raw_stall_followup)
+                    has_update = True
+                except ValueError:
+                    stall_followup = None
+
+        last_stall_followup_at = task.last_stall_followup_at
+        if last_stall_followup_at is None:
+            fallback_last_followup = self._parse_iso_datetime(artifacts.get("last_stall_followup_at"))
+            if fallback_last_followup is not None:
+                last_stall_followup_at = fallback_last_followup
+                has_update = True
+
+        last_intervened_at = task.last_intervened_at
+        if last_intervened_at is None and last_stall_followup_at is not None:
+            last_intervened_at = last_stall_followup_at
+            has_update = True
+
+        intervention_suggestions = [item for item in task.intervention_suggestions if item.strip()]
+        if not intervention_suggestions:
+            if stall_followup is not None:
+                intervention_suggestions = [item for item in stall_followup.suggestions if item.strip()]
+                if intervention_suggestions:
+                    has_update = True
+
+        if not has_update:
+            return task
+        return task.model_copy(
+            update={
+                "assignment_source": assignment_source,
+                "assignment_directive": assignment_directive,
+                "assignment_requested_objective": assignment_requested_objective,
+                "assignment_scope_override": assignment_scope_override,
+                "assignment_resolved_scope_override": assignment_resolved_scope_override,
+                "assignment_acceptance_override": assignment_acceptance_override,
+                "assignment_priority_override": assignment_priority_override,
+                "engineer_id": engineer_id,
+                "engineer_label": engineer_label,
+                "assigned_at": assigned_at,
+                "stall_level": stall_level,
+                "stall_followup": stall_followup,
+                "last_stall_followup_at": last_stall_followup_at,
+                "last_intervened_at": last_intervened_at,
+                "intervention_suggestions": intervention_suggestions,
+            }
+        )
+
+    def _normalize_filter_datetime(self, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def _matches_session_filters(
+        self,
+        session: OrchestratorSession,
+        *,
+        statuses: list[OrchestratorSessionStatus] | None,
+        project: str | None,
+        from_time: datetime | None,
+        to_time: datetime | None,
+        keyword: str | None,
+    ) -> bool:
+        if statuses:
+            allowed = set(statuses)
+            if session.status not in allowed:
+                return False
+
+        normalized_project = (project or "").strip().lower()
+        if normalized_project:
+            haystack = " ".join([session.project_name, session.project_path]).lower()
+            if normalized_project not in haystack:
+                return False
+
+        normalized_from = self._normalize_filter_datetime(from_time)
+        normalized_to = self._normalize_filter_datetime(to_time)
+        session_updated_at = session.updated_at
+        if session_updated_at.tzinfo is None:
+            session_updated_at = session_updated_at.replace(tzinfo=timezone.utc)
+        else:
+            session_updated_at = session_updated_at.astimezone(timezone.utc)
+
+        if normalized_from is not None and session_updated_at < normalized_from:
+            return False
+        if normalized_to is not None and session_updated_at > normalized_to:
+            return False
+
+        normalized_keyword = (keyword or "").strip().lower()
+        if normalized_keyword:
+            task_titles = []
+            if session.plan is not None:
+                task_titles = [task.title for task in session.plan.tasks]
+            keyword_haystack = " ".join(
+                [
+                    session.goal,
+                    session.project_name,
+                    session.project_path,
+                    session.summary or "",
+                    *task_titles,
+                ]
+            ).lower()
+            if normalized_keyword not in keyword_haystack:
+                return False
+
+        return True
+
+    def _is_task_already_stopped_by_orchestrator(self, task: OrchestratorTask) -> bool:
+        if task.status not in {OrchestratorTaskStatus.FAILED, OrchestratorTaskStatus.CANCELLED}:
+            return False
+        artifacts = task.artifacts or {}
+        stopped_flag = artifacts.get("stopped_by_orchestrator")
+        if isinstance(stopped_flag, bool) and stopped_flag:
+            return True
+        delegate_result = artifacts.get("delegate_result")
+        if isinstance(delegate_result, dict):
+            error = delegate_result.get("error")
+            if isinstance(error, str) and "delegate stopped by orchestrator" in error:
+                return True
+        if isinstance(task.error, str) and "delegate stopped by orchestrator" in task.error:
+            return True
+        return False
+
     def _get_task(self, session: OrchestratorSession, task_id: str) -> OrchestratorTask:
         if session.plan is None:
             raise ValueError("session plan is not ready")
@@ -1246,6 +2039,20 @@ class OrchestratorService:
             if task.task_id == task_id:
                 return task
         raise ValueError("orchestrator task not found")
+
+    def _find_task_for_followup_directive(self, session: OrchestratorSession, directive: str) -> OrchestratorTask | None:
+        if session.plan is None:
+            return None
+        normalized = directive.strip()
+        if not normalized:
+            return None
+        for task in session.plan.tasks:
+            if task.status != OrchestratorTaskStatus.RUNNING:
+                continue
+            tagged_directive = task.artifacts.get("last_followup_directive")
+            if isinstance(tagged_directive, str) and tagged_directive.strip() == normalized:
+                return task
+        return None
 
     def _validate_project_path(self, project_path: str) -> str:
         resolved = str(Path(project_path).expanduser().resolve())
@@ -1505,6 +2312,254 @@ class OrchestratorService:
             }
         )
 
+    def _apply_engineer_followup_directive(
+        self,
+        session: OrchestratorSession,
+        message: str,
+    ) -> OrchestratorSession | None:
+        normalized = message.strip()
+        if not re.search(r"(追问|询问|问一下|问|催|跟进)", normalized):
+            return None
+        if not re.search(r"(工程师|卡点|阻塞|进度|回执|卡住)", normalized):
+            return None
+        if session.plan is None:
+            raise ValueError("session plan is not ready")
+
+        running_tasks = [task for task in session.plan.tasks if task.status == OrchestratorTaskStatus.RUNNING]
+        if not running_tasks:
+            raise ValueError("no running task available for engineer follow-up")
+
+        engineer_id: int | None = None
+        engineer_match = re.search(r"工程师\s*(\d+)\s*号", normalized)
+        if engineer_match is not None:
+            try:
+                engineer_id = int(engineer_match.group(1))
+            except ValueError:
+                engineer_id = None
+
+        target_task: OrchestratorTask | None = None
+        if engineer_id is not None and engineer_id > 0:
+            for task in running_tasks:
+                task_engineer_id, _ = self._resolve_engineer_identity(task)
+                if task_engineer_id == engineer_id:
+                    target_task = task
+                    break
+            if target_task is None:
+                raise ValueError(f"工程师{engineer_id}号当前没有运行中的任务")
+        else:
+            if len(running_tasks) > 1:
+                raise ValueError("存在多个运行中任务，请指定工程师编号")
+            target_task = running_tasks[0]
+
+        _, engineer_label = self._resolve_engineer_identity(target_task)
+        now = self._now()
+        assigned_at = target_task.assigned_at
+        if assigned_at is None:
+            assigned_at = self._parse_iso_datetime(target_task.artifacts.get("assigned_at"))
+        if assigned_at is None:
+            assigned_at = session.updated_at
+        if assigned_at.tzinfo is None:
+            assigned_at = assigned_at.replace(tzinfo=timezone.utc)
+        elapsed = max(timedelta(minutes=1), now - assigned_at)
+
+        followup = self._build_stall_followup(
+            target_task,
+            engineer_label=engineer_label,
+            elapsed=elapsed,
+            level="manual_followup",
+        )
+        summary = followup.manager_summary or "主控已追问执行卡点。"
+
+        updated_tasks: list[OrchestratorTask] = []
+        for task in session.plan.tasks:
+            if task.task_id == target_task.task_id:
+                updated_tasks.append(
+                    task.model_copy(
+                        update={
+                            "result_summary": summary,
+                            "stall_level": "manual_followup",
+                            "stall_followup": followup,
+                            "last_stall_followup_at": now,
+                            "last_intervened_at": now,
+                            "intervention_suggestions": [item for item in followup.suggestions if item.strip()],
+                            "artifacts": {
+                                **task.artifacts,
+                                "stalled": bool(task.artifacts.get("stalled")),
+                                "stall_level": "manual_followup",
+                                "last_stall_followup_at": now.isoformat(),
+                                "last_followup_directive": normalized,
+                                "stall_followup": followup.model_dump(mode="json"),
+                            },
+                        }
+                    )
+                )
+            else:
+                updated_tasks.append(task.model_copy(deep=True))
+
+        coordination = self._copy_coordination(session, priority_score=self._priority_score(session)).model_copy(
+            update={
+                "mode": OrchestratorCoordinationMode.RUNNING,
+                "waiting_reason": summary,
+            }
+        )
+        return session.model_copy(
+            update={
+                "plan": session.plan.model_copy(update={"tasks": updated_tasks}),
+                "status": OrchestratorSessionStatus.RUNNING,
+                "summary": summary,
+                "coordination": coordination,
+                "updated_at": now,
+            }
+        )
+
+    def _apply_task_assignment_directive(
+        self,
+        session: OrchestratorSession,
+        message: str,
+    ) -> OrchestratorSession | None:
+        assignment_payload = self._extract_task_assignment_payload(message)
+        if assignment_payload is None:
+            return None
+        objective, scope_override, acceptance_override, priority_override = assignment_payload
+        if session.plan is None:
+            raise ValueError("session plan is not ready")
+        if session.status == OrchestratorSessionStatus.VERIFYING or any(
+            task.status == OrchestratorTaskStatus.RUNNING
+            and task.kind in {OrchestratorTaskKind.VERIFY, OrchestratorTaskKind.SUMMARIZE}
+            for task in session.plan.tasks
+        ):
+            raise ValueError("cannot add task while verification is running")
+
+        next_priority_bias = session.priority_bias if priority_override is None else priority_override
+        working_session = (
+            session
+            if next_priority_bias == session.priority_bias
+            else session.model_copy(update={"priority_bias": next_priority_bias})
+        )
+
+        task_id = self._next_chat_implement_task_id(session)
+        resolved_scope_override = scope_override or self._infer_scope_paths_from_chat_objective(objective)
+        scope_paths = resolved_scope_override or self._default_scope_paths_for_chat_task(session)
+        acceptance_commands = acceptance_override or self._default_acceptance_commands_for_chat_task(session)
+        depends_on = [task.task_id for task in session.plan.tasks if task.kind == OrchestratorTaskKind.ANALYZE]
+        chat_task = OrchestratorTask(
+            task_id=task_id,
+            title=f"聊天指派：{objective}",
+            kind=OrchestratorTaskKind.IMPLEMENT,
+            scope_paths=scope_paths,
+            acceptance_commands=acceptance_commands,
+            depends_on=depends_on,
+            assignment_source="chat_assignment",
+            assignment_directive=message,
+            assignment_requested_objective=objective,
+            assignment_scope_override=scope_override,
+            assignment_resolved_scope_override=resolved_scope_override,
+            assignment_acceptance_override=acceptance_override,
+            assignment_priority_override=priority_override,
+            artifacts={
+                "source": "chat_assignment",
+                "directive": message,
+                "requested_objective": objective,
+                "scope_override": scope_override,
+                "resolved_scope_override": resolved_scope_override,
+                "acceptance_override": acceptance_override,
+                "priority_override": priority_override,
+            },
+        )
+
+        tasks_with_inserted_chat_task: list[OrchestratorTask] = []
+        inserted = False
+        for task in session.plan.tasks:
+            if not inserted and task.kind == OrchestratorTaskKind.VERIFY:
+                tasks_with_inserted_chat_task.append(chat_task)
+                inserted = True
+            tasks_with_inserted_chat_task.append(task.model_copy(deep=True))
+        if not inserted:
+            tasks_with_inserted_chat_task.append(chat_task)
+
+        implement_ids = [
+            task.task_id
+            for task in tasks_with_inserted_chat_task
+            if task.kind == OrchestratorTaskKind.IMPLEMENT
+        ]
+        updated_tasks: list[OrchestratorTask] = []
+        for task in tasks_with_inserted_chat_task:
+            if task.kind == OrchestratorTaskKind.VERIFY:
+                verify_task = task.model_copy(update={"depends_on": list(dict.fromkeys(implement_ids))})
+                if verify_task.status != OrchestratorTaskStatus.PENDING:
+                    verify_task = self._reset_task_for_resume(verify_task).model_copy(
+                        update={"depends_on": list(dict.fromkeys(implement_ids))}
+                    )
+                updated_tasks.append(verify_task)
+                continue
+            if task.kind == OrchestratorTaskKind.SUMMARIZE:
+                summarize_task = (
+                    task
+                    if task.status == OrchestratorTaskStatus.PENDING
+                    else self._reset_task_for_resume(task)
+                )
+                updated_tasks.append(summarize_task)
+                continue
+            updated_tasks.append(task)
+
+        summary_parts = [f"已新增聊天任务（ID: {task_id}），准备交给 Codex：{objective}"]
+        if resolved_scope_override is not None:
+            summary_parts.append(f"scope={', '.join(scope_paths)}")
+        if acceptance_override is not None:
+            summary_parts.append(f"验收={ ' | '.join(acceptance_commands)}")
+        if priority_override is not None:
+            summary_parts.append(f"优先级={self._priority_bias_to_label(next_priority_bias)}")
+        summary = "；".join(summary_parts)
+        updated_plan = session.plan.model_copy(update={"tasks": updated_tasks})
+
+        base_coordination = self._copy_coordination(
+            working_session,
+            priority_score=self._priority_score(working_session),
+        )
+        if session.status == OrchestratorSessionStatus.PENDING_PLAN_APPROVAL:
+            coordination = base_coordination.model_copy(
+                update={
+                    "mode": OrchestratorCoordinationMode.IDLE,
+                    "waiting_reason": "计划已追加聊天任务，等待计划审批。",
+                    "queue_position": None,
+                    "dispatch_slot": None,
+                    "preempted_by_session_id": None,
+                    "failure_category": None,
+                }
+            )
+            return session.model_copy(
+                update={
+                    "plan": updated_plan,
+                    "verification": None,
+                    "summary": summary,
+                    "priority_bias": next_priority_bias,
+                    "coordination": coordination,
+                    "updated_at": self._now(),
+                }
+            )
+
+        coordination = base_coordination.model_copy(
+            update={
+                "mode": OrchestratorCoordinationMode.READY,
+                "waiting_reason": "已新增聊天任务，等待调度器派发。",
+                "queue_position": None,
+                "dispatch_slot": None,
+                "preempted_by_session_id": None,
+                "failure_category": None,
+            }
+        )
+        return session.model_copy(
+            update={
+                "plan": updated_plan,
+                "status": OrchestratorSessionStatus.DISPATCHING,
+                "verification": None,
+                "summary": summary,
+                "priority_bias": next_priority_bias,
+                "coordination": coordination,
+                "updated_at": self._now(),
+            }
+        )
+
     def _reset_secondary_approval_artifacts(self, artifacts: dict[str, object]) -> dict[str, object]:
         cleaned = dict(artifacts)
         for key in [
@@ -1544,8 +2599,10 @@ class OrchestratorService:
                 break
         if raw_value is None:
             return None
+        return self._extract_scope_paths_from_value(raw_value)
 
-        parts = re.split(r"[，,、\n]|(?:\s+和\s+)", raw_value)
+    def _extract_scope_paths_from_value(self, raw_value: str) -> list[str] | None:
+        parts = re.split(r"[，,、\n]|(?:\s+和\s+)|(?:\s+and\s+)", raw_value)
         normalized: list[str] = []
         for part in parts:
             item = part.strip().strip("\"'`")
@@ -1557,6 +2614,33 @@ class OrchestratorService:
             normalized.append(item or ".")
         deduped = list(dict.fromkeys(normalized))
         return deduped or None
+
+    def _infer_scope_paths_from_chat_objective(self, objective: str) -> list[str] | None:
+        normalized = re.sub(r"\s+", " ", objective).strip()
+        if not normalized:
+            return None
+        if self._looks_like_project_root_scope_request(normalized):
+            return ["."]
+        return None
+
+    def _looks_like_project_root_scope_request(self, text: str) -> bool:
+        root_patterns = [
+            r"当前目录",
+            r"当前工作目录",
+            r"本目录",
+            r"项目根目录",
+            r"仓库根目录",
+            r"根目录",
+            r"根路径",
+            r"\bproject\s+root\b",
+            r"\brepository\s+root\b",
+            r"\brepo\s+root\b",
+            r"\bworkspace\s+root\b",
+            r"\bcurrent\s+directory\b",
+            r"\bworking\s+directory\b",
+            r"\bcwd\b",
+        ]
+        return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in root_patterns)
 
     def _extract_acceptance_commands(self, message: str) -> list[str] | None:
         patterns = [
@@ -1570,13 +2654,144 @@ class OrchestratorService:
                 break
         if raw_value is None:
             return None
+        return self._extract_acceptance_commands_from_value(raw_value, include_pipe_separator=False)
 
+    def _extract_acceptance_commands_from_value(
+        self,
+        raw_value: str,
+        *,
+        include_pipe_separator: bool,
+    ) -> list[str] | None:
+        separators = r"[；;\n]+"
+        if include_pipe_separator:
+            separators = r"(?:[；;\n]+|\s*\|\s*)"
         commands = [
             item.strip()
-            for item in re.split(r"[；;\n]+", raw_value)
+            for item in re.split(separators, raw_value)
             if item.strip()
         ]
         return list(dict.fromkeys(commands)) or None
+
+    def _extract_task_assignment_payload(
+        self,
+        message: str,
+    ) -> tuple[str, list[str] | None, list[str] | None, int | None] | None:
+        patterns = [
+            r"^(?:请\s*)?(?:给\s*)?(?:codex|主控|你|小晏)?\s*(?:派|指派|安排|新增|添加|创建)(?:一个|个)?(?:新)?任务(?:给(?:codex|主控|你|小晏))?[:：\s]+(.+)$",
+            r"^(?:任务|task)\s*[:：]\s*(.+)$",
+            r"^(?:请\s*)?(?:把|将)?(?:这个|这项)?任务(?:交给|派给)\s*(?:codex|主控|你|小晏)[:：\s]+(.+)$",
+        ]
+        raw_payload: str | None = None
+        for pattern in patterns:
+            match = re.search(pattern, message, flags=re.IGNORECASE)
+            if match:
+                raw_payload = match.group(1)
+                break
+        if raw_payload is None:
+            return None
+
+        metadata_key_pattern = r"(?:scope|范围|验收|测试|验证|acceptance|priority|优先级)"
+        metadata_pattern = re.compile(
+            rf"(?:^|[；;\n])\s*(?P<key>{metadata_key_pattern})\s*[:：=]\s*(?P<value>.*?)(?=(?:[；;\n]\s*(?:{metadata_key_pattern})\s*[:：=])|$)",
+            flags=re.IGNORECASE,
+        )
+        scope_override: list[str] | None = None
+        acceptance_override: list[str] | None = None
+        priority_override: int | None = None
+        spans: list[tuple[int, int]] = []
+
+        for match in metadata_pattern.finditer(raw_payload):
+            spans.append(match.span())
+            key = (match.group("key") or "").strip().lower()
+            value = (match.group("value") or "").strip()
+            if not value:
+                continue
+
+            if key in {"scope", "范围"}:
+                parsed_scope = self._extract_scope_paths_from_value(value)
+                if parsed_scope is None:
+                    raise ValueError("task assignment scope is empty")
+                scope_override = parsed_scope
+                continue
+            if key in {"验收", "测试", "验证", "acceptance"}:
+                parsed_commands = self._extract_acceptance_commands_from_value(value, include_pipe_separator=True)
+                if parsed_commands is None:
+                    raise ValueError("task assignment acceptance commands are empty")
+                acceptance_override = parsed_commands
+                continue
+            if key in {"priority", "优先级"}:
+                priority_override = self._extract_priority_bias_from_value(value)
+
+        objective_source = raw_payload
+        for start, end in reversed(spans):
+            objective_source = f"{objective_source[:start]} {objective_source[end:]}"
+
+        normalized = re.sub(r"\s+", " ", objective_source).strip().strip("\"'`“”")
+        normalized = normalized.strip("。；;，,")
+        if len(normalized) < 2:
+            raise ValueError("task objective is too short")
+        if len(normalized) > 120:
+            normalized = f"{normalized[:117]}..."
+        return normalized, scope_override, acceptance_override, priority_override
+
+    def _extract_priority_bias_from_value(self, raw_value: str) -> int:
+        normalized = raw_value.strip().lower()
+        if normalized in {"最高", "高", "普通", "低"}:
+            return {"最高": 80, "高": 40, "普通": 0, "低": -40}[normalized]
+        if re.search(r"(最高|high(est)?|urgent|紧急|加急|p0)", normalized):
+            return 80
+        if re.search(r"(高优先级|high|p1|较高)", normalized):
+            return 40
+        if re.search(r"(普通|默认|normal|default|中优先级|p2)", normalized):
+            return 0
+        if re.search(r"(低优先级|low|延后|p3|较低|降低)", normalized):
+            return -40
+        raise ValueError("unsupported task assignment priority")
+
+    def _priority_bias_to_label(self, priority_bias: int) -> str:
+        if priority_bias >= 80:
+            return "最高"
+        if priority_bias >= 40:
+            return "高"
+        if priority_bias <= -40:
+            return "低"
+        return "普通"
+
+    def _default_scope_paths_for_chat_task(self, session: OrchestratorSession) -> list[str]:
+        if session.plan is None:
+            return ["."]
+
+        for task in session.plan.tasks:
+            if task.kind == OrchestratorTaskKind.IMPLEMENT and task.scope_paths:
+                return list(dict.fromkeys(task.scope_paths))
+        for task in session.plan.tasks:
+            if task.kind == OrchestratorTaskKind.ANALYZE and task.scope_paths:
+                return list(dict.fromkeys(task.scope_paths))
+        return ["."]
+
+    def _default_acceptance_commands_for_chat_task(self, session: OrchestratorSession) -> list[str]:
+        if session.plan is None:
+            return ["git status --short"]
+
+        for task in session.plan.tasks:
+            if task.kind == OrchestratorTaskKind.IMPLEMENT and task.acceptance_commands:
+                return list(dict.fromkeys(task.acceptance_commands))
+        for task in session.plan.tasks:
+            if task.kind == OrchestratorTaskKind.VERIFY and task.acceptance_commands:
+                return list(dict.fromkeys(task.acceptance_commands))
+        return ["git status --short"]
+
+    def _next_chat_implement_task_id(self, session: OrchestratorSession) -> str:
+        existing_ids = set()
+        if session.plan is not None:
+            existing_ids = {task.task_id for task in session.plan.tasks}
+
+        index = 1
+        while True:
+            candidate = f"chat-implement-{index}"
+            if candidate not in existing_ids:
+                return candidate
+            index += 1
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)

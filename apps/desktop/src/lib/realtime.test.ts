@@ -197,6 +197,15 @@ describe("app realtime client", () => {
         assistant_message_id: "assistant_1",
         response_id: "resp_1",
         content: "你好",
+        knowledge_references: [
+          {
+            source: "wing_xiaoyan/knowledge",
+            wing: "wing_xiaoyan",
+            room: "knowledge",
+            similarity: 0.88,
+            excerpt: "你喜欢结构化输出。",
+          },
+        ],
         session_id: "assistant_1",
         sequence: 4,
       },
@@ -252,6 +261,15 @@ describe("app realtime client", () => {
             assistant_message_id: "assistant_1",
             response_id: "resp_1",
             content: "你好",
+            knowledge_references: [
+              {
+                source: "wing_xiaoyan/knowledge",
+                wing: "wing_xiaoyan",
+                room: "knowledge",
+                similarity: 0.88,
+                excerpt: "你喜欢结构化输出。",
+              },
+            ],
             session_id: "assistant_1",
             sequence: 4,
           },

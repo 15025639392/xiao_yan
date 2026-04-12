@@ -224,3 +224,44 @@ def test_realtime_socket_pushes_chat_stream_events():
     assert completed_event["payload"]["session_id"] == "assistant_1"
     assert completed_event["payload"]["sequence"] == 3
     assert isinstance(completed_event["payload"]["timestamp_ms"], int)
+
+
+def test_realtime_socket_pushes_chat_completed_with_knowledge_references():
+    _install_runtime_for_realtime_test()
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws/app") as websocket:
+        assert websocket.receive_json()["type"] == "snapshot"
+
+        app.state.realtime_hub.publish_chat_started("assistant_knowledge", response_id="resp_knowledge")
+        websocket.receive_json()
+
+        app.state.realtime_hub.publish_chat_completed(
+            "assistant_knowledge",
+            "resp_knowledge",
+            "我会延续你喜欢结构化输出的偏好。",
+            knowledge_references=[
+                {
+                    "source": "wing_xiaoyan/knowledge",
+                    "wing": "wing_xiaoyan",
+                    "room": "knowledge",
+                    "similarity": 0.88,
+                    "excerpt": "你喜欢结构化输出。",
+                }
+            ],
+        )
+        completed_event = websocket.receive_json()
+
+    assert completed_event["type"] == "chat_completed"
+    assert completed_event["payload"]["assistant_message_id"] == "assistant_knowledge"
+    assert completed_event["payload"]["response_id"] == "resp_knowledge"
+    assert completed_event["payload"]["content"] == "我会延续你喜欢结构化输出的偏好。"
+    assert completed_event["payload"]["knowledge_references"] == [
+        {
+            "source": "wing_xiaoyan/knowledge",
+            "wing": "wing_xiaoyan",
+            "room": "knowledge",
+            "similarity": 0.88,
+            "excerpt": "你喜欢结构化输出。",
+        }
+    ]

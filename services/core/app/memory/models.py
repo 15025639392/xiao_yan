@@ -19,8 +19,9 @@
 
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── 枚举类型 ──────────────────────────────────────────────
@@ -73,6 +74,7 @@ class MemoryEntry(BaseModel):
     keywords: list[str] = Field(default_factory=list, description="关键词列表")
     subject: str | None = Field(default=None, description="相关主体/实体")
     source_context: str | None = Field(default=None, description="来源上下文摘要")
+    deleted_at: datetime | None = Field(default=None, description="软删除时间")
 
     # ── 时间戳 ──
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -120,6 +122,10 @@ class MemoryEntry(BaseModel):
         if self.expires_at is None:
             return False
         return datetime.now(timezone.utc) > self.expires_at
+
+    @property
+    def status(self) -> Literal["active", "deleted"]:
+        return "deleted" if self.deleted_at is not None else "active"
 
     @property
     def retention_score(self) -> float:
@@ -180,6 +186,8 @@ class MemoryEntry(BaseModel):
             "access_count": self.access_count,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_accessed_at": self.last_accessed_at.isoformat() if self.last_accessed_at else None,
+            "status": self.status,
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
         }
 
 
@@ -260,7 +268,17 @@ class MemoryEvent(BaseModel):
     role: str | None = None
     session_id: str | None = None
     source_context: str | None = None
+    namespace: str | None = Field(default=None, description="知识命名空间：chat/autobio/inner/knowledge")
+    knowledge_type: str | None = Field(default=None, description="知识类型，如 concept/preference/rule")
+    knowledge_tags: list[str] = Field(default_factory=list, description="知识标签")
+    source_ref: str | None = Field(default=None, description="知识来源引用（文件、URL、会话片段）")
+    version_tag: str | None = Field(default=None, description="知识版本标签")
+    visibility: Literal["internal", "user"] = Field(
+        default="internal",
+        description="可见性：internal=系统内部，user=对用户可见",
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    deleted_at: datetime | None = Field(default=None, description="软删除时间")
     entry_id: str = Field(
         default_factory=lambda: _generate_id(),
         description="关联的 MemoryEntry ID（用于删除/更新匹配）",
@@ -273,15 +291,51 @@ class MemoryEvent(BaseModel):
     @classmethod
     def from_entry(cls, entry: MemoryEntry) -> "MemoryEvent":
         """从 MemoryEntry 转换到存储事件。"""
+        storage_kind = _storage_kind_for_entry(entry)
         return cls(
-            kind=_storage_kind_for_entry(entry),
+            kind=storage_kind,
             content=entry.content,
             role=entry.role,
             session_id=entry.session_id,
             source_context=entry.source_context,
+            namespace=_default_namespace_for_kind(storage_kind),
+            knowledge_type="semantic" if entry.kind == MemoryKind.SEMANTIC else None,
+            source_ref=entry.source_context,
             created_at=entry.created_at,
+            deleted_at=entry.deleted_at,
             entry_id=entry.id,  # 保存 ID 用于后续匹配
         )
+
+    @model_validator(mode="after")
+    def _normalize_memory_schema(self) -> "MemoryEvent":
+        normalized_namespace = (self.namespace or "").strip().lower()
+        if not normalized_namespace:
+            normalized_namespace = _default_namespace_for_kind(self.kind)
+        if normalized_namespace not in _ALLOWED_MEMORY_NAMESPACES:
+            allowed = ", ".join(sorted(_ALLOWED_MEMORY_NAMESPACES))
+            raise ValueError(f"namespace must be one of: {allowed}")
+        self.namespace = normalized_namespace
+
+        if self.knowledge_type is not None:
+            normalized_knowledge_type = self.knowledge_type.strip()
+            self.knowledge_type = normalized_knowledge_type or None
+
+        normalized_tags: list[str] = []
+        for raw_tag in self.knowledge_tags or []:
+            normalized_tag = str(raw_tag).strip().lower()
+            if normalized_tag and normalized_tag not in normalized_tags:
+                normalized_tags.append(normalized_tag)
+        self.knowledge_tags = normalized_tags
+
+        if self.source_ref is not None:
+            normalized_source_ref = self.source_ref.strip()
+            self.source_ref = normalized_source_ref or None
+
+        if self.version_tag is not None:
+            normalized_version_tag = self.version_tag.strip()
+            self.version_tag = normalized_version_tag or None
+
+        return self
 
     def to_entry(self) -> MemoryEntry:
         """从存储事件转换为 MemoryEntry。"""
@@ -317,6 +371,7 @@ class MemoryEvent(BaseModel):
             session_id=self.session_id,
             source_context=self.source_context,
             created_at=self.created_at,
+            deleted_at=self.deleted_at,
             importance=default_importance,
             related_memory_ids=self.related_memory_ids,
         )
@@ -326,6 +381,7 @@ class MemoryEvent(BaseModel):
 
 
 _counter = 0
+_ALLOWED_MEMORY_NAMESPACES = {"chat", "autobio", "inner", "knowledge"}
 
 
 def _generate_id(length: int = 12) -> str:
@@ -345,3 +401,14 @@ def _storage_kind_for_entry(entry: MemoryEntry) -> str:
         return "chat"
 
     return entry.kind.value
+
+
+def _default_namespace_for_kind(kind: str) -> str:
+    normalized_kind = (kind or "").strip().lower()
+    if normalized_kind in {"autobio"}:
+        return "autobio"
+    if normalized_kind in {"inner", "world", "action", "self_check"}:
+        return "inner"
+    if normalized_kind in {"semantic", "fact", "emotional", "episodic", "knowledge"}:
+        return "knowledge"
+    return "chat"

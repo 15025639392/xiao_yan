@@ -351,6 +351,54 @@ test("quick action buttons populate draft", () => {
   expect(onDraftChange).toHaveBeenCalledWith("帮我制定今天的计划");
 });
 
+test("supports adding and removing attached folders in chat input", () => {
+  const onPickFolder = vi.fn();
+  const onPickFile = vi.fn();
+  const onPickImage = vi.fn();
+  const onRemoveAttachedFolder = vi.fn();
+  const onRemoveAttachedFile = vi.fn();
+  const onRemoveAttachedImage = vi.fn();
+
+  render(
+    <ChatPanel
+      draft="请帮我看目录结构"
+      focusGoalTitle={null}
+      focusModeLabel="常规自主"
+      isSending={false}
+      messages={[]}
+      modeLabel="运行中"
+      attachedFolders={["/tmp/workspace/project-a"]}
+      attachedFiles={["/tmp/workspace/project-a/README.md"]}
+      attachedImages={["/tmp/workspace/project-a/screenshot.png"]}
+      onDraftChange={vi.fn()}
+      onSend={vi.fn()}
+      onPickFolder={onPickFolder}
+      onPickFile={onPickFile}
+      onPickImage={onPickImage}
+      onRemoveAttachedFolder={onRemoveAttachedFolder}
+      onRemoveAttachedFile={onRemoveAttachedFile}
+      onRemoveAttachedImage={onRemoveAttachedImage}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "添加文件夹" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加文件" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加图片" }));
+  expect(onPickFolder).toHaveBeenCalledTimes(1);
+  expect(onPickFile).toHaveBeenCalledTimes(1);
+  expect(onPickImage).toHaveBeenCalledTimes(1);
+
+  expect(screen.getByText("/tmp/workspace/project-a")).toBeInTheDocument();
+  expect(screen.getByText("/tmp/workspace/project-a/README.md")).toBeInTheDocument();
+  expect(screen.getByText("/tmp/workspace/project-a/screenshot.png")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "移除文件夹 /tmp/workspace/project-a" }));
+  fireEvent.click(screen.getByRole("button", { name: "移除文件 /tmp/workspace/project-a/README.md" }));
+  fireEvent.click(screen.getByRole("button", { name: "移除图片 /tmp/workspace/project-a/screenshot.png" }));
+  expect(onRemoveAttachedFolder).toHaveBeenCalledWith("/tmp/workspace/project-a");
+  expect(onRemoveAttachedFile).toHaveBeenCalledWith("/tmp/workspace/project-a/README.md");
+  expect(onRemoveAttachedImage).toHaveBeenCalledWith("/tmp/workspace/project-a/screenshot.png");
+});
+
 test("updates chat model inside config modal", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -383,6 +431,23 @@ test("updates chat model inside config modal", async () => {
           ],
           current_provider: "openai",
           current_model: "gpt-5.4",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config/data-environment") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          testing_mode: false,
+          mempalace_palace_path: "/tmp/palace",
+          mempalace_wing: "wing_xiaoyan",
+          mempalace_room: "chat_exchange",
+          default_backup_directory: "/tmp/backups",
+          switch_backup_path: null,
         }),
         {
           status: 200,

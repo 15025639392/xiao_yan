@@ -285,6 +285,50 @@ def get_orchestrator_message_storage_path() -> Path:
     return get_service_root() / ".data" / "orchestrator_messages.json"
 
 
+def _read_positive_float_env(name: str, default: float, *, minimum: float) -> float:
+    load_local_env()
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return max(minimum, value)
+
+
+def _read_positive_int_env(name: str, default: int, *, minimum: int) -> int:
+    load_local_env()
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, value)
+
+
+def get_orchestrator_max_parallel_sessions() -> int:
+    return _read_positive_int_env("ORCHESTRATOR_MAX_PARALLEL_SESSIONS", 2, minimum=1)
+
+
+def get_orchestrator_max_parallel_tasks_per_session() -> int:
+    return _read_positive_int_env("ORCHESTRATOR_MAX_PARALLEL_TASKS_PER_SESSION", 2, minimum=1)
+
+
+def get_orchestrator_delegate_soft_ping_hours() -> float:
+    return _read_positive_float_env("ORCHESTRATOR_DELEGATE_SOFT_PING_HOURS", 2.0, minimum=0.25)
+
+
+def get_orchestrator_delegate_no_receipt_hours() -> float:
+    return _read_positive_float_env("ORCHESTRATOR_DELEGATE_NO_RECEIPT_HOURS", 6.0, minimum=0.5)
+
+
+def get_orchestrator_delegate_followup_interval_minutes() -> float:
+    return _read_positive_float_env("ORCHESTRATOR_DELEGATE_FOLLOWUP_INTERVAL_MINUTES", 30.0, minimum=1.0)
+
+
 def get_goal_admission_mode() -> str:
     load_local_env()
     mode = os.getenv("GOAL_ADMISSION_MODE", "shadow").strip().lower()

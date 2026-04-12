@@ -857,3 +857,13 @@
   color: var(--danger);
   font-size: 0.875rem;
 }
+
+.notice-banner {
+  margin: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-default));
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}

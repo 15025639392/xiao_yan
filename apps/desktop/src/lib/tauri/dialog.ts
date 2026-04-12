@@ -15,3 +15,26 @@ export async function pickDirectory(): Promise<string | null> {
   return selected;
 }
 
+type FileDialogFilter = {
+  name: string;
+  extensions: string[];
+};
+
+export async function pickFiles(options?: {
+  title?: string;
+  filters?: FileDialogFilter[];
+  multiple?: boolean;
+}): Promise<string[]> {
+  if (!isTauriRuntime()) return [];
+
+  const selected = await open({
+    directory: false,
+    multiple: options?.multiple ?? true,
+    title: options?.title ?? "选择文件",
+    filters: options?.filters,
+  });
+
+  if (!selected) return [];
+  if (Array.isArray(selected)) return selected.filter((item): item is string => typeof item === "string");
+  return typeof selected === "string" ? [selected] : [];
+}

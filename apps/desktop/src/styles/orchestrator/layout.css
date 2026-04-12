@@ -1,0 +1,17 @@
+.orchestrator-chat-layout {
+  min-height: 0;
+}
+
+.orchestrator-chat-main {
+  min-width: 0;
+}
+
+.orchestrator-chat-sidebar {
+  border: 1px solid var(--orchestrator-panel-border);
+  background: var(--orchestrator-panel-bg);
+  box-shadow: var(--orchestrator-panel-shadow);
+}
+
+.orchestrator-chat-sidebar__panel {
+  overflow: auto;
+}

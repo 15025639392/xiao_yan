@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, vi } from "vitest";
 
 import App from "./App";
+import * as tauri from "./lib/tauri";
 import { resetAppRealtimeForTests } from "./lib/realtime";
 import { IMPORTED_PROJECTS_STORAGE_KEY } from "./lib/projects";
 
@@ -404,6 +405,118 @@ test("streams assistant reply over realtime chat events", async () => {
   await waitFor(() => {
     expect(screen.getByText("hello human")).toBeInTheDocument();
   });
+});
+
+test("supports retrying a failed user message send", async () => {
+  let chatCallCount = 0;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: null,
+          active_goal_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat")) {
+      chatCallCount += 1;
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ message: "请重发这条消息" }));
+
+      if (chatCallCount === 1) {
+        return new Response(JSON.stringify({ detail: "upstream timeout" }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          response_id: "resp_retry_1",
+          assistant_message_id: "assistant_retry_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  const socket = MockWebSocket.instances[0];
+  socket.open();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "请重发这条消息" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "重发" })).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "重发" }));
+
+  await waitFor(() => {
+    expect(chatCallCount).toBe(2);
+  });
+
+  await waitFor(() => {
+    expect(screen.queryByRole("button", { name: "重发" })).not.toBeInTheDocument();
+  });
+
+  expect(screen.getAllByText("请重发这条消息")).toHaveLength(1);
 });
 
 test("does not duplicate text when chat delta payloads are cumulative snapshots", async () => {
@@ -2635,4 +2748,418 @@ test("renders self programming state from polled runtime state", async () => {
   render(<App />);
 
   expect(await screen.findByText("已修改状态面板并通过测试。")).toBeInTheDocument();
+});
+
+test("sends chat request with attached folder context after picking a folder", async () => {
+  const isTauriRuntimeSpy = vi.spyOn(tauri, "isTauriRuntime").mockReturnValue(true);
+  const pickDirectorySpy = vi.spyOn(tauri, "pickDirectory").mockResolvedValue("/tmp/project-folder");
+
+  let chatRequestBody: unknown = null;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: null,
+          active_goal_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "focused",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat/folder-permissions") && init?.method === "PUT") {
+      return new Response(
+        JSON.stringify({
+          permissions: [{ path: "/tmp/project-folder", access_level: "read_only" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat")) {
+      chatRequestBody = init?.body ? JSON.parse(String(init.body)) : null;
+      return new Response(
+        JSON.stringify({
+          response_id: "resp_folder",
+          assistant_message_id: "assistant_folder_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  MockWebSocket.instances[0]?.open();
+
+  fireEvent.click(await screen.findByRole("button", { name: "添加文件夹" }));
+  await waitFor(() => {
+    expect(pickDirectorySpy).toHaveBeenCalledTimes(1);
+  });
+
+  fireEvent.change(screen.getByLabelText("对话输入"), { target: { value: "请分析这个目录结构" } });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(chatRequestBody).toEqual({
+      message: "请分析这个目录结构",
+      attachments: [{ type: "folder", path: "/tmp/project-folder" }],
+    });
+  });
+
+  isTauriRuntimeSpy.mockRestore();
+});
+
+test("sends chat request with attached files and images", async () => {
+  const isTauriRuntimeSpy = vi.spyOn(tauri, "isTauriRuntime").mockReturnValue(true);
+  const pickFilesSpy = vi
+    .spyOn(tauri, "pickFiles")
+    .mockResolvedValueOnce(["/tmp/project-folder/README.md"])
+    .mockResolvedValueOnce(["/tmp/project-folder/screenshot.png"]);
+
+  let chatRequestBody: unknown = null;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: null,
+          active_goal_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "focused",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat/folder-permissions") && init?.method === "PUT") {
+      return new Response(
+        JSON.stringify({
+          permissions: [{ path: "/tmp/project-folder", access_level: "read_only" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat")) {
+      chatRequestBody = init?.body ? JSON.parse(String(init.body)) : null;
+      return new Response(
+        JSON.stringify({
+          response_id: "resp_attachment",
+          assistant_message_id: "assistant_attachment_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  MockWebSocket.instances[0]?.open();
+
+  fireEvent.click(await screen.findByRole("button", { name: "添加文件" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加图片" }));
+
+  await waitFor(() => {
+    expect(pickFilesSpy).toHaveBeenCalledTimes(2);
+  });
+
+  fireEvent.change(screen.getByLabelText("对话输入"), { target: { value: "请同时参考这两个附件" } });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(chatRequestBody).toEqual({
+      message: "请同时参考这两个附件",
+      attachments: [
+        { type: "file", path: "/tmp/project-folder/README.md" },
+        { type: "image", path: "/tmp/project-folder/screenshot.png" },
+      ],
+    });
+  });
+
+  isTauriRuntimeSpy.mockRestore();
+});
+
+test("blocks duplicate orchestrator quick command sends and shows notice", async () => {
+  let resolveConsoleCommand: ((response: Response) => void) | null = null;
+  let consoleCommandPostCount = 0;
+
+  const sessionPayload = {
+    session_id: "session-1",
+    project_path: "/tmp/demo-project",
+    project_name: "demo-project",
+    goal: "持续推进主控任务",
+    status: "running",
+    plan: {
+      objective: "持续推进主控任务",
+      constraints: [],
+      definition_of_done: [],
+      project_snapshot: {
+        project_path: "/tmp/demo-project",
+        project_name: "demo-project",
+        repository_root: "/tmp/demo-project",
+        languages: ["TypeScript"],
+        package_manager: "npm",
+        framework: "vite",
+        entry_files: ["src/main.tsx"],
+        test_commands: ["npm test"],
+        build_commands: ["npm run build"],
+        key_directories: ["src"],
+      },
+      tasks: [],
+    },
+    delegates: [],
+    coordination: {
+      mode: "queued",
+      priority_score: 101,
+      queue_position: 2,
+      waiting_reason: "等待并行名额释放。",
+    },
+    verification: null,
+    summary: "等待并行名额释放。",
+    entered_at: "2026-04-11T09:00:00.000Z",
+    updated_at: "2026-04-11T09:01:00.000Z",
+  };
+
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          focus_mode: "orchestrator",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+          self_programming_job: null,
+          orchestrator_session: sessionPayload,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "focused",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/orchestrator/sessions") && !init?.method) {
+      return new Response(JSON.stringify([sessionPayload]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/orchestrator/scheduler")) {
+      return new Response(
+        JSON.stringify({
+          max_parallel_sessions: 2,
+          running_sessions: 1,
+          available_slots: 1,
+          queued_sessions: 1,
+          active_session_id: "session-1",
+          running_session_ids: ["other-session"],
+          queued_session_ids: ["session-1"],
+          verification_rollup: {
+            total_sessions: 1,
+            passed_sessions: 0,
+            failed_sessions: 0,
+            pending_sessions: 1,
+          },
+          policy_note: "最多并行 2 个项目会话",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/orchestrator/sessions/session-1/messages")) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/orchestrator/console/command")) {
+      consoleCommandPostCount += 1;
+      return await new Promise<Response>((resolve) => {
+        resolveConsoleCommand = resolve;
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/orchestrator";
+
+  render(<App />);
+  MockWebSocket.instances[0]?.open();
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /查看进度/ })).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: /查看进度/ }));
+  fireEvent.click(screen.getByRole("button", { name: /查看进度/ }));
+
+  await waitFor(() => {
+    expect(consoleCommandPostCount).toBe(1);
+    expect(screen.getByText("同一条主控指令正在发送中，已为你拦截重复点击。")).toBeInTheDocument();
+  });
+
+  resolveConsoleCommand?.(
+    new Response(
+      JSON.stringify({
+        session: sessionPayload,
+        assistant_message_id: "assistant-next-action-2",
+        created_session: false,
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    ),
+  );
 });
