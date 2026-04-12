@@ -1,0 +1,398 @@
+{
+  "generated_at": "2026-04-12T18:01:49.609214+00:00",
+  "mode": "live-http-preflight",
+  "base_url": "http://127.0.0.1:8000",
+  "settings": {
+    "turns": 12,
+    "retries": 2,
+    "timeout": {
+      "connect_s": 5.0,
+      "read_s": 60.0,
+      "write_s": 10.0,
+      "pool_s": 10.0
+    },
+    "backoff_base_s": 1.5,
+    "sleep_ms": 0
+  },
+  "chat_results": [
+    {
+      "turn": 1,
+      "prompt": "请用一句话回答：我们继续知识库建设。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 4347.078,
+      "assistant_message_id": "assistant_2785566a8bab4f31b782809c5c591686",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 4346.739,
+          "error": null,
+          "assistant_message_id": "assistant_2785566a8bab4f31b782809c5c591686",
+          "body_snippet": "{\"response_id\":\"f5aa16c6-12f6-472d-86bf-fe635c929a48\",\"assistant_message_id\":\"assistant_2785566a8bab4f31b782809c5c591686\"}"
+        }
+      ]
+    },
+    {
+      "turn": 2,
+      "prompt": "请一句话回顾上条重点。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2800.214,
+      "assistant_message_id": "assistant_6314c7159a6440bda5210afbe8f4cc3b",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2800.044,
+          "error": null,
+          "assistant_message_id": "assistant_6314c7159a6440bda5210afbe8f4cc3b",
+          "body_snippet": "{\"response_id\":\"d2c8cfe0-8e01-4bba-ad3c-53a7cbc5a2d1\",\"assistant_message_id\":\"assistant_6314c7159a6440bda5210afbe8f4cc3b\"}"
+        }
+      ]
+    },
+    {
+      "turn": 3,
+      "prompt": "请给唯一下一步。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 11499.864,
+      "assistant_message_id": "assistant_a3d71c30cb5a4364b2ba7f161938f918",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 11499.7,
+          "error": null,
+          "assistant_message_id": "assistant_a3d71c30cb5a4364b2ba7f161938f918",
+          "body_snippet": "{\"response_id\":\"6cee0de6-f008-4e5f-a7ff-aec80277226c\",\"assistant_message_id\":\"assistant_a3d71c30cb5a4364b2ba7f161938f918\"}"
+        }
+      ]
+    },
+    {
+      "turn": 4,
+      "prompt": "请一句话回答：继续推进。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2095.124,
+      "assistant_message_id": "assistant_ecdbe829c1294c8bb0261c98ceff7d51",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2094.934,
+          "error": null,
+          "assistant_message_id": "assistant_ecdbe829c1294c8bb0261c98ceff7d51",
+          "body_snippet": "{\"response_id\":\"520ac5a5-d110-4e44-8f13-dd332eec5d83\",\"assistant_message_id\":\"assistant_ecdbe829c1294c8bb0261c98ceff7d51\"}"
+        }
+      ]
+    },
+    {
+      "turn": 5,
+      "prompt": "请列 2 条行动项。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 4844.177,
+      "assistant_message_id": "assistant_88b992227fb347a396ea167302c12701",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 4843.823,
+          "error": null,
+          "assistant_message_id": "assistant_88b992227fb347a396ea167302c12701",
+          "body_snippet": "{\"response_id\":\"530b8fb1-bff9-49ff-b8d1-e0205f62c73b\",\"assistant_message_id\":\"assistant_88b992227fb347a396ea167302c12701\"}"
+        }
+      ]
+    },
+    {
+      "turn": 6,
+      "prompt": "请一句话提示一个风险。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2359.419,
+      "assistant_message_id": "assistant_4214331ae7ab4311b07ad666a7e707ba",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2358.97,
+          "error": null,
+          "assistant_message_id": "assistant_4214331ae7ab4311b07ad666a7e707ba",
+          "body_snippet": "{\"response_id\":\"224e7cae-7b02-4183-90ec-664e04c31c8e\",\"assistant_message_id\":\"assistant_4214331ae7ab4311b07ad666a7e707ba\"}"
+        }
+      ]
+    },
+    {
+      "turn": 7,
+      "prompt": "请一句话回答：保持结构化。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2369.095,
+      "assistant_message_id": "assistant_ba5e7d43fb514fa3b16e28658ebcafdf",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2368.927,
+          "error": null,
+          "assistant_message_id": "assistant_ba5e7d43fb514fa3b16e28658ebcafdf",
+          "body_snippet": "{\"response_id\":\"607124bf-af17-4cc7-af9c-5ff2d576fefd\",\"assistant_message_id\":\"assistant_ba5e7d43fb514fa3b16e28658ebcafdf\"}"
+        }
+      ]
+    },
+    {
+      "turn": 8,
+      "prompt": "请一句话总结当前进展。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2503.181,
+      "assistant_message_id": "assistant_9d32b92b8d2744219a05552bab91e822",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2503.004,
+          "error": null,
+          "assistant_message_id": "assistant_9d32b92b8d2744219a05552bab91e822",
+          "body_snippet": "{\"response_id\":\"0a55e665-4c77-40a8-861e-41f2bb151973\",\"assistant_message_id\":\"assistant_9d32b92b8d2744219a05552bab91e822\"}"
+        }
+      ]
+    },
+    {
+      "turn": 9,
+      "prompt": "请给 1 条可执行动作。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 12680.245,
+      "assistant_message_id": "assistant_d0e0c06129a34addb4f0b29913bb8b1f",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 12680.082,
+          "error": null,
+          "assistant_message_id": "assistant_d0e0c06129a34addb4f0b29913bb8b1f",
+          "body_snippet": "{\"response_id\":\"0c88e258-c506-4e7a-aed2-6e381c76bb75\",\"assistant_message_id\":\"assistant_d0e0c06129a34addb4f0b29913bb8b1f\"}"
+        }
+      ]
+    },
+    {
+      "turn": 10,
+      "prompt": "请一句话回答：继续。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 3,
+      "elapsed_ms_total": 16982.305,
+      "assistant_message_id": "assistant_7bd0bcd6386047008b1c2fcfad8eb7d1",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": false,
+          "status_code": 502,
+          "duration_ms": 5065.532,
+          "error": null,
+          "assistant_message_id": null,
+          "body_snippet": "{\"detail\":\"[Errno 54] Connection reset by peer\"}"
+        },
+        {
+          "attempt": 2,
+          "ok": false,
+          "status_code": 502,
+          "duration_ms": 5067.81,
+          "error": null,
+          "assistant_message_id": null,
+          "body_snippet": "{\"detail\":\"[Errno 54] Connection reset by peer\"}"
+        },
+        {
+          "attempt": 3,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2339.641,
+          "error": null,
+          "assistant_message_id": "assistant_7bd0bcd6386047008b1c2fcfad8eb7d1",
+          "body_snippet": "{\"response_id\":\"f7c0860d-da66-4cde-a239-51b5ecbebe26\",\"assistant_message_id\":\"assistant_7bd0bcd6386047008b1c2fcfad8eb7d1\"}"
+        }
+      ]
+    },
+    {
+      "turn": 11,
+      "prompt": "请一句话回答：记住我们的目标是知识库建设。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2295.49,
+      "assistant_message_id": "assistant_464f5c81acf744ebb9f156154e2a5c2a",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2295.399,
+          "error": null,
+          "assistant_message_id": "assistant_464f5c81acf744ebb9f156154e2a5c2a",
+          "body_snippet": "{\"response_id\":\"b413e128-416e-4492-8ae4-69ef28c008c6\",\"assistant_message_id\":\"assistant_464f5c81acf744ebb9f156154e2a5c2a\"}"
+        }
+      ]
+    },
+    {
+      "turn": 12,
+      "prompt": "请一句话给收尾建议。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2278.721,
+      "assistant_message_id": "assistant_f00225a86a0e4f4dbe5d3d22de0daa7e",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2278.589,
+          "error": null,
+          "assistant_message_id": "assistant_f00225a86a0e4f4dbe5d3d22de0daa7e",
+          "body_snippet": "{\"response_id\":\"73497a4f-f740-4676-a6a9-58094e2a5635\",\"assistant_message_id\":\"assistant_f00225a86a0e4f4dbe5d3d22de0daa7e\"}"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "success_count": 12,
+    "failed_count": 0,
+    "success_rate": 1.0,
+    "client_elapsed_ms": {
+      "avg": 5587.909,
+      "p50": 2651.698,
+      "p95": 14616.172,
+      "max": 16982.305
+    }
+  },
+  "observability_before": {
+    "window": {
+      "max_samples": 500,
+      "updated_at": null
+    },
+    "latency": {
+      "retrieval_ms": {
+        "count": 0,
+        "avg": null,
+        "p50": null,
+        "p95": null
+      },
+      "chat_ms": {
+        "count": 0,
+        "avg": null,
+        "p50": null,
+        "p95": null
+      }
+    },
+    "quality": {
+      "queries": 0,
+      "failures": 0,
+      "hit_queries": 0,
+      "hit_rate": null,
+      "avg_hits_per_query": null,
+      "avg_similarity": null
+    },
+    "write": {
+      "attempts": 0,
+      "failures": 0,
+      "failure_rate": null
+    },
+    "alerts": [],
+    "thresholds": {
+      "retrieval_p95_ms": 120.0,
+      "chat_p95_ms": 1500.0,
+      "write_failure_rate": 0.01,
+      "retrieval_hit_rate": 0.4,
+      "min_latency_samples_for_alert": 20,
+      "min_write_samples_for_alert": 20,
+      "min_quality_samples_for_alert": 20
+    }
+  },
+  "observability_after": {
+    "window": {
+      "max_samples": 500,
+      "updated_at": "2026-04-12T18:01:49.336923+00:00"
+    },
+    "latency": {
+      "retrieval_ms": {
+        "count": 0,
+        "avg": null,
+        "p50": null,
+        "p95": null
+      },
+      "chat_ms": {
+        "count": 12,
+        "avg": 3850.925,
+        "p50": 2021.479,
+        "p95": 11638.69
+      }
+    },
+    "quality": {
+      "queries": 0,
+      "failures": 0,
+      "hit_queries": 0,
+      "hit_rate": null,
+      "avg_hits_per_query": null,
+      "avg_similarity": null
+    },
+    "write": {
+      "attempts": 12,
+      "failures": 0,
+      "failure_rate": 0.0
+    },
+    "alerts": [],
+    "thresholds": {
+      "retrieval_p95_ms": 120.0,
+      "chat_p95_ms": 1500.0,
+      "write_failure_rate": 0.01,
+      "retrieval_hit_rate": 0.4,
+      "min_latency_samples_for_alert": 20,
+      "min_write_samples_for_alert": 20,
+      "min_quality_samples_for_alert": 20
+    }
+  },
+  "observability_reset": {
+    "success": true,
+    "reset": true
+  },
+  "notes": [
+    "Live HTTP calls against local running service.",
+    "Report is persisted even when partial failures/timeouts occur."
+  ],
+  "run_window": {
+    "started_at": "2026-04-12T18:00:42.431338+00:00",
+    "finished_at": "2026-04-12T18:01:49.609351+00:00"
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "generated_at": "2026-04-12T17:04:39.753842+00:00",
+  "mode": "local-preflight-simulation",
+  "turns": 12,
+  "chat_results": [
+    {
+      "turn": 1,
+      "status_code": 200,
+      "assistant_message_id": "assistant_e34c6c255cbb43989eb922592081154a"
+    },
+    {
+      "turn": 2,
+      "status_code": 200,
+      "assistant_message_id": "assistant_7d3b9287ebac4df3966ae671666c5fff"
+    },
+    {
+      "turn": 3,
+      "status_code": 200,
+      "assistant_message_id": "assistant_d4fcbf25f6534dfd9e940969720827f3"
+    },
+    {
+      "turn": 4,
+      "status_code": 200,
+      "assistant_message_id": "assistant_397c2f3feb324d73a4e105951b3e760d"
+    },
+    {
+      "turn": 5,
+      "status_code": 200,
+      "assistant_message_id": "assistant_10a7a50a94ac44909f3ffdcff5456255"
+    },
+    {
+      "turn": 6,
+      "status_code": 200,
+      "assistant_message_id": "assistant_8bae0aa3f3cf48f0b5360639a3de0e41"
+    },
+    {
+      "turn": 7,
+      "status_code": 200,
+      "assistant_message_id": "assistant_5ba34b21e7d6430f9e8ad2a6595df06d"
+    },
+    {
+      "turn": 8,
+      "status_code": 200,
+      "assistant_message_id": "assistant_e06ff8efa5c048d595f6ae4adf31b45e"
+    },
+    {
+      "turn": 9,
+      "status_code": 200,
+      "assistant_message_id": "assistant_5d9d2cb6bed7426389f1fe16b5059b97"
+    },
+    {
+      "turn": 10,
+      "status_code": 200,
+      "assistant_message_id": "assistant_9844c419ae894abfa7d5782a9586d9fc"
+    },
+    {
+      "turn": 11,
+      "status_code": 200,
+      "assistant_message_id": "assistant_4a73e4eb034b42198bd6d9b7c2275bc3"
+    },
+    {
+      "turn": 12,
+      "status_code": 200,
+      "assistant_message_id": "assistant_767a2457d35942a499aa033cacc63c58"
+    }
+  ],
+  "summary": {
+    "success_count": 12,
+    "failed_count": 0,
+    "alerts": [],
+    "pass": true
+  },
+  "observability": {
+    "window": {
+      "max_samples": 500,
+      "updated_at": "2026-04-12T17:04:39.593140+00:00"
+    },
+    "latency": {
+      "retrieval_ms": {
+        "count": 12,
+        "avg": 0.03,
+        "p50": 0.03,
+        "p95": 0.035
+      },
+      "chat_ms": {
+        "count": 12,
+        "avg": 0.016,
+        "p50": 0.015,
+        "p95": 0.022
+      }
+    },
+    "quality": {
+      "queries": 12,
+      "failures": 0,
+      "hit_queries": 12,
+      "hit_rate": 1.0,
+      "avg_hits_per_query": 2.0,
+      "avg_similarity": 0.845
+    },
+    "write": {
+      "attempts": 12,
+      "failures": 0,
+      "failure_rate": 0.0
+    },
+    "alerts": [],
+    "thresholds": {
+      "retrieval_p95_ms": 120.0,
+      "chat_p95_ms": 1500.0,
+      "write_failure_rate": 0.01,
+      "retrieval_hit_rate": 0.4
+    }
+  },
+  "notes": [
+    "This preflight uses local TestClient with stub gateway/mempalace adapter.",
+    "Use real service traffic for final grey-release validation."
+  ]
+}

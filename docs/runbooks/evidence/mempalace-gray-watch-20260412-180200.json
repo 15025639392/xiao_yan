@@ -1,0 +1,228 @@
+{
+  "generated_at": "2026-04-12T18:02:04.922191+00:00",
+  "mode": "gray-observability-watch",
+  "base_url": "http://127.0.0.1:8000",
+  "settings": {
+    "interval_seconds": 2,
+    "planned_iterations": 3,
+    "required_latency_samples": 20,
+    "required_write_samples": 20,
+    "required_quality_samples": 20
+  },
+  "samples": [
+    {
+      "sample_index": 1,
+      "timestamp": "2026-04-12T18:02:00.901349+00:00",
+      "payload": {
+        "window": {
+          "max_samples": 500,
+          "updated_at": null
+        },
+        "latency": {
+          "retrieval_ms": {
+            "count": 0,
+            "avg": null,
+            "p50": null,
+            "p95": null
+          },
+          "chat_ms": {
+            "count": 0,
+            "avg": null,
+            "p50": null,
+            "p95": null
+          }
+        },
+        "quality": {
+          "queries": 0,
+          "failures": 0,
+          "hit_queries": 0,
+          "hit_rate": null,
+          "avg_hits_per_query": null,
+          "avg_similarity": null
+        },
+        "write": {
+          "attempts": 0,
+          "failures": 0,
+          "failure_rate": null
+        },
+        "alerts": [],
+        "thresholds": {
+          "retrieval_p95_ms": 120.0,
+          "chat_p95_ms": 1500.0,
+          "write_failure_rate": 0.01,
+          "retrieval_hit_rate": 0.4,
+          "min_latency_samples_for_alert": 20,
+          "min_write_samples_for_alert": 20,
+          "min_quality_samples_for_alert": 20
+        }
+      }
+    },
+    {
+      "sample_index": 2,
+      "timestamp": "2026-04-12T18:02:02.906755+00:00",
+      "payload": {
+        "window": {
+          "max_samples": 500,
+          "updated_at": null
+        },
+        "latency": {
+          "retrieval_ms": {
+            "count": 0,
+            "avg": null,
+            "p50": null,
+            "p95": null
+          },
+          "chat_ms": {
+            "count": 0,
+            "avg": null,
+            "p50": null,
+            "p95": null
+          }
+        },
+        "quality": {
+          "queries": 0,
+          "failures": 0,
+          "hit_queries": 0,
+          "hit_rate": null,
+          "avg_hits_per_query": null,
+          "avg_similarity": null
+        },
+        "write": {
+          "attempts": 0,
+          "failures": 0,
+          "failure_rate": null
+        },
+        "alerts": [],
+        "thresholds": {
+          "retrieval_p95_ms": 120.0,
+          "chat_p95_ms": 1500.0,
+          "write_failure_rate": 0.01,
+          "retrieval_hit_rate": 0.4,
+          "min_latency_samples_for_alert": 20,
+          "min_write_samples_for_alert": 20,
+          "min_quality_samples_for_alert": 20
+        }
+      }
+    },
+    {
+      "sample_index": 3,
+      "timestamp": "2026-04-12T18:02:04.915550+00:00",
+      "payload": {
+        "window": {
+          "max_samples": 500,
+          "updated_at": null
+        },
+        "latency": {
+          "retrieval_ms": {
+            "count": 0,
+            "avg": null,
+            "p50": null,
+            "p95": null
+          },
+          "chat_ms": {
+            "count": 0,
+            "avg": null,
+            "p50": null,
+            "p95": null
+          }
+        },
+        "quality": {
+          "queries": 0,
+          "failures": 0,
+          "hit_queries": 0,
+          "hit_rate": null,
+          "avg_hits_per_query": null,
+          "avg_similarity": null
+        },
+        "write": {
+          "attempts": 0,
+          "failures": 0,
+          "failure_rate": null
+        },
+        "alerts": [],
+        "thresholds": {
+          "retrieval_p95_ms": 120.0,
+          "chat_p95_ms": 1500.0,
+          "write_failure_rate": 0.01,
+          "retrieval_hit_rate": 0.4,
+          "min_latency_samples_for_alert": 20,
+          "min_write_samples_for_alert": 20,
+          "min_quality_samples_for_alert": 20
+        }
+      }
+    }
+  ],
+  "summary": {
+    "total_samples": 3,
+    "request_error_count": 0,
+    "alerts_union": [],
+    "latest_counts": {
+      "retrieval": 0,
+      "chat": 0,
+      "quality_queries": 0,
+      "write_attempts": 0
+    },
+    "max_p95": {
+      "retrieval_ms": null,
+      "chat_ms": null
+    },
+    "data_sufficiency": {
+      "latency": false,
+      "quality": false,
+      "write": false
+    },
+    "gate_pass_no_alerts": true
+  },
+  "latest_observability": {
+    "window": {
+      "max_samples": 500,
+      "updated_at": null
+    },
+    "latency": {
+      "retrieval_ms": {
+        "count": 0,
+        "avg": null,
+        "p50": null,
+        "p95": null
+      },
+      "chat_ms": {
+        "count": 0,
+        "avg": null,
+        "p50": null,
+        "p95": null
+      }
+    },
+    "quality": {
+      "queries": 0,
+      "failures": 0,
+      "hit_queries": 0,
+      "hit_rate": null,
+      "avg_hits_per_query": null,
+      "avg_similarity": null
+    },
+    "write": {
+      "attempts": 0,
+      "failures": 0,
+      "failure_rate": null
+    },
+    "alerts": [],
+    "thresholds": {
+      "retrieval_p95_ms": 120.0,
+      "chat_p95_ms": 1500.0,
+      "write_failure_rate": 0.01,
+      "retrieval_hit_rate": 0.4,
+      "min_latency_samples_for_alert": 20,
+      "min_write_samples_for_alert": 20,
+      "min_quality_samples_for_alert": 20
+    }
+  },
+  "observability_reset": {
+    "success": true,
+    "reset": true
+  },
+  "request_errors": [],
+  "notes": [
+    "This watch script only polls observability snapshots and does not inject traffic.",
+    "If traffic is low, data_sufficiency may remain false even when alerts are empty."
+  ]
+}

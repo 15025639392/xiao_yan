@@ -1,0 +1,412 @@
+{
+  "generated_at": "2026-04-12T17:31:19.853355+00:00",
+  "mode": "live-http-preflight",
+  "base_url": "http://127.0.0.1:8010",
+  "settings": {
+    "turns": 12,
+    "retries": 2,
+    "timeout": {
+      "connect_s": 5.0,
+      "read_s": 45.0,
+      "write_s": 10.0,
+      "pool_s": 10.0
+    },
+    "backoff_base_s": 1.5,
+    "sleep_ms": 0
+  },
+  "chat_results": [
+    {
+      "turn": 1,
+      "prompt": "请用一句话回答：我们继续知识库建设。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 3674.572,
+      "assistant_message_id": "assistant_ef32ab812a034b688348880e36bc04b0",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 3674.386,
+          "error": null,
+          "assistant_message_id": "assistant_ef32ab812a034b688348880e36bc04b0",
+          "body_snippet": "{\"response_id\":\"64803760-17bc-4b85-9776-5b72be9df1f4\",\"assistant_message_id\":\"assistant_ef32ab812a034b688348880e36bc04b0\"}"
+        }
+      ]
+    },
+    {
+      "turn": 2,
+      "prompt": "请一句话回顾上条重点。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2055.064,
+      "assistant_message_id": "assistant_a4e4703435404c738fba1e8305697c61",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2055.024,
+          "error": null,
+          "assistant_message_id": "assistant_a4e4703435404c738fba1e8305697c61",
+          "body_snippet": "{\"response_id\":\"d59e0346-de5a-4fc0-8633-1cfe449875e7\",\"assistant_message_id\":\"assistant_a4e4703435404c738fba1e8305697c61\"}"
+        }
+      ]
+    },
+    {
+      "turn": 3,
+      "prompt": "请给唯一下一步。",
+      "status_code": 502,
+      "ok": false,
+      "attempts": 3,
+      "elapsed_ms_total": 19763.39,
+      "assistant_message_id": null,
+      "error": "HTTP 502",
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": false,
+          "status_code": 502,
+          "duration_ms": 5062.837,
+          "error": null,
+          "assistant_message_id": null,
+          "body_snippet": "{\"detail\":\"[Errno 54] Connection reset by peer\"}"
+        },
+        {
+          "attempt": 2,
+          "ok": false,
+          "status_code": 502,
+          "duration_ms": 5083.332,
+          "error": null,
+          "assistant_message_id": null,
+          "body_snippet": "{\"detail\":\"[Errno 54] Connection reset by peer\"}"
+        },
+        {
+          "attempt": 3,
+          "ok": false,
+          "status_code": 502,
+          "duration_ms": 5109.394,
+          "error": null,
+          "assistant_message_id": null,
+          "body_snippet": "{\"detail\":\"[Errno 54] Connection reset by peer\"}"
+        }
+      ]
+    },
+    {
+      "turn": 4,
+      "prompt": "请一句话回答：继续推进。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 2,
+      "elapsed_ms_total": 8170.497,
+      "assistant_message_id": "assistant_88c93c87b1b2432da84cf138da672ae3",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": false,
+          "status_code": 502,
+          "duration_ms": 5082.323,
+          "error": null,
+          "assistant_message_id": null,
+          "body_snippet": "{\"detail\":\"[Errno 54] Connection reset by peer\"}"
+        },
+        {
+          "attempt": 2,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 1584.716,
+          "error": null,
+          "assistant_message_id": "assistant_88c93c87b1b2432da84cf138da672ae3",
+          "body_snippet": "{\"response_id\":\"b4a19a28-cb57-437c-be18-2a15a5000ec3\",\"assistant_message_id\":\"assistant_88c93c87b1b2432da84cf138da672ae3\"}"
+        }
+      ]
+    },
+    {
+      "turn": 5,
+      "prompt": "请列 2 条行动项。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2129.324,
+      "assistant_message_id": "assistant_f4b9703e1d3e4cb3af9499706ee361e6",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2129.277,
+          "error": null,
+          "assistant_message_id": "assistant_f4b9703e1d3e4cb3af9499706ee361e6",
+          "body_snippet": "{\"response_id\":\"592ffa49-67d6-4c26-9899-5228f6f8d4cc\",\"assistant_message_id\":\"assistant_f4b9703e1d3e4cb3af9499706ee361e6\"}"
+        }
+      ]
+    },
+    {
+      "turn": 6,
+      "prompt": "请一句话提示一个风险。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 1952.009,
+      "assistant_message_id": "assistant_a65af02392d74266aad4a8b99e0a5f04",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 1951.975,
+          "error": null,
+          "assistant_message_id": "assistant_a65af02392d74266aad4a8b99e0a5f04",
+          "body_snippet": "{\"response_id\":\"9e79d734-ecbb-457d-9aca-64f46a02d5e6\",\"assistant_message_id\":\"assistant_a65af02392d74266aad4a8b99e0a5f04\"}"
+        }
+      ]
+    },
+    {
+      "turn": 7,
+      "prompt": "请一句话回答：保持结构化。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 1780.711,
+      "assistant_message_id": "assistant_e3db039c54a54659ab47f8125c1b0335",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 1780.676,
+          "error": null,
+          "assistant_message_id": "assistant_e3db039c54a54659ab47f8125c1b0335",
+          "body_snippet": "{\"response_id\":\"c2b28273-49ec-4627-97f6-a160b9961d1e\",\"assistant_message_id\":\"assistant_e3db039c54a54659ab47f8125c1b0335\"}"
+        }
+      ]
+    },
+    {
+      "turn": 8,
+      "prompt": "请一句话总结当前进展。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2138.106,
+      "assistant_message_id": "assistant_b5d946264cf8412ea0680f5fecc897eb",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2138.066,
+          "error": null,
+          "assistant_message_id": "assistant_b5d946264cf8412ea0680f5fecc897eb",
+          "body_snippet": "{\"response_id\":\"463ca5c7-fad3-4d3c-b55c-f4221d2c4153\",\"assistant_message_id\":\"assistant_b5d946264cf8412ea0680f5fecc897eb\"}"
+        }
+      ]
+    },
+    {
+      "turn": 9,
+      "prompt": "请给 1 条可执行动作。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 2,
+      "elapsed_ms_total": 8928.004,
+      "assistant_message_id": "assistant_e0fc176c9843465f955004b5309b7255",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": false,
+          "status_code": 502,
+          "duration_ms": 5069.134,
+          "error": null,
+          "assistant_message_id": null,
+          "body_snippet": "{\"detail\":\"[Errno 54] Connection reset by peer\"}"
+        },
+        {
+          "attempt": 2,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2354.374,
+          "error": null,
+          "assistant_message_id": "assistant_e0fc176c9843465f955004b5309b7255",
+          "body_snippet": "{\"response_id\":\"8b8f6c7e-a9ce-49c4-920f-7aa256b4a19e\",\"assistant_message_id\":\"assistant_e0fc176c9843465f955004b5309b7255\"}"
+        }
+      ]
+    },
+    {
+      "turn": 10,
+      "prompt": "请一句话回答：继续。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 2466.812,
+      "assistant_message_id": "assistant_564ca976c7754e6f810bbba779dc6425",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 2466.776,
+          "error": null,
+          "assistant_message_id": "assistant_564ca976c7754e6f810bbba779dc6425",
+          "body_snippet": "{\"response_id\":\"e548797b-303c-4ec0-8ecc-aa09b95f71b9\",\"assistant_message_id\":\"assistant_564ca976c7754e6f810bbba779dc6425\"}"
+        }
+      ]
+    },
+    {
+      "turn": 11,
+      "prompt": "请一句话回答：记住我们的目标是知识库建设。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 1681.59,
+      "assistant_message_id": "assistant_9119a41ac9074c72a9b4aa6031734db1",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 1681.544,
+          "error": null,
+          "assistant_message_id": "assistant_9119a41ac9074c72a9b4aa6031734db1",
+          "body_snippet": "{\"response_id\":\"0c8a8a23-6399-4fcc-9717-9464655a3d4c\",\"assistant_message_id\":\"assistant_9119a41ac9074c72a9b4aa6031734db1\"}"
+        }
+      ]
+    },
+    {
+      "turn": 12,
+      "prompt": "请一句话给收尾建议。",
+      "status_code": 200,
+      "ok": true,
+      "attempts": 1,
+      "elapsed_ms_total": 1774.647,
+      "assistant_message_id": "assistant_d26e3e347229435f94515f9052c4c25a",
+      "error": null,
+      "attempt_logs": [
+        {
+          "attempt": 1,
+          "ok": true,
+          "status_code": 200,
+          "duration_ms": 1774.611,
+          "error": null,
+          "assistant_message_id": "assistant_d26e3e347229435f94515f9052c4c25a",
+          "body_snippet": "{\"response_id\":\"1d786c1c-c423-48d8-8549-f01c637afa71\",\"assistant_message_id\":\"assistant_d26e3e347229435f94515f9052c4c25a\"}"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "success_count": 11,
+    "failed_count": 1,
+    "success_rate": 0.9167,
+    "client_elapsed_ms": {
+      "avg": 4709.56,
+      "p50": 2133.715,
+      "p95": 13803.928,
+      "max": 19763.39
+    }
+  },
+  "observability_before": {
+    "window": {
+      "max_samples": 500,
+      "updated_at": null
+    },
+    "latency": {
+      "retrieval_ms": {
+        "count": 0,
+        "avg": null,
+        "p50": null,
+        "p95": null
+      },
+      "chat_ms": {
+        "count": 0,
+        "avg": null,
+        "p50": null,
+        "p95": null
+      }
+    },
+    "quality": {
+      "queries": 0,
+      "failures": 0,
+      "hit_queries": 0,
+      "hit_rate": null,
+      "avg_hits_per_query": null,
+      "avg_similarity": null
+    },
+    "write": {
+      "attempts": 0,
+      "failures": 0,
+      "failure_rate": null
+    },
+    "alerts": [],
+    "thresholds": {
+      "retrieval_p95_ms": 120.0,
+      "chat_p95_ms": 1500.0,
+      "write_failure_rate": 0.01,
+      "retrieval_hit_rate": 0.4,
+      "min_latency_samples_for_alert": 20,
+      "min_write_samples_for_alert": 20,
+      "min_quality_samples_for_alert": 20
+    }
+  },
+  "observability_after": {
+    "window": {
+      "max_samples": 500,
+      "updated_at": "2026-04-12T17:31:19.686787+00:00"
+    },
+    "latency": {
+      "retrieval_ms": {
+        "count": 0,
+        "avg": null,
+        "p50": null,
+        "p95": null
+      },
+      "chat_ms": {
+        "count": 11,
+        "avg": 1714.931,
+        "p50": 1766.265,
+        "p95": 2095.974
+      }
+    },
+    "quality": {
+      "queries": 0,
+      "failures": 0,
+      "hit_queries": 0,
+      "hit_rate": null,
+      "avg_hits_per_query": null,
+      "avg_similarity": null
+    },
+    "write": {
+      "attempts": 11,
+      "failures": 0,
+      "failure_rate": 0.0
+    },
+    "alerts": [],
+    "thresholds": {
+      "retrieval_p95_ms": 120.0,
+      "chat_p95_ms": 1500.0,
+      "write_failure_rate": 0.01,
+      "retrieval_hit_rate": 0.4,
+      "min_latency_samples_for_alert": 20,
+      "min_write_samples_for_alert": 20,
+      "min_quality_samples_for_alert": 20
+    }
+  },
+  "notes": [
+    "Live HTTP calls against local running service.",
+    "Report is persisted even when partial failures/timeouts occur."
+  ],
+  "run_window": {
+    "started_at": "2026-04-12T17:30:23.224092+00:00",
+    "finished_at": "2026-04-12T17:31:19.853413+00:00"
+  }
+}
