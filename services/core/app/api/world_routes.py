@@ -71,7 +71,11 @@ def build_world_router() -> APIRouter:
         recent_autobio = find_recent_autobio(memory_repository)
         selected_goal = _select_wake_goal(goal_repository, recent_autobio)
         waking_state = wake_up(recent_autobio=recent_autobio).model_copy(
-            update={"self_programming_job": current_state.self_programming_job}
+            update={
+                "self_programming_job": current_state.self_programming_job,
+                "last_proactive_source": current_state.last_proactive_source,
+                "last_proactive_at": current_state.last_proactive_at,
+            }
         )
 
         if selected_goal is not None:

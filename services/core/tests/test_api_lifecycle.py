@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 
 from app.goals.models import Goal
@@ -205,6 +207,32 @@ def test_post_wake_preserves_latest_self_programming_job_and_cooldown():
         assert body["mode"] == "awake"
         assert body["self_programming_job"]["status"] == "applied"
         assert body["self_programming_job"]["cooldown_until"] == "2026-04-05T12:00:00Z"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_wake_preserves_last_proactive_markers():
+    marker_time = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.SLEEPING,
+            last_proactive_source="嗯我同意",
+            last_proactive_at=marker_time,
+        )
+    )
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.post("/lifecycle/wake")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["last_proactive_source"] == "嗯我同意"
+        assert body["last_proactive_at"] == "2026-04-05T09:00:00Z"
     finally:
         app.dependency_overrides.clear()
 
