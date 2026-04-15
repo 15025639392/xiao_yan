@@ -38,6 +38,81 @@ from app.config import (
 FolderAccessLevel = Literal["read_only", "full_access"]
 GOAL_ADMISSION_HISTORY_MAX_ENTRIES = 50
 CAPABILITY_POLICY_HISTORY_MAX_ENTRIES = 50
+CHAT_MCP_SERVER_MAX_ENTRIES = 32
+
+
+def _normalize_chat_mcp_server_id(value: str) -> str:
+    normalized = value.strip().lower()
+    if not normalized:
+        raise ValueError("chat mcp server_id must not be empty")
+    return normalized
+
+
+def _normalize_chat_mcp_server_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    server_id_raw = payload.get("server_id")
+    command_raw = payload.get("command")
+    if not isinstance(server_id_raw, str):
+        raise ValueError("chat mcp server_id must be a string")
+    if not isinstance(command_raw, str):
+        raise ValueError("chat mcp command must be a string")
+
+    server_id = _normalize_chat_mcp_server_id(server_id_raw)
+    command = command_raw.strip()
+    if not command:
+        raise ValueError("chat mcp command must not be empty")
+
+    args_raw = payload.get("args", [])
+    if args_raw is None:
+        args_raw = []
+    if not isinstance(args_raw, list):
+        raise ValueError("chat mcp args must be a list")
+    args: list[str] = []
+    for item in args_raw:
+        if not isinstance(item, str):
+            raise ValueError("chat mcp args must be a list of strings")
+        item_trimmed = item.strip()
+        if item_trimmed:
+            args.append(item_trimmed)
+
+    cwd_raw = payload.get("cwd")
+    cwd: str | None
+    if cwd_raw is None:
+        cwd = None
+    elif isinstance(cwd_raw, str):
+        cwd = cwd_raw.strip() or None
+    else:
+        raise ValueError("chat mcp cwd must be a string or null")
+
+    env_raw = payload.get("env", {})
+    if env_raw is None:
+        env_raw = {}
+    if not isinstance(env_raw, dict):
+        raise ValueError("chat mcp env must be an object")
+    env: dict[str, str] = {}
+    for key, value in env_raw.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("chat mcp env keys must be non-empty strings")
+        if not isinstance(value, str):
+            raise ValueError("chat mcp env values must be strings")
+        env[key] = value
+
+    enabled = bool(payload.get("enabled", True))
+    timeout_raw = payload.get("timeout_seconds", 20)
+    try:
+        timeout_seconds = int(timeout_raw)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("chat mcp timeout_seconds must be an integer") from exc
+    timeout_seconds = max(1, min(120, timeout_seconds))
+
+    return {
+        "server_id": server_id,
+        "command": command,
+        "args": args,
+        "cwd": cwd,
+        "env": env,
+        "enabled": enabled,
+        "timeout_seconds": timeout_seconds,
+    }
 
 
 class RuntimeConfig:
@@ -54,6 +129,8 @@ class RuntimeConfig:
         instance._chat_provider = get_chat_provider()
         instance._chat_model = get_chat_model()
         instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
+        instance._chat_mcp_enabled = False
+        instance._chat_mcp_servers: dict[str, dict[str, Any]] = {}
         instance._self_programming_hard_failure_cooldown_minutes = 60
         instance._self_programming_proactive_cooldown_minutes = 720
         instance._goal_admission_stability_warning_rate = 0.6
@@ -96,6 +173,10 @@ class RuntimeConfig:
                 instance._chat_model = get_chat_model()
             if not hasattr(instance, "_chat_read_timeout_seconds"):
                 instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
+            if not hasattr(instance, "_chat_mcp_enabled"):
+                instance._chat_mcp_enabled = False
+            if not hasattr(instance, "_chat_mcp_servers") or not isinstance(instance._chat_mcp_servers, dict):
+                instance._chat_mcp_servers = {}
             if not hasattr(instance, "_self_programming_hard_failure_cooldown_minutes"):
                 instance._self_programming_hard_failure_cooldown_minutes = 60
             if not hasattr(instance, "_self_programming_proactive_cooldown_minutes"):
@@ -223,6 +304,33 @@ class RuntimeConfig:
     def chat_read_timeout_seconds(self, value: int) -> None:
         with self._lock:
             self._chat_read_timeout_seconds = max(10, min(600, int(value)))
+
+    @property
+    def chat_mcp_enabled(self) -> bool:
+        with self._lock:
+            return bool(self._chat_mcp_enabled)
+
+    @chat_mcp_enabled.setter
+    def chat_mcp_enabled(self, value: bool) -> None:
+        with self._lock:
+            self._chat_mcp_enabled = bool(value)
+
+    def list_chat_mcp_servers(self) -> list[dict[str, Any]]:
+        with self._lock:
+            snapshot = [dict(item) for item in self._chat_mcp_servers.values()]
+        return sorted(snapshot, key=lambda item: item["server_id"])
+
+    def replace_chat_mcp_servers(self, servers: list[dict[str, Any]]) -> None:
+        normalized_servers: dict[str, dict[str, Any]] = {}
+        for raw in servers:
+            if not isinstance(raw, dict):
+                raise ValueError("chat mcp servers must be objects")
+            normalized = _normalize_chat_mcp_server_payload(raw)
+            normalized_servers[normalized["server_id"]] = normalized
+            if len(normalized_servers) > CHAT_MCP_SERVER_MAX_ENTRIES:
+                raise ValueError(f"too many chat mcp servers (max {CHAT_MCP_SERVER_MAX_ENTRIES})")
+        with self._lock:
+            self._chat_mcp_servers = normalized_servers
 
     @property
     def self_programming_hard_failure_cooldown_minutes(self) -> int:

@@ -10,6 +10,10 @@ from app.llm.schemas import ChatMessage
 
 logger = getLogger(__name__)
 
+_CHAT_EVENTS_SCAN_MIN = 200
+_CHAT_EVENTS_SCAN_MAX = 5000
+_CHAT_EVENTS_SCAN_MULTIPLIER = 12
+
 
 SearchBackend = Callable[[str, str, int], dict]
 WriteBackend = Callable[..., bool]
@@ -22,7 +26,7 @@ class MemPalaceAdapter:
         self,
         *,
         enabled: bool = True,
-        palace_path: str = "~/.mempalace/palace",
+        palace_path: str = str(Path(__file__).resolve().parents[2] / ".mempalace" / "palace"),
         results_limit: int = 3,
         wing: str = "wing_xiaoyan",
         room: str = "chat_exchange",
@@ -182,7 +186,12 @@ class MemPalaceAdapter:
             return []
 
         safe_offset = max(0, int(offset))
-        events = self._list_chat_events()
+        target_window = max(1, safe_limit + safe_offset)
+        scan_limit = min(
+            _CHAT_EVENTS_SCAN_MAX,
+            max(_CHAT_EVENTS_SCAN_MIN, target_window * _CHAT_EVENTS_SCAN_MULTIPLIER),
+        )
+        events = self._list_chat_events(limit=scan_limit)
         if not events:
             return []
 
@@ -303,7 +312,7 @@ class MemPalaceAdapter:
         )
         return True
 
-    def _list_chat_events(self) -> list[dict]:
+    def _list_chat_events(self, *, limit: int = 10000) -> list[dict]:
         collection = self._get_collection(create=False)
         if collection is None:
             return []
@@ -312,7 +321,7 @@ class MemPalaceAdapter:
             payload = collection.get(
                 where={"$and": [{"wing": self.wing}, {"room": self.room}]},
                 include=["documents", "metadatas"],
-                limit=10000,
+                limit=max(1, int(limit)),
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("MemPalace list chat events failed: %s", exc)

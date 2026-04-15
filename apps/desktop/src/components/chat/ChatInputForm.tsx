@@ -1,5 +1,6 @@
+import { useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-import type { RelationshipSummary } from "../../lib/api";
+import type { ChatMcpServerConfig, RelationshipSummary } from "../../lib/api";
 import { ChatResponseGuidance } from "./ChatResponseGuidance";
 import { ChatRelationshipContext } from "./ChatRelationshipContext";
 import { LoadingSpinner, SendIcon } from "./ChatIcons";
@@ -21,6 +22,13 @@ type ChatInputFormProps = {
   onRemoveAttachedImage?: (path: string) => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
+  mcpEnabled: boolean;
+  mcpServers: ChatMcpServerConfig[];
+  selectedMcpServerIds: string[] | null;
+  isLoadingMcpServers: boolean;
+  mcpServerError: string;
+  onOpenMcpSelector: () => void;
+  onToggleMcpServer: (serverId: string) => void;
 };
 
 export function ChatInputForm({
@@ -40,8 +48,21 @@ export function ChatInputForm({
   onRemoveAttachedImage,
   onKeyDown,
   onSubmit,
+  mcpEnabled,
+  mcpServers,
+  selectedMcpServerIds,
+  isLoadingMcpServers,
+  mcpServerError,
+  onOpenMcpSelector,
+  onToggleMcpServer,
 }: ChatInputFormProps) {
+  const [showMcpSelector, setShowMcpSelector] = useState(false);
   const totalAttachments = attachedFolders.length + attachedFiles.length + attachedImages.length;
+  const enabledMcpServers = mcpServers.filter((server) => server.enabled);
+  const effectiveSelectedMcpServerIds = selectedMcpServerIds ?? [];
+  const selectedMcpServerCount = effectiveSelectedMcpServerIds.length;
+  const mcpServerCount = enabledMcpServers.length;
+  const mcpToolbarLabel = mcpEnabled ? `MCP ${selectedMcpServerCount}/${mcpServerCount}` : "MCP 关";
 
   return (
     <div className="chat-page__input-area">
@@ -85,6 +106,22 @@ export function ChatInputForm({
             disabled={isSending}
           >
             🖼️
+          </button>
+          <button
+            className={`chat-page__toolbar-btn chat-page__toolbar-btn--text ${showMcpSelector ? "chat-page__toolbar-btn--active" : ""}`}
+            type="button"
+            aria-label="选择 MCP Servers"
+            title="选择 MCP Servers"
+            disabled={isSending}
+            onClick={() => {
+              const nextOpen = !showMcpSelector;
+              setShowMcpSelector(nextOpen);
+              if (nextOpen) {
+                onOpenMcpSelector();
+              }
+            }}
+          >
+            🧩 {mcpToolbarLabel}
           </button>
           {totalAttachments > 0 ? (
             <div className="chat-page__attached-folders" aria-label="已附加附件">
@@ -136,6 +173,32 @@ export function ChatInputForm({
             </div>
           ) : null}
         </div>
+        {showMcpSelector ? (
+          <div className="chat-page__mcp-selector" aria-label="MCP Servers 选择">
+            {!mcpEnabled ? <div className="chat-page__mcp-hint">全局 MCP 未启用，请先在配置中开启。</div> : null}
+            {mcpEnabled && isLoadingMcpServers ? <div className="chat-page__mcp-hint">加载 MCP Servers...</div> : null}
+            {mcpEnabled && !isLoadingMcpServers && mcpServerCount === 0 ? (
+              <div className="chat-page__mcp-hint">当前没有可用的 MCP Server。</div>
+            ) : null}
+            {mcpEnabled && !isLoadingMcpServers && mcpServerCount > 0 ? (
+              <div className="chat-page__mcp-options">
+                {enabledMcpServers.map((server) => (
+                  <label key={server.server_id} className="chat-page__mcp-option">
+                    <input
+                      type="checkbox"
+                      aria-label={`MCP Server ${server.server_id}`}
+                      checked={effectiveSelectedMcpServerIds.includes(server.server_id)}
+                      disabled={isSending}
+                      onChange={() => onToggleMcpServer(server.server_id)}
+                    />
+                    <span>{server.server_id}</span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+            {mcpServerError ? <div className="chat-page__mcp-error">{mcpServerError}</div> : null}
+          </div>
+        ) : null}
         <label className="sr-only" htmlFor="chat-input">
           对话输入
         </label>

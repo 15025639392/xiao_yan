@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { ChatPanel } from "./components/ChatPanel";
-import type { ChatEntry } from "./components/ChatPanel";
+import type { ChatEntry, ChatSendOptions } from "./components/ChatPanel";
 import { PersonaPanel } from "./components/PersonaPanel";
 import { ToolPanel } from "./components/ToolPanel";
 import type {
@@ -107,6 +107,7 @@ import {
   createEmptySessionHistoryFilter,
   type SessionHistoryFilter,
 } from "./lib/orchestratorWorkbench";
+import { loadChatToolboxSelectedSkills } from "./lib/chatToolboxPreferences";
 
 type AppRoute =
   | "overview"
@@ -812,7 +813,7 @@ export default function App() {
     }
   }
 
-  async function handleSend() {
+  async function handleSend(options?: ChatSendOptions) {
     const content = draft.trim();
     if (!content) {
       return;
@@ -847,6 +848,28 @@ export default function App() {
       );
       const requestBody: ChatRequestBody =
         attachments.length > 0 ? { message: content, attachments } : { message: content };
+      if (Array.isArray(options?.mcpServerIds)) {
+        const normalizedMcpServerIds = Array.from(
+          new Set(
+            options.mcpServerIds
+              .filter((serverId): serverId is string => typeof serverId === "string")
+              .map((serverId) => serverId.trim())
+              .filter((serverId) => serverId.length > 0),
+          ),
+        );
+        requestBody.mcp_servers = normalizedMcpServerIds;
+      }
+      const selectedSkills = Array.from(
+        new Set(
+          loadChatToolboxSelectedSkills()
+            .filter((name): name is string => typeof name === "string")
+            .map((name) => name.trim())
+            .filter((name) => name.length > 0),
+        ),
+      );
+      if (selectedSkills.length > 0) {
+        requestBody.skills = selectedSkills;
+      }
       setMessages((current) => [...current, { ...userMessage, retryRequestBody: requestBody }]);
       pendingRequestMessageRef.current = content;
       await chat(requestBody);

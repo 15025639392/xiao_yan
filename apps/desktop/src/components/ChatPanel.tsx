@@ -3,10 +3,10 @@ import { ChatConfigPanel } from "./chat/ChatConfigPanel";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInputForm } from "./chat/ChatInputForm";
 import { ChatMessages } from "./chat/ChatMessages";
-import type { ChatEntry } from "./chat/chatTypes";
+import type { ChatEntry, ChatSendOptions } from "./chat/chatTypes";
 import { useChatPanelState } from "./chat/useChatPanelState";
 
-export type { ChatEntry } from "./chat/chatTypes";
+export type { ChatEntry, ChatSendOptions } from "./chat/chatTypes";
 
 type ChatPanelProps = {
   assistantName?: string;
@@ -22,7 +22,7 @@ type ChatPanelProps = {
   activeGoals?: Goal[];
   modeLabel: string;
   onDraftChange: (value: string) => void;
-  onSend: () => void;
+  onSend: (options?: ChatSendOptions) => void;
   onPickFolder?: () => void;
   onPickFile?: () => void;
   onPickImage?: () => void;
@@ -89,6 +89,13 @@ export function ChatPanel({
     handleKeyDown,
     handleSubmit,
     handleUpdateConfig,
+    isLoadingMcpServerSelection,
+    mcpServerSelectionError,
+    selectedMcpServerIds,
+    availableMcpServers,
+    mcpEnabled,
+    handleOpenMcpServerSelector,
+    handleToggleMcpServerSelection,
   } = useChatPanelState({ draft, messages, isSending, onSend });
 
   return (
@@ -159,6 +166,13 @@ export function ChatPanel({
         onRemoveAttachedImage={onRemoveAttachedImage}
         onKeyDown={handleKeyDown}
         onSubmit={handleSubmit}
+        mcpEnabled={mcpEnabled}
+        mcpServers={availableMcpServers}
+        selectedMcpServerIds={selectedMcpServerIds}
+        isLoadingMcpServers={isLoadingMcpServerSelection}
+        mcpServerError={mcpServerSelectionError}
+        onOpenMcpSelector={handleOpenMcpServerSelector}
+        onToggleMcpServer={handleToggleMcpServerSelection}
       />
     </section>
   );

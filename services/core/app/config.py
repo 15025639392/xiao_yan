@@ -459,6 +459,11 @@ def get_chat_context_limit() -> int:
     return 6  # 默认轮次基线
 
 
+def get_chat_knowledge_extraction_enabled() -> bool:
+    load_local_env()
+    return os.getenv("CHAT_KNOWLEDGE_EXTRACTION_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def get_chat_read_timeout_seconds() -> int:
     """获取聊天 read 超时时间（秒）。用于流式输出：只要持续有输出，read 超时会自动刷新。"""
     load_local_env()
@@ -499,10 +504,26 @@ def get_mempalace_enabled() -> bool:
 
 def get_mempalace_palace_path() -> str:
     load_local_env()
+    service_root = Path(__file__).resolve().parents[1]
+    default_path = service_root / ".mempalace" / "palace"
     configured = os.getenv("MEMPALACE_PALACE_PATH", "").strip()
     if configured:
-        return str(Path(configured).expanduser())
-    return str(Path("~/.mempalace/palace").expanduser())
+        candidate = Path(configured).expanduser()
+        if not candidate.is_absolute():
+            candidate = service_root / candidate
+        candidate = candidate.resolve()
+        try:
+            legacy_home_default = Path.home().resolve() / ".mempalace" / "palace"
+            if candidate == legacy_home_default:
+                return str(default_path)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            candidate.relative_to(service_root)
+        except ValueError:
+            return str(default_path)
+        return str(candidate)
+    return str(default_path)
 
 
 def get_mempalace_results_limit() -> int:

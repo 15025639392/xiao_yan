@@ -442,6 +442,8 @@ export type ChatAttachment = {
 export type ChatRequestBody = {
   message: string;
   attachments?: ChatAttachment[];
+  mcp_servers?: string[];
+  skills?: string[];
 };
 
 export type FolderAccessLevel = "read_only" | "full_access";
@@ -453,6 +455,17 @@ export type ChatFolderPermission = {
 
 export type ChatFolderPermissionsResponse = {
   permissions: ChatFolderPermission[];
+};
+
+export type ChatSkillEntry = {
+  name: string;
+  description?: string | null;
+  path: string;
+  trigger_prefixes: string[];
+};
+
+export type ChatSkillListResponse = {
+  skills: ChatSkillEntry[];
 };
 
 export type ChatResumeRequest = {
@@ -853,6 +866,10 @@ export function fetchChatFolderPermissions(): Promise<ChatFolderPermissionsRespo
   return get<ChatFolderPermissionsResponse>("/chat/folder-permissions");
 }
 
+export function fetchChatSkills(): Promise<ChatSkillListResponse> {
+  return get<ChatSkillListResponse>("/chat/skills");
+}
+
 export function upsertChatFolderPermission(
   path: string,
   accessLevel: FolderAccessLevel,
@@ -1237,8 +1254,83 @@ export type MemorySearchResult = {
   query_summary: string | null;
 };
 
+export type KnowledgeReviewStatus = "pending_review" | "approved" | "rejected";
+
+export type KnowledgeLifecycleStatus = "active" | "deleted" | "all";
+export type KnowledgeSortBy = "created_at" | "reviewed_at";
+export type KnowledgeSortOrder = "asc" | "desc";
+
+export type KnowledgeItem = {
+  id: string;
+  kind: string;
+  content: string;
+  role: string | null;
+  namespace: string | null;
+  knowledge_type: string | null;
+  knowledge_tags: string[];
+  source_ref: string | null;
+  version_tag: string | null;
+  visibility: "internal" | "user";
+  governance_source: "system" | "auto_extracted" | "manual";
+  review_status: KnowledgeReviewStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  status: "active" | "deleted";
+  created_at: string | null;
+  deleted_at: string | null;
+};
+
+export type KnowledgeItemsResponse = {
+  items: KnowledgeItem[];
+  total_count: number;
+  sort_by?: KnowledgeSortBy;
+  sort_order?: KnowledgeSortOrder;
+  next_cursor?: string | null;
+  next_offset?: number | null;
+};
+
+export type KnowledgeSummaryResponse = {
+  total_count: number;
+  active_count: number;
+  deleted_count: number;
+  by_review_status: Record<string, number>;
+  by_kind: Record<string, number>;
+};
+
+export type KnowledgeBatchReviewResponse = {
+  success: boolean;
+  decision: "approve" | "reject" | "pend";
+  updated: number;
+  failed: number;
+  updated_ids: string[];
+  failed_ids: string[];
+};
+
+export type KnowledgeItemsQuery = {
+  limit?: number;
+  offset?: number;
+  cursor?: string;
+  sort_by?: KnowledgeSortBy;
+  sort_order?: KnowledgeSortOrder;
+  review_status?: KnowledgeReviewStatus;
+  status?: KnowledgeLifecycleStatus;
+  q?: string;
+};
+
 export type MemoryTimelineResponse = {
   entries: MemoryEntryDisplay[];
+  total_count?: number;
+  query_summary?: string | null;
+};
+
+export type MemoryTimelineQuery = {
+  limit?: number;
+  status?: "active" | "deleted" | "all";
+  kind?: MemoryKind;
+  namespace?: string;
+  visibility?: "internal" | "user";
+  q?: string;
 };
 
 /** 获取记忆系统统计摘要 */
@@ -1246,9 +1338,102 @@ export function fetchMemorySummary(): Promise<MemorySummary> {
   return get<MemorySummary>("/memory/summary");
 }
 
+/** 获取知识条目列表（专项治理） */
+export function fetchKnowledgeItems(query?: KnowledgeItemsQuery): Promise<KnowledgeItemsResponse> {
+  const params = new URLSearchParams();
+  params.set("limit", String(query?.limit ?? 30));
+  params.set("offset", String(query?.offset ?? 0));
+  if (query?.cursor && query.cursor.trim().length > 0) {
+    params.set("cursor", query.cursor.trim());
+  }
+  if (query?.sort_by) {
+    params.set("sort_by", query.sort_by);
+  }
+  if (query?.sort_order) {
+    params.set("sort_order", query.sort_order);
+  }
+  if (query?.review_status) {
+    params.set("review_status", query.review_status);
+  }
+  if (query?.status) {
+    params.set("status", query.status);
+  }
+  if (query?.q && query.q.trim().length > 0) {
+    params.set("q", query.q.trim());
+  }
+  return get<KnowledgeItemsResponse>(`/knowledge/items?${params.toString()}`);
+}
+
+/** 获取知识治理汇总 */
+export function fetchKnowledgeSummary(): Promise<KnowledgeSummaryResponse> {
+  return get<KnowledgeSummaryResponse>("/knowledge/summary");
+}
+
+/** 人工创建知识条目 */
+export function createKnowledgeItem(data: {
+  kind: MemoryKind;
+  content: string;
+  role?: string | null;
+  knowledge_type?: string | null;
+  knowledge_tags?: string[];
+  source_ref?: string | null;
+  version_tag?: string | null;
+  visibility?: "internal" | "user";
+  reviewer?: string | null;
+  review_note?: string | null;
+}): Promise<{ success: boolean; item: KnowledgeItem }> {
+  return post<{ success: boolean; item: KnowledgeItem }>("/knowledge/items", data);
+}
+
+/** 审核知识条目 */
+export function reviewKnowledgeItem(
+  knowledgeId: string,
+  data: {
+    decision: "approve" | "reject" | "pend";
+    reviewer?: string | null;
+    review_note?: string | null;
+  },
+): Promise<{ success: boolean; item: KnowledgeItem }> {
+  return post<{ success: boolean; item: KnowledgeItem }>(
+    `/knowledge/items/${encodeURIComponent(knowledgeId)}/review`,
+    data,
+  );
+}
+
+/** 批量审核知识条目 */
+export function reviewKnowledgeItemsBatch(data: {
+  knowledge_ids: string[];
+  decision: "approve" | "reject" | "pend";
+  reviewer?: string | null;
+  review_note?: string | null;
+}): Promise<KnowledgeBatchReviewResponse> {
+  return post<KnowledgeBatchReviewResponse>("/knowledge/items/review-batch", data);
+}
+
 /** 获取记忆时间线 */
-export function fetchMemoryTimeline(limit?: number): Promise<MemoryTimelineResponse> {
-  return get<MemoryTimelineResponse>(`/memory/timeline?limit=${limit ?? 30}`);
+export function fetchMemoryTimeline(
+  limitOrQuery?: number | MemoryTimelineQuery,
+): Promise<MemoryTimelineResponse> {
+  const query: MemoryTimelineQuery =
+    typeof limitOrQuery === "number" ? { limit: limitOrQuery } : (limitOrQuery ?? {});
+  const params = new URLSearchParams();
+  params.set("limit", String(query.limit ?? 30));
+  if (query.status) {
+    params.set("status", query.status);
+  }
+  if (query.kind) {
+    params.set("kind", query.kind);
+  }
+  if (query.namespace) {
+    params.set("namespace", query.namespace);
+  }
+  if (query.visibility) {
+    params.set("visibility", query.visibility);
+  }
+  if (query.q && query.q.trim().length > 0) {
+    params.set("q", query.q.trim());
+  }
+  return get<MemoryTimelineResponse>(`/memory/timeline?${params.toString()}`);
 }
 
 /** 搜索记忆 */
@@ -1550,6 +1735,18 @@ export type AppConfig = {
   chat_provider: string;
   chat_model: string;
   chat_read_timeout_seconds: number;
+  chat_mcp_enabled: boolean;
+  chat_mcp_servers: ChatMcpServerConfig[];
+};
+
+export type ChatMcpServerConfig = {
+  server_id: string;
+  command: string;
+  args: string[];
+  cwd?: string | null;
+  env: Record<string, string>;
+  enabled: boolean;
+  timeout_seconds: number;
 };
 
 export type DataEnvironmentStatus = {
@@ -1604,27 +1801,62 @@ export type ChatModelsResponse = {
 export const DEFAULT_CHAT_PROVIDER = "openai";
 export const DEFAULT_CHAT_MODEL = "gpt-5.4";
 
-/** 获取配置 */
-export async function fetchConfig(): Promise<AppConfig> {
-  const payload = await get<Partial<AppConfig>>("/config");
+function normalizeAppConfig(payload: Partial<AppConfig> | null | undefined): AppConfig {
+  const source = payload ?? {};
+  const rawMcpServers = Array.isArray(source.chat_mcp_servers) ? source.chat_mcp_servers : [];
+  const normalizedMcpServers: ChatMcpServerConfig[] = rawMcpServers
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const candidate = item as Partial<ChatMcpServerConfig>;
+      if (typeof candidate.server_id !== "string" || !candidate.server_id.trim()) return null;
+      if (typeof candidate.command !== "string" || !candidate.command.trim()) return null;
+      return {
+        server_id: candidate.server_id.trim(),
+        command: candidate.command.trim(),
+        args: Array.isArray(candidate.args) ? candidate.args.filter((arg): arg is string => typeof arg === "string") : [],
+        cwd: typeof candidate.cwd === "string" ? candidate.cwd : null,
+        env:
+          candidate.env && typeof candidate.env === "object"
+            ? Object.fromEntries(
+                Object.entries(candidate.env).filter(
+                  (entry): entry is [string, string] => typeof entry[0] === "string" && typeof entry[1] === "string",
+                ),
+              )
+            : {},
+        enabled: typeof candidate.enabled === "boolean" ? candidate.enabled : true,
+        timeout_seconds:
+          typeof candidate.timeout_seconds === "number" && Number.isFinite(candidate.timeout_seconds)
+            ? Math.max(1, Math.min(120, Math.floor(candidate.timeout_seconds)))
+            : 20,
+      };
+    })
+    .filter((item): item is ChatMcpServerConfig => item !== null);
+
   return {
-    chat_context_limit: typeof payload.chat_context_limit === "number" ? payload.chat_context_limit : 6,
+    chat_context_limit: typeof source.chat_context_limit === "number" ? source.chat_context_limit : 6,
     chat_provider:
-      typeof payload.chat_provider === "string" && payload.chat_provider.trim()
-        ? payload.chat_provider.trim()
+      typeof source.chat_provider === "string" && source.chat_provider.trim()
+        ? source.chat_provider.trim()
         : DEFAULT_CHAT_PROVIDER,
     chat_model:
-      typeof payload.chat_model === "string" && payload.chat_model.trim()
-        ? payload.chat_model.trim()
-        : DEFAULT_CHAT_MODEL,
+      typeof source.chat_model === "string" && source.chat_model.trim() ? source.chat_model.trim() : DEFAULT_CHAT_MODEL,
     chat_read_timeout_seconds:
-      typeof payload.chat_read_timeout_seconds === "number" ? payload.chat_read_timeout_seconds : 180,
+      typeof source.chat_read_timeout_seconds === "number" ? source.chat_read_timeout_seconds : 180,
+    chat_mcp_enabled: typeof source.chat_mcp_enabled === "boolean" ? source.chat_mcp_enabled : false,
+    chat_mcp_servers: normalizedMcpServers,
   };
 }
 
+/** 获取配置 */
+export async function fetchConfig(): Promise<AppConfig> {
+  const payload = await get<Partial<AppConfig>>("/config");
+  return normalizeAppConfig(payload);
+}
+
 /** 更新配置 */
-export function updateConfig(data: Partial<AppConfig>): Promise<AppConfig> {
-  return put<AppConfig>("/config", data);
+export async function updateConfig(data: Partial<AppConfig>): Promise<AppConfig> {
+  const payload = await put<Partial<AppConfig>>("/config", data);
+  return normalizeAppConfig(payload);
 }
 
 /** 获取可选聊天模型列表 */

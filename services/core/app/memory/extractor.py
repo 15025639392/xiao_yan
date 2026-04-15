@@ -432,6 +432,8 @@ class MemoryExtractor:
             knowledge_tags=normalized_tags,
             source_ref=source_ref,
             version_tag=version_tag,
+            governance_source="auto_extracted",
+            review_status="pending_review",
             visibility=visibility,
         )
 

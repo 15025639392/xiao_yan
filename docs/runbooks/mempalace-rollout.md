@@ -10,6 +10,8 @@
 在 `services/core/.env.local` 中：
 
 - `MEMPALACE_PALACE_PATH`：MemPalace 数据目录
+  - 默认：`services/core/.mempalace/palace`（服务端根目录）
+  - 约束：运行时仅允许 `services/core` 根目录内路径；外部绝对路径会自动回退到默认目录
 - `MEMPALACE_RESULTS_LIMIT`：每次注入 prompt 的最大命中条数（建议 `3`）
 - `MEMPALACE_WING`：写入 wing（默认 `wing_xiaoyan`）
 - `MEMPALACE_ROOM`：写入 room（默认 `chat_exchange`）
@@ -43,7 +45,7 @@ import mempalace, chromadb
 from pathlib import Path
 print("mempalace", getattr(mempalace, "__version__", "unknown"))
 print("chromadb", getattr(chromadb, "__version__", "unknown"))
-client = chromadb.PersistentClient(path=str(Path("/Users/ldy/.mempalace/palace")))
+client = chromadb.PersistentClient(path=str(Path(".mempalace/palace")))
 col = client.get_collection("mempalace_drawers")
 print("collection", col.name, "count", col.count())
 PY
@@ -175,3 +177,18 @@ nohup env PYTHONPATH=. python scripts/mempalace_observability_watch.py --base-ur
   - `/Users/ldy/Desktop/map/ai/docs/runbooks/evidence/mempalace-gray-watch-20260412-174025.json`
   - 结果：`alerts_union=[]`
   - 说明：当前样本充足性为 false（流量样本未达到 20 条门槛），需继续观察窗口。
+
+## 13. 知识管理面板 MVP 约定（2026-04-13）
+
+- 目标：在不新增独立“知识库后台”的前提下，先复用现有记忆面板完成结构化知识管理闭环。
+- 前端入口：`#/memory` 页面新增模式切换：
+  - `全部记忆`：沿用原有记忆视图。
+  - `结构化知识`：限定展示结构化知识命名空间。
+- API 约定（关键）：
+  - 结构化模式下，时间线与搜索统一走 `/memory/timeline`，并带 `namespace=knowledge`。
+  - 搜索词通过 `q` 参数透传（仍保留 `namespace=knowledge` 作用域）。
+- 所有权约定：
+  - 结构化知识由服务端治理与写入（接口服务端为 owner）。
+  - 默认存储路径在服务端根目录：`services/core/.mempalace/palace`，不使用用户 home 目录 `~/.mempalace/palace`。
+- 后续演进：
+  - 若需要独立管理后台，再在该 MVP 基础上追加“结构化知识专用面板”，避免重复建设。

@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage
+from app.memory.models import MemoryStrength
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
 from app.runtime_ext.runtime_config import get_runtime_config
@@ -146,10 +147,30 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
 
 def build_memory_payload(target_app: FastAPI) -> dict[str, Any]:
     memory_service = target_app.state.memory_service
+    recent = memory_service.list_recent(limit=200)
+    entries = recent.entries
+    by_kind: dict[str, int] = {}
+    strong_memories = 0
+    for entry in entries:
+        kind = entry.kind.value
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        if entry.strength in (MemoryStrength.VIVID, MemoryStrength.CORE):
+            strong_memories += 1
+
+    relationship = memory_service._relationship_summary_from_entries(entries)
+    has_repository = memory_service.repository is not None
+    summary = {
+        "total_estimated": recent.total_count,
+        "by_kind": by_kind,
+        "recent_count": len(entries),
+        "strong_memories": strong_memories,
+        "relationship": relationship,
+        "available": has_repository,
+    }
     return {
-        "summary": memory_service.get_memory_summary(),
-        "relationship": memory_service.get_relationship_summary(),
-        "timeline": memory_service.get_memory_timeline(limit=40),
+        "summary": summary,
+        "relationship": relationship,
+        "timeline": [entry.to_display_dict() for entry in entries[:40]],
     }
 
 

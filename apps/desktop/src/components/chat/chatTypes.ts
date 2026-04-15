@@ -19,3 +19,7 @@ export type ChatEntry = {
   knowledgeReferences?: KnowledgeReference[];
   streamSequence?: number;
 };
+
+export type ChatSendOptions = {
+  mcpServerIds?: string[];
+};

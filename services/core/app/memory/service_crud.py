@@ -192,9 +192,15 @@ class MemoryCRUDMixin:
         if self.repository is None:
             return MemoryCollection(entries=[], total_count=0)
 
+        safe_limit = max(0, int(limit))
+        if safe_limit == 0:
+            return MemoryCollection(entries=[], total_count=0, query_summary="最近 0 条记录")
+
         filter_kind = kinds[0].value if kinds and len(kinds) == 1 else None
+        # Only over-fetch when we must post-filter multiple kinds in service layer.
+        repository_limit = safe_limit * 3 if kinds and len(kinds) > 1 else safe_limit
         events = self.repository.list_recent(
-            limit=limit * 3,
+            limit=repository_limit,
             offset=offset,
             status=status,
             kind=filter_kind,
@@ -210,9 +216,9 @@ class MemoryCRUDMixin:
         entries.sort(key=lambda e: e.created_at, reverse=True)
 
         return MemoryCollection(
-            entries=entries[:limit],
+            entries=entries[:safe_limit],
             total_count=len(entries),
-            query_summary=f"最近 {limit} 条记录",
+            query_summary=f"最近 {safe_limit} 条记录",
         )
 
     def restore(self: "MemoryService", memory_id: str) -> bool:

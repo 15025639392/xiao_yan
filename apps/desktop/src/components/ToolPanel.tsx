@@ -10,6 +10,8 @@ import { ToolTabs } from "./tools/ToolTabs";
 import type { ToolTabType } from "./tools/toolTypes";
 import { getSuccessRateBadgeStyle } from "./tools/toolUtils";
 import { ToolsBrowseTab } from "./tools/ToolsBrowseTab";
+import { McpManageTab } from "./tools/McpManageTab";
+import { SkillsManageTab } from "./tools/SkillsManageTab";
 
 export function ToolPanel() {
   const [activeTab, setActiveTab] = useState<ToolTabType>("execute");
@@ -30,7 +32,7 @@ export function ToolPanel() {
           <div className="panel__icon">🛠️</div>
           <div>
             <h2 className="panel__title">工具箱</h2>
-            <p className="panel__subtitle">命令执行 · 文件操作 · 工具状态</p>
+            <p className="panel__subtitle">命令执行 · MCP/Skills · 文件操作 · 工具状态</p>
           </div>
         </div>
 
@@ -55,6 +57,8 @@ export function ToolPanel() {
           <ExecuteTab tools={tools} onExecuted={() => void fetchToolHistory().catch(() => {})} />
         ) : null}
         {activeTab === "tools" ? <ToolsBrowseTab tools={tools} /> : null}
+        {activeTab === "mcp" ? <McpManageTab /> : null}
+        {activeTab === "skills" ? <SkillsManageTab /> : null}
         {activeTab === "files" ? <FilesTab /> : null}
         {activeTab === "history" ? <HistoryTab /> : null}
         {activeTab === "status" ? (

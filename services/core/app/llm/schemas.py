@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     message: str
     attachments: list[ChatAttachment] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    mcp_servers: list[str] = Field(default_factory=list)
 
 
 class ChatResumeRequest(BaseModel):

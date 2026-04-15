@@ -6,6 +6,9 @@ import {
   createDataBackup,
   deleteOrchestratorSession,
   fetchDataEnvironmentStatus,
+  fetchKnowledgeItems,
+  fetchKnowledgeSummary,
+  fetchMemoryTimeline,
   fetchConfig,
   fetchOrchestratorSessions,
   fetchMessages,
@@ -23,6 +26,8 @@ import {
   updateDataEnvironmentStatus,
   updateConfig,
   updateGoalAdmissionConfig,
+  reviewKnowledgeItem,
+  reviewKnowledgeItemsBatch,
   upsertChatFolderPermission,
   updatePersona,
   updatePersonaFeatures,
@@ -282,6 +287,16 @@ describe("persona api methods", () => {
           chat_provider: "openai",
           chat_model: "gpt-5.4-mini",
           chat_read_timeout_seconds: 180,
+          chat_mcp_enabled: true,
+          chat_mcp_servers: [
+            {
+              server_id: "filesystem",
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+              enabled: true,
+              timeout_seconds: 20,
+            },
+          ],
           providers: [
             {
               provider_id: "openai",
@@ -305,6 +320,8 @@ describe("persona api methods", () => {
     const config = await fetchConfig();
     expect(config.chat_model).toBe("gpt-5.4-mini");
     expect(config.chat_provider).toBe("openai");
+    expect(config.chat_mcp_enabled).toBe(true);
+    expect(config.chat_mcp_servers[0]?.server_id).toBe("filesystem");
     const models = await fetchChatModels();
     expect(models.providers[0]?.models).toContain("gpt-5.4-mini");
 
@@ -319,6 +336,31 @@ describe("persona api methods", () => {
         }),
       }),
     );
+  });
+
+  test("normalizes updateConfig response when MCP fields are omitted", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          chat_context_limit: 8,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4-mini",
+          chat_read_timeout_seconds: 120,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const updated = await updateConfig({ chat_model: "gpt-5.4-mini" });
+
+    expect(updated.chat_context_limit).toBe(8);
+    expect(updated.chat_model).toBe("gpt-5.4-mini");
+    expect(updated.chat_mcp_enabled).toBe(false);
+    expect(updated.chat_mcp_servers).toEqual([]);
   });
 
   test("uses goal-admission config endpoints with expected methods", async () => {
@@ -441,6 +483,174 @@ describe("persona api methods", () => {
     await fetchMessages({ limit: 80, offset: 0 });
 
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8000/messages?limit=80&offset=0");
+  });
+
+  test("builds memory timeline query with namespace and search keyword", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          entries: [],
+          total_count: 0,
+          query_summary: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchMemoryTimeline({
+      limit: 20,
+      namespace: "knowledge",
+      q: "长期偏好",
+      visibility: "user",
+      status: "active",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/memory/timeline?limit=20&status=active&namespace=knowledge&visibility=user&q=%E9%95%BF%E6%9C%9F%E5%81%8F%E5%A5%BD",
+    );
+  });
+
+  test("fetches knowledge items with review filter and query", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          items: [],
+          total_count: 0,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchKnowledgeItems({
+      limit: 20,
+      offset: 0,
+      review_status: "pending_review",
+      status: "active",
+      q: "偏好",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/knowledge/items?limit=20&offset=0&review_status=pending_review&status=active&q=%E5%81%8F%E5%A5%BD",
+    );
+  });
+
+  test("fetches knowledge items with cursor and sort controls", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          items: [],
+          total_count: 0,
+          next_cursor: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchKnowledgeItems({
+      limit: 10,
+      cursor: "cursor_abc",
+      sort_by: "reviewed_at",
+      sort_order: "asc",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/knowledge/items?limit=10&offset=0&cursor=cursor_abc&sort_by=reviewed_at&sort_order=asc",
+    );
+  });
+
+  test("reviews knowledge item with expected payload", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          item: {
+            id: "mem_1",
+            review_status: "approved",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await reviewKnowledgeItem("mem_1", {
+      decision: "approve",
+      reviewer: "owner",
+      review_note: "通过",
+    });
+    await fetchKnowledgeSummary();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8000/knowledge/items/mem_1/review",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          decision: "approve",
+          reviewer: "owner",
+          review_note: "通过",
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8000/knowledge/summary",
+    );
+  });
+
+  test("reviews knowledge items in batch with expected payload", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          decision: "approve",
+          updated: 2,
+          failed: 0,
+          updated_ids: ["mem_a", "mem_b"],
+          failed_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await reviewKnowledgeItemsBatch({
+      knowledge_ids: ["mem_a", "mem_b"],
+      decision: "approve",
+      reviewer: "owner",
+      review_note: "批量通过",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/knowledge/items/review-batch",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          knowledge_ids: ["mem_a", "mem_b"],
+          decision: "approve",
+          reviewer: "owner",
+          review_note: "批量通过",
+        }),
+      }),
+    );
   });
 
   test("sends chat attachments payload when provided", async () => {

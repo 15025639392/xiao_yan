@@ -1,7 +1,9 @@
 import base64
 import os
+import sys
 import time
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Thread
 from unittest.mock import patch
@@ -514,6 +516,171 @@ def test_post_chat_returns_submission_confirmation():
             ("hello", "echo:hello", response.json()["assistant_message_id"])
         ]
     finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_extracts_structured_knowledge_events_when_flag_enabled():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        with patch.dict(os.environ, {"CHAT_KNOWLEDGE_EXTRACTION_ENABLED": "1"}, clear=False):
+            response = client.post("/chat", json={"message": "我喜欢结构化输出"})
+        assert response.status_code == 200
+
+        recent = memory_repository.list_recent(limit=20, status="all")
+        extracted = [event for event in recent if event.kind != "chat"]
+        assert any(event.kind == "semantic" and event.knowledge_type == "preference" for event in extracted)
+        assert any(event.namespace == "knowledge" for event in extracted)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_injects_only_approved_structured_knowledge_into_instructions():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter(search_context_text="")
+
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="fact",
+            content="已审核知识：用户偏好先结论后细节",
+            namespace="knowledge",
+            review_status="approved",
+            source_ref="manual://knowledge",
+        )
+    )
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="fact",
+            content="待审核知识：用户偏好超长回复",
+            namespace="knowledge",
+            review_status="pending_review",
+            source_ref="extract://chat",
+        )
+    )
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="fact",
+            content="驳回知识：用户不需要上下文",
+            namespace="knowledge",
+            review_status="rejected",
+            source_ref="extract://chat",
+        )
+    )
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "今天继续聊输出方式"})
+        assert response.status_code == 200
+        instructions = gateway.last_instructions or ""
+        assert "已审核知识：用户偏好先结论后细节" in instructions
+        assert "待审核知识：用户偏好超长回复" not in instructions
+        assert "驳回知识：用户不需要上下文" not in instructions
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_prioritizes_relevant_approved_knowledge_for_instructions():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter(search_context_text="")
+    runtime_config = get_runtime_config()
+    original_context_limit = runtime_config.chat_context_limit
+    runtime_config.chat_context_limit = 3
+    now = datetime.now(timezone.utc)
+
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="fact",
+            content="输出规范：先给结论再给细节",
+            namespace="knowledge",
+            review_status="approved",
+            source_ref="manual://style",
+            created_at=now - timedelta(days=14),
+        )
+    )
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="fact",
+            content="无关知识：用户午饭喜欢米饭",
+            namespace="knowledge",
+            review_status="approved",
+            source_ref="manual://food",
+            created_at=now - timedelta(minutes=5),
+        )
+    )
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="fact",
+            content="无关知识：用户常在周三看电影",
+            namespace="knowledge",
+            review_status="approved",
+            source_ref="manual://habit",
+            created_at=now - timedelta(minutes=2),
+        )
+    )
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "后续回答请先给结论再给细节"})
+        assert response.status_code == 200
+        instructions = gateway.last_instructions or ""
+        assert "输出规范：先给结论再给细节" in instructions
+        assert "无关知识：用户午饭喜欢米饭" not in instructions
+        assert "无关知识：用户常在周三看电影" not in instructions
+    finally:
+        runtime_config.chat_context_limit = original_context_limit
         app.dependency_overrides.clear()
 
 
@@ -2506,3 +2673,197 @@ def test_post_chat_injects_skill_instructions_when_message_matches_prefix_trigge
                 assert "先确认目标，再拆解范围。" in gateway.last_instructions
     finally:
         app.dependency_overrides.clear()
+
+class McpToolCallingStubGateway(StubGateway):
+    def __init__(self, tool_name: str) -> None:
+        super().__init__()
+        self.tool_name = tool_name
+        self.tool_output_text: str | None = None
+
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        has_tool_output = any(
+            isinstance(item, dict) and item.get("type") == "function_call_output"
+            for item in input_items
+        )
+
+        if not has_tool_output:
+            return {
+                "id": "resp_mcp_tool_1",
+                "output": [
+                    {
+                        "type": "function_call",
+                        "id": "fc_mcp_1",
+                        "call_id": "call_mcp_1",
+                        "name": self.tool_name,
+                        "arguments": '{"text": "hello mcp"}',
+                    }
+                ],
+            }
+
+        tool_outputs = [
+            item for item in input_items
+            if isinstance(item, dict) and item.get("type") == "function_call_output"
+        ]
+        assert tool_outputs
+        self.tool_output_text = str(tool_outputs[-1].get("output"))
+        return {
+            "id": "resp_mcp_tool_2",
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "MCP 已执行。",
+                        }
+                    ],
+                }
+            ],
+            "output_text": "MCP 已执行。",
+        }
+
+
+def test_get_chat_mcp_servers_returns_runtime_snapshot():
+    config = get_runtime_config()
+    original_enabled = config.chat_mcp_enabled
+    original_servers = config.list_chat_mcp_servers()
+
+    try:
+        config.chat_mcp_enabled = True
+        config.replace_chat_mcp_servers(
+            [
+                {
+                    "server_id": "filesystem",
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                    "enabled": True,
+                    "timeout_seconds": 20,
+                }
+            ]
+        )
+
+        client = TestClient(app)
+        response = client.get("/chat/mcp/servers")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is True
+        assert body["servers"]
+        assert body["servers"][0]["server_id"] == "filesystem"
+        assert body["servers"][0]["command"] == "npx"
+    finally:
+        config.chat_mcp_enabled = original_enabled
+        config.replace_chat_mcp_servers(original_servers)
+
+
+def test_post_chat_executes_mcp_tool_when_server_is_selected():
+    memory_repository = InMemoryMemoryRepository()
+    config = get_runtime_config()
+    original_enabled = config.chat_mcp_enabled
+    original_servers = config.list_chat_mcp_servers()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        script_path = Path(temp_dir).resolve() / "mcp_echo_server.py"
+        script_path.write_text(
+            (
+                "import json\n"
+                "import sys\n"
+                "\n"
+                "def read_msg():\n"
+                "    headers = {}\n"
+                "    while True:\n"
+                "        line = sys.stdin.buffer.readline()\n"
+                "        if not line:\n"
+                "            return None\n"
+                "        if line in (b'\\r\\n', b'\\n'):\n"
+                "            break\n"
+                "        decoded = line.decode('utf-8').strip()\n"
+                "        if ':' not in decoded:\n"
+                "            continue\n"
+                "        key, value = decoded.split(':', 1)\n"
+                "        headers[key.strip().lower()] = value.strip()\n"
+                "    length = int(headers.get('content-length', '0'))\n"
+                "    body = sys.stdin.buffer.read(length)\n"
+                "    return json.loads(body.decode('utf-8'))\n"
+                "\n"
+                "def write_msg(payload):\n"
+                "    body = json.dumps(payload).encode('utf-8')\n"
+                "    sys.stdout.buffer.write(f'Content-Length: {len(body)}\\r\\n\\r\\n'.encode('ascii'))\n"
+                "    sys.stdout.buffer.write(body)\n"
+                "    sys.stdout.buffer.flush()\n"
+                "\n"
+                "while True:\n"
+                "    msg = read_msg()\n"
+                "    if msg is None:\n"
+                "        break\n"
+                "    method = msg.get('method')\n"
+                "    request_id = msg.get('id')\n"
+                "    if method == 'initialize':\n"
+                "        write_msg({'jsonrpc': '2.0', 'id': request_id, 'result': {'capabilities': {}}})\n"
+                "    elif method == 'tools/list':\n"
+                "        write_msg({'jsonrpc': '2.0', 'id': request_id, 'result': {'tools': [{'name': 'echo_tool', 'description': 'echo text', 'inputSchema': {'type': 'object', 'properties': {'text': {'type': 'string'}}, 'required': ['text'], 'additionalProperties': False}}]}})\n"
+                "    elif method == 'tools/call':\n"
+                "        params = msg.get('params') or {}\n"
+                "        arguments = params.get('arguments') or {}\n"
+                "        text = arguments.get('text', '')\n"
+                "        write_msg({'jsonrpc': '2.0', 'id': request_id, 'result': {'content': [{'type': 'text', 'text': f'mcp:{text}'}]}})\n"
+                "    elif request_id is not None:\n"
+                "        write_msg({'jsonrpc': '2.0', 'id': request_id, 'error': {'code': -32601, 'message': 'method not found'}})\n"
+            ),
+            encoding="utf-8",
+        )
+
+        gateway = McpToolCallingStubGateway("mcp__test_server__echo_tool")
+        mempalace_adapter = StubMemPalaceAdapter()
+
+        def override_gateway():
+            try:
+                yield gateway
+            finally:
+                gateway.close()
+
+        def override_memory_repository():
+            return memory_repository
+
+        def override_mempalace_adapter():
+            return mempalace_adapter
+
+        app.dependency_overrides[get_chat_gateway] = override_gateway
+        app.dependency_overrides[get_memory_repository] = override_memory_repository
+        app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+        try:
+            config.chat_mcp_enabled = True
+            config.replace_chat_mcp_servers(
+                [
+                    {
+                        "server_id": "test-server",
+                        "command": sys.executable,
+                        "args": [str(script_path)],
+                        "enabled": True,
+                        "timeout_seconds": 20,
+                    }
+                ]
+            )
+
+            client = TestClient(app)
+            response = client.post(
+                "/chat",
+                json={
+                    "message": "请通过 mcp 回答",
+                    "mcp_servers": ["test-server"],
+                },
+            )
+            assert response.status_code == 200
+            assert gateway.tool_output_text is not None
+            assert "mcp:hello mcp" in gateway.tool_output_text
+        finally:
+            config.chat_mcp_enabled = original_enabled
+            config.replace_chat_mcp_servers(original_servers)
+            app.dependency_overrides.clear()

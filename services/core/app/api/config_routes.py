@@ -40,6 +40,18 @@ class ConfigUpdateRequest(BaseModel):
     chat_provider: str | None = Field(default=None, min_length=1, description="聊天服务商标识，例如 openai/minimaxi/nvidia/deepseek")
     chat_model: str | None = Field(default=None, min_length=1, description="聊天模型名称，例如 gpt-5.4")
     chat_read_timeout_seconds: int | None = Field(default=None, ge=10, le=600, description="聊天 read 超时（秒），默认 180")
+    chat_mcp_enabled: bool | None = Field(default=None, description="是否启用 chat MCP 工具")
+    chat_mcp_servers: list[dict[str, object]] | None = Field(default=None, description="chat MCP server 配置列表")
+
+
+class ChatMcpServerConfig(BaseModel):
+    server_id: str = Field(..., min_length=1)
+    command: str = Field(..., min_length=1)
+    args: list[str] = Field(default_factory=list)
+    cwd: str | None = None
+    env: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+    timeout_seconds: int = Field(default=20, ge=1, le=120)
 
 
 class ConfigResponse(BaseModel):
@@ -47,6 +59,8 @@ class ConfigResponse(BaseModel):
     chat_provider: str
     chat_model: str
     chat_read_timeout_seconds: int
+    chat_mcp_enabled: bool = False
+    chat_mcp_servers: list[ChatMcpServerConfig] = Field(default_factory=list)
 
 
 class SelfProgrammingConfigUpdateRequest(BaseModel):
@@ -270,6 +284,8 @@ def build_config_router() -> APIRouter:
             chat_provider=config.chat_provider,
             chat_model=config.chat_model,
             chat_read_timeout_seconds=config.chat_read_timeout_seconds,
+            chat_mcp_enabled=config.chat_mcp_enabled,
+            chat_mcp_servers=[ChatMcpServerConfig.model_validate(item) for item in config.list_chat_mcp_servers()],
         )
 
     @router.get("/config/self-programming")
@@ -287,6 +303,8 @@ def build_config_router() -> APIRouter:
             and request.chat_provider is None
             and request.chat_model is None
             and request.chat_read_timeout_seconds is None
+            and request.chat_mcp_enabled is None
+            and request.chat_mcp_servers is None
         ):
             raise HTTPException(status_code=400, detail="at least one config field is required")
 
@@ -314,12 +332,22 @@ def build_config_router() -> APIRouter:
             if not chat_model:
                 raise HTTPException(status_code=400, detail="chat_model must not be empty")
             config.chat_model = chat_model
+        if request.chat_mcp_enabled is not None:
+            config.chat_mcp_enabled = request.chat_mcp_enabled
+        if request.chat_mcp_servers is not None:
+            try:
+                normalized_servers = [ChatMcpServerConfig.model_validate(item).model_dump(mode="json") for item in request.chat_mcp_servers]
+                config.replace_chat_mcp_servers(normalized_servers)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         return ConfigResponse(
             chat_context_limit=config.chat_context_limit,
             chat_provider=next_provider,
             chat_model=config.chat_model,
             chat_read_timeout_seconds=config.chat_read_timeout_seconds,
+            chat_mcp_enabled=config.chat_mcp_enabled,
+            chat_mcp_servers=[ChatMcpServerConfig.model_validate(item) for item in config.list_chat_mcp_servers()],
         )
 
     @router.put("/config/self-programming")

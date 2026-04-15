@@ -5,6 +5,7 @@ import json
 import mimetypes
 import os
 import re
+from datetime import datetime, timezone
 from logging import getLogger
 from pathlib import Path
 from time import perf_counter
@@ -21,6 +22,7 @@ from app.api.deps import (
     get_persona_service,
     get_state_store,
 )
+from app.config import get_chat_knowledge_extraction_enabled
 from app.goals.repository import GoalRepository
 from app.capabilities.models import CapabilityDispatchRequest, RiskLevel
 from app.capabilities.runtime import dispatch_and_wait, has_recent_capability_executor
@@ -32,9 +34,12 @@ from app.llm.schemas import (
     ChatResumeRequest,
     ChatSubmissionResult,
 )
+from app.memory.extractor import MemoryExtractor
 from app.memory.mempalace_adapter import MemPalaceAdapter
 from app.memory.observability import KnowledgeObservabilityTracker
 from app.memory.repository import MemoryRepository
+from app.memory.search_utils import tokenize_text
+from app.mcp import ChatMcpCallRegistry, build_chat_mcp_tool_registry, call_chat_mcp_tool
 from app.memory.models import MemoryEvent
 from app.persona.expression_mapper import ExpressionStyleMapper
 from app.persona.prompt_builder import build_chat_instructions
@@ -147,6 +152,20 @@ class ChatSkillEntry(BaseModel):
 
 class ChatSkillListResponse(BaseModel):
     skills: list[ChatSkillEntry]
+
+
+class ChatMcpServerEntry(BaseModel):
+    server_id: str
+    command: str
+    args: list[str] = Field(default_factory=list)
+    cwd: str | None = None
+    enabled: bool = True
+    timeout_seconds: int = 20
+
+
+class ChatMcpServerListResponse(BaseModel):
+    enabled: bool
+    servers: list[ChatMcpServerEntry]
 
 
 def build_chat_router() -> APIRouter:
@@ -700,6 +719,35 @@ def build_chat_router() -> APIRouter:
             )
         )
 
+    def _extract_structured_knowledge_events(
+        *,
+        memory_repository: MemoryRepository,
+        user_message: str,
+        assistant_response: str,
+        assistant_session_id: str,
+        personality,
+    ) -> int:
+        user_text = (user_message or "").strip()
+        assistant_text = (assistant_response or "").strip()
+        if not user_text or not assistant_text:
+            return 0
+
+        extractor = MemoryExtractor(personality=personality)
+        events = extractor.extract_from_dialogue(
+            [
+                ChatMessage(role="user", content=user_text),
+                ChatMessage(role="assistant", content=assistant_text),
+            ],
+            {
+                "source_ref": f"chat://{assistant_session_id}",
+                "version_tag": "v1",
+                "topic": _compact_text(user_text, limit=40),
+            },
+        )
+        for event in events:
+            memory_repository.save_event(event)
+        return len(events)
+
     def _should_fallback_to_stream_without_tools(exception: Exception) -> bool:
         if not isinstance(exception, httpx.HTTPStatusError):
             return False
@@ -849,10 +897,35 @@ def build_chat_router() -> APIRouter:
             folder_permissions=granted_folders,
         )
 
+    def _build_chat_mcp_server_response() -> ChatMcpServerListResponse:
+        config = get_runtime_config()
+        servers = [
+            ChatMcpServerEntry(
+                server_id=str(item.get("server_id", "")),
+                command=str(item.get("command", "")),
+                args=[str(arg) for arg in (item.get("args") or []) if isinstance(arg, str)],
+                cwd=str(item.get("cwd")) if item.get("cwd") is not None else None,
+                enabled=bool(item.get("enabled", True)),
+                timeout_seconds=int(item.get("timeout_seconds", 20)),
+            )
+            for item in config.list_chat_mcp_servers()
+            if str(item.get("server_id", "")).strip() and str(item.get("command", "")).strip()
+        ]
+        return ChatMcpServerListResponse(enabled=config.chat_mcp_enabled, servers=servers)
+
+    def _build_chat_mcp_registry(requested_server_ids: list[str]) -> ChatMcpCallRegistry:
+        config = get_runtime_config()
+        return build_chat_mcp_tool_registry(
+            mcp_enabled=config.chat_mcp_enabled,
+            configured_servers=config.list_chat_mcp_servers(),
+            selected_server_ids=requested_server_ids,
+        )
+
     def _resolve_mempalace_chat_context(
         *,
         user_message: str,
         mempalace_adapter: MemPalaceAdapter,
+        memory_repository: MemoryRepository,
         context_limit: int,
     ) -> tuple[list[ChatMessage], str, bool, bool]:
         recent_turn_limit, long_term_hits = _split_context_budget(context_limit)
@@ -895,7 +968,130 @@ def build_chat_router() -> APIRouter:
         if not chat_messages:
             chat_messages = [ChatMessage(role="user", content=user_message)]
 
+        approved_knowledge_context = _build_approved_knowledge_context(
+            memory_repository=memory_repository,
+            user_message=user_message,
+            max_hits=long_term_hits,
+        )
+        if approved_knowledge_context:
+            if memory_context:
+                memory_context = f"{memory_context}\n{approved_knowledge_context}"
+            else:
+                memory_context = approved_knowledge_context
+
         return chat_messages, memory_context, search_failed, retrieval_attempted
+
+    def _build_approved_knowledge_context(
+        *,
+        memory_repository: MemoryRepository,
+        user_message: str,
+        max_hits: int,
+    ) -> str:
+        safe_hits = max(1, int(max_hits))
+        try:
+            events = memory_repository.list_recent(
+                limit=max(safe_hits * 5, 20),
+                status="active",
+                namespace="knowledge",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("failed to load approved knowledge events: %s", exc)
+            return ""
+
+        approved_events = [event for event in events if getattr(event, "review_status", "approved") == "approved"]
+        if not approved_events:
+            return ""
+
+        ranked_events = _rank_approved_knowledge_events(
+            events=approved_events,
+            user_message=user_message,
+            max_hits=safe_hits,
+        )
+
+        lines = ["【结构化知识（已审核）】"]
+        for event in ranked_events:
+            excerpt = _compact_text(event.content or "", limit=180)
+            if not excerpt:
+                continue
+            source = _compact_text((event.source_ref or "knowledge/approved"), limit=120).replace(" ", "_")
+            lines.append(f"- {source} {excerpt}")
+
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    def _rank_approved_knowledge_events(
+        *,
+        events: list[MemoryEvent],
+        user_message: str,
+        max_hits: int,
+    ) -> list[MemoryEvent]:
+        safe_hits = max(1, int(max_hits))
+        query_tokens = tokenize_text(user_message or "")
+        normalized_query = (user_message or "").strip().lower()
+        now_utc = datetime.now(timezone.utc)
+
+        scored: list[tuple[float, float, float, float, MemoryEvent]] = []
+        for event in events:
+            relevance_score = _score_approved_knowledge_relevance(
+                event=event,
+                query_tokens=query_tokens,
+                normalized_query=normalized_query,
+            )
+            freshness_score = _score_approved_knowledge_freshness(event=event, now_utc=now_utc)
+            combined_score = _merge_approved_knowledge_scores(
+                relevance_score=relevance_score,
+                freshness_score=freshness_score,
+                has_query=bool(query_tokens),
+            )
+            scored.append((combined_score, relevance_score, freshness_score, _event_timestamp(event), event))
+
+        scored.sort(key=lambda item: (item[0], item[1], item[2], item[3]), reverse=True)
+        return [item[4] for item in scored[:safe_hits]]
+
+    def _score_approved_knowledge_relevance(
+        *,
+        event: MemoryEvent,
+        query_tokens: set[str],
+        normalized_query: str,
+    ) -> float:
+        if not query_tokens:
+            return 0.0
+
+        event_index_text = " ".join(
+            part
+            for part in (
+                event.content or "",
+                " ".join(event.knowledge_tags),
+                event.knowledge_type or "",
+                event.source_ref or "",
+            )
+            if part
+        )
+        event_tokens = tokenize_text(event_index_text)
+        overlap = len(query_tokens & event_tokens)
+        token_coverage = overlap / max(1, len(query_tokens))
+        phrase_bonus = 0.0
+        if normalized_query and normalized_query in (event.content or "").lower():
+            phrase_bonus = 0.25
+        return min(1.0, token_coverage + phrase_bonus)
+
+    def _score_approved_knowledge_freshness(*, event: MemoryEvent, now_utc: datetime) -> float:
+        created_at = event.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        age_seconds = max(0.0, (now_utc - created_at).total_seconds())
+        freshness_half_life_seconds = 14 * 24 * 60 * 60
+        return float(0.5 ** (age_seconds / freshness_half_life_seconds))
+
+    def _merge_approved_knowledge_scores(*, relevance_score: float, freshness_score: float, has_query: bool) -> float:
+        if not has_query:
+            return freshness_score
+        return (relevance_score * 0.75) + (freshness_score * 0.25)
+
+    def _event_timestamp(event: MemoryEvent) -> float:
+        created_at = event.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return created_at.timestamp()
 
     def _split_context_budget(context_limit: int) -> tuple[int, int]:
         total = max(1, int(context_limit))
@@ -943,7 +1139,13 @@ def build_chat_router() -> APIRouter:
 
         return references
 
-    def _execute_file_tool_call(file_tools, tool_name: str, arguments: dict) -> str:
+    def _execute_tool_call(
+        file_tools,
+        tool_name: str,
+        arguments: dict,
+        *,
+        mcp_registry: ChatMcpCallRegistry | None = None,
+    ) -> str:
         def _try_dispatch(tool: str, args: dict) -> str | None:
             if not has_recent_capability_executor("desktop", max_age_seconds=10):
                 return None
@@ -1132,6 +1334,15 @@ def build_chat_router() -> APIRouter:
                 result = file_tools.write_file(path, content, create_dirs=create_dirs)
                 return json.dumps(result.to_dict(), ensure_ascii=False)
 
+            if mcp_registry is not None:
+                mcp_output = call_chat_mcp_tool(
+                    mcp_registry,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                )
+                if mcp_output is not None:
+                    return mcp_output
+
             return json.dumps({"error": f"unknown tool: {tool_name}"}, ensure_ascii=False)
         except Exception as exception:  # noqa: BLE001
             return json.dumps({"error": str(exception)}, ensure_ascii=False)
@@ -1215,6 +1426,8 @@ def build_chat_router() -> APIRouter:
         assistant_message_id: str,
         initial_output_text: str = "",
         knowledge_references: list[dict[str, str | float | None]] | None = None,
+        extra_tools: list[dict[str, object]] | None = None,
+        mcp_registry: ChatMcpCallRegistry | None = None,
     ) -> tuple[ChatSubmissionResult, str]:
         create_with_tools = getattr(gateway, "create_response_with_tools", None)
         if not callable(create_with_tools):
@@ -1233,6 +1446,7 @@ def build_chat_router() -> APIRouter:
         response_id: str | None = None
 
         file_tools = _build_chat_file_tools()
+        tool_definitions = [*CHAT_FILE_TOOL_DEFINITIONS, *(extra_tools or [])]
         accumulated_input: list[dict] = [message.model_dump() for message in chat_messages]
         max_tool_rounds = 8
         tool_repeat_streak_limit = 3
@@ -1266,7 +1480,7 @@ def build_chat_router() -> APIRouter:
                     response_payload = create_with_tools(
                         accumulated_input,
                         instructions=instructions,
-                        tools=CHAT_FILE_TOOL_DEFINITIONS,
+                        tools=tool_definitions,
                     )
                 except Exception as exception:  # noqa: BLE001
                     # Some providers reject tool payloads; degrade to plain streaming instead of hard failing.
@@ -1356,7 +1570,12 @@ def build_chat_router() -> APIRouter:
 
                 tool_outputs: list[dict[str, str]] = []
                 for call_id, tool_name, arguments in function_calls:
-                    tool_output = _execute_file_tool_call(file_tools, tool_name, arguments)
+                    tool_output = _execute_tool_call(
+                        file_tools,
+                        tool_name,
+                        arguments,
+                        mcp_registry=mcp_registry,
+                    )
                     tool_outputs.append(
                         {
                             "type": "function_call_output",
@@ -1419,6 +1638,10 @@ def build_chat_router() -> APIRouter:
                 if str(skill.get("name", "")).strip() and str(skill.get("path", "")).strip()
             ]
         )
+
+    @router.get("/chat/mcp/servers")
+    def get_chat_mcp_servers() -> ChatMcpServerListResponse:
+        return _build_chat_mcp_server_response()
 
     @router.put("/chat/folder-permissions")
     def upsert_folder_permission(request_body: FolderPermissionRequest) -> FolderPermissionListResponse:
@@ -1492,6 +1715,7 @@ def build_chat_router() -> APIRouter:
         chat_messages, memory_context, retrieval_failed, retrieval_attempted = _resolve_mempalace_chat_context(
             user_message=request_body.message,
             mempalace_adapter=mempalace_adapter,
+            memory_repository=memory_repository,
             context_limit=config.chat_context_limit,
         )
         knowledge_references = _extract_knowledge_references(memory_context)
@@ -1549,6 +1773,7 @@ def build_chat_router() -> APIRouter:
             user_message=request_body.message,
             requested_skills=request_body.skills,
         )
+        mcp_registry = _build_chat_mcp_registry(request_body.mcp_servers)
 
         assistant_message_id = f"assistant_{uuid4().hex}"
         chat_started_at = perf_counter()
@@ -1569,6 +1794,8 @@ def build_chat_router() -> APIRouter:
                 instructions=instructions,
                 assistant_message_id=assistant_message_id,
                 knowledge_references=knowledge_references,
+                extra_tools=mcp_registry.tools,
+                mcp_registry=mcp_registry,
             )
         if tracker is not None:
             tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
@@ -1596,6 +1823,17 @@ def build_chat_router() -> APIRouter:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("mirror exchange to memory repository failed: %s", exc)
+        if get_chat_knowledge_extraction_enabled():
+            try:
+                _extract_structured_knowledge_events(
+                    memory_repository=memory_repository,
+                    user_message=request_body.message,
+                    assistant_response=output_text,
+                    assistant_session_id=assistant_message_id,
+                    personality=persona_service.profile.personality,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("structured knowledge extraction failed: %s", exc)
         latest_state = state_store.get()
         next_thought = _build_post_chat_thought(request_body.message, output_text)
         state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))
@@ -1632,6 +1870,7 @@ def build_chat_router() -> APIRouter:
         chat_messages, memory_context, retrieval_failed, retrieval_attempted = _resolve_mempalace_chat_context(
             user_message=request_body.message,
             mempalace_adapter=mempalace_adapter,
+            memory_repository=memory_repository,
             context_limit=config.chat_context_limit,
         )
         knowledge_references = _extract_knowledge_references(memory_context)
@@ -1659,6 +1898,7 @@ def build_chat_router() -> APIRouter:
             instructions,
             user_message=request_body.message,
         )
+        mcp_registry = _build_chat_mcp_registry([])
 
         chat_started_at = perf_counter()
         submission, output_text = _run_chat_submission_with_tools(
@@ -1669,6 +1909,8 @@ def build_chat_router() -> APIRouter:
             assistant_message_id=request_body.assistant_message_id,
             initial_output_text=request_body.partial_content,
             knowledge_references=knowledge_references,
+            extra_tools=mcp_registry.tools,
+            mcp_registry=mcp_registry,
         )
         if tracker is not None:
             tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
@@ -1696,6 +1938,17 @@ def build_chat_router() -> APIRouter:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("mirror exchange to memory repository failed: %s", exc)
+        if get_chat_knowledge_extraction_enabled():
+            try:
+                _extract_structured_knowledge_events(
+                    memory_repository=memory_repository,
+                    user_message=request_body.message,
+                    assistant_response=output_text,
+                    assistant_session_id=request_body.assistant_message_id,
+                    personality=persona_service.profile.personality,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("structured knowledge extraction failed: %s", exc)
         latest_state = state_store.get()
         next_thought = _build_post_chat_thought(request_body.message, output_text)
         state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))

@@ -60,12 +60,16 @@ def build_runtime_router() -> APIRouter:
         ensure_runtime_initialized(websocket.app)
         ensure_realtime_hub_initialized(websocket.app)
         hub = websocket.app.state.realtime_hub
-        await hub.connect(websocket)
+        connected = await hub.connect(websocket)
+        if not connected:
+            return
 
         try:
             while True:
                 await websocket.receive_text()
         except WebSocketDisconnect:
+            pass
+        finally:
             await hub.disconnect(websocket)
 
     @router.get("/state")

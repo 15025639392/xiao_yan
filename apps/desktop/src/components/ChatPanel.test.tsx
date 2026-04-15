@@ -224,6 +224,73 @@ test("forwards input changes and send events", () => {
   expect(onSend).toHaveBeenCalledTimes(1);
 });
 
+test("sends selected MCP server ids with onSend", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+
+    if (url.endsWith("/config") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          chat_context_limit: 6,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4",
+          chat_read_timeout_seconds: 180,
+          chat_mcp_enabled: true,
+          chat_mcp_servers: [
+            {
+              server_id: "filesystem",
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+              enabled: true,
+              timeout_seconds: 20,
+            },
+            {
+              server_id: "browser",
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-browser"],
+              enabled: true,
+              timeout_seconds: 20,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url} [${method}]`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const onSend = vi.fn();
+  render(
+    <ChatPanel
+      draft="帮我读取项目结构"
+      focusGoalTitle={null}
+      focusModeLabel="常规自主"
+      isSending={false}
+      messages={[]}
+      modeLabel="运行中"
+      onDraftChange={vi.fn()}
+      onSend={onSend}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "选择 MCP Servers" }));
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("MCP Server filesystem")).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getByLabelText("MCP Server filesystem"));
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  expect(onSend).toHaveBeenCalledWith({ mcpServerIds: ["browser"] });
+});
+
 test("sends message on Enter key press", () => {
   const onSend = vi.fn();
 
@@ -495,4 +562,117 @@ test("updates chat model inside config modal", async () => {
       }),
     );
   });
+});
+
+test("shows MCP section as read-only inside config modal", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+
+    if (url.endsWith("/config")) {
+      if (method === "GET") {
+        return new Response(
+          JSON.stringify({
+            chat_context_limit: 6,
+            chat_provider: "openai",
+            chat_model: "gpt-5.4",
+            chat_read_timeout_seconds: 180,
+            chat_mcp_enabled: true,
+            chat_mcp_servers: [
+              {
+                server_id: "filesystem",
+                command: "npx",
+                args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                cwd: null,
+                env: {},
+                enabled: true,
+                timeout_seconds: 20,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      throw new Error("should not update MCP config in read-only modal");
+    }
+
+    if (url.endsWith("/config/chat-models")) {
+      return new Response(
+        JSON.stringify({
+          providers: [
+            {
+              provider_id: "openai",
+              provider_name: "OpenAI",
+              models: ["gpt-5.4", "gpt-5.4-mini"],
+              default_model: "gpt-5.4",
+              error: null,
+            },
+          ],
+          current_provider: "openai",
+          current_model: "gpt-5.4",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config/data-environment") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          testing_mode: false,
+          mempalace_palace_path: "/tmp/palace",
+          mempalace_wing: "wing_xiaoyan",
+          mempalace_room: "chat_exchange",
+          default_backup_directory: "/tmp/backups",
+          switch_backup_path: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat/folder-permissions") && method === "GET") {
+      return new Response(JSON.stringify({ permissions: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`unexpected request: ${url} [${method}]`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <ChatPanel
+      draft=""
+      focusGoalTitle={null}
+      focusModeLabel="常规自主"
+      isSending={false}
+      messages={[]}
+      modeLabel="运行中"
+      onDraftChange={vi.fn()}
+      onSend={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
+  await screen.findByText("MCP 管理入口已迁移到工具箱，此处仅展示当前状态与配置快照。");
+
+  expect(screen.queryByRole("button", { name: "新增 MCP Server" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("MCP Server ID")).not.toBeInTheDocument();
+  expect(screen.getByText("filesystem")).toBeInTheDocument();
+  expect(screen.getByText(/如需新增、编辑、删除或启停，请前往“工具箱/)).toBeInTheDocument();
+  expect(
+    fetchMock.mock.calls.some(
+      ([input, init]) => String(input).endsWith("/config") && (init?.method ?? "GET") === "PUT",
+    ),
+  ).toBe(false);
 });

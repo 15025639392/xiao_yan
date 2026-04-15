@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from pathlib import Path
 
 import httpx
 from fastapi import Request
@@ -50,9 +51,11 @@ def get_mempalace_adapter(request: Request) -> MemPalaceAdapter:
     ensure_runtime_initialized(request.app)
     adapter = getattr(request.app.state, "mempalace_adapter", None)
     if adapter is None:
+        palace_path = get_mempalace_palace_path()
+        Path(palace_path).mkdir(parents=True, exist_ok=True)
         adapter = MemPalaceAdapter(
             enabled=True,
-            palace_path=get_mempalace_palace_path(),
+            palace_path=palace_path,
             results_limit=get_mempalace_results_limit(),
             wing=get_mempalace_wing(),
             room=get_mempalace_room(),

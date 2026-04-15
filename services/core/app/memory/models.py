@@ -273,6 +273,17 @@ class MemoryEvent(BaseModel):
     knowledge_tags: list[str] = Field(default_factory=list, description="知识标签")
     source_ref: str | None = Field(default=None, description="知识来源引用（文件、URL、会话片段）")
     version_tag: str | None = Field(default=None, description="知识版本标签")
+    governance_source: Literal["system", "auto_extracted", "manual"] = Field(
+        default="system",
+        description="知识治理来源：system/auto_extracted/manual",
+    )
+    review_status: Literal["pending_review", "approved", "rejected"] = Field(
+        default="approved",
+        description="知识审核状态",
+    )
+    reviewed_by: str | None = Field(default=None, description="审核人")
+    reviewed_at: datetime | None = Field(default=None, description="审核时间")
+    review_note: str | None = Field(default=None, description="审核备注")
     visibility: Literal["internal", "user"] = Field(
         default="internal",
         description="可见性：internal=系统内部，user=对用户可见",
@@ -334,6 +345,14 @@ class MemoryEvent(BaseModel):
         if self.version_tag is not None:
             normalized_version_tag = self.version_tag.strip()
             self.version_tag = normalized_version_tag or None
+
+        if self.reviewed_by is not None:
+            normalized_reviewed_by = self.reviewed_by.strip()
+            self.reviewed_by = normalized_reviewed_by or None
+
+        if self.review_note is not None:
+            normalized_review_note = self.review_note.strip()
+            self.review_note = normalized_review_note or None
 
         return self
 

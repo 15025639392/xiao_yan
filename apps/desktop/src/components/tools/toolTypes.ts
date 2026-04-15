@@ -1,2 +1,1 @@
-export type ToolTabType = "execute" | "tools" | "files" | "history" | "status";
-
+export type ToolTabType = "execute" | "tools" | "mcp" | "skills" | "files" | "history" | "status";

@@ -753,6 +753,39 @@
   color: var(--text-tertiary);
 }
 
+.memory-page__mode-switch {
+  margin-top: var(--space-2);
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-canvas);
+  width: fit-content;
+}
+
+.memory-page__mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.memory-page__mode-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.memory-page__mode-btn--active {
+  background: var(--primary-muted);
+  color: var(--primary);
+  font-weight: 600;
+}
+
 .memory-page__content {
   flex: 1;
   overflow-y: auto;

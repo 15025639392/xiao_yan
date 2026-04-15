@@ -5,6 +5,7 @@ import App from "./App";
 import * as tauri from "./lib/tauri";
 import { resetAppRealtimeForTests } from "./lib/realtime";
 import { IMPORTED_PROJECTS_STORAGE_KEY } from "./lib/projects";
+import { CHAT_TOOLBOX_SELECTED_SKILLS_KEY } from "./lib/chatToolboxPreferences";
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -41,6 +42,7 @@ afterEach(() => {
   resetAppRealtimeForTests();
   vi.restoreAllMocks();
   vi.useRealTimers();
+  window.localStorage.removeItem(CHAT_TOOLBOX_SELECTED_SKILLS_KEY);
   window.location.hash = "";
   MockWebSocket.instances = [];
 });
@@ -517,6 +519,236 @@ test("supports retrying a failed user message send", async () => {
   });
 
   expect(screen.getAllByText("请重发这条消息")).toHaveLength(1);
+});
+
+test("sends selected mcp_servers in chat request body", async () => {
+  let chatRequested = false;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: null,
+          active_goal_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          chat_context_limit: 6,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4",
+          chat_read_timeout_seconds: 180,
+          chat_mcp_enabled: true,
+          chat_mcp_servers: [
+            {
+              server_id: "filesystem",
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+              enabled: true,
+              timeout_seconds: 20,
+            },
+            {
+              server_id: "browser",
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-browser"],
+              enabled: true,
+              timeout_seconds: 20,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat")) {
+      chatRequested = true;
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ message: "用 browser 工具检查页面", mcp_servers: ["browser"] }));
+      return new Response(
+        JSON.stringify({
+          response_id: "resp_mcp_1",
+          assistant_message_id: "assistant_mcp_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  const socket = MockWebSocket.instances[0];
+  socket.open();
+
+  fireEvent.click(screen.getByRole("button", { name: "选择 MCP Servers" }));
+  await waitFor(() => {
+    expect(screen.getByLabelText("MCP Server filesystem")).toBeInTheDocument();
+  });
+  fireEvent.click(screen.getByLabelText("MCP Server filesystem"));
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "用 browser 工具检查页面" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(chatRequested).toBe(true);
+  });
+});
+
+test("sends toolbox-selected skills in chat request body", async () => {
+  localStorage.setItem(CHAT_TOOLBOX_SELECTED_SKILLS_KEY, JSON.stringify(["requirement-workflow", "bugfix-workflow"]));
+  let chatRequested = false;
+
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: null,
+          active_goal_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat")) {
+      chatRequested = true;
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(
+        JSON.stringify({
+          message: "按需求流程分析这个任务",
+          skills: ["requirement-workflow", "bugfix-workflow"],
+        }),
+      );
+      return new Response(
+        JSON.stringify({
+          response_id: "resp_skill_1",
+          assistant_message_id: "assistant_skill_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  const socket = MockWebSocket.instances[0];
+  socket.open();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "按需求流程分析这个任务" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(chatRequested).toBe(true);
+  });
 });
 
 test("does not duplicate text when chat delta payloads are cumulative snapshots", async () => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from logging import getLogger
+from pathlib import Path
 from threading import Event, Thread
 
 from fastapi import FastAPI
@@ -67,9 +68,12 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
 
     target_app.state.mac_console_bootstrap_status = maybe_bootstrap_mac_console_environment()
 
+    palace_path = get_mempalace_palace_path()
+    Path(palace_path).mkdir(parents=True, exist_ok=True)
+
     mempalace_adapter = MemPalaceAdapter(
         enabled=True,
-        palace_path=get_mempalace_palace_path(),
+        palace_path=palace_path,
         results_limit=get_mempalace_results_limit(),
         wing=get_mempalace_wing(),
         room=get_mempalace_room(),
@@ -245,3 +249,8 @@ def ensure_realtime_hub_initialized(target_app: FastAPI) -> None:
         goal_admission_service.set_on_change_callback(hub.publish_runtime)
     if hasattr(persona_service, "set_on_change_callback"):
         persona_service.set_on_change_callback(hub.publish_persona)
+
+    try:
+        hub.warm_snapshot_cache()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Realtime snapshot warmup failed: %s", exc)

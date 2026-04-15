@@ -928,6 +928,273 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ═══ MCP / Skills 管理 Tab ═══ */
+
+.tool-mcp-tab,
+.tool-skill-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tool-config-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.tool-config-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.tool-config-card__header h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.tool-config-card__header p {
+  margin: var(--space-1) 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+.tool-config-card__badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-muted);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tool-config-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tool-config-btn {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tool-config-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.tool-config-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tool-config-btn--primary {
+  border-color: var(--primary);
+  background: var(--primary-muted);
+  color: var(--primary);
+}
+
+.tool-config-btn--danger {
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--danger);
+}
+
+.tool-config-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.tool-config-switch--compact {
+  align-self: flex-start;
+}
+
+.tool-config-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+.tool-config-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--danger-muted);
+  color: var(--danger);
+  font-size: 0.8125rem;
+}
+
+.tool-config-input {
+  flex: 1;
+  min-width: 220px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.tool-mcp-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+}
+
+.tool-mcp-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tool-mcp-form span {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.tool-mcp-form input,
+.tool-mcp-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+
+.tool-mcp-form textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.tool-mcp-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tool-mcp-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+
+.tool-mcp-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tool-mcp-item__main strong {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.tool-mcp-item__main span {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.tool-mcp-item__main code {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.tool-mcp-item__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tool-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tool-skill-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-canvas);
+}
+
+.tool-skill-item__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.tool-skill-item__head {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.tool-skill-item__head strong {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.tool-skill-item__trigger {
+  font-size: 0.71875rem;
+  color: var(--text-tertiary);
+  background: var(--bg-surface-elevated);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+.tool-skill-item p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.tool-skill-item code {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ═══ ToolPanel 响应式适配 ═══ */
 
 @media (max-width: 900px) {

@@ -24,14 +24,20 @@ import {
   upsertChatFolderPermission,
 } from "../../lib/api";
 import { subscribeAppRealtime } from "../../lib/realtime";
-import type { ChatEntry } from "./chatTypes";
+import type { ChatEntry, ChatSendOptions } from "./chatTypes";
 import { useChatScrollBehavior } from "./useChatScrollBehavior";
+
+function listEnabledMcpServerIds(config: AppConfig): string[] {
+  return (Array.isArray(config.chat_mcp_servers) ? config.chat_mcp_servers : [])
+    .filter((server) => server.enabled)
+    .map((server) => server.server_id);
+}
 
 type UseChatPanelStateArgs = {
   draft: string;
   messages: ChatEntry[];
   isSending: boolean;
-  onSend: () => void;
+  onSend: (options?: ChatSendOptions) => void;
 };
 
 type UseChatPanelStateResult = {
@@ -66,6 +72,13 @@ type UseChatPanelStateResult = {
   handleKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   handleSubmit: () => void;
   handleUpdateConfig: (newConfig: Partial<AppConfig>) => Promise<void>;
+  mcpEnabled: boolean;
+  availableMcpServers: AppConfig["chat_mcp_servers"];
+  selectedMcpServerIds: string[] | null;
+  isLoadingMcpServerSelection: boolean;
+  mcpServerSelectionError: string;
+  handleOpenMcpServerSelector: () => Promise<void>;
+  handleToggleMcpServerSelection: (serverId: string) => void;
 };
 
 export function useChatPanelState({ draft, messages, isSending, onSend }: UseChatPanelStateArgs): UseChatPanelStateResult {
@@ -81,6 +94,8 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     chat_provider: DEFAULT_CHAT_PROVIDER,
     chat_model: DEFAULT_CHAT_MODEL,
     chat_read_timeout_seconds: 180,
+    chat_mcp_enabled: false,
+    chat_mcp_servers: [],
   });
   const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
   const [configError, setConfigError] = useState("");
@@ -95,6 +110,22 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
   const [isImportingDataBackup, setIsImportingDataBackup] = useState(false);
   const [dataEnvironmentError, setDataEnvironmentError] = useState("");
   const [dataOperationMessage, setDataOperationMessage] = useState("");
+  const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[] | null>(null);
+  const [hasLoadedMcpServerSelection, setHasLoadedMcpServerSelection] = useState(false);
+  const [isLoadingMcpServerSelection, setIsLoadingMcpServerSelection] = useState(false);
+  const [mcpServerSelectionError, setMcpServerSelectionError] = useState("");
+
+  const applyConfigForMcpSelection = useCallback((nextConfig: AppConfig) => {
+    setConfig(nextConfig);
+    setHasLoadedMcpServerSelection(true);
+    setSelectedMcpServerIds((prev) => {
+      if (prev === null) {
+        return null;
+      }
+      const enabledServerIdSet = new Set(listEnabledMcpServerIds(nextConfig));
+      return prev.filter((serverId) => enabledServerIdSet.has(serverId));
+    });
+  }, []);
 
   async function loadConfigAndFolderPermissions() {
     setConfigError("");
@@ -110,7 +141,8 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     ]);
 
     if (configResult.status === "fulfilled") {
-      setConfig(configResult.value);
+      setMcpServerSelectionError("");
+      applyConfigForMcpSelection(configResult.value);
     } else {
       const message = configResult.reason instanceof Error ? configResult.reason.message : "加载配置失败";
       setConfigError(message);
@@ -186,18 +218,27 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     });
   }, []);
 
+  function resolveSendOptions(): ChatSendOptions | undefined {
+    if (selectedMcpServerIds === null) {
+      return undefined;
+    }
+    const enabledServerIdSet = new Set(listEnabledMcpServerIds(config));
+    const filteredServerIds = selectedMcpServerIds.filter((serverId) => enabledServerIdSet.has(serverId));
+    return { mcpServerIds: filteredServerIds };
+  }
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (!isSending && draft.trim()) {
-        onSend();
+        onSend(resolveSendOptions());
       }
     }
   }
 
   function handleSubmit() {
     if (!isSending && draft.trim()) {
-      onSend();
+      onSend(resolveSendOptions());
     }
   }
 
@@ -206,12 +247,49 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     setConfigError("");
     try {
       const updated = await updateConfig(newConfig);
-      setConfig(updated);
+      applyConfigForMcpSelection(updated);
     } catch (error) {
       setConfigError(error instanceof Error ? error.message : "更新配置失败");
     } finally {
       setIsUpdatingConfig(false);
     }
+  }
+
+  async function handleOpenMcpServerSelector() {
+    if (hasLoadedMcpServerSelection || isLoadingMcpServerSelection) {
+      return;
+    }
+
+    setIsLoadingMcpServerSelection(true);
+    setMcpServerSelectionError("");
+    try {
+      const loadedConfig = await fetchConfig();
+      applyConfigForMcpSelection(loadedConfig);
+      setSelectedMcpServerIds((prev) => prev ?? listEnabledMcpServerIds(loadedConfig));
+    } catch (error) {
+      setMcpServerSelectionError(error instanceof Error ? error.message : "加载 MCP Server 失败");
+    } finally {
+      setIsLoadingMcpServerSelection(false);
+    }
+  }
+
+  function handleToggleMcpServerSelection(serverId: string) {
+    const enabledServerIds = listEnabledMcpServerIds(config);
+    if (!enabledServerIds.includes(serverId)) {
+      return;
+    }
+
+    setMcpServerSelectionError("");
+    setSelectedMcpServerIds((prev) => {
+      const current = prev ?? enabledServerIds;
+      const currentSet = new Set(current);
+      if (currentSet.has(serverId)) {
+        currentSet.delete(serverId);
+      } else {
+        currentSet.add(serverId);
+      }
+      return enabledServerIds.filter((item) => currentSet.has(item));
+    });
   }
 
   async function handleAddOrUpdateFolderPermission(path: string, accessLevel: FolderAccessLevel) {
@@ -358,5 +436,12 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     handleKeyDown,
     handleSubmit,
     handleUpdateConfig,
+    mcpEnabled: Boolean(config.chat_mcp_enabled),
+    availableMcpServers: Array.isArray(config.chat_mcp_servers) ? config.chat_mcp_servers : [],
+    selectedMcpServerIds,
+    isLoadingMcpServerSelection,
+    mcpServerSelectionError,
+    handleOpenMcpServerSelector,
+    handleToggleMcpServerSelection,
   };
 }

@@ -103,12 +103,26 @@ def test_get_config_returns_context_limit_provider_and_chat_model():
     original_provider = config.chat_provider
     original_model = config.chat_model
     original_timeout = config.chat_read_timeout_seconds
+    original_mcp_enabled = config.chat_mcp_enabled
+    original_mcp_servers = config.list_chat_mcp_servers()
 
     try:
         config.chat_context_limit = 7
         config.chat_provider = "minimaxi"
         config.chat_model = "gpt-5.4-mini"
         config.chat_read_timeout_seconds = 240
+        config.chat_mcp_enabled = True
+        config.replace_chat_mcp_servers(
+            [
+                {
+                    "server_id": "filesystem",
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                    "enabled": True,
+                    "timeout_seconds": 20,
+                }
+            ]
+        )
         client = TestClient(app)
         response = client.get("/config")
         assert response.status_code == 200
@@ -117,12 +131,26 @@ def test_get_config_returns_context_limit_provider_and_chat_model():
             "chat_provider": "minimaxi",
             "chat_model": "gpt-5.4-mini",
             "chat_read_timeout_seconds": 240,
+            "chat_mcp_enabled": True,
+            "chat_mcp_servers": [
+                {
+                    "server_id": "filesystem",
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                    "cwd": None,
+                    "env": {},
+                    "enabled": True,
+                    "timeout_seconds": 20,
+                }
+            ],
         }
     finally:
         config.chat_context_limit = original_limit
         config.chat_provider = original_provider
         config.chat_model = original_model
         config.chat_read_timeout_seconds = original_timeout
+        config.chat_mcp_enabled = original_mcp_enabled
+        config.replace_chat_mcp_servers(original_mcp_servers)
 
 
 def test_update_config_supports_provider_and_model_patch(monkeypatch):
@@ -131,6 +159,8 @@ def test_update_config_supports_provider_and_model_patch(monkeypatch):
     original_provider = config.chat_provider
     original_model = config.chat_model
     original_timeout = config.chat_read_timeout_seconds
+    original_mcp_enabled = config.chat_mcp_enabled
+    original_mcp_servers = config.list_chat_mcp_servers()
 
     monkeypatch.setattr(config_routes, "get_llm_provider_configs", _provider_catalog)
 
@@ -150,12 +180,16 @@ def test_update_config_supports_provider_and_model_patch(monkeypatch):
             "chat_provider": "minimaxi",
             "chat_model": "MiniMax-M2.7",
             "chat_read_timeout_seconds": 200,
+            "chat_mcp_enabled": config.chat_mcp_enabled,
+            "chat_mcp_servers": config.list_chat_mcp_servers(),
         }
     finally:
         config.chat_context_limit = original_limit
         config.chat_provider = original_provider
         config.chat_model = original_model
         config.chat_read_timeout_seconds = original_timeout
+        config.chat_mcp_enabled = original_mcp_enabled
+        config.replace_chat_mcp_servers(original_mcp_servers)
 
 
 def test_update_config_rejects_empty_patch():
@@ -165,11 +199,70 @@ def test_update_config_rejects_empty_patch():
     assert response.json()["detail"] == "at least one config field is required"
 
 
+def test_update_config_supports_chat_mcp_fields():
+    config = get_runtime_config()
+    original_enabled = config.chat_mcp_enabled
+    original_servers = config.list_chat_mcp_servers()
+
+    try:
+        client = TestClient(app)
+        response = client.put(
+            "/config",
+            json={
+                "chat_mcp_enabled": True,
+                "chat_mcp_servers": [
+                    {
+                        "server_id": "filesystem",
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                        "enabled": True,
+                        "timeout_seconds": 30,
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["chat_mcp_enabled"] is True
+        assert payload["chat_mcp_servers"] == [
+            {
+                "server_id": "filesystem",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                "cwd": None,
+                "env": {},
+                "enabled": True,
+                "timeout_seconds": 30,
+            }
+        ]
+    finally:
+        config.chat_mcp_enabled = original_enabled
+        config.replace_chat_mcp_servers(original_servers)
+
+
+def test_update_config_rejects_invalid_chat_mcp_server_payload():
+    client = TestClient(app)
+    response = client.put(
+        "/config",
+        json={
+            "chat_mcp_servers": [
+                {
+                    "server_id": "   ",
+                    "command": "",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 400
+
+
 def test_update_config_switch_provider_without_model_uses_provider_default(monkeypatch):
     config = get_runtime_config()
     original_provider = config.chat_provider
     original_model = config.chat_model
     original_timeout = config.chat_read_timeout_seconds
+    original_mcp_enabled = config.chat_mcp_enabled
+    original_mcp_servers = config.list_chat_mcp_servers()
 
     monkeypatch.setattr(config_routes, "get_llm_provider_configs", _provider_catalog)
 
@@ -184,11 +277,15 @@ def test_update_config_switch_provider_without_model_uses_provider_default(monke
             "chat_provider": "minimaxi",
             "chat_model": "MiniMax-M2.7",
             "chat_read_timeout_seconds": config.chat_read_timeout_seconds,
+            "chat_mcp_enabled": config.chat_mcp_enabled,
+            "chat_mcp_servers": config.list_chat_mcp_servers(),
         }
     finally:
         config.chat_provider = original_provider
         config.chat_model = original_model
         config.chat_read_timeout_seconds = original_timeout
+        config.chat_mcp_enabled = original_mcp_enabled
+        config.replace_chat_mcp_servers(original_mcp_servers)
 
 
 def test_get_chat_models_returns_multi_provider_catalog_and_partial_errors(monkeypatch):

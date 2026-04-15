@@ -79,6 +79,8 @@ export function ChatConfigPanel({
   const dataActionRunning = isUpdatingDataEnvironment || isCreatingDataBackup || isImportingDataBackup;
   const testingModeEnabled = dataEnvironment?.testing_mode ?? false;
   const canUseNativePickers = isTauriRuntime();
+  const mcpEnabled = Boolean(config.chat_mcp_enabled);
+  const mcpServers = Array.isArray(config.chat_mcp_servers) ? config.chat_mcp_servers : [];
 
   useEffect(() => {
     setProviderDraft(config.chat_provider);
@@ -229,6 +231,42 @@ export function ChatConfigPanel({
             <span>{modelError}</span>
           </div>
         ) : null}
+      </div>
+
+      <div className="config-panel__section">
+        <div className="config-panel__section-header">
+          <span className="config-panel__section-icon">🧩</span>
+          <label className="config-panel__label">MCP 工具</label>
+        </div>
+        <p className="config-panel__description">
+          MCP 管理入口已迁移到工具箱，此处仅展示当前状态与配置快照。
+        </p>
+        <div className="config-panel__mcp-hint">
+          当前状态：{mcpEnabled ? "已启用" : "未启用"}。如需新增、编辑、删除或启停，请前往“工具箱 {"->"} MCP”。
+        </div>
+        {mcpServers.length === 0 ? (
+          <div className="config-panel__mcp-hint">当前没有配置 MCP Server。</div>
+        ) : (
+          <div className="config-panel__mcp-list">
+            {mcpServers.map((server) => (
+              <div key={server.server_id} className="config-panel__mcp-item">
+                <div className="config-panel__mcp-item-main">
+                  <strong>{server.server_id}</strong>
+                  <span>
+                    {server.command} {server.args.join(" ")}
+                  </span>
+                  <span className="config-panel__mcp-meta">
+                    timeout: {server.timeout_seconds}s
+                    {server.cwd ? ` · cwd: ${server.cwd}` : ""}
+                  </span>
+                </div>
+                <div className="config-panel__mcp-item-actions">
+                  <span className="config-panel__item-action">默认状态：{server.enabled ? "启用" : "停用"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="config-panel__section">

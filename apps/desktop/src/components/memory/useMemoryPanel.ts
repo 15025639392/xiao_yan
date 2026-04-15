@@ -5,18 +5,29 @@ import {
   deleteMemory,
   fetchMemorySummary,
   fetchMemoryTimeline,
-  searchMemories,
   starMemory,
   updateMemory,
   type MemoryEntryDisplay,
   type MemoryKind,
+  type MemoryTimelineQuery,
   type MemorySummary,
   type RelationshipSummary,
 } from "../../lib/api";
 import { subscribeAppRealtime } from "../../lib/realtime";
 import type { ViewMode } from "./memoryConstants";
 
-export function useMemoryPanelState() {
+type MemoryPanelMode = "all" | "knowledge";
+
+const KNOWLEDGE_NAMESPACE = "knowledge";
+
+function buildTimelineQuery(mode: MemoryPanelMode, query: MemoryTimelineQuery): MemoryTimelineQuery {
+  if (mode === "knowledge") {
+    return { ...query, namespace: KNOWLEDGE_NAMESPACE };
+  }
+  return query;
+}
+
+export function useMemoryPanelState(mode: MemoryPanelMode = "all") {
   const [summary, setSummary] = useState<MemorySummary | null>(null);
   const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const [entries, setEntries] = useState<MemoryEntryDisplay[]>([]);
@@ -47,7 +58,10 @@ export function useMemoryPanelState() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [summaryData, timelineData] = await Promise.all([fetchMemorySummary(), fetchMemoryTimeline(40)]);
+      const [summaryData, timelineData] = await Promise.all([
+        fetchMemorySummary(),
+        fetchMemoryTimeline(buildTimelineQuery(mode, { limit: 40 })),
+      ]);
       setSummary(summaryData);
       setRelationship(summaryData.relationship);
       setEntries(timelineData.entries);
@@ -56,22 +70,23 @@ export function useMemoryPanelState() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mode]);
 
   const handleSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
+    const trimmed = query.trim();
+    if (!trimmed) {
       setSearchResults(null);
       setShowSearchOnly(false);
       return;
     }
     try {
-      const result = await searchMemories(query, 20);
+      const result = await fetchMemoryTimeline(buildTimelineQuery(mode, { limit: 20, q: trimmed }));
       setSearchResults(result.entries);
       setShowSearchOnly(true);
     } catch {
       setSearchResults([]);
     }
-  }, []);
+  }, [mode]);
 
   const handleDelete = useCallback(
     async (memoryId: string) => {
@@ -249,19 +264,35 @@ export function useMemoryPanelState() {
         return;
       }
 
+      if (mode === "knowledge") {
+        void loadData();
+        return;
+      }
+
       setSummary(memoryPayload.summary);
       setRelationship(memoryPayload.relationship ?? memoryPayload.summary.relationship ?? null);
       setEntries(memoryPayload.timeline);
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [loadData]);
+  }, [loadData, mode]);
 
   useEffect(() => {
     if (!searchQuery) return;
     const timer = setTimeout(() => handleSearch(searchQuery), 300);
     return () => clearTimeout(timer);
   }, [searchQuery, handleSearch]);
+
+  useEffect(() => {
+    setActiveFilter(null);
+    setSearchQuery("");
+    setSearchResults(null);
+    setShowSearchOnly(false);
+    setSelectedIds(new Set());
+    setIsBatchMode(false);
+    setEditingId(null);
+    setEditContent("");
+  }, [mode]);
 
   const displayEntries = showSearchOnly
     ? (searchResults ?? [])

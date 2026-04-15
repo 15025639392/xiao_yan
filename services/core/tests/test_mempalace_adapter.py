@@ -1,4 +1,12 @@
+from pathlib import Path
+
 from app.memory.mempalace_adapter import MemPalaceAdapter
+
+
+def test_mempalace_adapter_default_palace_path_is_service_root():
+    adapter = MemPalaceAdapter()
+    expected = Path(__file__).resolve().parents[1] / ".mempalace" / "palace"
+    assert adapter.palace_path == str(expected)
 
 
 def test_mempalace_adapter_returns_empty_for_blank_query():
@@ -246,8 +254,11 @@ def test_mempalace_adapter_does_not_fallback_to_local_history_when_write_backend
 
 
 def test_mempalace_adapter_list_recent_chat_messages_keeps_session_id_from_metadata():
+    observed_limits: list[int] = []
+
     class _FakeCollection:
         def get(self, *, where=None, include=None, limit=None):
+            observed_limits.append(int(limit))
             return {
                 "ids": ["drawer_1"],
                 "documents": ["> 你好\n我在。"],
@@ -270,6 +281,7 @@ def test_mempalace_adapter_list_recent_chat_messages_keeps_session_id_from_metad
     assert recent[0]["role"] == "assistant"
     assert recent[0]["session_id"] == "assistant_abc123"
     assert recent[1]["role"] == "user"
+    assert observed_limits == [200]
     assert recent[1]["session_id"] == "assistant_abc123"
 
 

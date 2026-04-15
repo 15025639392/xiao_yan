@@ -186,11 +186,18 @@ npm install
 ```
 
 服务将在 `http://127.0.0.1:8000` 启动。
+默认关闭 `--reload`，以避免本地数据目录频繁写入导致 CPU 抖动或 websocket 断连。
 
 如果需要通过局域网 IP 访问（例如手机或其他电脑）：
 
 ```bash
 HOST=0.0.0.0 PORT=8000 ./services/core/scripts/start_dev_server.sh
+```
+
+如需开启热重载（仅开发调试建议）：
+
+```bash
+ENABLE_RELOAD=1 ./services/core/scripts/start_dev_server.sh
 ```
 
 #### 启动前端应用
@@ -218,7 +225,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - **对话界面**：与小晏进行实时对话
 - **人格面板**：查看和配置数字人的人格特征
 - **记忆库**：浏览和管理数字人的记忆
-- **工具箱**：查看可用工具和执行记录
+- **工具箱**：查看可用工具和执行记录，并统一管理 MCP/Skills
 - **历史记录**：查看自我编程历史，支持回滚操作
 
 ### 唤醒与休眠

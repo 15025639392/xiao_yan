@@ -13,6 +13,11 @@ from app.memory.search_utils import search_relevant_events as _search_relevant_e
 
 logger = getLogger(__name__)
 
+_READ_ALL_EVENTS_LIMIT = 100000
+_BOUNDED_READ_MIN_SCAN = 200
+_BOUNDED_READ_MAX_SCAN = 5000
+_BOUNDED_READ_MULTIPLIER = 24
+
 class MemPalaceMemoryRepository:
     """MemoryRepository implementation backed by MemPalace/Chroma.
 
@@ -66,8 +71,23 @@ class MemPalaceMemoryRepository:
         visibility: Literal["internal", "user"] | None = None,
         query: str | None = None,
     ) -> list[MemoryEvent]:
+        read_limit = _READ_ALL_EVENTS_LIMIT
+        if (
+            query is None
+            and kind is None
+            and namespace is None
+            and visibility is None
+            and status == "active"
+            and offset <= 200
+            and limit <= 200
+        ):
+            target_window = max(1, limit + offset)
+            read_limit = min(
+                _BOUNDED_READ_MAX_SCAN,
+                max(_BOUNDED_READ_MIN_SCAN, target_window * _BOUNDED_READ_MULTIPLIER),
+            )
         events = self._filter_events(
-            self._read_all_events(),
+            self._read_all_events(limit=read_limit),
             status=status,
             kind=kind,
             namespace=namespace,
@@ -77,9 +97,14 @@ class MemPalaceMemoryRepository:
         return _slice_recent(events, limit=limit, offset=offset)
 
     def list_recent_chat(self, limit: int, offset: int = 0) -> list[MemoryEvent]:
+        target_window = max(1, limit + offset)
+        read_limit = min(
+            _BOUNDED_READ_MAX_SCAN,
+            max(_BOUNDED_READ_MIN_SCAN, target_window * _BOUNDED_READ_MULTIPLIER),
+        )
         chat_events = [
             event
-            for event in self._read_all_events()
+            for event in self._read_all_events(limit=read_limit)
             if event.deleted_at is None and event.kind == "chat" and event.role in {"user", "assistant"}
         ]
         return _slice_recent(chat_events, limit=limit, offset=offset)
@@ -176,7 +201,7 @@ class MemPalaceMemoryRepository:
     def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
         self._on_change = callback
 
-    def _read_all_events(self) -> list[MemoryEvent]:
+    def _read_all_events(self, *, limit: int = _READ_ALL_EVENTS_LIMIT) -> list[MemoryEvent]:
         collection = self._get_collection(create=False)
         if collection is None:
             return sorted(self._fallback_events.values(), key=lambda event: event.created_at)
@@ -184,7 +209,7 @@ class MemPalaceMemoryRepository:
         payload = collection.get(
             where=self._where_filter(),
             include=["documents"],
-            limit=100000,
+            limit=max(1, int(limit)),
         )
         docs = payload.get("documents") or []
         ids = payload.get("ids") or []
@@ -221,6 +246,11 @@ class MemPalaceMemoryRepository:
             "knowledge_tags": ",".join(event.knowledge_tags),
             "source_ref": event.source_ref or "",
             "version_tag": event.version_tag or "",
+            "governance_source": event.governance_source,
+            "review_status": event.review_status,
+            "reviewed_by": event.reviewed_by or "",
+            "reviewed_at": event.reviewed_at.isoformat() if event.reviewed_at is not None else "",
+            "review_note": event.review_note or "",
             "role": event.role or "",
             "session_id": event.session_id or "",
             "source_context": event.source_context or "",
