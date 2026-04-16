@@ -203,6 +203,7 @@ test("renders wake and sleep controls", async () => {
   expect(screen.getByRole("button", { name: "休眠" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "对话" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "总览" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "能力中枢" })).not.toBeInTheDocument();
   expect(screen.getByText("小晏")).toBeInTheDocument();
   expect(screen.getByText("目标看板")).toBeInTheDocument();
   expect(container.querySelector(".app-layout")).toBeTruthy();

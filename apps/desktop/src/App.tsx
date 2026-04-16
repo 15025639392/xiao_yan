@@ -62,7 +62,6 @@ import {
 import { OverviewPanel } from "./pages/OverviewPage";
 import { MemoryPage } from "./pages/MemoryPage";
 import { HistoryPage } from "./pages/HistoryPage";
-import { CapabilitiesPage } from "./pages/CapabilitiesPage";
 import { OrchestratorPage, type StopDelegateTaskRequest } from "./pages/OrchestratorPage";
 import {
   addImportedProject,
@@ -1747,19 +1746,6 @@ export default function App() {
             <span>工具箱</span>
           </button>
           <button
-            className={`app-sidebar__nav-item ${route === "capabilities" ? "app-sidebar__nav-item--active" : ""}`}
-            onClick={() => handleNavigate("capabilities")}
-            type="button"
-          >
-            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="4" y="4" width="7" height="7" rx="1" />
-              <rect x="13" y="4" width="7" height="7" rx="1" />
-              <rect x="4" y="13" width="7" height="7" rx="1" />
-              <path d="M13 16h7M16.5 13v7" />
-            </svg>
-            <span>能力中枢</span>
-          </button>
-          <button
             className={`app-sidebar__nav-item ${route === "orchestrator" ? "app-sidebar__nav-item--active" : ""}`}
             onClick={() => handleNavigate("orchestrator")}
             type="button"
@@ -1906,7 +1892,7 @@ export default function App() {
         ) : route === "tools" ? (
           <ToolPanel />
         ) : route === "capabilities" ? (
-          <CapabilitiesPage />
+          <ToolPanel initialTab="capabilities" />
         ) : (
           <OverviewPanel
             focusGoalTitle={focusGoalTitle}

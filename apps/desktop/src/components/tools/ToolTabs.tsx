@@ -14,6 +14,7 @@ const TABS: [ToolTabType, string, string][] = [
   ["files", "📁 文件", "文件浏览与搜索"],
   ["history", "📜 历史", "执行记录"],
   ["status", "📊 状态", "系统统计"],
+  ["capabilities", "🧠 能力", "查看能力契约、审批与审计"],
 ];
 
 export function ToolTabs({ activeTab, onTabChange }: ToolTabsProps) {

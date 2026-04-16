@@ -12,9 +12,14 @@ import { getSuccessRateBadgeStyle } from "./tools/toolUtils";
 import { ToolsBrowseTab } from "./tools/ToolsBrowseTab";
 import { McpManageTab } from "./tools/McpManageTab";
 import { SkillsManageTab } from "./tools/SkillsManageTab";
+import { CapabilitiesPage } from "../pages/CapabilitiesPage";
 
-export function ToolPanel() {
-  const [activeTab, setActiveTab] = useState<ToolTabType>("execute");
+type ToolPanelProps = {
+  initialTab?: ToolTabType;
+};
+
+export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
+  const [activeTab, setActiveTab] = useState<ToolTabType>(initialTab);
   const [tools, setTools] = useState<ToolsListResponse | null>(null);
   const [status, setStatus] = useState<ToolsStatusResponse | null>(null);
 
@@ -23,7 +28,14 @@ export function ToolPanel() {
     fetchToolsStatus().then(setStatus).catch(() => {});
   }, []);
 
-  const successRateBadgeStyle = status ? getSuccessRateBadgeStyle(status.statistics.success_rate) : undefined;
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  const successRate = status?.statistics?.success_rate;
+  const allowedCommandCount = status?.allowed_command_count;
+  const successRateBadgeStyle =
+    typeof successRate === "number" ? getSuccessRateBadgeStyle(successRate) : undefined;
 
   return (
     <section className="tool-panel">
@@ -38,14 +50,18 @@ export function ToolPanel() {
 
         {status ? (
           <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-            <StatusBadge
-              style={successRateBadgeStyle}
-            >
-              成功率 {Math.round(status.statistics.success_rate * 100)}%
-            </StatusBadge>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-              {status.allowed_command_count} 个工具可用
-            </span>
+            {typeof successRate === "number" ? (
+              <StatusBadge
+                style={successRateBadgeStyle}
+              >
+                成功率 {Math.round(successRate * 100)}%
+              </StatusBadge>
+            ) : null}
+            {typeof allowedCommandCount === "number" ? (
+              <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
+                {allowedCommandCount} 个工具可用
+              </span>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -64,6 +80,7 @@ export function ToolPanel() {
         {activeTab === "status" ? (
           <StatusTab status={status} onRefresh={() => void fetchToolsStatus().then(setStatus).catch(() => {})} />
         ) : null}
+        {activeTab === "capabilities" ? <CapabilitiesPage /> : null}
       </div>
     </section>
   );
