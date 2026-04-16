@@ -2,15 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   chat,
-  clearOrchestratorMessages,
   createDataBackup,
-  deleteOrchestratorSession,
   fetchDataEnvironmentStatus,
   fetchKnowledgeItems,
   fetchKnowledgeSummary,
   fetchMemoryTimeline,
   fetchConfig,
-  fetchOrchestratorSessions,
   fetchMessages,
   fetchGoalAdmissionConfig,
   fetchGoalAdmissionConfigHistory,
@@ -18,10 +15,8 @@ import {
   fetchChatFolderPermissions,
   removeChatFolderPermission,
   rollbackGoalAdmissionConfig,
-  runOrchestratorConsoleCommand,
   resolveApiBaseUrl,
   resetPersona,
-  stopOrchestratorDelegate,
   importDataBackup,
   updateDataEnvironmentStatus,
   updateConfig,
@@ -114,168 +109,6 @@ describe("persona api methods", () => {
       3,
       "http://127.0.0.1:8000/chat/folder-permissions?path=%2Ftmp%2Fproject",
       expect.objectContaining({ method: "DELETE" }),
-    );
-  });
-
-  test("clears orchestrator messages with DELETE endpoint", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "session-1",
-          deleted_count: 3,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const payload = await clearOrchestratorMessages("session-1");
-
-    expect(payload).toEqual({
-      session_id: "session-1",
-      deleted_count: 3,
-    });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/orchestrator/sessions/session-1/messages",
-      expect.objectContaining({ method: "DELETE" }),
-    );
-  });
-
-  test("deletes orchestrator session with DELETE endpoint", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "session-1",
-          deleted: true,
-          cleared_messages: 5,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const payload = await deleteOrchestratorSession("session-1");
-
-    expect(payload).toEqual({
-      session_id: "session-1",
-      deleted: true,
-      cleared_messages: 5,
-    });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/orchestrator/sessions/session-1",
-      expect.objectContaining({ method: "DELETE" }),
-    );
-  });
-
-  test("fetches orchestrator sessions with filters", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await fetchOrchestratorSessions({
-      status: ["running", "failed"],
-      project: "demo-project",
-      from: "2026-04-08T00:00:00.000Z",
-      to: "2026-04-09T00:00:00.000Z",
-      keyword: "主控",
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/orchestrator/sessions?status=running&status=failed&project=demo-project&from=2026-04-08T00%3A00%3A00.000Z&to=2026-04-09T00%3A00%3A00.000Z&keyword=%E4%B8%BB%E6%8E%A7",
-    );
-  });
-
-  test("stops a delegate task through orchestrator stop endpoint", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "session-1",
-          project_path: "/tmp/demo-project",
-          project_name: "demo-project",
-          goal: "demo",
-          status: "failed",
-          delegates: [],
-          entered_at: "2026-04-08T12:00:00.000Z",
-          updated_at: "2026-04-08T12:10:00.000Z",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await stopOrchestratorDelegate({
-      session_id: "session-1",
-      task_id: "task-1",
-      delegate_run_id: "run-1",
-      reason: "manual stop",
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/orchestrator/delegates/stop",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          session_id: "session-1",
-          task_id: "task-1",
-          delegate_run_id: "run-1",
-          reason: "manual stop",
-        }),
-      }),
-    );
-  });
-
-  test("runs orchestrator console command through unified endpoint", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          session: {
-            session_id: "session-1",
-            project_path: "/tmp/demo-project",
-            project_name: "demo-project",
-            goal: "demo",
-            status: "running",
-            delegates: [],
-            entered_at: "2026-04-08T12:00:00.000Z",
-            updated_at: "2026-04-08T12:10:00.000Z",
-          },
-          assistant_message_id: "assistant-console-1",
-          created_session: true,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await runOrchestratorConsoleCommand({
-      message: "进入主控后先总结当前进展",
-      project_path: "/tmp/demo-project",
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/orchestrator/console/command",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          message: "进入主控后先总结当前进展",
-          project_path: "/tmp/demo-project",
-        }),
-      }),
     );
   });
 

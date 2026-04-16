@@ -67,7 +67,6 @@ const initialState: BeingState = {
   active_goal_ids: [],
   today_plan: null,
   last_action: null,
-  self_programming_job: null,
   orchestrator_session: null,
 };
 
