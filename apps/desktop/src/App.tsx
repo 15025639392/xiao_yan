@@ -1722,6 +1722,17 @@ export default function App() {
                   type="button"
                   className="app-sidebar__brand-menu-item"
                   onClick={() => {
+                    handleNavigate("persona");
+                    setShowBrandMenu(false);
+                  }}
+                >
+                  <span>🎭</span>
+                  <span>人格设置</span>
+                </button>
+                <button
+                  type="button"
+                  className="app-sidebar__brand-menu-item"
+                  onClick={() => {
                     setTheme(theme === "dark" ? "light" : "dark");
                     setShowBrandMenu(false);
                   }}
@@ -1771,17 +1782,6 @@ export default function App() {
             <span>对话</span>
           </button>
           <button
-            className={`app-sidebar__nav-item ${route === "persona" ? "app-sidebar__nav-item--active" : ""}`}
-            onClick={() => handleNavigate("persona")}
-            type="button"
-          >
-            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-              <circle cx="12" cy="7" r="4"/>
-            </svg>
-            <span>人格</span>
-          </button>
-          <button
             className={`app-sidebar__nav-item ${route === "tools" ? "app-sidebar__nav-item--active" : ""}`}
             onClick={() => handleNavigate("tools")}
             type="button"
@@ -1823,7 +1823,7 @@ export default function App() {
               </button>
             </div>
             <p className="app-sidebar__section-hint">
-              运营和高自治能力保留为次级入口，避免默认导航承载治理后台。
+              记忆、人格配置和高自治能力保留为次级入口，避免默认导航承载治理后台。
             </p>
           </div>
         ) : (
@@ -1844,7 +1844,7 @@ export default function App() {
               </button>
             </div>
             <p className="app-sidebar__section-hint">
-              运营和高自治能力保留为次级入口，避免默认导航承载治理后台。
+              记忆、人格配置和高自治能力保留为次级入口，避免默认导航承载治理后台。
             </p>
           </div>
         )}

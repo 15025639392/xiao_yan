@@ -27,7 +27,7 @@ export function OverviewPanel({
   macConsoleStatus?: MacConsoleBootstrapStatus | null;
   onRollback?: (jobId: string) => void;
   onApprovalDecision?: (jobId: string, approved: boolean) => void;
-  onNavigate: (route: "memory" | "orchestrator") => void;
+  onNavigate: (route: "memory" | "orchestrator" | "persona") => void;
 }) {
   const isAwake = mode === "awake";
 
@@ -88,6 +88,9 @@ export function OverviewPanel({
               </button>
               <button type="button" className="app-sidebar__action-btn" onClick={() => onNavigate("memory")}>
                 打开记忆库
+              </button>
+              <button type="button" className="app-sidebar__action-btn" onClick={() => onNavigate("persona")}>
+                打开人格设置
               </button>
             </div>
           </Panel>
