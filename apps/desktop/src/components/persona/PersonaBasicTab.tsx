@@ -1,3 +1,5 @@
+import { Button, Input, Textarea } from "../ui";
+
 type PersonaBasicTabProps = {
   name: string;
   identity: string;
@@ -33,7 +35,7 @@ export function PersonaBasicTab({
             名字
             <span className="persona-form__hint">数字人的称呼</span>
           </label>
-          <input
+          <Input
             id="wb-persona-name"
             type="text"
             className="persona-form__input"
@@ -49,7 +51,7 @@ export function PersonaBasicTab({
             身份
             <span className="persona-form__hint">自我认知的身份描述</span>
           </label>
-          <input
+          <Input
             id="wb-persona-identity"
             type="text"
             className="persona-form__input"
@@ -65,7 +67,7 @@ export function PersonaBasicTab({
             背景故事
             <span className="persona-form__hint">起源和成长经历（影响叙事风格）</span>
           </label>
-          <textarea
+          <Textarea
             id="wb-persona-origin"
             className="persona-form__textarea"
             value={originStory}
@@ -78,17 +80,16 @@ export function PersonaBasicTab({
       </div>
 
       <div className="persona-form__actions">
-        <button type="button" className="btn btn--primary" onClick={onSave} disabled={saving}>
+        <Button type="button" variant="default" onClick={onSave} disabled={saving}>
           {saving ? "保存中..." : "保存更改"}
-        </button>
-        <button type="button" className="btn btn--ghost" onClick={onReset} disabled={saving}>
+        </Button>
+        <Button type="button" variant="ghost" onClick={onReset} disabled={saving}>
           重置默认
-        </button>
-        <button type="button" className="btn btn--danger" onClick={onInitialize} disabled={saving}>
+        </Button>
+        <Button type="button" variant="destructive" onClick={onInitialize} disabled={saving}>
           🔄 初始化数字人
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
-

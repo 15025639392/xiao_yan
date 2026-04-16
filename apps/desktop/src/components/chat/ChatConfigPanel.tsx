@@ -7,7 +7,7 @@ import type {
   FolderAccessLevel,
 } from "../../lib/api";
 import { isTauriRuntime, pickDirectory, pickFiles } from "../../lib/tauri";
-import { ConfigModal, RangeSettingField } from "../ui";
+import { Button, Checkbox, ConfigModal, Input, RangeSettingField, Select } from "../ui";
 
 type ChatConfigPanelProps = {
   config: AppConfig;
@@ -157,7 +157,7 @@ export function ChatConfigPanel({
               <span className="config-panel__model-icon">🏢</span>
               <span>服务商</span>
             </label>
-            <select
+            <Select
               id="chat-config-provider-select"
               aria-label="模型服务商"
               className="config-panel__model-select"
@@ -181,7 +181,7 @@ export function ChatConfigPanel({
                   {provider.provider_name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="config-panel__model-line">
@@ -189,7 +189,7 @@ export function ChatConfigPanel({
               <span className="config-panel__model-icon">💬</span>
               <span>模型</span>
             </label>
-            <select
+            <Select
               id="chat-config-model-select"
               aria-label="聊天模型"
               className="config-panel__model-select"
@@ -209,7 +209,7 @@ export function ChatConfigPanel({
                   {model}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
 
@@ -245,10 +245,9 @@ export function ChatConfigPanel({
         </p>
         <label className="config-panel__switch-row" htmlFor="chat-config-continuous-reasoning">
           <span>启用持续推理</span>
-          <input
+          <Checkbox
             id="chat-config-continuous-reasoning"
             aria-label="启用持续推理"
-            type="checkbox"
             checked={Boolean(config.chat_continuous_reasoning_enabled)}
             disabled={isUpdating}
             onChange={(event) => {
@@ -312,8 +311,9 @@ export function ChatConfigPanel({
               {testingModeEnabled ? "当前为测试隔离环境" : "当前为默认数据环境"}
             </div>
             <div className="config-panel__fs-actions">
-              <button
+              <Button
                 type="button"
+                variant="default"
                 className="config-panel__fs-btn config-panel__fs-btn--primary"
                 disabled={dataActionRunning}
                 onClick={() => {
@@ -321,7 +321,7 @@ export function ChatConfigPanel({
                 }}
               >
                 {testingModeEnabled ? "退出测试隔离" : "进入测试隔离（自动备份）"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -330,7 +330,7 @@ export function ChatConfigPanel({
           <label className="config-panel__label" htmlFor="chat-config-backup-path">
             备份目录或备份文件路径
           </label>
-          <input
+          <Input
             id="chat-config-backup-path"
             aria-label="备份路径"
             className="config-panel__backup-input"
@@ -340,8 +340,9 @@ export function ChatConfigPanel({
             disabled={dataActionRunning}
           />
           <div className="config-panel__backup-picker-actions">
-            <button
+            <Button
               type="button"
+              variant="secondary"
               className="config-panel__fs-btn"
               disabled={dataActionRunning || !canUseNativePickers}
               onClick={() => {
@@ -359,9 +360,10 @@ export function ChatConfigPanel({
               }}
             >
               选目录（备份）
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
               className="config-panel__fs-btn"
               disabled={dataActionRunning || !canUseNativePickers}
               onClick={() => {
@@ -383,14 +385,15 @@ export function ChatConfigPanel({
               }}
             >
               选 zip（导入）
-            </button>
+            </Button>
           </div>
           {!canUseNativePickers ? (
             <div className="config-panel__backup-hint">当前不是 Tauri 宿主，请手动输入路径。</div>
           ) : null}
           <div className="config-panel__backup-actions">
-            <button
+            <Button
               type="button"
+              variant="secondary"
               className="config-panel__fs-btn"
               disabled={dataActionRunning}
               onClick={() => {
@@ -398,9 +401,10 @@ export function ChatConfigPanel({
               }}
             >
               {isCreatingDataBackup ? "备份中..." : "立即备份"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="destructive"
               className="config-panel__fs-btn config-panel__fs-btn--danger"
               disabled={dataActionRunning}
               onClick={() => {
@@ -408,7 +412,7 @@ export function ChatConfigPanel({
               }}
             >
               {isImportingDataBackup ? "导入中..." : "导入备份（先自动备份）"}
-            </button>
+            </Button>
           </div>
         </div>
 

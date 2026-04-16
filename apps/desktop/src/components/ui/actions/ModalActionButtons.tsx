@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button } from "../button";
 
 export type ModalActionTone = "default" | "secondary" | "primary" | "danger";
 export type ModalActionStyle = "system" | "config";
@@ -62,9 +63,17 @@ export function ModalActionButtons({
   return (
     <>
       {actions.map((action) => (
-        <button
+        <Button
           key={action.key}
           type={action.type ?? "button"}
+          variant={
+            action.tone === "danger"
+              ? "destructive"
+              : action.tone === "primary"
+                ? "default"
+                : "secondary"
+          }
+          size={size === "sm" ? "sm" : "default"}
           className={getModalActionButtonClass({
             style,
             tone: action.tone,
@@ -76,7 +85,7 @@ export function ModalActionButtons({
           autoFocus={action.autoFocus}
         >
           {action.label}
-        </button>
+        </Button>
       ))}
     </>
   );

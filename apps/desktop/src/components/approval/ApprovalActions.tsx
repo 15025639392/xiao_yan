@@ -1,3 +1,5 @@
+import { Button, Textarea } from "../ui";
+
 type ApprovalActionsProps = {
   showRejectForm: boolean;
   decisioning: boolean;
@@ -23,19 +25,19 @@ export function ApprovalActions({
     <div className="approval-actions">
       {!showRejectForm ? (
         <>
-          <button type="button" className="btn btn--primary btn--lg" disabled={decisioning} onClick={onApprove} style={{ flex: 2 }}>
+          <Button type="button" variant="default" size="lg" disabled={decisioning} onClick={onApprove} style={{ flex: 2 }}>
             {decisioning ? "⏳ 处理中..." : "✅ 批准应用"}
-          </button>
-          <button type="button" className="btn btn--sm" disabled={decisioning} onClick={onOpenRejectForm} style={{ flex: 1 }}>
+          </Button>
+          <Button type="button" variant="secondary" size="sm" disabled={decisioning} onClick={onOpenRejectForm} style={{ flex: 1 }}>
             🚫 拒绝
-          </button>
+          </Button>
         </>
       ) : (
         <div className="approval-reject-form">
           <label className="approval-reject-form__label" htmlFor="reject-reason">
             请填写拒绝原因（帮助数字人学习）：
           </label>
-          <textarea
+          <Textarea
             id="reject-reason"
             className="approval-reject-form__textarea"
             value={rejectReason}
@@ -45,17 +47,18 @@ export function ApprovalActions({
             autoFocus
           />
           <div className="approval-reject-form__actions">
-            <button type="button" className="btn btn--sm" onClick={onCancelReject} disabled={decisioning}>
+            <Button type="button" variant="secondary" size="sm" onClick={onCancelReject} disabled={decisioning}>
               返回
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="btn btn--danger btn--sm"
+              variant="destructive"
+              size="sm"
               onClick={onReject}
               disabled={decisioning || !rejectReason.trim()}
             >
               确认拒绝
-            </button>
+            </Button>
           </div>
         </div>
       )}

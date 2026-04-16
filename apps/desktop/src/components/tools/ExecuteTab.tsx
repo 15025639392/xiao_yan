@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { ToolExecutionResult, ToolsListResponse } from "../../lib/api";
 import { executeTool } from "../../lib/api";
+import { Button, Textarea } from "../ui";
 
 type ExecuteTabProps = {
   tools: ToolsListResponse | null;
@@ -55,7 +56,7 @@ export function ExecuteTab({ tools, onExecuted }: ExecuteTabProps) {
     <div className="execute-tab">
       <div className="execute-input-group">
         <code className="execute-prompt">$</code>
-        <textarea
+        <Textarea
           className="execute-textarea"
           value={command}
           onChange={(e) => setCommand(e.target.value)}
@@ -65,15 +66,16 @@ export function ExecuteTab({ tools, onExecuted }: ExecuteTabProps) {
           rows={2}
           spellCheck={false}
         />
-        <button
+        <Button
           type="button"
-          className="btn btn--primary btn--sm"
+          variant="default"
+          size="sm"
           onClick={() => void handleExecute()}
           disabled={executing || !command.trim()}
           style={{ alignSelf: "flex-end" }}
         >
           {executing ? "⏳ 执行中..." : "▶ 执行"}
-        </button>
+        </Button>
       </div>
 
       <div className="quick-commands">

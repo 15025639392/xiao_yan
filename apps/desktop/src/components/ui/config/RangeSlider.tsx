@@ -1,3 +1,5 @@
+import { Slider } from "../slider";
+
 type RangeSliderProps = {
   min: number;
   max: number;
@@ -18,13 +20,12 @@ export function RangeSlider({
   onChange,
 }: RangeSliderProps) {
   return (
-    <input
-      type="range"
+    <Slider
       min={min}
       max={max}
       step={step}
-      value={value}
-      onChange={(event) => onChange(Number.parseInt(event.target.value, 10))}
+      value={[value]}
+      onValueChange={(nextValue) => onChange(nextValue[0] ?? min)}
       disabled={disabled}
       className={className}
     />

@@ -1,3 +1,4 @@
+import { Tabs, TabsList, TabsTrigger } from "../ui";
 import type { ToolTabType } from "./toolTypes";
 
 type ToolTabsProps = {
@@ -17,18 +18,19 @@ const TABS: [ToolTabType, string, string][] = [
 
 export function ToolTabs({ activeTab, onTabChange }: ToolTabsProps) {
   return (
-    <nav className="tool-tabs">
+    <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as ToolTabType)}>
+      <TabsList className="tool-tabs">
       {TABS.map(([tabKey, label, hint]) => (
-        <button
+        <TabsTrigger
           key={tabKey}
-          type="button"
+          value={tabKey}
           className={`tool-tab ${activeTab === tabKey ? "tool-tab--active" : ""}`}
-          onClick={() => onTabChange(tabKey)}
           title={hint}
         >
           {label}
-        </button>
+        </TabsTrigger>
       ))}
-    </nav>
+      </TabsList>
+    </Tabs>
   );
 }

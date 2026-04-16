@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Card, CardContent, CardHeader } from "./card";
 
 type PanelProps = {
   icon?: ReactNode;
@@ -11,8 +12,8 @@ type PanelProps = {
 
 export function Panel({ icon, title, subtitle, actions, className, children }: PanelProps) {
   return (
-    <section className={`panel${className ? ` ${className}` : ""}`}>
-      <div className="panel__header">
+    <Card className={`panel${className ? ` ${className}` : ""}`}>
+        <CardHeader className="panel__header">
         <div className="panel__title-group">
           {icon ? <div className="panel__icon">{icon}</div> : null}
           <div>
@@ -21,9 +22,8 @@ export function Panel({ icon, title, subtitle, actions, className, children }: P
           </div>
         </div>
         {actions ? <div>{actions}</div> : null}
-      </div>
-      <div className="panel__content">{children}</div>
-    </section>
+        </CardHeader>
+        <CardContent className="panel__content">{children}</CardContent>
+    </Card>
   );
 }
-

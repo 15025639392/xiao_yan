@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { Badge } from "./badge";
 
 type StatusBadgeProps = {
   children: ReactNode;
@@ -18,8 +19,8 @@ export function StatusBadge({ children, tone, className, style, title }: StatusB
     .join(" ");
 
   return (
-    <span className={classes} style={style} title={title}>
+    <Badge variant="outline" className={classes} style={style} title={title}>
       {children}
-    </span>
+    </Badge>
   );
 }

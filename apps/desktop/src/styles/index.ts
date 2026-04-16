@@ -18,6 +18,7 @@
  * - responsive.css  响应式断点
  */
 
+import "./tailwind.css";
 import "./variables.css";
 import "./base.css";
 import "./layout.css";

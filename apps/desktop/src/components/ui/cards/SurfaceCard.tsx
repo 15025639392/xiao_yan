@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { Card } from "../card";
 
 type SurfaceCardProps = {
   children: ReactNode;
@@ -7,7 +8,7 @@ type SurfaceCardProps = {
 
 export function SurfaceCard({ children, style }: SurfaceCardProps) {
   return (
-    <div
+    <Card
       style={{
         padding: "var(--space-3)",
         background: "var(--bg-surface-elevated)",
@@ -17,6 +18,6 @@ export function SurfaceCard({ children, style }: SurfaceCardProps) {
       }}
     >
       {children}
-    </div>
+    </Card>
   );
 }

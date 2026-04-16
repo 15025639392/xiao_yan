@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Dialog, DialogContent } from "../dialog";
 
 type OverlayDialogProps = {
   isOpen?: boolean;
@@ -15,15 +16,11 @@ export function OverlayDialog({
   contentClassName = "modal",
   children,
 }: OverlayDialogProps) {
-  if (!isOpen) {
-    return null;
-  }
-
   return (
-    <div className={overlayClassName} onClick={onClose}>
-      <div className={contentClassName} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+    <Dialog open={isOpen} onOpenChange={(open) => (!open ? onClose() : undefined)}>
+      <DialogContent className={contentClassName} overlayClassName={overlayClassName} aria-describedby={undefined}>
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

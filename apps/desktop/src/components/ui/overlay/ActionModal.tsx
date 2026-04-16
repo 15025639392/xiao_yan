@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ModalActionButtons } from "../actions/ModalActionButtons";
 import type { ModalActionItem } from "../actions/ModalActionButtons";
 import type { ModalActionSize, ModalActionStyle } from "../actions/ModalActionButtons";
+import { DialogTitle } from "../dialog";
 import { OverlayDialog } from "./OverlayDialog";
 
 type ActionModalCloseButton = {
@@ -85,7 +86,7 @@ export function ActionModal({
       contentClassName={resolvedContentClassName}
     >
       <div className={headerClassName}>
-        <h3 className={titleClassName}>{title}</h3>
+        <DialogTitle className={titleClassName}>{title}</DialogTitle>
         {showCloseButton ? (
           <button type="button" className={closeButtonClassName} onClick={onClose} aria-label={closeButtonAriaLabel}>
             {closeButtonContent}

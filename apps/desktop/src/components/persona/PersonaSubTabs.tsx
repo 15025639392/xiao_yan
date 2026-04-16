@@ -1,3 +1,4 @@
+import { Tabs, TabsList, TabsTrigger } from "../ui";
 import { PERSONA_SUB_TABS, type PersonaSubTab } from "./personaConstants";
 
 type PersonaSubTabsProps = {
@@ -8,19 +9,20 @@ type PersonaSubTabsProps = {
 
 export function PersonaSubTabs({ activeSubTab, toast, onChange }: PersonaSubTabsProps) {
   return (
-    <div className="persona-config-tabs">
-      {PERSONA_SUB_TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          className={`persona-config-tab ${activeSubTab === tab.id ? "persona-config-tab--active" : ""}`}
-          onClick={() => onChange(tab.id)}
-        >
-          <span>{tab.icon}</span>
-          <span>{tab.label}</span>
-        </button>
-      ))}
-      {toast ? <span className="persona-config-toast">{toast}</span> : null}
-    </div>
+    <Tabs value={activeSubTab} onValueChange={(value) => onChange(value as PersonaSubTab)}>
+      <TabsList className="persona-config-tabs">
+        {PERSONA_SUB_TABS.map((tab) => (
+          <TabsTrigger
+            key={tab.id}
+            value={tab.id}
+            className={`persona-config-tab ${activeSubTab === tab.id ? "persona-config-tab--active" : ""}`}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </TabsTrigger>
+        ))}
+        {toast ? <span className="persona-config-toast">{toast}</span> : null}
+      </TabsList>
+    </Tabs>
   );
 }

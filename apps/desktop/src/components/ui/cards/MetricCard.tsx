@@ -20,8 +20,10 @@ export function MetricCard({ label, value, tone = "default" }: MetricCardProps) 
 
   return (
     <SurfaceCard>
-      <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", marginBottom: "var(--space-1)" }}>{label}</div>
-      <div style={{ fontSize: "1.5rem", fontWeight: 600, color: toneColor }}>{value}</div>
+      <div className="text-[0.75rem] text-[var(--text-tertiary)] mb-[var(--space-1)]">{label}</div>
+      <div className="text-2xl font-semibold" style={{ color: toneColor }}>
+        {value}
+      </div>
     </SurfaceCard>
   );
 }

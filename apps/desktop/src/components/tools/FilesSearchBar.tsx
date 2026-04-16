@@ -1,3 +1,5 @@
+import { Button, Input } from "../ui";
+
 type FilesSearchBarProps = {
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
@@ -7,7 +9,7 @@ type FilesSearchBarProps = {
 export function FilesSearchBar({ searchQuery, onSearchQueryChange, onSearch }: FilesSearchBarProps) {
   return (
     <div className="files-search-bar">
-      <input
+      <Input
         type="text"
         value={searchQuery}
         onChange={(event) => onSearchQueryChange(event.target.value)}
@@ -15,9 +17,9 @@ export function FilesSearchBar({ searchQuery, onSearchQueryChange, onSearch }: F
         placeholder="搜索文件内容..."
         className="files-search-input"
       />
-      <button type="button" className="btn btn--primary btn--sm" onClick={() => void onSearch()} disabled={!searchQuery.trim()}>
+      <Button type="button" variant="default" size="sm" onClick={() => void onSearch()} disabled={!searchQuery.trim()}>
         搜索
-      </button>
+      </Button>
     </div>
   );
 }
