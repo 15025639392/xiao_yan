@@ -15,6 +15,7 @@ If a user request conflicts with these rules, pause and ask for confirmation onl
 - Prefer explicit code over hidden magic.
 - Prefer small, local, reversible changes over large rewrites.
 - Prefer fewer dependencies and shorter call chains.
+- Prefer the smallest clear responsibility per module, function, and component.
 - Prefer clear module boundaries over clever abstractions.
 - Do not treat file growth as a normal implementation strategy.
 
@@ -32,6 +33,7 @@ If a user request conflicts with these rules, pause and ask for confirmation onl
 
 ## Splitting Rules
 
+- If a module, service, function, or component starts handling more than one clear responsibility, split it.
 - Split by responsibility first: protocol, orchestration, storage, transformation, rendering.
 - Split by domain second: chat, memory, goals, orchestrator, persona, tools.
 - Only move logic into `utils` when it is genuinely generic and not domain behavior in disguise.
@@ -72,6 +74,7 @@ Before editing:
 During editing:
 
 - Stay on the smallest behavior chain that solves the request.
+- Check whether the target unit already violates the minimum-responsibility principle before adding more logic.
 - Reuse existing patterns unless there is a clear benefit in changing them.
 - Do not mix unrelated cleanup into the same change.
 
@@ -97,4 +100,5 @@ When reporting a completed code change, include:
 - Do not silently widen autonomy or execution permissions.
 - Do not silently convert optional dependencies into required ones.
 - Do not silently turn the product into a tool platform instead of a digital being.
+- Do not keep growing a mixed-responsibility file when the change should live in a smaller unit.
 - Do not continue inflating already oversized files just because that is the fastest path.
