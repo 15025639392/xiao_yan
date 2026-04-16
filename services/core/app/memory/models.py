@@ -19,7 +19,7 @@
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -268,6 +268,8 @@ class MemoryEvent(BaseModel):
     role: str | None = None
     session_id: str | None = None
     source_context: str | None = None
+    reasoning_session_id: str | None = Field(default=None, description="持续推理会话 ID")
+    reasoning_state: dict[str, Any] | None = Field(default=None, description="持续推理状态快照")
     namespace: str | None = Field(default=None, description="知识命名空间：chat/autobio/inner/knowledge")
     knowledge_type: str | None = Field(default=None, description="知识类型，如 concept/preference/rule")
     knowledge_tags: list[str] = Field(default_factory=list, description="知识标签")
@@ -353,6 +355,28 @@ class MemoryEvent(BaseModel):
         if self.review_note is not None:
             normalized_review_note = self.review_note.strip()
             self.review_note = normalized_review_note or None
+
+        if self.reasoning_session_id is not None:
+            normalized_reasoning_session_id = self.reasoning_session_id.strip()
+            self.reasoning_session_id = normalized_reasoning_session_id or None
+
+        if self.reasoning_state is not None:
+            if not isinstance(self.reasoning_state, dict):
+                self.reasoning_state = None
+            else:
+                normalized_reasoning_state = dict(self.reasoning_state)
+                raw_reasoning_state_session_id = normalized_reasoning_state.get("session_id")
+                if isinstance(raw_reasoning_state_session_id, str):
+                    normalized_state_session_id = raw_reasoning_state_session_id.strip()
+                    if normalized_state_session_id:
+                        normalized_reasoning_state["session_id"] = normalized_state_session_id
+                    else:
+                        normalized_reasoning_state.pop("session_id", None)
+                self.reasoning_state = normalized_reasoning_state
+                if self.reasoning_session_id is None:
+                    candidate_session_id = normalized_reasoning_state.get("session_id")
+                    if isinstance(candidate_session_id, str) and candidate_session_id.strip():
+                        self.reasoning_session_id = candidate_session_id.strip()
 
         return self
 

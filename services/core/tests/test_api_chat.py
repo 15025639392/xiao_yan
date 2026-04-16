@@ -407,6 +407,7 @@ class StubMemPalaceAdapter:
         self.cross_room_probe_calls = 0
         self.build_limits: list[int] = []
         self.record_calls: list[tuple[str, str, str | None]] = []
+        self.record_reasoning_calls: list[tuple[str | None, dict | None]] = []
         self.record_attempts = 0
         self.chat_history = [
             {
@@ -415,6 +416,8 @@ class StubMemPalaceAdapter:
                 "content": str(item.get("content") or ""),
                 "created_at": item.get("created_at"),
                 "session_id": item.get("session_id"),
+                "reasoning_session_id": item.get("reasoning_session_id"),
+                "reasoning_state": item.get("reasoning_state"),
             }
             for index, item in enumerate(chat_history or [])
         ]
@@ -458,11 +461,19 @@ class StubMemPalaceAdapter:
         start = max(0, end - safe_limit)
         return list(reversed(self.chat_history[start:end]))
 
-    def record_exchange(self, user_message: str, assistant_response: str, assistant_session_id: str | None = None) -> bool:
+    def record_exchange(
+        self,
+        user_message: str,
+        assistant_response: str,
+        assistant_session_id: str | None = None,
+        reasoning_session_id: str | None = None,
+        reasoning_state: dict | None = None,
+    ) -> bool:
         self.record_attempts += 1
         if self.raise_on_record:
             raise RuntimeError("record boom")
         self.record_calls.append((user_message, assistant_response, assistant_session_id))
+        self.record_reasoning_calls.append((reasoning_session_id, reasoning_state))
         event_seed = len(self.chat_history)
         self.chat_history.append(
             {
@@ -471,6 +482,8 @@ class StubMemPalaceAdapter:
                 "content": user_message,
                 "created_at": None,
                 "session_id": None,
+                "reasoning_session_id": None,
+                "reasoning_state": None,
             }
         )
         self.chat_history.append(
@@ -480,6 +493,8 @@ class StubMemPalaceAdapter:
                 "content": assistant_response,
                 "created_at": None,
                 "session_id": assistant_session_id,
+                "reasoning_session_id": reasoning_session_id,
+                "reasoning_state": reasoning_state,
             }
         )
         return True
@@ -1119,6 +1134,219 @@ def test_post_chat_resume_falls_back_to_plain_stream_when_tools_request_is_rejec
         app.dependency_overrides.clear()
 
 
+def test_post_chat_returns_reasoning_session_state_when_enabled():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    try:
+        client = TestClient(app)
+        with client.websocket_connect("/ws/app") as websocket:
+            assert websocket.receive_json()["type"] == "snapshot"
+
+            response_box: dict[str, object] = {}
+
+            def receive_until(event_type: str) -> dict:
+                while True:
+                    event = websocket.receive_json()
+                    if event["type"] == event_type:
+                        return event
+
+            def submit_chat() -> None:
+                response_box["response"] = client.post(
+                    "/chat",
+                    json={
+                        "message": "请持续推理这个方案",
+                        "reasoning": {"enabled": True},
+                    },
+                )
+
+            worker = Thread(target=submit_chat)
+            worker.start()
+
+            started_event = receive_until("chat_started")
+            receive_until("chat_delta")
+            receive_until("chat_delta")
+            completed_event = receive_until("chat_completed")
+
+            worker.join(timeout=5)
+            response = response_box["response"]
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert isinstance(payload.get("reasoning_session_id"), str)
+        assert payload["reasoning_session_id"].startswith("reasoning_")
+        assert payload["reasoning_state"]["step_index"] == 1
+        assert payload["reasoning_state"]["phase"] == "exploring"
+        assert isinstance(payload["reasoning_state"]["summary"], str)
+
+        assert started_event["payload"]["reasoning_session_id"] == payload["reasoning_session_id"]
+        assert started_event["payload"]["reasoning_state"]["step_index"] == 1
+        assert completed_event["payload"]["reasoning_session_id"] == payload["reasoning_session_id"]
+        assert completed_event["payload"]["reasoning_state"]["step_index"] == 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_and_resume_ignore_reasoning_when_feature_disabled():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = ResumeStubGateway()
+    runtime_config = get_runtime_config()
+    original_enabled = runtime_config.chat_continuous_reasoning_enabled
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    runtime_config.chat_continuous_reasoning_enabled = False
+    try:
+        client = TestClient(app)
+        first = client.post(
+            "/chat",
+            json={
+                "message": "请持续推理这个方案",
+                "reasoning": {"enabled": True},
+            },
+        )
+        assert first.status_code == 200
+        first_payload = first.json()
+        assert "reasoning_session_id" not in first_payload
+        assert "reasoning_state" not in first_payload
+
+        resumed = client.post(
+            "/chat/resume",
+            json={
+                "message": "继续",
+                "assistant_message_id": first_payload["assistant_message_id"],
+                "partial_content": "前半句，",
+                "reasoning_session_id": "reasoning_manual_1",
+            },
+        )
+        assert resumed.status_code == 200
+        resumed_payload = resumed.json()
+        assert "reasoning_session_id" not in resumed_payload
+        assert "reasoning_state" not in resumed_payload
+        assert gateway.last_instructions is not None
+        assert "持续推理会话" not in gateway.last_instructions
+    finally:
+        runtime_config.chat_continuous_reasoning_enabled = original_enabled
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_resume_advances_reasoning_step_index():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = ResumeStubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    try:
+        client = TestClient(app)
+        first = client.post(
+            "/chat",
+            json={
+                "message": "请持续推理这个方案",
+                "reasoning": {"enabled": True},
+            },
+        )
+        assert first.status_code == 200
+        first_payload = first.json()
+        reasoning_session_id = first_payload["reasoning_session_id"]
+        assert first_payload["reasoning_state"]["step_index"] == 1
+
+        resumed = client.post(
+            "/chat/resume",
+            json={
+                "message": "继续",
+                "assistant_message_id": first_payload["assistant_message_id"],
+                "partial_content": "前半句，",
+                "reasoning_session_id": reasoning_session_id,
+            },
+        )
+        assert resumed.status_code == 200
+        resumed_payload = resumed.json()
+        assert resumed_payload["reasoning_session_id"] == reasoning_session_id
+        assert resumed_payload["reasoning_state"]["step_index"] == 2
+        assert resumed_payload["reasoning_state"]["phase"] == "exploring"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_resume_recovers_reasoning_session_from_persisted_chat_event():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = ResumeStubGateway()
+
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="chat",
+            role="assistant",
+            content="这是上一轮推理结果",
+            session_id="assistant_resume_persisted",
+            reasoning_session_id="reasoning_persisted_1",
+            reasoning_state={
+                "session_id": "reasoning_persisted_1",
+                "phase": "exploring",
+                "step_index": 5,
+                "summary": "已经推进到第5步",
+                "updated_at": "2026-04-16T10:00:00+00:00",
+            },
+        )
+    )
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    try:
+        client = TestClient(app)
+        resumed = client.post(
+            "/chat/resume",
+            json={
+                "message": "继续",
+                "assistant_message_id": "assistant_resume_persisted",
+                "partial_content": "前半句，",
+            },
+        )
+        assert resumed.status_code == 200
+        resumed_payload = resumed.json()
+        assert resumed_payload["reasoning_session_id"] == "reasoning_persisted_1"
+        assert resumed_payload["reasoning_state"]["step_index"] == 6
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_chat_falls_back_to_plain_stream_when_tools_response_has_empty_output():
     memory_repository = InMemoryMemoryRepository()
     gateway = EmptyToolOutputFallbackGateway()
@@ -1675,7 +1903,15 @@ def test_post_chat_can_override_mempalace_adapter_dependency():
         def list_recent_chat_messages(self, *, limit: int, offset: int = 0) -> list[dict]:
             return []
 
-        def record_exchange(self, user_message: str, assistant_response: str, assistant_session_id: str | None = None) -> bool:
+        def record_exchange(
+            self,
+            user_message: str,
+            assistant_response: str,
+            assistant_session_id: str | None = None,
+            reasoning_session_id: str | None = None,
+            reasoning_state: dict | None = None,
+        ) -> bool:
+            _ = (reasoning_session_id, reasoning_state)
             return True
 
     memory_repository = InMemoryMemoryRepository()
@@ -1954,6 +2190,14 @@ def test_get_messages_returns_recent_chat_events():
                 "content": "第二句",
                 "created_at": "2026-04-11T10:00:05Z",
                 "session_id": "assistant_2",
+                "reasoning_session_id": "reasoning_2",
+                "reasoning_state": {
+                    "session_id": "reasoning_2",
+                    "phase": "exploring",
+                    "step_index": 2,
+                    "summary": "继续分析",
+                    "updated_at": "2026-04-16T10:00:00+00:00",
+                },
             },
         ]
     )
@@ -1979,6 +2223,8 @@ def test_get_messages_returns_recent_chat_events():
                 "content": "第一句",
                 "created_at": payload["messages"][0]["created_at"],
                 "session_id": None,
+                "reasoning_session_id": None,
+                "reasoning_state": None,
             },
             {
                 "id": payload["messages"][1]["id"],
@@ -1986,6 +2232,14 @@ def test_get_messages_returns_recent_chat_events():
                 "content": "第二句",
                 "created_at": payload["messages"][1]["created_at"],
                 "session_id": "assistant_2",
+                "reasoning_session_id": "reasoning_2",
+                "reasoning_state": {
+                    "session_id": "reasoning_2",
+                    "phase": "exploring",
+                    "step_index": 2,
+                    "summary": "继续分析",
+                    "updated_at": "2026-04-16T10:00:00+00:00",
+                },
             },
         ]
         assert all(isinstance(message["id"], str) for message in payload["messages"])

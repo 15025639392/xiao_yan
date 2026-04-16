@@ -80,6 +80,17 @@ export const ChatMessages = memo(function ChatMessages({
               <p className="chat-message__content">{message.content}</p>
             )}
 
+            {message.role === "assistant" && message.reasoningState ? (
+              <div className="chat-message__reasoning" aria-label="持续推理状态">
+                <div className="chat-message__reasoning-head">
+                  <span>持续推理</span>
+                  <span>步骤 {message.reasoningState.step_index}</span>
+                  <span>阶段 {message.reasoningState.phase}</span>
+                </div>
+                <p className="chat-message__reasoning-summary">{message.reasoningState.summary}</p>
+              </div>
+            ) : null}
+
             {message.role === "assistant" && message.id === latestAssistantMessageId ? (
               <ChatMessageResponseReference relationship={relationship} />
             ) : null}

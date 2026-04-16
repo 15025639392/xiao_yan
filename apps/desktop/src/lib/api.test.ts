@@ -287,6 +287,7 @@ describe("persona api methods", () => {
           chat_provider: "openai",
           chat_model: "gpt-5.4-mini",
           chat_read_timeout_seconds: 180,
+          chat_continuous_reasoning_enabled: true,
           chat_mcp_enabled: true,
           chat_mcp_servers: [
             {
@@ -320,6 +321,7 @@ describe("persona api methods", () => {
     const config = await fetchConfig();
     expect(config.chat_model).toBe("gpt-5.4-mini");
     expect(config.chat_provider).toBe("openai");
+    expect(config.chat_continuous_reasoning_enabled).toBe(true);
     expect(config.chat_mcp_enabled).toBe(true);
     expect(config.chat_mcp_servers[0]?.server_id).toBe("filesystem");
     const models = await fetchChatModels();
@@ -359,6 +361,7 @@ describe("persona api methods", () => {
 
     expect(updated.chat_context_limit).toBe(8);
     expect(updated.chat_model).toBe("gpt-5.4-mini");
+    expect(updated.chat_continuous_reasoning_enabled).toBe(false);
     expect(updated.chat_mcp_enabled).toBe(false);
     expect(updated.chat_mcp_servers).toEqual([]);
   });

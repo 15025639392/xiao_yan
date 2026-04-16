@@ -430,6 +430,8 @@ export type MacConsoleBootstrapStatus = {
 export type ChatSubmissionResult = {
   response_id: string | null;
   assistant_message_id: string;
+  reasoning_session_id?: string;
+  reasoning_state?: ChatReasoningState;
 };
 
 export type ChatAttachment = {
@@ -439,11 +441,25 @@ export type ChatAttachment = {
   mime_type?: string | null;
 };
 
+export type ChatReasoningRequest = {
+  enabled: boolean;
+  session_id?: string;
+};
+
+export type ChatReasoningState = {
+  session_id: string;
+  phase: "planning" | "exploring" | "finalizing" | "completed" | string;
+  step_index: number;
+  summary: string;
+  updated_at: string;
+};
+
 export type ChatRequestBody = {
   message: string;
   attachments?: ChatAttachment[];
   mcp_servers?: string[];
   skills?: string[];
+  reasoning?: ChatReasoningRequest;
 };
 
 export type FolderAccessLevel = "read_only" | "full_access";
@@ -472,6 +488,7 @@ export type ChatResumeRequest = {
   message: string;
   assistant_message_id: string;
   partial_content: string;
+  reasoning_session_id?: string;
 };
 
 export type ChatHistoryMessage = {
@@ -480,6 +497,8 @@ export type ChatHistoryMessage = {
   content: string;
   created_at?: string | null;
   session_id?: string | null;
+  reasoning_session_id?: string | null;
+  reasoning_state?: ChatReasoningState | null;
 };
 
 export type ChatHistoryResponse = {
@@ -1735,6 +1754,7 @@ export type AppConfig = {
   chat_provider: string;
   chat_model: string;
   chat_read_timeout_seconds: number;
+  chat_continuous_reasoning_enabled: boolean;
   chat_mcp_enabled: boolean;
   chat_mcp_servers: ChatMcpServerConfig[];
 };
@@ -1842,6 +1862,8 @@ function normalizeAppConfig(payload: Partial<AppConfig> | null | undefined): App
       typeof source.chat_model === "string" && source.chat_model.trim() ? source.chat_model.trim() : DEFAULT_CHAT_MODEL,
     chat_read_timeout_seconds:
       typeof source.chat_read_timeout_seconds === "number" ? source.chat_read_timeout_seconds : 180,
+    chat_continuous_reasoning_enabled:
+      typeof source.chat_continuous_reasoning_enabled === "boolean" ? source.chat_continuous_reasoning_enabled : false,
     chat_mcp_enabled: typeof source.chat_mcp_enabled === "boolean" ? source.chat_mcp_enabled : false,
     chat_mcp_servers: normalizedMcpServers,
   };

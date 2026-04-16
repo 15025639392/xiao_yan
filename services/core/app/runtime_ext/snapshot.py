@@ -96,6 +96,8 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
                 content=str(event.get("content") or ""),
                 created_at=event.get("created_at"),
                 session_id=event.get("session_id"),
+                reasoning_session_id=event.get("reasoning_session_id"),
+                reasoning_state=(event.get("reasoning_state") if isinstance(event.get("reasoning_state"), dict) else None),
             ).model_dump()
             for event in reversed(recent_chat_messages)
             if isinstance(event, dict)
@@ -108,6 +110,8 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
                 content=event.content,
                 created_at=event.created_at.isoformat() if event.created_at else None,
                 session_id=event.session_id,
+                reasoning_session_id=event.reasoning_session_id,
+                reasoning_state=event.reasoning_state,
             ).model_dump()
             for event in reversed(memory_repository.list_recent_chat(limit=RUNTIME_CHAT_MESSAGES_LIMIT))
         ]

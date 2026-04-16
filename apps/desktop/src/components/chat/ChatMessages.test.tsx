@@ -140,3 +140,36 @@ test("renders knowledge references for assistant messages", () => {
   expect(screen.getByText("相似度 0.88")).toBeInTheDocument();
   expect(screen.getByText("你喜欢结构化输出。")).toBeInTheDocument();
 });
+
+test("renders continuous reasoning state for assistant messages", () => {
+  render(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "我先继续推理。",
+          reasoningSessionId: "reasoning_1",
+          reasoningState: {
+            session_id: "reasoning_1",
+            phase: "exploring",
+            step_index: 3,
+            summary: "先收敛约束，再确认可行路径。",
+            updated_at: "2026-04-16T10:00:00+00:00",
+          },
+        },
+      ]}
+      relationship={null}
+      isSending={false}
+      showMemoryContext={new Set()}
+      onToggleMemoryContext={() => {}}
+      onDraftChange={() => {}}
+    />,
+  );
+
+  expect(screen.getByLabelText("持续推理状态")).toBeInTheDocument();
+  expect(screen.getByText("步骤 3")).toBeInTheDocument();
+  expect(screen.getByText("阶段 exploring")).toBeInTheDocument();
+  expect(screen.getByText("先收敛约束，再确认可行路径。")).toBeInTheDocument();
+});

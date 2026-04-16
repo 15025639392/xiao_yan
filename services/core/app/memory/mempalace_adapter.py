@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
 from logging import getLogger
 from pathlib import Path
@@ -113,6 +114,8 @@ class MemPalaceAdapter:
         user_message: str,
         assistant_response: str,
         assistant_session_id: str | None = None,
+        reasoning_session_id: str | None = None,
+        reasoning_state: dict | None = None,
     ) -> bool:
         user_text = (user_message or "").strip()
         assistant_text = (assistant_response or "").strip()
@@ -127,6 +130,8 @@ class MemPalaceAdapter:
                 content=content,
                 source_context=source_context,
                 session_id=assistant_session_id,
+                reasoning_session_id=reasoning_session_id,
+                reasoning_state=reasoning_state,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("MemPalace record exchange failed: %s", exc)
@@ -273,6 +278,8 @@ class MemPalaceAdapter:
         content: str,
         source_context: str,
         session_id: str | None,
+        reasoning_session_id: str | None,
+        reasoning_state: dict | None,
     ) -> bool:
         if self._write_backend is not None:
             return bool(
@@ -280,6 +287,8 @@ class MemPalaceAdapter:
                     content=content,
                     source_context=source_context,
                     session_id=session_id,
+                    reasoning_session_id=reasoning_session_id,
+                    reasoning_state=reasoning_state,
                 )
             )
 
@@ -307,6 +316,8 @@ class MemPalaceAdapter:
                     "added_by": "xiaoyan",
                     "filed_at": now.isoformat(),
                     "session_id": session_id or "",
+                    "reasoning_session_id": (reasoning_session_id or "").strip(),
+                    "reasoning_state": _encode_reasoning_state(reasoning_state),
                 }
             ],
         )
@@ -331,7 +342,7 @@ class MemPalaceAdapter:
         metadatas = payload.get("metadatas") or []
         ids = payload.get("ids") or []
 
-        rows: list[tuple[str, str, str, str, str | None]] = []
+        rows: list[tuple[str, str, str, str, str | None, str | None, dict | None]] = []
         for index, raw_document in enumerate(documents):
             if not isinstance(raw_document, str):
                 continue
@@ -341,21 +352,49 @@ class MemPalaceAdapter:
             raw_session_id = metadata.get("session_id")
             session_id = str(raw_session_id).strip() if raw_session_id is not None else ""
             normalized_session_id = session_id or None
+            raw_reasoning_session_id = metadata.get("reasoning_session_id")
+            reasoning_session_id = str(raw_reasoning_session_id).strip() if raw_reasoning_session_id is not None else ""
+            normalized_reasoning_session_id = reasoning_session_id or None
+            normalized_reasoning_state = _parse_reasoning_state(metadata.get("reasoning_state"))
+            if normalized_reasoning_session_id is None and isinstance(normalized_reasoning_state, dict):
+                candidate_session_id = normalized_reasoning_state.get("session_id")
+                if isinstance(candidate_session_id, str) and candidate_session_id.strip():
+                    normalized_reasoning_session_id = candidate_session_id.strip()
 
             user_text, assistant_text = _parse_exchange_document(raw_document)
             if user_text:
-                rows.append((filed_at, drawer_id, "user", user_text, normalized_session_id))
+                rows.append((filed_at, drawer_id, "user", user_text, normalized_session_id, None, None))
             if assistant_text:
-                rows.append((filed_at, drawer_id, "assistant", assistant_text, normalized_session_id))
+                rows.append(
+                    (
+                        filed_at,
+                        drawer_id,
+                        "assistant",
+                        assistant_text,
+                        normalized_session_id,
+                        normalized_reasoning_session_id,
+                        normalized_reasoning_state,
+                    )
+                )
 
             if not user_text and not assistant_text:
                 compact = " ".join(raw_document.split())
                 if compact:
-                    rows.append((filed_at, drawer_id, "assistant", compact, normalized_session_id))
+                    rows.append(
+                        (
+                            filed_at,
+                            drawer_id,
+                            "assistant",
+                            compact,
+                            normalized_session_id,
+                            normalized_reasoning_session_id,
+                            normalized_reasoning_state,
+                        )
+                    )
 
         rows.sort(key=lambda item: item[0])
         events: list[dict] = []
-        for filed_at, drawer_id, role, content, session_id in rows:
+        for filed_at, drawer_id, role, content, session_id, reasoning_session_id, reasoning_state in rows:
             message_id = f"{drawer_id}:{role}:{len(events)}"
             events.append(
                 {
@@ -364,6 +403,8 @@ class MemPalaceAdapter:
                     "content": content,
                     "created_at": filed_at or None,
                     "session_id": session_id,
+                    "reasoning_session_id": reasoning_session_id if role == "assistant" else None,
+                    "reasoning_state": reasoning_state if role == "assistant" else None,
                 }
             )
         return events
@@ -392,6 +433,30 @@ def _compact_text(text: str, limit: int) -> str:
     if len(compacted) <= limit:
         return compacted
     return f"{compacted[: limit - 1].rstrip()}…"
+
+
+def _encode_reasoning_state(value: dict | None) -> str:
+    if not isinstance(value, dict):
+        return ""
+    try:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _parse_reasoning_state(value) -> dict | None:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        parsed = json.loads(normalized)
+    except Exception:  # noqa: BLE001
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _format_similarity(value) -> str:

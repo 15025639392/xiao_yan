@@ -100,6 +100,8 @@ def build_runtime_router() -> APIRouter:
                 content=str(event.get("content") or ""),
                 created_at=event.get("created_at"),
                 session_id=event.get("session_id"),
+                reasoning_session_id=event.get("reasoning_session_id"),
+                reasoning_state=(event.get("reasoning_state") if isinstance(event.get("reasoning_state"), dict) else None),
             )
             for event in reversed(page_events)
             if isinstance(event, dict)

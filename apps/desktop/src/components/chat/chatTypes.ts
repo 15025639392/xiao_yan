@@ -1,4 +1,4 @@
-import type { ChatRequestBody, MemoryEntryDisplay } from "../../lib/api";
+import type { ChatReasoningState, ChatRequestBody, MemoryEntryDisplay } from "../../lib/api";
 
 export type KnowledgeReference = {
   source: string;
@@ -17,9 +17,12 @@ export type ChatEntry = {
   retryRequestBody?: ChatRequestBody;
   relatedMemories?: MemoryEntryDisplay[];
   knowledgeReferences?: KnowledgeReference[];
+  reasoningSessionId?: string;
+  reasoningState?: ChatReasoningState;
   streamSequence?: number;
 };
 
 export type ChatSendOptions = {
   mcpServerIds?: string[];
+  continuousReasoningEnabled?: boolean;
 };

@@ -103,6 +103,7 @@ def test_get_config_returns_context_limit_provider_and_chat_model():
     original_provider = config.chat_provider
     original_model = config.chat_model
     original_timeout = config.chat_read_timeout_seconds
+    original_reasoning_enabled = config.chat_continuous_reasoning_enabled
     original_mcp_enabled = config.chat_mcp_enabled
     original_mcp_servers = config.list_chat_mcp_servers()
 
@@ -111,6 +112,7 @@ def test_get_config_returns_context_limit_provider_and_chat_model():
         config.chat_provider = "minimaxi"
         config.chat_model = "gpt-5.4-mini"
         config.chat_read_timeout_seconds = 240
+        config.chat_continuous_reasoning_enabled = False
         config.chat_mcp_enabled = True
         config.replace_chat_mcp_servers(
             [
@@ -131,6 +133,7 @@ def test_get_config_returns_context_limit_provider_and_chat_model():
             "chat_provider": "minimaxi",
             "chat_model": "gpt-5.4-mini",
             "chat_read_timeout_seconds": 240,
+            "chat_continuous_reasoning_enabled": False,
             "chat_mcp_enabled": True,
             "chat_mcp_servers": [
                 {
@@ -149,6 +152,7 @@ def test_get_config_returns_context_limit_provider_and_chat_model():
         config.chat_provider = original_provider
         config.chat_model = original_model
         config.chat_read_timeout_seconds = original_timeout
+        config.chat_continuous_reasoning_enabled = original_reasoning_enabled
         config.chat_mcp_enabled = original_mcp_enabled
         config.replace_chat_mcp_servers(original_mcp_servers)
 
@@ -159,6 +163,7 @@ def test_update_config_supports_provider_and_model_patch(monkeypatch):
     original_provider = config.chat_provider
     original_model = config.chat_model
     original_timeout = config.chat_read_timeout_seconds
+    original_reasoning_enabled = config.chat_continuous_reasoning_enabled
     original_mcp_enabled = config.chat_mcp_enabled
     original_mcp_servers = config.list_chat_mcp_servers()
 
@@ -180,6 +185,7 @@ def test_update_config_supports_provider_and_model_patch(monkeypatch):
             "chat_provider": "minimaxi",
             "chat_model": "MiniMax-M2.7",
             "chat_read_timeout_seconds": 200,
+            "chat_continuous_reasoning_enabled": config.chat_continuous_reasoning_enabled,
             "chat_mcp_enabled": config.chat_mcp_enabled,
             "chat_mcp_servers": config.list_chat_mcp_servers(),
         }
@@ -188,6 +194,7 @@ def test_update_config_supports_provider_and_model_patch(monkeypatch):
         config.chat_provider = original_provider
         config.chat_model = original_model
         config.chat_read_timeout_seconds = original_timeout
+        config.chat_continuous_reasoning_enabled = original_reasoning_enabled
         config.chat_mcp_enabled = original_mcp_enabled
         config.replace_chat_mcp_servers(original_mcp_servers)
 
@@ -199,8 +206,24 @@ def test_update_config_rejects_empty_patch():
     assert response.json()["detail"] == "at least one config field is required"
 
 
+def test_update_config_supports_chat_continuous_reasoning_flag():
+    config = get_runtime_config()
+    original_reasoning_enabled = config.chat_continuous_reasoning_enabled
+
+    try:
+        client = TestClient(app)
+        response = client.put("/config", json={"chat_continuous_reasoning_enabled": False})
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["chat_continuous_reasoning_enabled"] is False
+        assert config.chat_continuous_reasoning_enabled is False
+    finally:
+        config.chat_continuous_reasoning_enabled = original_reasoning_enabled
+
+
 def test_update_config_supports_chat_mcp_fields():
     config = get_runtime_config()
+    original_reasoning_enabled = config.chat_continuous_reasoning_enabled
     original_enabled = config.chat_mcp_enabled
     original_servers = config.list_chat_mcp_servers()
 
@@ -223,6 +246,7 @@ def test_update_config_supports_chat_mcp_fields():
         )
         assert response.status_code == 200
         payload = response.json()
+        assert payload["chat_continuous_reasoning_enabled"] == config.chat_continuous_reasoning_enabled
         assert payload["chat_mcp_enabled"] is True
         assert payload["chat_mcp_servers"] == [
             {
@@ -236,6 +260,7 @@ def test_update_config_supports_chat_mcp_fields():
             }
         ]
     finally:
+        config.chat_continuous_reasoning_enabled = original_reasoning_enabled
         config.chat_mcp_enabled = original_enabled
         config.replace_chat_mcp_servers(original_servers)
 
@@ -261,6 +286,7 @@ def test_update_config_switch_provider_without_model_uses_provider_default(monke
     original_provider = config.chat_provider
     original_model = config.chat_model
     original_timeout = config.chat_read_timeout_seconds
+    original_reasoning_enabled = config.chat_continuous_reasoning_enabled
     original_mcp_enabled = config.chat_mcp_enabled
     original_mcp_servers = config.list_chat_mcp_servers()
 
@@ -277,6 +303,7 @@ def test_update_config_switch_provider_without_model_uses_provider_default(monke
             "chat_provider": "minimaxi",
             "chat_model": "MiniMax-M2.7",
             "chat_read_timeout_seconds": config.chat_read_timeout_seconds,
+            "chat_continuous_reasoning_enabled": config.chat_continuous_reasoning_enabled,
             "chat_mcp_enabled": config.chat_mcp_enabled,
             "chat_mcp_servers": config.list_chat_mcp_servers(),
         }
@@ -284,6 +311,7 @@ def test_update_config_switch_provider_without_model_uses_provider_default(monke
         config.chat_provider = original_provider
         config.chat_model = original_model
         config.chat_read_timeout_seconds = original_timeout
+        config.chat_continuous_reasoning_enabled = original_reasoning_enabled
         config.chat_mcp_enabled = original_mcp_enabled
         config.replace_chat_mcp_servers(original_mcp_servers)
 

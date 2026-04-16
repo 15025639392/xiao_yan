@@ -2,6 +2,7 @@ import { BASE_URL } from "./api";
 import type {
   BeingState,
   ChatHistoryMessage,
+  ChatReasoningState,
   EmotionState,
   Goal,
   GoalAdmissionCandidateSnapshot,
@@ -50,6 +51,8 @@ export type AppRealtimeSnapshot = {
 export type AppChatStartedPayload = {
   assistant_message_id: string;
   response_id: string | null;
+  reasoning_session_id?: string;
+  reasoning_state?: ChatReasoningState;
   session_id?: string;
   sequence?: number;
   timestamp_ms?: number;
@@ -58,6 +61,8 @@ export type AppChatStartedPayload = {
 export type AppChatDeltaPayload = {
   assistant_message_id: string;
   delta: string;
+  reasoning_session_id?: string;
+  reasoning_state?: ChatReasoningState;
   session_id?: string;
   sequence?: number;
   timestamp_ms?: number;
@@ -76,6 +81,8 @@ export type AppChatCompletedPayload = {
   response_id: string | null;
   content: string;
   knowledge_references?: AppKnowledgeReferencePayload[];
+  reasoning_session_id?: string;
+  reasoning_state?: ChatReasoningState;
   session_id?: string;
   sequence?: number;
   timestamp_ms?: number;
@@ -84,6 +91,8 @@ export type AppChatCompletedPayload = {
 export type AppChatFailedPayload = {
   assistant_message_id: string;
   error: string;
+  reasoning_session_id?: string;
+  reasoning_state?: ChatReasoningState;
   session_id?: string;
   sequence?: number;
   timestamp_ms?: number;

@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timezone
 from logging import getLogger
 from pathlib import Path
+from threading import Lock
 from time import perf_counter
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -30,6 +31,7 @@ from app.llm.gateway import ChatGateway
 from app.llm.schemas import (
     ChatAttachment,
     ChatMessage,
+    ChatReasoningState,
     ChatRequest,
     ChatResumeRequest,
     ChatSubmissionResult,
@@ -192,6 +194,129 @@ def build_chat_router() -> APIRouter:
     max_attached_files = 6
     max_attached_images = 4
     max_total_file_context_chars = 16_000
+    reasoning_resume_recovery_scan_limit = 800
+    reasoning_sessions: dict[str, dict[str, object]] = {}
+    reasoning_assistant_map: dict[str, str] = {}
+    reasoning_lock = Lock()
+
+    def _normalize_reasoning_session_id(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    def _coerce_reasoning_state(value: object) -> ChatReasoningState | None:
+        if not isinstance(value, dict):
+            return None
+        try:
+            return ChatReasoningState.model_validate(value)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _hydrate_reasoning_session_state(reasoning_state: ChatReasoningState) -> None:
+        with reasoning_lock:
+            reasoning_sessions[reasoning_state.session_id] = reasoning_state.model_dump(mode="json")
+
+    def _resolve_resume_reasoning_session_id(
+        request_body: ChatResumeRequest,
+        *,
+        memory_repository: MemoryRepository,
+    ) -> str | None:
+        explicit = _normalize_reasoning_session_id(request_body.reasoning_session_id)
+        if explicit:
+            return explicit
+
+        normalized_assistant_message_id = (request_body.assistant_message_id or "").strip()
+        if not normalized_assistant_message_id:
+            return None
+
+        with reasoning_lock:
+            remembered = reasoning_assistant_map.get(normalized_assistant_message_id)
+        if remembered:
+            return remembered
+
+        try:
+            recent_chat_events = memory_repository.list_recent_chat(limit=reasoning_resume_recovery_scan_limit)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("resume reasoning recovery scan failed: %s", exc)
+            return None
+
+        for event in recent_chat_events:
+            if event.role != "assistant":
+                continue
+            if _normalize_reasoning_session_id(event.session_id) != normalized_assistant_message_id:
+                continue
+            recovered_reasoning_state = _coerce_reasoning_state(event.reasoning_state)
+            recovered_reasoning_session_id = _normalize_reasoning_session_id(event.reasoning_session_id)
+            if recovered_reasoning_session_id is None and recovered_reasoning_state is not None:
+                recovered_reasoning_session_id = _normalize_reasoning_session_id(recovered_reasoning_state.session_id)
+            if recovered_reasoning_session_id is None:
+                continue
+            if recovered_reasoning_state is not None:
+                _hydrate_reasoning_session_state(recovered_reasoning_state)
+            _remember_reasoning_session_for_assistant(
+                normalized_assistant_message_id,
+                recovered_reasoning_session_id,
+            )
+            return recovered_reasoning_session_id
+        return None
+
+    def _remember_reasoning_session_for_assistant(assistant_message_id: str, reasoning_session_id: str) -> None:
+        with reasoning_lock:
+            reasoning_assistant_map[assistant_message_id] = reasoning_session_id
+
+    def _start_reasoning_session(*, user_message: str, session_id: str | None) -> ChatReasoningState:
+        normalized_session_id = _normalize_reasoning_session_id(session_id) or f"reasoning_{uuid4().hex}"
+        with reasoning_lock:
+            previous = reasoning_sessions.get(normalized_session_id)
+            previous_step = int(previous.get("step_index", 0)) if isinstance(previous, dict) else 0
+            step_index = max(1, previous_step + 1)
+            state = ChatReasoningState(
+                session_id=normalized_session_id,
+                phase="exploring",
+                step_index=step_index,
+                summary=(user_message or "").strip()[:72] or "继续推理中",
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            )
+            reasoning_sessions[normalized_session_id] = state.model_dump(mode="json")
+            return state
+
+    def _update_reasoning_session_after_completion(
+        *,
+        reasoning_state: ChatReasoningState | None,
+        user_message: str,
+        output_text: str,
+    ) -> ChatReasoningState | None:
+        if reasoning_state is None:
+            return None
+
+        completion_markers = ("结论", "总结", "已完成", "final", "done")
+        is_completed = any(marker in (output_text or "").lower() for marker in completion_markers)
+        summarized = _compact_text(output_text or user_message, limit=120) or "继续推理中"
+        updated = reasoning_state.model_copy(
+            update={
+                "phase": "completed" if is_completed else "exploring",
+                "summary": summarized,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        with reasoning_lock:
+            reasoning_sessions[updated.session_id] = updated.model_dump(mode="json")
+        return updated
+
+    def _append_reasoning_instruction(
+        instructions: str,
+        *,
+        reasoning_state: ChatReasoningState | None,
+    ) -> str:
+        if reasoning_state is None:
+            return instructions
+        return (
+            f"{instructions}\n\n"
+            "[Continuous Reasoning]\n"
+            f"你正在同一个持续推理会话中（session={reasoning_state.session_id}, step={reasoning_state.step_index}, phase={reasoning_state.phase}）。\n"
+            "请延续已有推理，不要重置上下文；输出时先给结论，再给一段简短“阶段摘要”，但不要泄露完整思维链。"
+        )
 
     def _default_files_base_path() -> Path:
         try:
@@ -697,11 +822,15 @@ def build_chat_router() -> APIRouter:
         user_message: str,
         assistant_response: str,
         assistant_session_id: str,
+        reasoning_session_id: str | None = None,
+        reasoning_state: ChatReasoningState | None = None,
     ) -> None:
         user_text = (user_message or "").strip()
         assistant_text = (assistant_response or "").strip()
         if not user_text or not assistant_text:
             return
+        normalized_reasoning_session_id = _normalize_reasoning_session_id(reasoning_session_id)
+        reasoning_payload = reasoning_state.model_dump(mode="json") if reasoning_state is not None else None
 
         memory_repository.save_event(
             MemoryEvent(
@@ -716,6 +845,8 @@ def build_chat_router() -> APIRouter:
                 content=assistant_text,
                 role="assistant",
                 session_id=assistant_session_id,
+                reasoning_session_id=normalized_reasoning_session_id,
+                reasoning_state=reasoning_payload,
             )
         )
 
@@ -809,11 +940,14 @@ def build_chat_router() -> APIRouter:
         initial_output_text: str = "",
         suppress_started_event: bool = False,
         knowledge_references: list[dict[str, str | float | None]] | None = None,
+        reasoning_session_id: str | None = None,
+        reasoning_state: ChatReasoningState | None = None,
     ) -> tuple[ChatSubmissionResult, str]:
         response_id: str | None = None
         output_text = initial_output_text
         started = False
         hub = getattr(request.app.state, "realtime_hub", None)
+        reasoning_payload = reasoning_state.model_dump(mode="json") if reasoning_state is not None else None
 
         try:
             for event in gateway.stream_response(chat_messages, instructions=instructions):
@@ -821,13 +955,23 @@ def build_chat_router() -> APIRouter:
                 if event_type == "response_started":
                     response_id = event.get("response_id") or response_id
                     if hub is not None and not started and not suppress_started_event:
-                        hub.publish_chat_started(assistant_message_id, response_id=response_id)
+                        hub.publish_chat_started(
+                            assistant_message_id,
+                            response_id=response_id,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_payload,
+                        )
                         started = True
                     continue
 
                 if event_type == "text_delta":
                     if hub is not None and not started and not suppress_started_event:
-                        hub.publish_chat_started(assistant_message_id, response_id=response_id)
+                        hub.publish_chat_started(
+                            assistant_message_id,
+                            response_id=response_id,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_payload,
+                        )
                         started = True
 
                     delta = event.get("delta") or ""
@@ -836,7 +980,12 @@ def build_chat_router() -> APIRouter:
 
                     output_text = _merge_chat_stream_content(output_text, delta)
                     if hub is not None:
-                        hub.publish_chat_delta(assistant_message_id, delta)
+                        hub.publish_chat_delta(
+                            assistant_message_id,
+                            delta,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_payload,
+                        )
                     continue
 
                 if event_type == "response_completed":
@@ -849,7 +998,12 @@ def build_chat_router() -> APIRouter:
                 if event_type == "response_failed":
                     error_message = event.get("error") or "streaming failed"
                     if hub is not None:
-                        hub.publish_chat_failed(assistant_message_id, error_message)
+                        hub.publish_chat_failed(
+                            assistant_message_id,
+                            error_message,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_payload,
+                        )
                     raise HTTPException(status_code=502, detail=error_message)
         except httpx.HTTPStatusError as exception:
             detail = str(exception)
@@ -859,23 +1013,40 @@ def build_chat_router() -> APIRouter:
             except Exception:  # noqa: BLE001
                 pass
             if hub is not None:
-                hub.publish_chat_failed(assistant_message_id, detail)
+                hub.publish_chat_failed(
+                    assistant_message_id,
+                    detail,
+                    reasoning_session_id=reasoning_session_id,
+                    reasoning_state=reasoning_payload,
+                )
             raise HTTPException(status_code=502, detail=detail) from exception
         except HTTPException:
             raise
         except Exception as exception:
             if hub is not None:
-                hub.publish_chat_failed(assistant_message_id, str(exception))
+                hub.publish_chat_failed(
+                    assistant_message_id,
+                    str(exception),
+                    reasoning_session_id=reasoning_session_id,
+                    reasoning_state=reasoning_payload,
+                )
             raise HTTPException(status_code=502, detail=str(exception)) from exception
 
         if hub is not None and not started and not suppress_started_event:
-            hub.publish_chat_started(assistant_message_id, response_id=response_id)
+            hub.publish_chat_started(
+                assistant_message_id,
+                response_id=response_id,
+                reasoning_session_id=reasoning_session_id,
+                reasoning_state=reasoning_payload,
+            )
         if hub is not None:
             hub.publish_chat_completed(
                 assistant_message_id,
                 response_id,
                 output_text,
                 knowledge_references=knowledge_references,
+                reasoning_session_id=reasoning_session_id,
+                reasoning_state=reasoning_payload,
             )
 
         return (
@@ -1428,6 +1599,8 @@ def build_chat_router() -> APIRouter:
         knowledge_references: list[dict[str, str | float | None]] | None = None,
         extra_tools: list[dict[str, object]] | None = None,
         mcp_registry: ChatMcpCallRegistry | None = None,
+        reasoning_session_id: str | None = None,
+        reasoning_state: ChatReasoningState | None = None,
     ) -> tuple[ChatSubmissionResult, str]:
         create_with_tools = getattr(gateway, "create_response_with_tools", None)
         if not callable(create_with_tools):
@@ -1439,11 +1612,14 @@ def build_chat_router() -> APIRouter:
                 assistant_message_id=assistant_message_id,
                 initial_output_text=initial_output_text,
                 knowledge_references=knowledge_references,
+                reasoning_session_id=reasoning_session_id,
+                reasoning_state=reasoning_state,
             )
 
         hub = getattr(request.app.state, "realtime_hub", None)
         started = False
         response_id: str | None = None
+        reasoning_payload = reasoning_state.model_dump(mode="json") if reasoning_state is not None else None
 
         file_tools = _build_chat_file_tools()
         tool_definitions = [*CHAT_FILE_TOOL_DEFINITIONS, *(extra_tools or [])]
@@ -1472,6 +1648,8 @@ def build_chat_router() -> APIRouter:
                 initial_output_text=initial_output_text,
                 suppress_started_event=started,
                 knowledge_references=knowledge_references,
+                reasoning_session_id=reasoning_session_id,
+                reasoning_state=reasoning_state,
             )
 
         try:
@@ -1497,6 +1675,8 @@ def build_chat_router() -> APIRouter:
                             assistant_message_id=assistant_message_id,
                             initial_output_text=initial_output_text,
                             knowledge_references=knowledge_references,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_state,
                         )
                     raise
                 if not isinstance(response_payload, dict):
@@ -1528,23 +1708,37 @@ def build_chat_router() -> APIRouter:
                             assistant_message_id=assistant_message_id,
                             initial_output_text=initial_output_text,
                             knowledge_references=knowledge_references,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_state,
                         )
 
                     if not output_text:
                         raise HTTPException(status_code=502, detail="empty gateway response payload")
 
                     if hub is not None and not started:
-                        hub.publish_chat_started(assistant_message_id, response_id=response_id)
+                        hub.publish_chat_started(
+                            assistant_message_id,
+                            response_id=response_id,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_payload,
+                        )
                         started = True
 
                     if hub is not None and output_text:
-                        hub.publish_chat_delta(assistant_message_id, output_text)
+                        hub.publish_chat_delta(
+                            assistant_message_id,
+                            output_text,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_payload,
+                        )
                     if hub is not None:
                         hub.publish_chat_completed(
                             assistant_message_id,
                             response_id,
                             output_text,
                             knowledge_references=knowledge_references,
+                            reasoning_session_id=reasoning_session_id,
+                            reasoning_state=reasoning_payload,
                         )
 
                     return (
@@ -1556,7 +1750,12 @@ def build_chat_router() -> APIRouter:
                     )
 
                 if hub is not None and not started:
-                    hub.publish_chat_started(assistant_message_id, response_id=response_id)
+                    hub.publish_chat_started(
+                        assistant_message_id,
+                        response_id=response_id,
+                        reasoning_session_id=reasoning_session_id,
+                        reasoning_state=reasoning_payload,
+                    )
                     started = True
 
                 call_signature = _build_function_call_signature(function_calls)
@@ -1595,7 +1794,12 @@ def build_chat_router() -> APIRouter:
             return _fallback_without_tools("tool_call_recursion_limit_exceeded")
         except HTTPException:
             if hub is not None and started:
-                hub.publish_chat_failed(assistant_message_id, "tool execution failed")
+                hub.publish_chat_failed(
+                    assistant_message_id,
+                    "tool execution failed",
+                    reasoning_session_id=reasoning_session_id,
+                    reasoning_state=reasoning_payload,
+                )
             raise
         except httpx.HTTPStatusError as exception:
             detail = str(exception)
@@ -1605,11 +1809,21 @@ def build_chat_router() -> APIRouter:
             except Exception:  # noqa: BLE001
                 pass
             if hub is not None and started:
-                hub.publish_chat_failed(assistant_message_id, f"{payload_hint}; {detail}")
+                hub.publish_chat_failed(
+                    assistant_message_id,
+                    f"{payload_hint}; {detail}",
+                    reasoning_session_id=reasoning_session_id,
+                    reasoning_state=reasoning_payload,
+                )
             raise HTTPException(status_code=502, detail=f"{payload_hint}; {detail}") from exception
         except Exception as exception:  # noqa: BLE001
             if hub is not None and started:
-                hub.publish_chat_failed(assistant_message_id, str(exception))
+                hub.publish_chat_failed(
+                    assistant_message_id,
+                    str(exception),
+                    reasoning_session_id=reasoning_session_id,
+                    reasoning_state=reasoning_payload,
+                )
             raise HTTPException(status_code=502, detail=str(exception)) from exception
 
     @router.get("/chat/folder-permissions")
@@ -1664,7 +1878,7 @@ def build_chat_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="folder permission not found")
         return _build_folder_permission_response()
 
-    @router.post("/chat")
+    @router.post("/chat", response_model_exclude_none=True)
     def chat(
         request_body: ChatRequest,
         request: Request,
@@ -1773,6 +1987,18 @@ def build_chat_router() -> APIRouter:
             user_message=request_body.message,
             requested_skills=request_body.skills,
         )
+        reasoning_state: ChatReasoningState | None = None
+        reasoning_session_id: str | None = None
+        if config.chat_continuous_reasoning_enabled and request_body.reasoning is not None and request_body.reasoning.enabled:
+            reasoning_state = _start_reasoning_session(
+                user_message=request_body.message,
+                session_id=request_body.reasoning.session_id,
+            )
+            reasoning_session_id = reasoning_state.session_id
+            instructions = _append_reasoning_instruction(
+                instructions,
+                reasoning_state=reasoning_state,
+            )
         mcp_registry = _build_chat_mcp_registry(request_body.mcp_servers)
 
         assistant_message_id = f"assistant_{uuid4().hex}"
@@ -1785,6 +2011,8 @@ def build_chat_router() -> APIRouter:
                 instructions=instructions,
                 assistant_message_id=assistant_message_id,
                 knowledge_references=knowledge_references,
+                reasoning_session_id=reasoning_session_id,
+                reasoning_state=reasoning_state,
             )
         else:
             submission, output_text = _run_chat_submission_with_tools(
@@ -1796,10 +2024,20 @@ def build_chat_router() -> APIRouter:
                 knowledge_references=knowledge_references,
                 extra_tools=mcp_registry.tools,
                 mcp_registry=mcp_registry,
+                reasoning_session_id=reasoning_session_id,
+                reasoning_state=reasoning_state,
             )
         if tracker is not None:
             tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
 
+        finalized_reasoning_state = _update_reasoning_session_after_completion(
+            reasoning_state=reasoning_state,
+            user_message=request_body.message,
+            output_text=output_text,
+        )
+        finalized_reasoning_session_id = (
+            finalized_reasoning_state.session_id if finalized_reasoning_state is not None else None
+        )
         write_success = False
         try:
             write_success = bool(
@@ -1807,6 +2045,12 @@ def build_chat_router() -> APIRouter:
                     request_body.message,
                     output_text,
                     assistant_message_id,
+                    reasoning_session_id=finalized_reasoning_session_id,
+                    reasoning_state=(
+                        finalized_reasoning_state.model_dump(mode="json")
+                        if finalized_reasoning_state is not None
+                        else None
+                    ),
                 )
             )
         except Exception as exc:  # noqa: BLE001
@@ -1820,6 +2064,8 @@ def build_chat_router() -> APIRouter:
                 user_message=request_body.message,
                 assistant_response=output_text,
                 assistant_session_id=assistant_message_id,
+                reasoning_session_id=finalized_reasoning_session_id,
+                reasoning_state=finalized_reasoning_state,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("mirror exchange to memory repository failed: %s", exc)
@@ -1837,10 +2083,18 @@ def build_chat_router() -> APIRouter:
         latest_state = state_store.get()
         next_thought = _build_post_chat_thought(request_body.message, output_text)
         state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))
+        if finalized_reasoning_state is not None:
+            _remember_reasoning_session_for_assistant(assistant_message_id, finalized_reasoning_state.session_id)
+            submission = submission.model_copy(
+                update={
+                    "reasoning_session_id": finalized_reasoning_state.session_id,
+                    "reasoning_state": finalized_reasoning_state,
+                }
+            )
 
         return submission
 
-    @router.post("/chat/resume")
+    @router.post("/chat/resume", response_model_exclude_none=True)
     def resume_chat(
         request_body: ChatResumeRequest,
         request: Request,
@@ -1893,6 +2147,22 @@ def build_chat_router() -> APIRouter:
             expression_style_context=expression_style_context or None,
             folder_permissions=config.list_folder_permissions(),
         )
+        resume_reasoning_session_id = (
+            _resolve_resume_reasoning_session_id(request_body, memory_repository=memory_repository)
+            if config.chat_continuous_reasoning_enabled
+            else None
+        )
+        resume_reasoning_state: ChatReasoningState | None = None
+        if resume_reasoning_session_id is not None:
+            resume_reasoning_state = _start_reasoning_session(
+                user_message=request_body.message,
+                session_id=resume_reasoning_session_id,
+            )
+            instructions = _append_reasoning_instruction(
+                instructions,
+                reasoning_state=resume_reasoning_state,
+            )
+
         instructions = f"{instructions}\n\n{_build_resume_instruction(request_body.partial_content)}"
         instructions = _append_skill_context(
             instructions,
@@ -1911,10 +2181,20 @@ def build_chat_router() -> APIRouter:
             knowledge_references=knowledge_references,
             extra_tools=mcp_registry.tools,
             mcp_registry=mcp_registry,
+            reasoning_session_id=resume_reasoning_state.session_id if resume_reasoning_state is not None else None,
+            reasoning_state=resume_reasoning_state,
         )
         if tracker is not None:
             tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
 
+        finalized_reasoning_state = _update_reasoning_session_after_completion(
+            reasoning_state=resume_reasoning_state,
+            user_message=request_body.message,
+            output_text=output_text,
+        )
+        finalized_reasoning_session_id = (
+            finalized_reasoning_state.session_id if finalized_reasoning_state is not None else None
+        )
         write_success = False
         try:
             write_success = bool(
@@ -1922,6 +2202,12 @@ def build_chat_router() -> APIRouter:
                     request_body.message,
                     output_text,
                     request_body.assistant_message_id,
+                    reasoning_session_id=finalized_reasoning_session_id,
+                    reasoning_state=(
+                        finalized_reasoning_state.model_dump(mode="json")
+                        if finalized_reasoning_state is not None
+                        else None
+                    ),
                 )
             )
         except Exception as exc:  # noqa: BLE001
@@ -1935,6 +2221,8 @@ def build_chat_router() -> APIRouter:
                 user_message=request_body.message,
                 assistant_response=output_text,
                 assistant_session_id=request_body.assistant_message_id,
+                reasoning_session_id=finalized_reasoning_session_id,
+                reasoning_state=finalized_reasoning_state,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("mirror exchange to memory repository failed: %s", exc)
@@ -1952,6 +2240,17 @@ def build_chat_router() -> APIRouter:
         latest_state = state_store.get()
         next_thought = _build_post_chat_thought(request_body.message, output_text)
         state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))
+        if finalized_reasoning_state is not None:
+            _remember_reasoning_session_for_assistant(
+                request_body.assistant_message_id,
+                finalized_reasoning_state.session_id,
+            )
+            submission = submission.model_copy(
+                update={
+                    "reasoning_session_id": finalized_reasoning_state.session_id,
+                    "reasoning_state": finalized_reasoning_state,
+                }
+            )
 
         return submission
 

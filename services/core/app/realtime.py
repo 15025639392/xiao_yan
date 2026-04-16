@@ -165,36 +165,44 @@ class AppRealtimeHub:
         assistant_message_id: str,
         response_id: str | None = None,
         session_id: str | None = None,
+        reasoning_session_id: str | None = None,
+        reasoning_state: dict[str, Any] | None = None,
     ) -> None:
         seq = self._get_next_sequence(session_id or assistant_message_id)
-        self._schedule_payload(
-            "chat_started",
-            {
-                "assistant_message_id": assistant_message_id,
-                "response_id": response_id,
-                "session_id": session_id or assistant_message_id,
-                "sequence": seq,
-                "timestamp_ms": _current_timestamp_ms(),
-            },
-        )
+        payload = {
+            "assistant_message_id": assistant_message_id,
+            "response_id": response_id,
+            "session_id": session_id or assistant_message_id,
+            "sequence": seq,
+            "timestamp_ms": _current_timestamp_ms(),
+        }
+        if reasoning_session_id:
+            payload["reasoning_session_id"] = reasoning_session_id
+        if reasoning_state:
+            payload["reasoning_state"] = reasoning_state
+        self._schedule_payload("chat_started", payload)
 
     def publish_chat_delta(
         self,
         assistant_message_id: str,
         delta: str,
         session_id: str | None = None,
+        reasoning_session_id: str | None = None,
+        reasoning_state: dict[str, Any] | None = None,
     ) -> None:
         seq = self._get_next_sequence(session_id or assistant_message_id)
-        self._schedule_payload(
-            "chat_delta",
-            {
-                "assistant_message_id": assistant_message_id,
-                "delta": delta,
-                "session_id": session_id or assistant_message_id,
-                "sequence": seq,
-                "timestamp_ms": _current_timestamp_ms(),
-            },
-        )
+        payload = {
+            "assistant_message_id": assistant_message_id,
+            "delta": delta,
+            "session_id": session_id or assistant_message_id,
+            "sequence": seq,
+            "timestamp_ms": _current_timestamp_ms(),
+        }
+        if reasoning_session_id:
+            payload["reasoning_session_id"] = reasoning_session_id
+        if reasoning_state:
+            payload["reasoning_state"] = reasoning_state
+        self._schedule_payload("chat_delta", payload)
 
     def publish_chat_completed(
         self,
@@ -203,6 +211,8 @@ class AppRealtimeHub:
         content: str,
         session_id: str | None = None,
         knowledge_references: list[dict[str, Any]] | None = None,
+        reasoning_session_id: str | None = None,
+        reasoning_state: dict[str, Any] | None = None,
     ) -> None:
         seq = self._get_next_sequence(session_id or assistant_message_id)
         payload = {
@@ -215,6 +225,10 @@ class AppRealtimeHub:
         }
         if knowledge_references:
             payload["knowledge_references"] = knowledge_references
+        if reasoning_session_id:
+            payload["reasoning_session_id"] = reasoning_session_id
+        if reasoning_state:
+            payload["reasoning_state"] = reasoning_state
         self._schedule_payload("chat_completed", payload)
 
     def publish_chat_failed(
@@ -222,18 +236,22 @@ class AppRealtimeHub:
         assistant_message_id: str,
         error: str,
         session_id: str | None = None,
+        reasoning_session_id: str | None = None,
+        reasoning_state: dict[str, Any] | None = None,
     ) -> None:
         seq = self._get_next_sequence(session_id or assistant_message_id)
-        self._schedule_payload(
-            "chat_failed",
-            {
-                "assistant_message_id": assistant_message_id,
-                "error": error,
-                "session_id": session_id or assistant_message_id,
-                "sequence": seq,
-                "timestamp_ms": _current_timestamp_ms(),
-            },
-        )
+        payload = {
+            "assistant_message_id": assistant_message_id,
+            "error": error,
+            "session_id": session_id or assistant_message_id,
+            "sequence": seq,
+            "timestamp_ms": _current_timestamp_ms(),
+        }
+        if reasoning_session_id:
+            payload["reasoning_session_id"] = reasoning_session_id
+        if reasoning_state:
+            payload["reasoning_state"] = reasoning_state
+        self._schedule_payload("chat_failed", payload)
 
     def _schedule_broadcast(
         self,

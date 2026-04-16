@@ -215,10 +215,19 @@ def test_mempalace_adapter_record_exchange_returns_false_when_message_is_blank()
 def test_mempalace_adapter_record_exchange_calls_write_backend():
     captured: dict[str, str] = {}
 
-    def _stub_write(*, content: str, source_context: str, session_id: str | None) -> bool:
+    def _stub_write(
+        *,
+        content: str,
+        source_context: str,
+        session_id: str | None,
+        reasoning_session_id: str | None,
+        reasoning_state: dict | None,
+    ) -> bool:
         captured["content"] = content
         captured["source_context"] = source_context
         captured["session_id"] = session_id or ""
+        captured["reasoning_session_id"] = reasoning_session_id or ""
+        captured["reasoning_state"] = "" if reasoning_state is None else str(reasoning_state.get("session_id") or "")
         return True
 
     adapter = MemPalaceAdapter(
@@ -227,17 +236,39 @@ def test_mempalace_adapter_record_exchange_calls_write_backend():
         write_backend=_stub_write,
     )
 
-    result = adapter.record_exchange("你还记得星星吗", "我记得", "assistant_42")
+    result = adapter.record_exchange(
+        "你还记得星星吗",
+        "我记得",
+        "assistant_42",
+        reasoning_session_id="reasoning_42",
+        reasoning_state={
+            "session_id": "reasoning_42",
+            "phase": "exploring",
+            "step_index": 2,
+            "summary": "继续推理",
+            "updated_at": "2026-04-16T10:00:00+00:00",
+        },
+    )
 
     assert result is True
     assert captured["content"].startswith("> 你还记得星星吗")
     assert "我记得" in captured["content"]
     assert captured["source_context"] == "xiaoyan_chat_exchange"
     assert captured["session_id"] == "assistant_42"
+    assert captured["reasoning_session_id"] == "reasoning_42"
+    assert captured["reasoning_state"] == "reasoning_42"
 
 
 def test_mempalace_adapter_does_not_fallback_to_local_history_when_write_backend_fails():
-    def _broken_write(*, content: str, source_context: str, session_id: str | None) -> bool:
+    def _broken_write(
+        *,
+        content: str,
+        source_context: str,
+        session_id: str | None,
+        reasoning_session_id: str | None,
+        reasoning_state: dict | None,
+    ) -> bool:
+        _ = (reasoning_session_id, reasoning_state)
         raise RuntimeError("write unavailable")
 
     adapter = MemPalaceAdapter(
@@ -268,6 +299,11 @@ def test_mempalace_adapter_list_recent_chat_messages_keeps_session_id_from_metad
                         "room": "chat_exchange",
                         "filed_at": "2026-04-11T00:00:00+00:00",
                         "session_id": "assistant_abc123",
+                        "reasoning_session_id": "reasoning_abc123",
+                        "reasoning_state": (
+                            '{"session_id":"reasoning_abc123","phase":"exploring",'
+                            '"step_index":3,"summary":"继续推理","updated_at":"2026-04-16T10:00:00+00:00"}'
+                        ),
                     }
                 ],
             }
@@ -280,9 +316,13 @@ def test_mempalace_adapter_list_recent_chat_messages_keeps_session_id_from_metad
     assert len(recent) == 2
     assert recent[0]["role"] == "assistant"
     assert recent[0]["session_id"] == "assistant_abc123"
+    assert recent[0]["reasoning_session_id"] == "reasoning_abc123"
+    assert recent[0]["reasoning_state"]["step_index"] == 3
     assert recent[1]["role"] == "user"
     assert observed_limits == [200]
     assert recent[1]["session_id"] == "assistant_abc123"
+    assert recent[1]["reasoning_session_id"] is None
+    assert recent[1]["reasoning_state"] is None
 
 
 def test_mempalace_adapter_cross_room_source_probe_ignores_event_room():

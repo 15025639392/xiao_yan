@@ -235,6 +235,31 @@ export function ChatConfigPanel({
 
       <div className="config-panel__section">
         <div className="config-panel__section-header">
+          <span className="config-panel__section-icon">🧠</span>
+          <label className="config-panel__label" htmlFor="chat-config-continuous-reasoning">
+            持续推理
+          </label>
+        </div>
+        <p className="config-panel__description">
+          开启后每轮对话都会携带持续推理参数，并在失败后继续生成时沿用同一推理会话。
+        </p>
+        <label className="config-panel__switch-row" htmlFor="chat-config-continuous-reasoning">
+          <span>启用持续推理</span>
+          <input
+            id="chat-config-continuous-reasoning"
+            aria-label="启用持续推理"
+            type="checkbox"
+            checked={Boolean(config.chat_continuous_reasoning_enabled)}
+            disabled={isUpdating}
+            onChange={(event) => {
+              void onUpdate({ chat_continuous_reasoning_enabled: event.target.checked });
+            }}
+          />
+        </label>
+      </div>
+
+      <div className="config-panel__section">
+        <div className="config-panel__section-header">
           <span className="config-panel__section-icon">🧩</span>
           <label className="config-panel__label">MCP 工具</label>
         </div>

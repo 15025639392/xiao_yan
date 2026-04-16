@@ -40,6 +40,7 @@ class ConfigUpdateRequest(BaseModel):
     chat_provider: str | None = Field(default=None, min_length=1, description="聊天服务商标识，例如 openai/minimaxi/nvidia/deepseek")
     chat_model: str | None = Field(default=None, min_length=1, description="聊天模型名称，例如 gpt-5.4")
     chat_read_timeout_seconds: int | None = Field(default=None, ge=10, le=600, description="聊天 read 超时（秒），默认 180")
+    chat_continuous_reasoning_enabled: bool | None = Field(default=None, description="是否启用 chat 持续推理能力")
     chat_mcp_enabled: bool | None = Field(default=None, description="是否启用 chat MCP 工具")
     chat_mcp_servers: list[dict[str, object]] | None = Field(default=None, description="chat MCP server 配置列表")
 
@@ -59,6 +60,7 @@ class ConfigResponse(BaseModel):
     chat_provider: str
     chat_model: str
     chat_read_timeout_seconds: int
+    chat_continuous_reasoning_enabled: bool = True
     chat_mcp_enabled: bool = False
     chat_mcp_servers: list[ChatMcpServerConfig] = Field(default_factory=list)
 
@@ -284,6 +286,7 @@ def build_config_router() -> APIRouter:
             chat_provider=config.chat_provider,
             chat_model=config.chat_model,
             chat_read_timeout_seconds=config.chat_read_timeout_seconds,
+            chat_continuous_reasoning_enabled=config.chat_continuous_reasoning_enabled,
             chat_mcp_enabled=config.chat_mcp_enabled,
             chat_mcp_servers=[ChatMcpServerConfig.model_validate(item) for item in config.list_chat_mcp_servers()],
         )
@@ -303,6 +306,7 @@ def build_config_router() -> APIRouter:
             and request.chat_provider is None
             and request.chat_model is None
             and request.chat_read_timeout_seconds is None
+            and request.chat_continuous_reasoning_enabled is None
             and request.chat_mcp_enabled is None
             and request.chat_mcp_servers is None
         ):
@@ -332,6 +336,8 @@ def build_config_router() -> APIRouter:
             if not chat_model:
                 raise HTTPException(status_code=400, detail="chat_model must not be empty")
             config.chat_model = chat_model
+        if request.chat_continuous_reasoning_enabled is not None:
+            config.chat_continuous_reasoning_enabled = request.chat_continuous_reasoning_enabled
         if request.chat_mcp_enabled is not None:
             config.chat_mcp_enabled = request.chat_mcp_enabled
         if request.chat_mcp_servers is not None:
@@ -346,6 +352,7 @@ def build_config_router() -> APIRouter:
             chat_provider=next_provider,
             chat_model=config.chat_model,
             chat_read_timeout_seconds=config.chat_read_timeout_seconds,
+            chat_continuous_reasoning_enabled=config.chat_continuous_reasoning_enabled,
             chat_mcp_enabled=config.chat_mcp_enabled,
             chat_mcp_servers=[ChatMcpServerConfig.model_validate(item) for item in config.list_chat_mcp_servers()],
         )

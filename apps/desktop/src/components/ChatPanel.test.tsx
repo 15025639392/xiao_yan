@@ -564,6 +564,123 @@ test("updates chat model inside config modal", async () => {
   });
 });
 
+test("updates continuous reasoning switch inside config modal", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+
+    if (url.endsWith("/config")) {
+      if (method === "GET") {
+        return new Response(
+          JSON.stringify({
+            chat_context_limit: 6,
+            chat_provider: "openai",
+            chat_model: "gpt-5.4",
+            chat_read_timeout_seconds: 180,
+            chat_continuous_reasoning_enabled: false,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      expect(method).toBe("PUT");
+      expect(init?.body).toBe(JSON.stringify({ chat_continuous_reasoning_enabled: true }));
+      return new Response(
+        JSON.stringify({
+          chat_context_limit: 6,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4",
+          chat_read_timeout_seconds: 180,
+          chat_continuous_reasoning_enabled: true,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config/chat-models")) {
+      return new Response(
+        JSON.stringify({
+          providers: [
+            {
+              provider_id: "openai",
+              provider_name: "OpenAI",
+              models: ["gpt-5.4", "gpt-5.4-mini"],
+              default_model: "gpt-5.4",
+              error: null,
+            },
+          ],
+          current_provider: "openai",
+          current_model: "gpt-5.4",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config/data-environment") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          testing_mode: false,
+          mempalace_palace_path: "/tmp/palace",
+          mempalace_wing: "wing_xiaoyan",
+          mempalace_room: "chat_exchange",
+          default_backup_directory: "/tmp/backups",
+          switch_backup_path: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat/folder-permissions") && method === "GET") {
+      return new Response(JSON.stringify({ permissions: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`unexpected request: ${url} [${method}]`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <ChatPanel
+      draft=""
+      focusGoalTitle={null}
+      focusModeLabel="常规自主"
+      isSending={false}
+      messages={[]}
+      modeLabel="运行中"
+      onDraftChange={vi.fn()}
+      onSend={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
+  const toggle = await screen.findByLabelText("启用持续推理");
+  fireEvent.click(toggle);
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/config",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ chat_continuous_reasoning_enabled: true }),
+      }),
+    );
+  });
+});
+
 test("shows MCP section as read-only inside config modal", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);

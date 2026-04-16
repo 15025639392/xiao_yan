@@ -319,6 +319,9 @@ export default function App() {
             "streaming",
             requestMessage,
             event.payload.sequence,
+            undefined,
+            event.payload.reasoning_session_id,
+            event.payload.reasoning_state,
           )
         );
         pendingRequestMessageRef.current = null;
@@ -333,6 +336,8 @@ export default function App() {
             event.payload.assistant_message_id,
             event.payload.delta,
             event.payload.sequence,
+            event.payload.reasoning_session_id,
+            event.payload.reasoning_state,
           );
           return updated;
         });
@@ -348,6 +353,8 @@ export default function App() {
             event.payload.content,
             event.payload.sequence,
             event.payload.knowledge_references,
+            event.payload.reasoning_session_id,
+            event.payload.reasoning_state,
           );
           return updated;
         });
@@ -357,7 +364,13 @@ export default function App() {
 
       if (event.type === "chat_failed") {
         setMessages((current) =>
-          markAssistantMessageFailed(current, event.payload.assistant_message_id, event.payload.sequence)
+          markAssistantMessageFailed(
+            current,
+            event.payload.assistant_message_id,
+            event.payload.sequence,
+            event.payload.reasoning_session_id,
+            event.payload.reasoning_state,
+          )
         );
         setError(event.payload.error);
         return;
@@ -848,6 +861,9 @@ export default function App() {
       );
       const requestBody: ChatRequestBody =
         attachments.length > 0 ? { message: content, attachments } : { message: content };
+      if (options?.continuousReasoningEnabled) {
+        requestBody.reasoning = { enabled: true };
+      }
       if (Array.isArray(options?.mcpServerIds)) {
         const normalizedMcpServerIds = Array.from(
           new Set(
@@ -960,6 +976,7 @@ export default function App() {
         message: message.requestMessage,
         assistant_message_id: message.id,
         partial_content: message.content,
+        reasoning_session_id: message.reasoningSessionId,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "继续生成失败");

@@ -8,6 +8,8 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
   incoming.forEach((message, index) => {
     const incomingMessageId = message.id;
     const incomingSessionId = message.session_id;
+    const incomingReasoningSessionId = resolveIncomingReasoningSessionId(message);
+    const incomingReasoningState = resolveIncomingReasoningState(message);
     const exactMatchIndex =
       incomingMessageId == null ? -1 : merged.findIndex((entry) => entry.id === incomingMessageId);
     if (exactMatchIndex >= 0 && incomingMessageId != null) {
@@ -16,6 +18,8 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
         id: incomingMessageId,
         role: message.role,
         content: message.content,
+        reasoningSessionId: incomingReasoningSessionId ?? merged[exactMatchIndex].reasoningSessionId,
+        reasoningState: incomingReasoningState ?? merged[exactMatchIndex].reasoningState,
       };
       matchedIndexes.add(exactMatchIndex);
       return;
@@ -35,6 +39,8 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
         id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
         role: message.role,
         content: message.content,
+        reasoningSessionId: incomingReasoningSessionId ?? currentEntry.reasoningSessionId,
+        reasoningState: incomingReasoningState ?? currentEntry.reasoningState,
       };
       matchedIndexes.add(sessionMatchIndex);
       return;
@@ -52,6 +58,8 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
         id: incomingMessageId ?? merged[fallbackMatchIndex].id,
         role: message.role,
         content: message.content,
+        reasoningSessionId: incomingReasoningSessionId ?? merged[fallbackMatchIndex].reasoningSessionId,
+        reasoningState: incomingReasoningState ?? merged[fallbackMatchIndex].reasoningState,
       };
       matchedIndexes.add(fallbackMatchIndex);
       return;
@@ -72,6 +80,8 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
         id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
         role: message.role,
         content: message.content,
+        reasoningSessionId: incomingReasoningSessionId ?? currentEntry.reasoningSessionId,
+        reasoningState: incomingReasoningState ?? currentEntry.reasoningState,
       };
       matchedIndexes.add(inFlightMatchIndex);
       return;
@@ -81,6 +91,8 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
       id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
       role: message.role,
       content: message.content,
+      reasoningSessionId: incomingReasoningSessionId,
+      reasoningState: incomingReasoningState,
     });
     matchedIndexes.add(merged.length - 1);
   });
@@ -163,6 +175,29 @@ function findInFlightAssistantMatchIndex(
   return -1;
 }
 
+function resolveIncomingReasoningSessionId(message: ChatHistoryMessage): string | undefined {
+  if (message.role !== "assistant") {
+    return undefined;
+  }
+  const directSessionId =
+    typeof message.reasoning_session_id === "string" ? message.reasoning_session_id.trim() : "";
+  if (directSessionId) {
+    return directSessionId;
+  }
+  const fromStateSessionId =
+    message.reasoning_state != null && typeof message.reasoning_state.session_id === "string"
+      ? message.reasoning_state.session_id.trim()
+      : "";
+  return fromStateSessionId || undefined;
+}
+
+function resolveIncomingReasoningState(message: ChatHistoryMessage): ChatEntry["reasoningState"] | undefined {
+  if (message.role !== "assistant" || message.reasoning_state == null) {
+    return undefined;
+  }
+  return message.reasoning_state;
+}
+
 export function upsertAssistantMessage(
   current: ChatEntry[],
   assistantMessageId: string,
@@ -171,6 +206,8 @@ export function upsertAssistantMessage(
   requestMessage?: string,
   sequence?: number,
   knowledgeReferences?: ChatEntry["knowledgeReferences"],
+  reasoningSessionId?: string,
+  reasoningState?: ChatEntry["reasoningState"],
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (existing) {
@@ -182,6 +219,8 @@ export function upsertAssistantMessage(
             state,
             requestMessage: requestMessage ?? message.requestMessage,
             knowledgeReferences: knowledgeReferences ?? message.knowledgeReferences,
+            reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
+            reasoningState: reasoningState ?? message.reasoningState,
             streamSequence: maxStreamSequence(message.streamSequence, sequence),
           }
         : message,
@@ -197,6 +236,8 @@ export function upsertAssistantMessage(
       state,
       requestMessage,
       knowledgeReferences,
+      reasoningSessionId,
+      reasoningState,
       streamSequence: sequence,
     },
   ];
@@ -207,10 +248,22 @@ export function appendAssistantDelta(
   assistantMessageId: string,
   delta: string,
   sequence?: number,
+  reasoningSessionId?: string,
+  reasoningState?: ChatEntry["reasoningState"],
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (!existing) {
-    return upsertAssistantMessage(current, assistantMessageId, delta, "streaming", undefined, sequence);
+    return upsertAssistantMessage(
+      current,
+      assistantMessageId,
+      delta,
+      "streaming",
+      undefined,
+      sequence,
+      undefined,
+      reasoningSessionId,
+      reasoningState,
+    );
   }
 
   if (!shouldApplyStreamSequence(existing.streamSequence, sequence)) {
@@ -222,6 +275,8 @@ export function appendAssistantDelta(
           ...message,
           content: mergeAssistantStreamContent(message.content, delta, message.streamSequence, sequence),
           state: "streaming",
+          reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
+          reasoningState: reasoningState ?? message.reasoningState,
           streamSequence: maxStreamSequence(message.streamSequence, sequence),
         }
       : message,
@@ -271,6 +326,8 @@ export function finalizeAssistantMessage(
   content: string,
   sequence?: number,
   knowledgeReferences?: ChatEntry["knowledgeReferences"],
+  reasoningSessionId?: string,
+  reasoningState?: ChatEntry["reasoningState"],
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (existing) {
@@ -286,6 +343,8 @@ export function finalizeAssistantMessage(
             content: content || message.content,
             state: undefined,
             knowledgeReferences: knowledgeReferences ?? message.knowledgeReferences,
+            reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
+            reasoningState: reasoningState ?? message.reasoningState,
             streamSequence: maxStreamSequence(message.streamSequence, sequence),
           }
         : message,
@@ -300,6 +359,8 @@ export function finalizeAssistantMessage(
     undefined,
     sequence,
     knowledgeReferences,
+    reasoningSessionId,
+    reasoningState,
   );
 }
 
@@ -307,10 +368,22 @@ export function markAssistantMessageFailed(
   current: ChatEntry[],
   assistantMessageId: string,
   sequence?: number,
+  reasoningSessionId?: string,
+  reasoningState?: ChatEntry["reasoningState"],
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (!existing) {
-    return upsertAssistantMessage(current, assistantMessageId, "", "failed", undefined, sequence);
+    return upsertAssistantMessage(
+      current,
+      assistantMessageId,
+      "",
+      "failed",
+      undefined,
+      sequence,
+      undefined,
+      reasoningSessionId,
+      reasoningState,
+    );
   }
 
   if (!shouldApplyStreamSequence(existing.streamSequence, sequence)) {
@@ -319,7 +392,13 @@ export function markAssistantMessageFailed(
 
   return current.map((message) =>
     message.id === assistantMessageId
-      ? { ...message, state: "failed", streamSequence: maxStreamSequence(message.streamSequence, sequence) }
+      ? {
+          ...message,
+          state: "failed",
+          reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
+          reasoningState: reasoningState ?? message.reasoningState,
+          streamSequence: maxStreamSequence(message.streamSequence, sequence),
+        }
       : message,
   );
 }

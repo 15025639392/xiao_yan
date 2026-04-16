@@ -129,6 +129,7 @@ class RuntimeConfig:
         instance._chat_provider = get_chat_provider()
         instance._chat_model = get_chat_model()
         instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
+        instance._chat_continuous_reasoning_enabled = True
         instance._chat_mcp_enabled = False
         instance._chat_mcp_servers: dict[str, dict[str, Any]] = {}
         instance._self_programming_hard_failure_cooldown_minutes = 60
@@ -173,6 +174,8 @@ class RuntimeConfig:
                 instance._chat_model = get_chat_model()
             if not hasattr(instance, "_chat_read_timeout_seconds"):
                 instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
+            if not hasattr(instance, "_chat_continuous_reasoning_enabled"):
+                instance._chat_continuous_reasoning_enabled = True
             if not hasattr(instance, "_chat_mcp_enabled"):
                 instance._chat_mcp_enabled = False
             if not hasattr(instance, "_chat_mcp_servers") or not isinstance(instance._chat_mcp_servers, dict):
@@ -314,6 +317,16 @@ class RuntimeConfig:
     def chat_mcp_enabled(self, value: bool) -> None:
         with self._lock:
             self._chat_mcp_enabled = bool(value)
+
+    @property
+    def chat_continuous_reasoning_enabled(self) -> bool:
+        with self._lock:
+            return bool(self._chat_continuous_reasoning_enabled)
+
+    @chat_continuous_reasoning_enabled.setter
+    def chat_continuous_reasoning_enabled(self, value: bool) -> None:
+        with self._lock:
+            self._chat_continuous_reasoning_enabled = bool(value)
 
     def list_chat_mcp_servers(self) -> list[dict[str, Any]]:
         with self._lock:

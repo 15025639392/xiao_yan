@@ -94,6 +94,7 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     chat_provider: DEFAULT_CHAT_PROVIDER,
     chat_model: DEFAULT_CHAT_MODEL,
     chat_read_timeout_seconds: 180,
+    chat_continuous_reasoning_enabled: false,
     chat_mcp_enabled: false,
     chat_mcp_servers: [],
   });
@@ -199,6 +200,25 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchConfig()
+      .then((loadedConfig) => {
+        if (cancelled) {
+          return;
+        }
+        // Bootstrap chat-level config (e.g. continuous reasoning) without touching MCP selection state.
+        setConfig(loadedConfig);
+      })
+      .catch(() => {
+        // Keep default chat config when bootstrap fetch fails.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useChatScrollBehavior({
     messages,
     isSending,
@@ -219,12 +239,16 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
   }, []);
 
   function resolveSendOptions(): ChatSendOptions | undefined {
-    if (selectedMcpServerIds === null) {
-      return undefined;
+    const options: ChatSendOptions = {};
+    if (selectedMcpServerIds !== null) {
+      const enabledServerIdSet = new Set(listEnabledMcpServerIds(config));
+      const filteredServerIds = selectedMcpServerIds.filter((serverId) => enabledServerIdSet.has(serverId));
+      options.mcpServerIds = filteredServerIds;
     }
-    const enabledServerIdSet = new Set(listEnabledMcpServerIds(config));
-    const filteredServerIds = selectedMcpServerIds.filter((serverId) => enabledServerIdSet.has(serverId));
-    return { mcpServerIds: filteredServerIds };
+    if (config.chat_continuous_reasoning_enabled) {
+      options.continuousReasoningEnabled = true;
+    }
+    return Object.keys(options).length > 0 ? options : undefined;
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {

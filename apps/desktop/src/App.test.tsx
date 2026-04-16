@@ -652,6 +652,117 @@ test("sends selected mcp_servers in chat request body", async () => {
   });
 });
 
+test("sends reasoning payload when bootstrap config enables continuous reasoning", async () => {
+  let chatRequested = false;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          current_thought: null,
+          active_goal_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          chat_context_limit: 6,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4",
+          chat_read_timeout_seconds: 180,
+          chat_continuous_reasoning_enabled: true,
+          chat_mcp_enabled: false,
+          chat_mcp_servers: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat")) {
+      chatRequested = true;
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(JSON.stringify({ message: "继续说", reasoning: { enabled: true } }));
+      return new Response(
+        JSON.stringify({
+          response_id: "resp_reasoning_bootstrap_1",
+          assistant_message_id: "assistant_reasoning_bootstrap_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  render(<App />);
+  const socket = MockWebSocket.instances[0];
+  socket.open();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "继续说" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(chatRequested).toBe(true);
+  });
+});
+
 test("sends toolbox-selected skills in chat request body", async () => {
   localStorage.setItem(CHAT_TOOLBOX_SELECTED_SKILLS_KEY, JSON.stringify(["requirement-workflow", "bugfix-workflow"]));
   let chatRequested = false;
@@ -1953,8 +2064,10 @@ test("does not duplicate text when chat delta payloads overlap with previous suf
 test("continues generation in the same assistant bubble after failure", async () => {
   let resolveChatRequest: ((response: Response) => void) | null = null;
   let resolveResumeRequest: ((response: Response) => void) | null = null;
+  const reasoningSessionId = "reasoning_resume_1";
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    const method = init?.method ?? "GET";
 
     if (url.endsWith("/state")) {
       return new Response(
@@ -2007,6 +2120,89 @@ test("continues generation in the same assistant bubble after failure", async ()
       );
     }
 
+    if (url.endsWith("/config") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          chat_context_limit: 6,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4",
+          chat_read_timeout_seconds: 180,
+          chat_continuous_reasoning_enabled: false,
+          chat_mcp_enabled: false,
+          chat_mcp_servers: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config/chat-models")) {
+      return new Response(
+        JSON.stringify({
+          providers: [
+            {
+              provider_id: "openai",
+              provider_name: "OpenAI",
+              models: ["gpt-5.4", "gpt-5.4-mini"],
+              default_model: "gpt-5.4",
+              error: null,
+            },
+          ],
+          current_provider: "openai",
+          current_model: "gpt-5.4",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config/data-environment") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          testing_mode: false,
+          mempalace_palace_path: "/tmp/palace",
+          mempalace_wing: "wing_xiaoyan",
+          mempalace_room: "chat_exchange",
+          default_backup_directory: "/tmp/backups",
+          switch_backup_path: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat/folder-permissions") && method === "GET") {
+      return new Response(JSON.stringify({ permissions: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/config") && method === "PUT") {
+      expect(init?.body).toBe(JSON.stringify({ chat_continuous_reasoning_enabled: true }));
+      return new Response(
+        JSON.stringify({
+          chat_context_limit: 6,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4",
+          chat_read_timeout_seconds: 180,
+          chat_continuous_reasoning_enabled: true,
+          chat_mcp_enabled: false,
+          chat_mcp_servers: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     if (url.endsWith("/chat/resume")) {
       expect(init?.method).toBe("POST");
       expect(init?.body).toBe(
@@ -2014,6 +2210,7 @@ test("continues generation in the same assistant bubble after failure", async ()
           message: "继续说",
           assistant_message_id: "assistant_resume_1",
           partial_content: "前半句，",
+          reasoning_session_id: reasoningSessionId,
         }),
       );
       return await new Promise<Response>((resolve) => {
@@ -2023,7 +2220,12 @@ test("continues generation in the same assistant bubble after failure", async ()
 
     if (url.endsWith("/chat")) {
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ message: "继续说" }));
+      expect(init?.body).toBe(
+        JSON.stringify({
+          message: "继续说",
+          reasoning: { enabled: true },
+        }),
+      );
       return await new Promise<Response>((resolve) => {
         resolveChatRequest = resolve;
       });
@@ -2040,6 +2242,10 @@ test("continues generation in the same assistant bubble after failure", async ()
   const socket = MockWebSocket.instances[0];
   socket.open();
 
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
+  fireEvent.click(await screen.findByLabelText("启用持续推理"));
+  fireEvent.click(screen.getByLabelText("关闭"));
+
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "继续说" },
   });
@@ -2051,6 +2257,14 @@ test("continues generation in the same assistant bubble after failure", async ()
       payload: {
         assistant_message_id: "assistant_resume_1",
         response_id: "resp_failed_1",
+        reasoning_session_id: reasoningSessionId,
+        reasoning_state: {
+          session_id: reasoningSessionId,
+          phase: "planning",
+          step_index: 1,
+          summary: "规划续写步骤",
+          updated_at: "2026-04-16T10:00:00Z",
+        },
       },
     });
   });
@@ -2067,6 +2281,7 @@ test("continues generation in the same assistant bubble after failure", async ()
 
   await waitFor(() => {
     expect(screen.getByText("前半句，▍")).toBeInTheDocument();
+    expect(screen.getByText("规划续写步骤")).toBeInTheDocument();
   });
 
   await act(async () => {
@@ -2099,6 +2314,14 @@ test("continues generation in the same assistant bubble after failure", async ()
       payload: {
         assistant_message_id: "assistant_resume_1",
         response_id: "resp_resume_1",
+        reasoning_session_id: reasoningSessionId,
+        reasoning_state: {
+          session_id: reasoningSessionId,
+          phase: "exploring",
+          step_index: 2,
+          summary: "继续补全后半句",
+          updated_at: "2026-04-16T10:00:20Z",
+        },
       },
     });
   });
@@ -2109,6 +2332,14 @@ test("continues generation in the same assistant bubble after failure", async ()
       payload: {
         assistant_message_id: "assistant_resume_1",
         delta: "后半句。",
+        reasoning_session_id: reasoningSessionId,
+        reasoning_state: {
+          session_id: reasoningSessionId,
+          phase: "finalizing",
+          step_index: 3,
+          summary: "整理最终回答",
+          updated_at: "2026-04-16T10:00:30Z",
+        },
       },
     });
   });
@@ -2137,12 +2368,21 @@ test("continues generation in the same assistant bubble after failure", async ()
         assistant_message_id: "assistant_resume_1",
         response_id: "resp_resume_1",
         content: "前半句，后半句。",
+        reasoning_session_id: reasoningSessionId,
+        reasoning_state: {
+          session_id: reasoningSessionId,
+          phase: "completed",
+          step_index: 4,
+          summary: "续写完成",
+          updated_at: "2026-04-16T10:00:40Z",
+        },
       },
     });
   });
 
   await waitFor(() => {
     expect(screen.getByText("前半句，后半句。")).toBeInTheDocument();
+    expect(screen.getByText("续写完成")).toBeInTheDocument();
   });
 
   expect(screen.queryAllByText("前半句，后半句。")).toHaveLength(1);

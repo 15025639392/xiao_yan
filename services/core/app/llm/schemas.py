@@ -3,6 +3,19 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class ChatReasoningRequest(BaseModel):
+    enabled: bool = False
+    session_id: str | None = None
+
+
+class ChatReasoningState(BaseModel):
+    session_id: str
+    phase: Literal["planning", "exploring", "finalizing", "completed"] = "planning"
+    step_index: int = Field(default=1, ge=1)
+    summary: str = ""
+    updated_at: str
+
+
 class ChatAttachment(BaseModel):
     type: Literal["folder", "file", "image"]
     path: str
@@ -20,12 +33,14 @@ class ChatRequest(BaseModel):
     attachments: list[ChatAttachment] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     mcp_servers: list[str] = Field(default_factory=list)
+    reasoning: ChatReasoningRequest | None = None
 
 
 class ChatResumeRequest(BaseModel):
     message: str
     assistant_message_id: str
     partial_content: str
+    reasoning_session_id: str | None = None
 
 
 class ChatResult(BaseModel):
@@ -36,6 +51,8 @@ class ChatResult(BaseModel):
 class ChatSubmissionResult(BaseModel):
     response_id: str | None = None
     assistant_message_id: str
+    reasoning_session_id: str | None = None
+    reasoning_state: ChatReasoningState | None = None
 
 
 class ChatHistoryMessage(BaseModel):
@@ -44,6 +61,8 @@ class ChatHistoryMessage(BaseModel):
     content: str
     created_at: str | None = None
     session_id: str | None = None
+    reasoning_session_id: str | None = None
+    reasoning_state: ChatReasoningState | None = None
 
 
 class ChatHistoryResponse(BaseModel):
