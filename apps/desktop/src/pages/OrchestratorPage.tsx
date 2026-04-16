@@ -120,9 +120,9 @@ export function OrchestratorPage({
       <section className="orchestrator-page orchestrator-page--empty">
         <div className="orchestrator-empty-card">
           <div className="orchestrator-empty-card__badge">主控工作台</div>
-          <h2 className="orchestrator-empty-card__title">等待显式进入主控模式</h2>
+          <h2 className="orchestrator-empty-card__title">主控工作台待命中</h2>
           <p className="orchestrator-empty-card__desc">
-            在聊天里发送“进入主控，处理当前项目”后，小晏会切到这里，用对话方式持续推进当前项目。
+            这里用于持续推进当前项目；当存在主控会话时，会展示对应的工作台内容。
           </p>
           <div className="orchestrator-empty-card__meta">
             <span>当前主控项目</span>

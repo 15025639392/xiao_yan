@@ -204,6 +204,13 @@
   margin-bottom: var(--space-2);
 }
 
+.app-sidebar__section-hint {
+  margin: var(--space-2) 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
 .app-sidebar__actions {
   display: flex;
   flex-direction: column;
