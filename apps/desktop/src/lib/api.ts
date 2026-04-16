@@ -99,31 +99,6 @@ export type SelfProgrammingJob = {
   } | null;
 };
 
-// 自我编程历史记录
-export type SelfProgrammingHistoryEntry = {
-  job_id: string;
-  target_area: string;
-  reason: string;
-  reason_statement?: string | null;
-  direction_statement?: string | null;
-  status: string;
-  outcome: string;
-  touched_files: string[];
-  created_at: string;
-  completed_at?: string | null;
-  health_score?: number | null;
-  had_rollback?: boolean;
-  rejection_phase?: "start" | "promotion" | null;
-  rejection_reason?: string | null;
-  start_approved_at?: string | null;
-  approved_at?: string | null;
-};
-
-export type SelfProgrammingRuntimeConfig = {
-  hard_failure_cooldown_minutes: number;
-  proactive_cooldown_minutes: number;
-};
-
 export type DelegateCommandResult = {
   command: string;
   success: boolean;
@@ -955,96 +930,6 @@ export function updateGoalStatus(
   status: Goal["status"],
 ): Promise<Goal> {
   return post<Goal>(`/goals/${goalId}/status`, { status });
-}
-
-// 自我编程 API
-
-/** 获取自我编程历史记录 */
-export function fetchSelfProgrammingHistory(): Promise<{ entries: SelfProgrammingHistoryEntry[] }> {
-  return get<{ entries: SelfProgrammingHistoryEntry[] }>("/self-programming/history");
-}
-
-/** 触发回滚操作 */
-export function rollbackSelfProgrammingJob(jobId: string, reason?: string): Promise<{ success: boolean; message: string }> {
-  return post<{ success: boolean; message: string }>(`/self-programming/${jobId}/rollback`, { reason });
-}
-
-/** 提交开工申请 */
-export function requestStartSelfProgrammingJob(
-  jobId: string,
-  reason?: string,
-): Promise<{ success: boolean; message: string; job_id: string }> {
-  return post<{ success: boolean; message: string; job_id: string }>(
-    `/self-programming/${jobId}/request-start`,
-    reason ? { reason } : undefined,
-  );
-}
-
-/** 确认开工 */
-export function approveStartSelfProgrammingJob(
-  jobId: string,
-  reason?: string,
-): Promise<{ success: boolean; message: string; job_id: string }> {
-  return post<{ success: boolean; message: string; job_id: string }>(
-    `/self-programming/${jobId}/approve-start`,
-    reason ? { reason } : undefined,
-  );
-}
-
-/** 拒绝开工 */
-export function rejectStartSelfProgrammingJob(
-  jobId: string,
-  reason: string,
-): Promise<{ success: boolean; message: string; job_id: string }> {
-  return post<{ success: boolean; message: string; job_id: string }>(
-    `/self-programming/${jobId}/reject-start`,
-    { reason },
-  );
-}
-
-/** 触发委托执行 */
-export function delegateSelfProgrammingJob(
-  jobId: string,
-  provider = "codex",
-): Promise<{ success: boolean; message: string; job_id: string }> {
-  return post<{ success: boolean; message: string; job_id: string }>(
-    `/self-programming/${jobId}/delegate`,
-    { provider },
-  );
-}
-
-/** 批准自我编程 Job */
-export function approveSelfProgrammingJob(
-  jobId: string,
-  reason?: string,
-): Promise<{ success: boolean; message: string; job_id: string }> {
-  return post<{ success: boolean; message: string; job_id: string }>(
-    `/self-programming/${jobId}/approve`,
-    reason ? { reason } : undefined,
-  );
-}
-
-/** 拒绝自我编程 Job */
-export function rejectSelfProgrammingJob(
-  jobId: string,
-  reason: string,
-): Promise<{ success: boolean; message: string; job_id: string }> {
-  return post<{ success: boolean; message: string; job_id: string }>(
-    `/self-programming/${jobId}/reject`,
-    { reason },
-  );
-}
-
-/** 获取自我编程冷却配置 */
-export function fetchSelfProgrammingConfig(): Promise<SelfProgrammingRuntimeConfig> {
-  return get<SelfProgrammingRuntimeConfig>("/config/self-programming");
-}
-
-/** 更新自我编程冷却配置 */
-export function updateSelfProgrammingConfig(
-  patch: Partial<SelfProgrammingRuntimeConfig>,
-): Promise<SelfProgrammingRuntimeConfig> {
-  return put<SelfProgrammingRuntimeConfig>("/config/self-programming", patch);
 }
 
 /** 获取目标准入稳定性阈值配置 */

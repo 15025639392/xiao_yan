@@ -65,16 +65,6 @@ class ConfigResponse(BaseModel):
     chat_mcp_servers: list[ChatMcpServerConfig] = Field(default_factory=list)
 
 
-class SelfProgrammingConfigUpdateRequest(BaseModel):
-    hard_failure_cooldown_minutes: int | None = Field(default=None, ge=1, le=10080)
-    proactive_cooldown_minutes: int | None = Field(default=None, ge=1, le=10080)
-
-
-class SelfProgrammingConfigResponse(BaseModel):
-    hard_failure_cooldown_minutes: int
-    proactive_cooldown_minutes: int
-
-
 class GoalAdmissionConfigUpdateRequest(BaseModel):
     stability_warning_rate: float | None = Field(default=None, ge=0.0, le=1.0)
     stability_danger_rate: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -291,14 +281,6 @@ def build_config_router() -> APIRouter:
             chat_mcp_servers=[ChatMcpServerConfig.model_validate(item) for item in config.list_chat_mcp_servers()],
         )
 
-    @router.get("/config/self-programming")
-    def get_self_programming_config() -> SelfProgrammingConfigResponse:
-        config = get_runtime_config()
-        return SelfProgrammingConfigResponse(
-            hard_failure_cooldown_minutes=config.self_programming_hard_failure_cooldown_minutes,
-            proactive_cooldown_minutes=config.self_programming_proactive_cooldown_minutes,
-        )
-
     @router.put("/config")
     def update_config(request: ConfigUpdateRequest) -> ConfigResponse:
         if (
@@ -355,30 +337,6 @@ def build_config_router() -> APIRouter:
             chat_continuous_reasoning_enabled=config.chat_continuous_reasoning_enabled,
             chat_mcp_enabled=config.chat_mcp_enabled,
             chat_mcp_servers=[ChatMcpServerConfig.model_validate(item) for item in config.list_chat_mcp_servers()],
-        )
-
-    @router.put("/config/self-programming")
-    def update_self_programming_config(
-        request: SelfProgrammingConfigUpdateRequest,
-    ) -> SelfProgrammingConfigResponse:
-        if (
-            request.hard_failure_cooldown_minutes is None
-            and request.proactive_cooldown_minutes is None
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="at least one self-programming config field is required",
-            )
-
-        config = get_runtime_config()
-        if request.hard_failure_cooldown_minutes is not None:
-            config.self_programming_hard_failure_cooldown_minutes = request.hard_failure_cooldown_minutes
-        if request.proactive_cooldown_minutes is not None:
-            config.self_programming_proactive_cooldown_minutes = request.proactive_cooldown_minutes
-
-        return SelfProgrammingConfigResponse(
-            hard_failure_cooldown_minutes=config.self_programming_hard_failure_cooldown_minutes,
-            proactive_cooldown_minutes=config.self_programming_proactive_cooldown_minutes,
         )
 
     @router.get("/config/goal-admission")

@@ -32,14 +32,12 @@ def test_chat_instructions_prioritize_internal_state_for_status_questions():
     instructions = build_chat_instructions(
         focus_goal_title="整理今天的对话记忆",
         latest_plan_completion="我把今天的计划“整理今天的对话记忆”完整走完了。",
-        latest_self_programming="我补强了状态展示，并通过了验证。",
         user_message="你现在在想什么",
         persona_system_prompt=persona_prompt,
     )
 
     assert "如果用户在问你当前状态" in instructions
-    assert "最近一次自我编程" in instructions
-    assert "先回答你此刻最在意的目标、今天的计划、刚完成的事或最近一次自我编程" in instructions
+    assert "先回答你此刻最在意的目标、今天的计划或刚完成的事" in instructions
     assert "再补充相关记忆" in instructions
 
 

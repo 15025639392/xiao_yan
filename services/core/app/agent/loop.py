@@ -17,7 +17,6 @@ from app.agent.loop_helpers import (
     build_next_goal_title as _build_next_goal_title,
     build_proactive_message as _build_proactive_message,
     build_proactive_thought as _build_proactive_thought,
-    build_self_programming_memory as _build_self_programming_memory,
     build_today_plan_completion_memory as _build_today_plan_completion_memory,
     build_today_plan_step_focus as _build_today_plan_step_focus,
     build_world_goal_start as _build_world_goal_start,
@@ -46,7 +45,6 @@ from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
 from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanPlanner
 from app.runtime import StateStore
-from app.self_programming.service import SelfProgrammingService
 from app.tools.runner import CommandRunner
 from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
 from app.world.service import WorldStateService
@@ -76,7 +74,6 @@ class AutonomyLoop:
         command_runner: CommandRunner | None = None,
         morning_plan_planner: MorningPlanPlanner | None = None,
         goal_admission_service: GoalAdmissionService | None = None,
-        self_programming_service: SelfProgrammingService | None = None,
         gateway=None,
     ) -> None:
         self.state_store = state_store
@@ -91,7 +88,6 @@ class AutonomyLoop:
         self.goal_admission_service = goal_admission_service or GoalAdmissionService(
             store=GoalAdmissionStore.in_memory(),
         )
-        self.self_programming_service = self_programming_service
 
     def tick_once(self):
         state = self.state_store.get()
@@ -104,9 +100,6 @@ class AutonomyLoop:
         if transitioned:
             return state
         state = self._sync_focus_mode(state)
-        self_programming_state = self._advance_self_programming(state, recent_events, now)
-        if self_programming_state is not None:
-            return self_programming_state
         world_state = self._world_state_for(state, now)
         seeded_plan_state = self._advance_morning_plan(state, now, world_state)
         if seeded_plan_state is not None:
@@ -662,35 +655,6 @@ class AutonomyLoop:
             )
             self.memory_repository.save_event(MemoryEvent.from_entry(entry))
         next_state = state.model_copy(update=updates)
-        return self.state_store.set(next_state)
-
-    def _advance_self_programming(self, state, recent_events, now: datetime):
-        if self.self_programming_service is None:
-            return None
-        if state.focus_mode == FocusMode.SELF_IMPROVEMENT:
-            next_state = self.self_programming_service.tick_job(state)
-            if next_state is None:
-                return None
-            if (
-                state.self_programming_job is not None
-                and next_state.self_programming_job is not None
-                and state.self_programming_job.status != next_state.self_programming_job.status
-                and next_state.self_programming_job.status.value in {"applied", "failed"}
-            ):
-                entry = MemoryEntry.create(
-                    kind=MemoryKind.EPISODIC,
-                    content=_build_self_programming_memory(next_state.self_programming_job),
-                )
-                self.memory_repository.save_event(MemoryEvent.from_entry(entry))
-            return self.state_store.set(next_state)
-
-        next_state = self.self_programming_service.maybe_start_job(
-            state,
-            recent_events,
-            now,
-        )
-        if next_state is None:
-            return None
         return self.state_store.set(next_state)
 
     def _world_state_for(self, state, now: datetime):

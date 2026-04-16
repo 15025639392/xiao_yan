@@ -203,11 +203,7 @@ test("keeps memory reachable as an optional entry instead of a primary nav item"
 });
 
 test("redirects legacy history route to overview and exposes a history entry", async () => {
-  const fetchMock = createAppShellFetchMock([
-    (url) => (url.endsWith("/self-programming/history") ? jsonResponse({ entries: [] }) : null),
-  ]);
-
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", createAppShellFetchMock());
   window.location.hash = "#/history";
 
   await renderApp();
@@ -2986,133 +2982,6 @@ test("polls world state and renders the inner world panel", async () => {
   expect(screen.getByText("疲惫")).toBeInTheDocument();
   expect(screen.getByText("高")).toBeInTheDocument();
   expect(screen.getByText("夜里很安静，我有点困，但还惦记着整理今天的对话记忆。")).toBeInTheDocument();
-});
-
-test("renders a compact self programming overview from polled runtime state", async () => {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-
-    if (url.endsWith("/state")) {
-      return new Response(
-        JSON.stringify({
-          mode: "awake",
-          focus_mode: "self_programming",
-          current_thought: "我准备修一下自己的状态展示。",
-          active_goal_ids: [],
-          today_plan: null,
-          last_action: null,
-          self_programming_job: {
-            id: "job-1",
-            reason: "测试失败：状态面板没有展示自我编程状态。",
-            target_area: "ui",
-            status: "applied",
-            spec: "补上自我编程状态展示。",
-            patch_summary: "已修改状态面板并通过测试。",
-            red_verification: {
-              commands: ["npm test -- --run src/components/StatusPanel.test.tsx"],
-              passed: false,
-              summary: "1 failed",
-            },
-            verification: {
-              commands: ["npm test -- --run src/components/StatusPanel.test.tsx"],
-              passed: true,
-              summary: "3 passed",
-            },
-            touched_files: [
-              "apps/desktop/src/components/StatusPanel.tsx",
-              "apps/desktop/src/components/StatusPanel.test.tsx",
-            ],
-          },
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/messages")) {
-      return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/world")) {
-      return new Response(
-        JSON.stringify({
-          time_of_day: "afternoon",
-          energy: "medium",
-          mood: "engaged",
-          focus_tension: "medium",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/persona/emotion")) {
-      return new Response(
-        JSON.stringify({
-          primary_emotion: "engaged",
-          primary_intensity: "mild",
-          secondary_emotion: null,
-          secondary_intensity: "none",
-          mood_valence: 1,
-          arousal: 0,
-          is_calm: true,
-          active_entry_count: 0,
-          active_entries: [],
-          last_updated: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/memory/summary")) {
-      return new Response(
-        JSON.stringify({
-          total_estimated: 0,
-          by_kind: {},
-          recent_count: 0,
-          strong_memories: 0,
-          relationship: {
-            available: false,
-            boundaries: [],
-            commitments: [],
-            preferences: [],
-          },
-          available: true,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    throw new Error(`unexpected request: ${url}`);
-  });
-
-  vi.stubGlobal("fetch", fetchMock);
-
-  await renderApp();
-
-  expect(await screen.findByText("我准备修一下自己的状态展示。")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "查看执行历史" })).toBeInTheDocument();
-  expect(screen.queryByText("已修改状态面板并通过测试。")).not.toBeInTheDocument();
 });
 
 test("sends chat request with attached folder context after picking a folder", async () => {

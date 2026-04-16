@@ -13,8 +13,6 @@ export function OverviewPanel({
   state,
   world,
   macConsoleStatus,
-  onRollback,
-  onApprovalDecision,
   onNavigate,
 }: {
   focusGoalTitle: string | null;
@@ -25,8 +23,6 @@ export function OverviewPanel({
   state: BeingState;
   world: InnerWorldState | null;
   macConsoleStatus?: MacConsoleBootstrapStatus | null;
-  onRollback?: (jobId: string) => void;
-  onApprovalDecision?: (jobId: string, approved: boolean) => void;
   onNavigate: (route: "memory" | "orchestrator" | "persona") => void;
 }) {
   const isAwake = mode === "awake";
@@ -65,8 +61,6 @@ export function OverviewPanel({
             focusGoalTitle={focusGoalTitle}
             state={state}
             macConsoleStatus={macConsoleStatus}
-            onRollback={onRollback}
-            onApprovalDecision={onApprovalDecision}
             variant="compact"
           />
         </div>

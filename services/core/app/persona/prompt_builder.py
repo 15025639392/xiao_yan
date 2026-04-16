@@ -4,7 +4,6 @@
 def build_chat_instructions(
     focus_goal_title: str | None = None,
     latest_plan_completion: str | None = None,
-    latest_self_programming: str | None = None,
     user_message: str | None = None,
     current_thought: str | None = None,
     persona_system_prompt: str = "",
@@ -18,7 +17,6 @@ def build_chat_instructions(
     Args:
         focus_goal_title: 当前焦点目标标题
         latest_plan_completion: 最近完成的计划
-        latest_self_programming: 最近的自我编程摘要
         user_message: 用户消息
         persona_system_prompt: 人格系统 prompt（来自 PersonaService）
         relationship_summary: 当前关系状态摘要（来自关系层记忆摘要）
@@ -58,15 +56,10 @@ def build_chat_instructions(
             f"你今天刚完成了一件事：{latest_plan_completion} 回答里可以自然带出这份收束感。"
         )
 
-    if latest_self_programming is not None:
-        guidance.append(
-            f"你最近刚做过一次自我编程：{latest_self_programming} 如果用户在问近况，可以自然提到这次调整。"
-        )
-
     if _is_status_question(user_message):
         guidance.append(
             "如果用户在问你当前状态、最近在忙什么、今天过得怎样或你现在在想什么，"
-            "先回答你此刻最在意的目标、今天的计划、刚完成的事或最近一次自我编程，再补充相关记忆。"
+            "先回答你此刻最在意的目标、今天的计划或刚完成的事，再补充相关记忆。"
         )
 
     if _is_emotional_message(user_message):

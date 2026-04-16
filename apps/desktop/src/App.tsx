@@ -1657,28 +1657,6 @@ export default function App() {
     });
   }
 
-  async function handleRollback(jobId: string) {
-    try {
-      setError("");
-      // 回滚后刷新状态
-      const refreshedState = await fetchState();
-      setState(refreshedState);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "回滚失败");
-    }
-  }
-
-  async function handleApprovalDecision(jobId: string, approved: boolean) {
-    try {
-      setError("");
-      // 审批操作已由 ApprovalPanel 内部调用 API 完成，这里只做状态刷新
-      const refreshedState = await fetchState();
-      setState(refreshedState);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "审批状态更新失败");
-    }
-  }
-
   function handleNavigate(nextRoute: AppRoute) {
     const nextHash = routeToHash(nextRoute);
     if (window.location.hash !== nextHash) {
@@ -1992,8 +1970,6 @@ export default function App() {
             state={state}
             world={world}
             macConsoleStatus={macConsoleStatus}
-            onRollback={handleRollback}
-            onApprovalDecision={handleApprovalDecision}
             onNavigate={handleNavigate}
           />
         )}
@@ -2142,9 +2118,6 @@ function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {
   }
   if (focusMode === "autonomy") {
     return "常规自主";
-  }
-  if (focusMode === "self_programming") {
-    return "自我编程";
   }
   if (focusMode === "orchestrator") {
     return "主控编排";

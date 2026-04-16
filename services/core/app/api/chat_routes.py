@@ -324,16 +324,6 @@ def build_chat_router() -> APIRouter:
         except Exception:  # noqa: BLE001
             return Path(__file__).resolve().parents[4]
 
-    def _summarize_latest_self_programming(state) -> str | None:
-        job = state.self_programming_job
-        if job is None:
-            return None
-        if job.status.value == "applied":
-            return f"我补强了 {job.target_area}，并通过了验证。"
-        if job.status.value == "failed":
-            return f"我尝试补强 {job.target_area}，但还没通过验证。"
-        return None
-
     def _merge_chat_stream_content(current_content: str, delta: str) -> str:
         if not current_content:
             return delta
@@ -1892,8 +1882,6 @@ def build_chat_router() -> APIRouter:
         state = state_store.get()
         focus_goal = None if not state.active_goal_ids else goal_repository.get_goal(state.active_goal_ids[0])
         latest_plan_completion = None
-        latest_self_programming = _summarize_latest_self_programming(state)
-
         persona_service.infer_chat_emotion(request_body.message)
         persona_system_prompt = persona_service.build_system_prompt()
 
@@ -1967,7 +1955,6 @@ def build_chat_router() -> APIRouter:
         instructions = build_chat_instructions(
             focus_goal_title=None if focus_goal is None else focus_goal.title,
             latest_plan_completion=latest_plan_completion,
-            latest_self_programming=latest_self_programming,
             user_message=request_body.message,
             current_thought=state.current_thought,
             persona_system_prompt=persona_system_prompt,
@@ -2108,8 +2095,6 @@ def build_chat_router() -> APIRouter:
         state = state_store.get()
         focus_goal = None if not state.active_goal_ids else goal_repository.get_goal(state.active_goal_ids[0])
         latest_plan_completion = None
-        latest_self_programming = _summarize_latest_self_programming(state)
-
         persona_service.infer_chat_emotion(request_body.message)
         persona_system_prompt = persona_service.build_system_prompt()
         current_emotion = persona_service.profile.emotion
@@ -2138,7 +2123,6 @@ def build_chat_router() -> APIRouter:
         instructions = build_chat_instructions(
             focus_goal_title=None if focus_goal is None else focus_goal.title,
             latest_plan_completion=latest_plan_completion,
-            latest_self_programming=latest_self_programming,
             user_message=request_body.message,
             current_thought=state.current_thought,
             persona_system_prompt=persona_system_prompt,

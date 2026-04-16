@@ -11,8 +11,6 @@
  * - chat.css        聊天页面（消息/气泡/输入框/Markdown）
  * - overview.css    总览页面（Inspector/看板/指标卡/叙事）
  * - modal.css       弹窗/对话框
- * - self-programming.css  自我编程面板（候选/Diff/Git/安全检查）
- * - approval.css    审批交互面板
  * - tools.css       工具箱面板（5 Tab）
  * - capabilities.css 能力中枢页面（能力清单/学习进度/审批）
  * - responsive.css  响应式断点
@@ -26,8 +24,6 @@ import "./components.css";
 import "./chat/index.css";
 import "./overview.css";
 import "./modal.css";
-import "./self-programming.css";
-import "./approval.css";
 import "./tools.css";
 import "./capabilities.css";
 import "./orchestrator/tokens.css";

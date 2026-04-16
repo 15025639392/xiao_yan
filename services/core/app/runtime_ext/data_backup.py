@@ -227,7 +227,6 @@ def _resolve_data_entries() -> list[_DataEntry]:
         _DataEntry("capability_queue", get_capability_queue_storage_path().expanduser()),
         _DataEntry("orchestrator_sessions", get_orchestrator_storage_path().expanduser()),
         _DataEntry("orchestrator_messages", get_orchestrator_message_storage_path().expanduser()),
-        _DataEntry("self_programming_history", state_path.parent / ".self-programming-history.json"),
         _DataEntry("legacy_memory_jsonl", service_root / ".data" / "memory.jsonl"),
         _DataEntry("mempalace_palace", Path(get_mempalace_palace_path()).expanduser()),
     ]

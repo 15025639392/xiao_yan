@@ -60,7 +60,7 @@ test("renders her plan for today when a morning plan exists", () => {
   );
 
   expect(screen.getAllByText("今日计划").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("当前日程与自我编程状态")).toBeInTheDocument();
+  expect(screen.getByText("当前日程与运行状态")).toBeInTheDocument();
   expect(screen.getByText("整理今天的对话记忆")).toBeInTheDocument();
   expect(screen.getAllByText("待处理")).toHaveLength(2);
   expect(screen.getByText("把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
@@ -95,86 +95,12 @@ test("renders completed state when today's plan is finished", () => {
     />
   );
 
-  expect(screen.getByText("当前日程与自我编程状态")).toBeInTheDocument();
+  expect(screen.getByText("当前日程与运行状态")).toBeInTheDocument();
   expect(screen.getAllByText("已完成").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
   expect(screen.getByText("开始动手推进")).toBeInTheDocument();
 });
 
-
-test("renders self programming progress and verification result", () => {
-  render(
-    <StatusPanel
-      error=""
-      state={{
-        mode: "awake",
-        focus_mode: "self_programming",
-        current_thought: "我先停下来修一修自己。",
-        active_goal_ids: [],
-        last_action: null,
-        today_plan: null,
-        self_programming_job: {
-          id: "job-1",
-          reason: "测试失败：状态面板没有展示自我编程状态。",
-          target_area: "ui",
-          status: "verifying",
-          spec: "补上自我编程状态展示。",
-          patch_summary: "已修改 apps/desktop/src/components/StatusPanel.tsx",
-          red_verification: {
-            commands: ["npm test -- --run src/components/StatusPanel.test.tsx"],
-            passed: false,
-            summary: "1 failed",
-          },
-          verification: {
-            commands: ["npm test -- --run src/components/StatusPanel.test.tsx"],
-            passed: true,
-            summary: "1 passed",
-          },
-          touched_files: [
-            "apps/desktop/src/components/StatusPanel.tsx",
-            "apps/desktop/src/components/StatusPanel.test.tsx",
-          ],
-        },
-      }}
-    />
-  );
-
-  expect(screen.getAllByText("自我编程").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("ui")).toBeInTheDocument();
-  expect(screen.getAllByText("验证中").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("测试失败：状态面板没有展示自我编程状态。")).toBeInTheDocument();
-});
-
-
-test("renders start approval panel when self programming is pending start approval", () => {
-  render(
-    <StatusPanel
-      error=""
-      state={{
-        mode: "awake",
-        focus_mode: "self_programming",
-        current_thought: "等待确认开工。",
-        active_goal_ids: [],
-        last_action: null,
-        today_plan: null,
-        self_programming_job: {
-          id: "job-start-1",
-          reason: "测试失败：需要先确认开工。",
-          reason_statement: "我要先修复执行链路断裂问题",
-          direction_statement: "先修 rollback API 和 history 同源",
-          target_area: "self_programming",
-          status: "pending_start_approval",
-          spec: "补齐开工审批门禁。",
-          touched_files: [],
-        },
-      }}
-    />
-  );
-
-  expect(screen.getByText("开工审批")).toBeInTheDocument();
-  expect(screen.getByText("确认开工")).toBeInTheDocument();
-  expect(screen.getByText("我要先修复执行链路断裂问题")).toBeInTheDocument();
-});
 
 test("renders relationship state when relationship summary is available", async () => {
   fetchEmotionState.mockResolvedValue({

@@ -1809,7 +1809,7 @@ def test_post_chat_instructions_tell_persona_to_prioritize_current_focus_goal():
         assert "持续存在的人格体" in gateway.last_instructions
         assert "整理今天的对话记忆" in gateway.last_instructions
         assert "优先自然承接这个焦点目标" in gateway.last_instructions
-        assert "先回答你此刻最在意的目标、今天的计划、刚完成的事或最近一次自我编程" in gateway.last_instructions
+        assert "先回答你此刻最在意的目标、今天的计划或刚完成的事" in gateway.last_instructions
     finally:
         app.dependency_overrides.clear()
 
@@ -2124,53 +2124,6 @@ def test_post_chat_instructions_include_today_plan_completion_closure():
     finally:
         app.dependency_overrides.clear()
 
-
-def test_post_chat_instructions_include_latest_self_programming_result():
-    memory_repository = InMemoryMemoryRepository()
-    goal_repository = InMemoryGoalRepository()
-    state_store = StateStore(
-        BeingState(
-            mode=WakeMode.AWAKE,
-            focus_mode=FocusMode.AUTONOMY,
-            self_programming_job={
-                "reason": "测试失败：状态面板没有展示自我编程状态。",
-                "target_area": "ui",
-                "status": "applied",
-                "spec": "补上自我编程状态展示。",
-            },
-        )
-    )
-    gateway = StubGateway()
-
-    def override_gateway():
-        try:
-            yield gateway
-        finally:
-            gateway.close()
-
-    def override_memory_repository():
-        return memory_repository
-
-    def override_goal_repository():
-        return goal_repository
-
-    def override_state_store():
-        return state_store
-
-    app.dependency_overrides[get_chat_gateway] = override_gateway
-    app.dependency_overrides[get_memory_repository] = override_memory_repository
-    app.dependency_overrides[get_goal_repository] = override_goal_repository
-    app.dependency_overrides[get_state_store] = override_state_store
-
-    try:
-        client = TestClient(app)
-        response = client.post("/chat", json={"message": "你最近怎么样"})
-        assert response.status_code == 200
-        assert gateway.last_instructions is not None
-        assert "你最近刚做过一次自我编程" in gateway.last_instructions
-        assert "我补强了 ui，并通过了验证。" in gateway.last_instructions
-    finally:
-        app.dependency_overrides.clear()
 
 
 def test_get_messages_returns_recent_chat_events():

@@ -3,12 +3,8 @@ import type { BeingState, EmotionState, MacConsoleBootstrapStatus, RelationshipS
 import { fetchEmotionState, fetchMemorySummary } from "../lib/api";
 import { formatRelativeTimeZh } from "../lib/utils/time";
 import { subscribeAppRealtime } from "../lib/realtime";
-import { ApprovalPanel } from "./ApprovalPanel";
 import { MemoryRelationshipSummary } from "./memory/MemoryRelationshipSummary";
-import { StartApprovalPanel } from "./StartApprovalPanel";
 import { EmotionPanel } from "./status/EmotionPanel";
-import { SelfProgrammingCooldownSettings } from "./status/SelfProgrammingCooldownSettings";
-import { SelfProgrammingPanel } from "./status/SelfProgrammingPanel";
 import { TodayPlanSection } from "./status/TodayPlanSection";
 import { Panel } from "./ui/Panel";
 import { StatusBadge } from "./ui/StatusBadge";
@@ -19,8 +15,6 @@ type StatusPanelProps = {
   macConsoleStatus?: MacConsoleBootstrapStatus | null;
   error: string;
   focusGoalTitle?: string | null;
-  onRollback?: (jobId: string) => void;
-  onApprovalDecision?: (jobId: string, approved: boolean) => void;
   variant?: "full" | "compact";
 };
 
@@ -28,13 +22,10 @@ export function StatusPanel({
   state,
   macConsoleStatus,
   error,
-  onRollback,
-  onApprovalDecision,
   variant = "full",
 }: StatusPanelProps) {
   const planCompleted =
     state.today_plan?.steps.length && state.today_plan.steps.every((step) => step.status === "completed");
-  const selfProgrammingJob = state.self_programming_job;
   const isCompact = variant === "compact";
   const [emotionState, setEmotionState] = useState<EmotionState | null>(null);
   const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
@@ -84,7 +75,7 @@ export function StatusPanel({
     : "";
 
   return (
-    <Panel icon="📋" title="今日计划" subtitle="当前日程与自我编程状态" actions={headerBadge}>
+    <Panel icon="📋" title="今日计划" subtitle="当前日程与运行状态" actions={headerBadge}>
       {macConsoleStatus ? (
         <section className="environment-status-card">
           <header className="environment-status-card__header">
@@ -124,33 +115,9 @@ export function StatusPanel({
 
       {!isCompact ? <MemoryRelationshipSummary relationship={relationship} /> : null}
 
-      {selfProgrammingJob ? (
-        selfProgrammingJob.status === "pending_start_approval"
-        || selfProgrammingJob.status === "drafted"
-        || selfProgrammingJob.status === "queued" ? (
-          <StartApprovalPanel
-            job={selfProgrammingJob}
-            onDecision={(jobId) => {
-              onApprovalDecision?.(jobId, true);
-            }}
-          />
-        ) : selfProgrammingJob.status === "pending_approval" ? (
-          <ApprovalPanel
-            job={selfProgrammingJob}
-            onDecision={(jobId, approved) => {
-              onApprovalDecision?.(jobId, approved);
-            }}
-          />
-        ) : !isCompact ? (
-          <SelfProgrammingPanel job={selfProgrammingJob} onRollback={onRollback} />
-        ) : null
-      ) : null}
-
       {error ? (
         <InlineAlert tone="danger">{error}</InlineAlert>
       ) : null}
-
-      {!isCompact && selfProgrammingJob ? <SelfProgrammingCooldownSettings /> : null}
     </Panel>
   );
 }

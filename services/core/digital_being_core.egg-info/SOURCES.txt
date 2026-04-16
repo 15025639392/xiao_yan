@@ -12,6 +12,7 @@ app/api/capabilities_routes.py
 app/api/chat_routes.py
 app/api/config_routes.py
 app/api/deps.py
+app/api/knowledge_routes.py
 app/api/memory_routes.py
 app/api/orchestrator_routes.py
 app/api/persona_routes.py
@@ -41,6 +42,9 @@ app/llm/enhanced_gateway.py
 app/llm/gateway.py
 app/llm/gateway_events.py
 app/llm/schemas.py
+app/mcp/__init__.py
+app/mcp/service.py
+app/mcp/stdio_client.py
 app/memory/associator.py
 app/memory/extractor.py
 app/memory/mempalace_adapter.py
@@ -136,6 +140,7 @@ tests/test_api_chat.py
 tests/test_api_config.py
 tests/test_api_cors.py
 tests/test_api_goals.py
+tests/test_api_knowledge.py
 tests/test_api_lifecycle.py
 tests/test_api_memory.py
 tests/test_api_orchestrator.py
@@ -149,6 +154,7 @@ tests/test_autonomy.py
 tests/test_autonomy_loop.py
 tests/test_capability_queue_persistence.py
 tests/test_chat_system.py
+tests/test_config_paths.py
 tests/test_domain_models.py
 tests/test_enhanced_gateway.py
 tests/test_expression_consistency.py
@@ -156,21 +162,18 @@ tests/test_expression_style.py
 tests/test_gateway.py
 tests/test_git_workflow.py
 tests/test_goal_admission.py
-tests/test_goal_admission_canary_pipeline.py
-tests/test_goal_admission_canary_summary.py
-tests/test_goal_admission_mock_samples.py
-tests/test_goal_admission_release_report.py
-tests/test_goal_admission_replay_compare.py
 tests/test_goal_management.py
 tests/test_goal_repository.py
 tests/test_health.py
 tests/test_integration_wake.py
 tests/test_lifecycle.py
 tests/test_mac_console_bootstrap.py
+tests/test_mcp_service.py
 tests/test_memory_associator.py
 tests/test_memory_extractor.py
 tests/test_memory_integration.py
 tests/test_memory_repository.py
+tests/test_memory_service_recent_limits.py
 tests/test_memory_system.py
 tests/test_mempalace_adapter.py
 tests/test_morning_plan_planner.py
@@ -179,6 +182,7 @@ tests/test_persona.py
 tests/test_persona_templates.py
 tests/test_preflight_safety_history.py
 tests/test_prompt_builder.py
+tests/test_realtime_hub.py
 tests/test_rollback_and_health.py
 tests/test_runtime.py
 tests/test_runtime_config.py
