@@ -178,13 +178,6 @@ MEMPALACE_ROOM=chat_exchange
 # 晨间计划 LLM 功能开关（可选）
 MORNING_PLAN_LLM_ENABLED=true
 
-# NVIDIA NIM（可选：接入英伟达服务商）
-NVIDIA_API_KEY=nvapi-xxxxx
-NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-NVIDIA_MODEL=meta/llama-3.1-70b-instruct
-NVIDIA_WIRE_API=chat
-CHAT_PROVIDER=nvidia
-
 # DeepSeek（可选：接入深度求索服务商）
 DEEPSEEK_API_KEY=sk-xxxxx
 DEEPSEEK_BASE_URL=https://api.deepseek.com

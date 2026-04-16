@@ -495,7 +495,6 @@ def test_gateway_from_env_supports_minimax_key_and_chat_default():
         "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL"),
         "OPENAI_WIRE_API": os.getenv("OPENAI_WIRE_API"),
         "OPENAI_MODEL": os.getenv("OPENAI_MODEL"),
-        "NVIDIA_API_KEY": os.getenv("NVIDIA_API_KEY"),
         "CHAT_PROVIDER": os.getenv("CHAT_PROVIDER"),
     }
 
@@ -506,7 +505,6 @@ def test_gateway_from_env_supports_minimax_key_and_chat_default():
         os.environ["OPENAI_BASE_URL"] = "https://api.minimaxi.com/v1"
         os.environ.pop("OPENAI_WIRE_API", None)
         os.environ["OPENAI_MODEL"] = "MiniMax-M2.7"
-        os.environ["NVIDIA_API_KEY"] = ""
         # Keep an explicit empty value so load_local_env() does not re-inject
         # CHAT_PROVIDER from local .env files via os.environ.setdefault().
         os.environ["CHAT_PROVIDER"] = ""
@@ -523,44 +521,10 @@ def test_gateway_from_env_supports_minimax_key_and_chat_default():
                 os.environ[key] = value
 
 
-def test_gateway_from_env_supports_nvidia_key_and_chat_default():
-    env_backup = {
-        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
-        "MINIMAX_API_KEY": os.getenv("MINIMAX_API_KEY"),
-        "NVIDIA_API_KEY": os.getenv("NVIDIA_API_KEY"),
-        "NVIDIA_MODEL": os.getenv("NVIDIA_MODEL"),
-        "NVIDIA_BASE_URL": os.getenv("NVIDIA_BASE_URL"),
-        "NVIDIA_WIRE_API": os.getenv("NVIDIA_WIRE_API"),
-        "CHAT_PROVIDER": os.getenv("CHAT_PROVIDER"),
-    }
-
-    try:
-        os.environ["OPENAI_API_KEY"] = ""
-        os.environ["MINIMAX_API_KEY"] = ""
-        os.environ["NVIDIA_API_KEY"] = "nvidia-key"
-        os.environ["NVIDIA_MODEL"] = "meta/llama-3.1-70b-instruct"
-        os.environ["NVIDIA_BASE_URL"] = "https://integrate.api.nvidia.com/v1"
-        os.environ.pop("NVIDIA_WIRE_API", None)
-        os.environ["CHAT_PROVIDER"] = "nvidia"
-
-        gateway = ChatGateway.from_env()
-        assert gateway.api_key == "nvidia-key"
-        assert gateway.wire_api == "chat"
-        assert gateway.model == "meta/llama-3.1-70b-instruct"
-        assert gateway.base_url == "https://integrate.api.nvidia.com/v1"
-    finally:
-        for key, value in env_backup.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
-
 def test_gateway_from_env_supports_deepseek_key_and_chat_default():
     env_backup = {
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
         "MINIMAX_API_KEY": os.getenv("MINIMAX_API_KEY"),
-        "NVIDIA_API_KEY": os.getenv("NVIDIA_API_KEY"),
         "DEEPSEEK_API_KEY": os.getenv("DEEPSEEK_API_KEY"),
         "DEEPSEEK_MODEL": os.getenv("DEEPSEEK_MODEL"),
         "DEEPSEEK_BASE_URL": os.getenv("DEEPSEEK_BASE_URL"),
@@ -571,7 +535,6 @@ def test_gateway_from_env_supports_deepseek_key_and_chat_default():
     try:
         os.environ["OPENAI_API_KEY"] = ""
         os.environ["MINIMAX_API_KEY"] = ""
-        os.environ["NVIDIA_API_KEY"] = ""
         os.environ["DEEPSEEK_API_KEY"] = "deepseek-key"
         os.environ["DEEPSEEK_MODEL"] = "deepseek-chat"
         os.environ["DEEPSEEK_BASE_URL"] = "https://api.deepseek.com"

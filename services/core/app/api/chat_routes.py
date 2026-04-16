@@ -373,8 +373,6 @@ def build_chat_router() -> APIRouter:
     def _supports_image_attachments(provider_id: str, model: str) -> bool:
         normalized_provider = (provider_id or "").strip().lower()
         normalized_model = (model or "").strip().lower()
-        if normalized_provider == "nvidia":
-            return False
         if normalized_provider == "openai":
             return any(
                 normalized_model.startswith(prefix)

@@ -2620,7 +2620,7 @@ def test_post_chat_attached_file_is_injected_into_user_context():
             config.set_folder_permission(folder_path, access_level)
 
 
-def test_post_chat_rejects_image_attachment_for_nvidia_provider():
+def test_post_chat_rejects_image_attachment_for_unsupported_model():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     config = get_runtime_config()
@@ -2640,8 +2640,8 @@ def test_post_chat_rejects_image_attachment_for_nvidia_provider():
     app.dependency_overrides[get_memory_repository] = override_memory_repository
 
     try:
-        config.chat_provider = "nvidia"
-        config.chat_model = "meta/llama-3.1-70b-instruct"
+        config.chat_provider = "openai"
+        config.chat_model = "gpt-3.5-turbo"
         with tempfile.TemporaryDirectory() as temp_dir:
             image_path = Path(temp_dir).resolve() / "sample.png"
             image_path.write_bytes(
