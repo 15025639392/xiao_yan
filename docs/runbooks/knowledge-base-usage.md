@@ -378,4 +378,3 @@ ENABLE_RELOAD=1 ./services/core/scripts/start_dev_server.sh
 ## 12. 相关文档
 
 - MemPalace 灰度与观测：`docs/runbooks/mempalace-rollout.md`
-- 需求/建设过程：`docs/requirements/2026-04-12-knowledge-base-construction.md`
