@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.agent.loop import AutonomyLoop
-from app.domain.models import BeingState, FocusMode, SelfProgrammingStatus, WakeMode
+from app.domain.models import BeingState, FocusMode, WakeMode
 from app.goals.admission import (
     DeferredGoalCandidate,
     GoalAdmissionService,
@@ -739,7 +739,7 @@ def test_tick_once_executes_action_step_declared_in_today_plan():
     assert state.today_plan.steps[0].status == "completed"
 
 
-def test_tick_once_does_not_enter_self_programming_when_test_failure_is_detected():
+def test_tick_once_ignores_removed_legacy_test_failure_trigger():
     now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
     store = StateStore(BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY))
     repo = InMemoryMemoryRepository()
@@ -749,10 +749,9 @@ def test_tick_once_does_not_enter_self_programming_when_test_failure_is_detected
     state = loop.tick_once()
 
     assert state.focus_mode == FocusMode.AUTONOMY
-    assert state.self_programming_job is None
 
 
-def test_tick_once_does_not_proactively_enter_self_programming_after_repeated_idle_progress():
+def test_tick_once_ignores_removed_legacy_idle_trigger():
     now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
     store = StateStore(
         BeingState(
@@ -770,36 +769,6 @@ def test_tick_once_does_not_proactively_enter_self_programming_after_repeated_id
     state = loop.tick_once()
 
     assert state.focus_mode == FocusMode.AUTONOMY
-    assert state.self_programming_job is None
-
-
-def test_tick_once_respects_self_programming_cooldown_for_proactive_trigger():
-    now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
-    store = StateStore(
-        BeingState(
-            mode=WakeMode.AWAKE,
-            focus_mode=FocusMode.AUTONOMY,
-            active_goal_ids=["goal-1"],
-            self_programming_job={
-                "reason": "之前已经做过一次自我编程",
-                "target_area": "agent",
-                "status": "applied",
-                "spec": "减少空转",
-                "cooldown_until": now + timedelta(hours=1),
-            },
-        )
-    )
-    repo = InMemoryMemoryRepository()
-    repo.save_event(MemoryEvent(kind="inner", content="我还在想怎么推进。"))
-    repo.save_event(MemoryEvent(kind="chat", role="assistant", content="我先整理一下思路。"))
-    repo.save_event(MemoryEvent(kind="autobio", content="今天一直停留在想法里。"))
-    loop = AutonomyLoop(store, repo, now_provider=lambda: now)
-
-    state = loop.tick_once()
-
-    assert state.focus_mode != FocusMode.SELF_IMPROVEMENT
-    assert state.self_programming_job is not None
-    assert state.self_programming_job.status == SelfProgrammingStatus.APPLIED
 
 
 def test_tick_once_shadow_mode_records_stats_without_blocking_goal_creation():

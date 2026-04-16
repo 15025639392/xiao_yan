@@ -221,13 +221,6 @@ class PersonaService:
         self._update_emotion(new_emotion)
         return new_emotion
 
-    def infer_self_programming_emotion(self, event_type: str, target_area: str) -> EmotionalState:
-        """从自我编程事件推断并应用情绪变化"""
-        current = self.profile.emotion
-        new_emotion = self.engine.infer_from_self_programming(current, event_type, target_area)
-        self._update_emotion(new_emotion)
-        return new_emotion
-
     # ── Prompt 生成 ──────────────────────────────────────
 
     def build_system_prompt(self) -> str:

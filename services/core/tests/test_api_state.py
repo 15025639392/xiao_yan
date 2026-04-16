@@ -21,23 +21,11 @@ def test_get_state_returns_current_runtime_state():
     assert "self_programming_job" not in response.json()
 
 
-def test_get_state_downgrades_self_programming_focus_to_autonomy():
+def test_get_state_omits_removed_legacy_fields():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
-            focus_mode=FocusMode.SELF_IMPROVEMENT,
-            self_programming_job={
-                "reason": "测试失败：状态面板没有展示自我编程状态。",
-                "target_area": "ui",
-                "status": "verifying",
-                "spec": "补上自我编程状态展示。",
-                "patch_summary": "已修改状态面板。",
-                "verification": {
-                    "commands": ["npm test -- --run src/components/StatusPanel.test.tsx"],
-                    "passed": True,
-                    "summary": "3 passed",
-                },
-            },
+            focus_mode=FocusMode.AUTONOMY,
         )
     )
 

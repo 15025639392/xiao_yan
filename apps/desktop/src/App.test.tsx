@@ -1004,7 +1004,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
           orchestrator_session: null,
         }),
         {
@@ -1113,7 +1112,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
           orchestrator_session: null,
         },
         messages: [],
@@ -1148,7 +1146,6 @@ test("keeps just-sent local user message when a transient runtime update has emp
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
           orchestrator_session: null,
         }),
         {
@@ -1224,7 +1221,6 @@ test("keeps just-sent local user message when a transient runtime update has emp
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
           orchestrator_session: null,
         },
         messages: [],
@@ -1275,7 +1271,6 @@ test("keeps just-completed local assistant reply when a transient runtime update
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
           orchestrator_session: null,
         }),
         {
@@ -1378,7 +1373,6 @@ test("keeps just-completed local assistant reply when a transient runtime update
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
           orchestrator_session: null,
         },
         messages: [],
@@ -2055,7 +2049,6 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
         }),
         {
           status: 200,
@@ -2155,7 +2148,6 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
         },
         messages: [
           { id: "mem_user_1", role: "user", content: "你好" },
@@ -2299,7 +2291,6 @@ test("renders proactive replies from realtime runtime updates in the chat panel"
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
         },
         messages: [
           { role: "assistant", content: "我刚刚又想到你提到的星星了。" },
@@ -2336,7 +2327,6 @@ test("syncs assistant name across app chrome when persona updates arrive", async
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          self_programming_job: null,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );

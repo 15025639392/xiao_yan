@@ -161,7 +161,6 @@ def build_persona_router() -> APIRouter:
             active_goal_ids=[],
             today_plan=None,
             last_action=None,
-            self_programming_job=None,
         )
         state_store.set(initial_state)
         return {

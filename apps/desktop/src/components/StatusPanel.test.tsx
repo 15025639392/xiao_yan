@@ -46,7 +46,6 @@ test("renders her plan for today when a morning plan exists", () => {
         current_thought: "今天先把轮廓理一下。",
         active_goal_ids: ["goal-1"],
         last_action: null,
-        self_programming_job: null,
         today_plan: {
           goal_id: "goal-1",
           goal_title: "整理今天的对话记忆",
@@ -82,7 +81,6 @@ test("renders completed state when today's plan is finished", () => {
           command: "pwd",
           output: "/Users/ldy/Desktop/map/ai",
         },
-        self_programming_job: null,
         today_plan: {
           goal_id: "goal-1",
           goal_title: "整理今天的对话记忆",
@@ -140,7 +138,6 @@ test("renders relationship state when relationship summary is available", async 
         active_goal_ids: [],
         last_action: null,
         today_plan: null,
-        self_programming_job: null,
       }}
     />
   );
@@ -167,7 +164,6 @@ test("compact variant keeps today plan visible and skips secondary insight fetch
         current_thought: "先保留主链路。",
         active_goal_ids: ["goal-1"],
         last_action: null,
-        self_programming_job: null,
         today_plan: {
           goal_id: "goal-1",
           goal_title: "收敛默认首页",
@@ -214,7 +210,6 @@ test("updates relationship state from realtime memory events", async () => {
         active_goal_ids: [],
         last_action: null,
         today_plan: null,
-        self_programming_job: null,
       }}
     />
   );

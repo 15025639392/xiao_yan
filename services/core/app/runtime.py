@@ -2,7 +2,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Callable
 
-from app.domain.models import BeingState, OrchestratorSession, SelfProgrammingJob, TodayPlan
+from app.domain.models import BeingState, OrchestratorSession, TodayPlan
 from app.memory.repository import MemoryRepository
 from app.utils.file_utils import read_json_file, write_json_file
 from app.usecases.lifecycle import go_to_sleep, wake_up
@@ -22,36 +22,32 @@ class StateStore:
         self._on_change = on_change
         self._state = self._load_state(initial_state)
 
+    def _normalize_state(self, state: BeingState) -> BeingState:
+        today_plan = state.today_plan
+        if today_plan is not None and not isinstance(today_plan, TodayPlan):
+            today_plan = TodayPlan.model_validate(today_plan)
+
+        orchestrator_session = state.orchestrator_session
+        if orchestrator_session is not None and not isinstance(
+            orchestrator_session, OrchestratorSession
+        ):
+            orchestrator_session = OrchestratorSession.model_validate(orchestrator_session)
+
+        return state.model_copy(
+            update={
+                "today_plan": today_plan,
+                "orchestrator_session": orchestrator_session,
+            },
+            deep=True,
+        )
+
     def get(self) -> BeingState:
         with self._lock:
             return self._state.model_copy(deep=True)
 
     def set(self, state: BeingState) -> BeingState:
         with self._lock:
-            today_plan = state.today_plan
-            if today_plan is not None and not isinstance(today_plan, TodayPlan):
-                today_plan = TodayPlan.model_validate(today_plan)
-
-            self_programming_job = state.self_programming_job
-            if self_programming_job is not None and not isinstance(
-                self_programming_job, SelfProgrammingJob
-            ):
-                self_programming_job = SelfProgrammingJob.model_validate(self_programming_job)
-
-            orchestrator_session = state.orchestrator_session
-            if orchestrator_session is not None and not isinstance(
-                orchestrator_session, OrchestratorSession
-            ):
-                orchestrator_session = OrchestratorSession.model_validate(orchestrator_session)
-
-            self._state = state.model_copy(
-                update={
-                    "today_plan": today_plan,
-                    "self_programming_job": self_programming_job,
-                    "orchestrator_session": orchestrator_session,
-                },
-                deep=True,
-            )
+            self._state = self._normalize_state(state)
             self._persist_state(self._state)
             self._notify_change()
             return self._state.model_copy(deep=True)
@@ -72,8 +68,8 @@ class StateStore:
     def _load_state(self, initial_state: BeingState | None) -> BeingState:
         if self._storage_path is not None and self._storage_path.exists():
             data = read_json_file(self._storage_path)
-            return BeingState.model_validate(data)
-        return initial_state or BeingState.default()
+            return self._normalize_state(BeingState.model_validate(data))
+        return self._normalize_state(initial_state or BeingState.default())
 
     def _persist_state(self, state: BeingState) -> None:
         if self._storage_path is None:

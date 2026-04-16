@@ -1097,7 +1097,6 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
             active_goal_ids: [],
             today_plan: null,
             last_action: null,
-            self_programming_job: null,
           },
           messages: [],
           goals: [],

@@ -180,17 +180,10 @@ def test_post_wake_uses_generated_plan_draft_when_it_is_valid():
         app.dependency_overrides.clear()
 
 
-def test_post_wake_does_not_expose_self_programming_job_or_cooldown():
+def test_post_wake_omits_removed_legacy_fields():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.SLEEPING,
-            self_programming_job={
-                "reason": "测试失败：状态面板没有展示自我编程状态。",
-                "target_area": "ui",
-                "status": "applied",
-                "spec": "补上自我编程状态展示。",
-                "cooldown_until": "2026-04-05T12:00:00Z",
-            },
         )
     )
 
@@ -236,17 +229,10 @@ def test_post_wake_preserves_last_proactive_markers():
         app.dependency_overrides.clear()
 
 
-def test_post_sleep_does_not_expose_self_programming_job_or_cooldown():
+def test_post_sleep_omits_removed_legacy_fields():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
-            self_programming_job={
-                "reason": "测试失败：状态面板没有展示自我编程状态。",
-                "target_area": "ui",
-                "status": "failed",
-                "spec": "补上自我编程状态展示。",
-                "cooldown_until": "2026-04-05T12:00:00Z",
-            },
         )
     )
 

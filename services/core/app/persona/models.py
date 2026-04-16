@@ -276,7 +276,7 @@ class EmotionEntry(BaseModel):
     emotion_type: EmotionType
     intensity: EmotionIntensity = EmotionIntensity.MILD
     reason: str = ""
-    source: str = Field(default="system", description="触发来源：user/system/goal/self_programming/world")
+    source: str = Field(default="system", description="触发来源：user/system/goal/world")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     decay_ticks: int = Field(default=12, description="衰减所需 tick 数（约 1 分钟/tick）")
 

@@ -108,7 +108,6 @@ def build_world_router() -> APIRouter:
                 "active_goal_ids": [],
                 "today_plan": None,
                 "last_action": None,
-                "self_programming_job": None,
             }
         )
         return build_public_state_payload(state_store.set(sleeping_state))

@@ -350,14 +350,6 @@ class TestEmotionEngine:
         new_state = engine.infer_from_goal_event(calm_state, "abandoned", "旧项目")
         assert new_state.primary_emotion == EmotionType.SADNESS
 
-    def test_infer_from_self_programming_success(self, engine, calm_state):
-        new_state = engine.infer_from_self_programming(calm_state, "success", "代码质量")
-        assert new_state.primary_emotion == EmotionType.JOY
-
-    def test_infer_from_self_programming_rejected(self, engine, calm_state):
-        new_state = engine.infer_from_self_programming(calm_state, "rejected", "重构方案")
-        assert new_state.primary_emotion == EmotionType.SADNESS
-
     def test_personality_adjusts_intensity(self):
         # 高神经质的人情绪放大
         nervous = EmotionEngine(personality=PersonalityDimensions(neuroticism=85))
@@ -474,10 +466,6 @@ class TestPersonaService:
 
     def test_infer_goal_emotion_completed(self, service):
         new_state = service.infer_goal_emotion("completed", "学习目标")
-        assert new_state.primary_emotion == EmotionType.PROUD
-
-    def test_infer_si_emotion_applied(self, service):
-        new_state = service.infer_self_programming_emotion("applied", "性能优化")
         assert new_state.primary_emotion == EmotionType.PROUD
 
 

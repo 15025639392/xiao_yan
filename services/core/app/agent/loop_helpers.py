@@ -195,8 +195,6 @@ def sync_today_plan(today_plan, active_goal_ids: list[str]):
 def next_focus_mode(mode, current_focus_mode, today_plan):
     if mode != WakeMode.AWAKE:
         return FocusMode.SLEEPING
-    if current_focus_mode == FocusMode.SELF_IMPROVEMENT:
-        return FocusMode.SELF_IMPROVEMENT
     if today_plan is None:
         return FocusMode.AUTONOMY
     if any(step.status == TodayPlanStepStatus.PENDING for step in today_plan.steps):
@@ -216,12 +214,6 @@ def build_chain_transition(goal_repository: GoalRepository, goal: Goal) -> str |
     if summary is None:
         return None
     return f"这条线已经接到第{summary.generation + 1}步了，"
-
-
-def build_self_programming_memory(job) -> str:
-    if job.status.value == "applied":
-        return f"我刚完成了一次自我编程，补强了 {job.target_area}，并通过了验证。"
-    return f"我刚尝试自我编程，但还没通过验证：{job.patch_summary or job.reason}"
 
 
 def workspace_root() -> Path:

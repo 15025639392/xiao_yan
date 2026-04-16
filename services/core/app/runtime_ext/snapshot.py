@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from app.domain.models import BeingState, FocusMode
+from app.domain.models import BeingState
 from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage
@@ -20,10 +20,7 @@ RUNTIME_CHAT_MESSAGES_LIMIT = 80
 
 
 def build_public_state_payload(state: BeingState) -> dict[str, Any]:
-    payload = state.model_dump(mode="json", exclude={"self_programming_job"})
-    if payload.get("focus_mode") == FocusMode.SELF_IMPROVEMENT.value:
-        payload["focus_mode"] = FocusMode.AUTONOMY.value
-    return payload
+    return state.model_dump(mode="json")
 
 
 def _compose_world_state(

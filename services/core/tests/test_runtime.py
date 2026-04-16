@@ -106,36 +106,3 @@ def test_state_store_uses_persisted_state_as_initial_value(tmp_path: Path):
     assert reloaded.get().mode == WakeMode.AWAKE
     assert reloaded.get().focus_mode == FocusMode.AUTONOMY
     assert reloaded.get().current_thought == "我还惦记着今天的整理。"
-
-
-def test_state_store_persists_self_programming_job_to_disk(tmp_path: Path):
-    storage_path = tmp_path / "state.json"
-    store = StateStore(storage_path=storage_path)
-
-    updated = store.set(
-        store.get().model_copy(
-            update={
-                "mode": WakeMode.AWAKE,
-                "focus_mode": FocusMode.SELF_IMPROVEMENT,
-                "self_programming_job": {
-                    "reason": "连续多次没有有效推进",
-                    "target_area": "agent",
-                    "status": "verifying",
-                    "spec": "提升自主循环对空转的处理",
-                    "patch_summary": "新增自我编程状态切换",
-                    "verification": {
-                        "commands": ["pytest tests/test_autonomy_loop.py -q"],
-                        "passed": True,
-                        "summary": "1 passed",
-                    },
-                },
-            }
-        )
-    )
-
-    reloaded = StateStore(storage_path=storage_path)
-
-    assert updated.focus_mode == FocusMode.SELF_IMPROVEMENT
-    assert updated.self_programming_job is not None
-    assert updated.self_programming_job.status == "verifying"
-    assert reloaded.get() == updated

@@ -130,8 +130,6 @@ class RuntimeConfig:
         instance._chat_continuous_reasoning_enabled = True
         instance._chat_mcp_enabled = False
         instance._chat_mcp_servers: dict[str, dict[str, Any]] = {}
-        instance._self_programming_hard_failure_cooldown_minutes = 60
-        instance._self_programming_proactive_cooldown_minutes = 720
         instance._goal_admission_stability_warning_rate = 0.6
         instance._goal_admission_stability_danger_rate = 0.35
         instance._goal_admission_user_topic_min_score = get_goal_admission_min_score()
@@ -176,10 +174,6 @@ class RuntimeConfig:
                 instance._chat_mcp_enabled = False
             if not hasattr(instance, "_chat_mcp_servers") or not isinstance(instance._chat_mcp_servers, dict):
                 instance._chat_mcp_servers = {}
-            if not hasattr(instance, "_self_programming_hard_failure_cooldown_minutes"):
-                instance._self_programming_hard_failure_cooldown_minutes = 60
-            if not hasattr(instance, "_self_programming_proactive_cooldown_minutes"):
-                instance._self_programming_proactive_cooldown_minutes = 720
             if not hasattr(instance, "_goal_admission_stability_warning_rate"):
                 instance._goal_admission_stability_warning_rate = 0.6
             if not hasattr(instance, "_goal_admission_stability_danger_rate"):
@@ -336,26 +330,6 @@ class RuntimeConfig:
                 raise ValueError(f"too many chat mcp servers (max {CHAT_MCP_SERVER_MAX_ENTRIES})")
         with self._lock:
             self._chat_mcp_servers = normalized_servers
-
-    @property
-    def self_programming_hard_failure_cooldown_minutes(self) -> int:
-        with self._lock:
-            return self._self_programming_hard_failure_cooldown_minutes
-
-    @self_programming_hard_failure_cooldown_minutes.setter
-    def self_programming_hard_failure_cooldown_minutes(self, value: int) -> None:
-        with self._lock:
-            self._self_programming_hard_failure_cooldown_minutes = max(1, min(7 * 24 * 60, int(value)))
-
-    @property
-    def self_programming_proactive_cooldown_minutes(self) -> int:
-        with self._lock:
-            return self._self_programming_proactive_cooldown_minutes
-
-    @self_programming_proactive_cooldown_minutes.setter
-    def self_programming_proactive_cooldown_minutes(self, value: int) -> None:
-        with self._lock:
-            self._self_programming_proactive_cooldown_minutes = max(1, min(7 * 24 * 60, int(value)))
 
     @property
     def goal_admission_stability_warning_rate(self) -> float:
