@@ -180,7 +180,7 @@ def test_post_wake_uses_generated_plan_draft_when_it_is_valid():
         app.dependency_overrides.clear()
 
 
-def test_post_wake_preserves_latest_self_programming_job_and_cooldown():
+def test_post_wake_does_not_expose_self_programming_job_or_cooldown():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.SLEEPING,
@@ -205,8 +205,7 @@ def test_post_wake_preserves_latest_self_programming_job_and_cooldown():
         assert response.status_code == 200
         body = response.json()
         assert body["mode"] == "awake"
-        assert body["self_programming_job"]["status"] == "applied"
-        assert body["self_programming_job"]["cooldown_until"] == "2026-04-05T12:00:00Z"
+        assert "self_programming_job" not in body
     finally:
         app.dependency_overrides.clear()
 
@@ -237,7 +236,7 @@ def test_post_wake_preserves_last_proactive_markers():
         app.dependency_overrides.clear()
 
 
-def test_post_sleep_preserves_latest_self_programming_job_and_cooldown():
+def test_post_sleep_does_not_expose_self_programming_job_or_cooldown():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
@@ -262,8 +261,7 @@ def test_post_sleep_preserves_latest_self_programming_job_and_cooldown():
         assert response.status_code == 200
         body = response.json()
         assert body["mode"] == "sleeping"
-        assert body["self_programming_job"]["status"] == "failed"
-        assert body["self_programming_job"]["cooldown_until"] == "2026-04-05T12:00:00Z"
+        assert "self_programming_job" not in body
     finally:
         app.dependency_overrides.clear()
 

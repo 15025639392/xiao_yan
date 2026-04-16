@@ -26,6 +26,7 @@ class AdmissionDecision(str, Enum):
 
 class GoalCandidateSource(str, Enum):
     USER_TOPIC = "user_topic"
+    # Legacy persisted value kept only so old snapshots/candidates still deserialize.
     WORLD_EVENT = "world_event"
     CHAIN_NEXT = "chain_next"
 
@@ -263,7 +264,6 @@ class GoalAdmissionService:
     )
     GOAL_PREFIXES = (
         "持续理解用户最近在意的话题：",
-        "继续消化自己刚经历的状态：",
         "继续推进：",
     )
     RETRY_BACKOFF_MINUTES = (5, 15, 30, 60)
@@ -275,12 +275,9 @@ class GoalAdmissionService:
         mode: GoalAdmissionMode = "shadow",
         min_score: float = 0.68,
         defer_score: float = 0.45,
-        world_min_score: float = 0.75,
-        world_defer_score: float = 0.52,
         chain_min_score: float = 0.62,
         chain_defer_score: float = 0.45,
         wip_limit: int = 2,
-        world_enabled: bool = True,
         max_retries: int = 6,
     ) -> None:
         self.store = store
@@ -288,12 +285,9 @@ class GoalAdmissionService:
         self.mode: GoalAdmissionMode = mode
         self.min_score = min_score
         self.defer_score = defer_score
-        self.world_min_score = world_min_score
-        self.world_defer_score = world_defer_score
         self.chain_min_score = chain_min_score
         self.chain_defer_score = chain_defer_score
         self.wip_limit = wip_limit
-        self.world_enabled = world_enabled
         self.max_retries = max_retries
 
     def set_on_change_callback(self, callback: Callable[[], None] | None) -> None:
@@ -427,7 +421,6 @@ class GoalAdmissionService:
             "wip_limit": self.wip_limit,
             "thresholds": {
                 "user_topic": {"min_score": self.min_score, "defer_score": self.defer_score},
-                "world_event": {"min_score": self.world_min_score, "defer_score": self.world_defer_score},
                 "chain_next": {"min_score": self.chain_min_score, "defer_score": self.chain_defer_score},
             },
         }
@@ -573,21 +566,18 @@ class GoalAdmissionService:
             return 0.0, AdmissionDecision.DROP, relationship_boundary_reason
 
         fingerprint = candidate.fingerprint or ""
-        if candidate.source_type in {GoalCandidateSource.USER_TOPIC, GoalCandidateSource.WORLD_EVENT}:
+        if candidate.source_type == GoalCandidateSource.USER_TOPIC:
             if self.store.is_recently_seen(fingerprint, now, ttl=timedelta(minutes=5)):
                 return 0.0, AdmissionDecision.DEFER, "duplicate_candidate"
 
-        if candidate.source_type == GoalCandidateSource.WORLD_EVENT and not self.world_enabled:
-            return 0.0, AdmissionDecision.DEFER, "world_event_disabled"
+        if candidate.source_type == GoalCandidateSource.WORLD_EVENT:
+            return 0.0, AdmissionDecision.DROP, "legacy_source_removed"
 
         if candidate.source_type == GoalCandidateSource.CHAIN_NEXT:
             score = self._score_chain_candidate(candidate)
             return score, self._decision_from_threshold(score, self.chain_min_score, self.chain_defer_score), "chain_score"
 
         score = self._score_user_world_candidate(candidate, all_goals=all_goals, recent_events=recent_events)
-        if candidate.source_type == GoalCandidateSource.WORLD_EVENT:
-            decision = self._decision_from_threshold(score, self.world_min_score, self.world_defer_score)
-            return score, decision, "world_score"
         return score, self._decision_from_threshold(score, self.min_score, self.defer_score), "user_score"
 
     def _score_user_world_candidate(

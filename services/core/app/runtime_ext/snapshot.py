@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from app.domain.models import BeingState, FocusMode
 from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage
@@ -18,10 +19,16 @@ from app.world.service import WorldStateService
 RUNTIME_CHAT_MESSAGES_LIMIT = 80
 
 
+def build_public_state_payload(state: BeingState) -> dict[str, Any]:
+    payload = state.model_dump(mode="json", exclude={"self_programming_job"})
+    if payload.get("focus_mode") == FocusMode.SELF_IMPROVEMENT.value:
+        payload["focus_mode"] = FocusMode.AUTONOMY.value
+    return payload
+
+
 def _compose_world_state(
     state_store: StateStore,
     goal_repository: GoalRepository,
-    memory_repository: MemoryRepository,
     world_state_service: WorldStateService,
 ) -> WorldState:
     state = state_store.get()
@@ -30,15 +37,9 @@ def _compose_world_state(
         for goal_id in state.active_goal_ids
         if (goal := goal_repository.get_goal(goal_id)) is not None
     ]
-    latest_world_event = next(
-        (event for event in memory_repository.list_recent(limit=20) if event.kind == "world"),
-        None,
-    )
     return world_state_service.bootstrap(
         being_state=state,
         focused_goals=focused_goals,
-        latest_event=None if latest_world_event is None else latest_world_event.content,
-        latest_event_at=None if latest_world_event is None else latest_world_event.created_at,
     )
 
 
@@ -52,7 +53,6 @@ def build_world_state(
     world_state = _compose_world_state(
         state_store,
         goal_repository,
-        memory_repository,
         world_state_service,
     )
     return world_repository.save_world_state(world_state)
@@ -123,13 +123,12 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
     world_state = _compose_world_state(
         state_store,
         goal_repository,
-        memory_repository,
         WorldStateService(),
     )
     runtime_config = get_runtime_config()
     mac_console_status = getattr(target_app.state, "mac_console_bootstrap_status", None)
     return {
-        "state": state_store.get().model_dump(mode="json"),
+        "state": build_public_state_payload(state_store.get()),
         "messages": messages,
         "goals": [goal.model_dump(mode="json") for goal in goal_repository.list_goals()],
         "goal_admission_stats": (

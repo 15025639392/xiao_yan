@@ -114,7 +114,6 @@ function createAppShellFetchMock(handlers: FetchHandler[] = []) {
         wip_limit: 3,
         thresholds: {
           user_topic: { min_score: 0.6, defer_score: 0.4 },
-          world_event: { min_score: 0.6, defer_score: 0.4 },
           chain_next: { min_score: 0.6, defer_score: 0.4 },
         },
       });

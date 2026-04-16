@@ -371,12 +371,11 @@ export type GoalAdmissionConfigRollbackResponse = GoalAdmissionRuntimeConfig & {
 
 export type BeingState = {
   mode: "awake" | "sleeping";
-  focus_mode: "sleeping" | "morning_plan" | "autonomy" | "self_programming" | "orchestrator";
+  focus_mode: "sleeping" | "morning_plan" | "autonomy" | "orchestrator";
   current_thought: string | null;
   active_goal_ids: string[];
   today_plan?: TodayPlan | null;
   last_action?: ToolExecutionResult | null;
-  self_programming_job?: SelfProgrammingJob | null;
   orchestrator_session?: OrchestratorSession | null;
 };
 
@@ -553,7 +552,6 @@ export type GoalsResponse = {
 
 export type GoalAdmissionThresholds = {
   user_topic: { min_score: number; defer_score: number };
-  world_event: { min_score: number; defer_score: number };
   chain_next: { min_score: number; defer_score: number };
 };
 
@@ -582,6 +580,7 @@ export type GoalAdmissionStats = {
 };
 
 export type GoalAdmissionCandidate = {
+  // Keep "world_event" for historical snapshots only; current runtime no longer emits it.
   source_type: "user_topic" | "world_event" | "chain_next";
   title: string;
   source_content?: string | null;

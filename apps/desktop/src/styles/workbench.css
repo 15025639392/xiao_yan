@@ -711,15 +711,6 @@
   color: var(--primary);
   font-weight: 500;
 }
-
-
-
-.btn--ghost:hover {
-  background: var(--bg-surface-elevated);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
 /* ── 记忆页面样式 ── */
 .memory-page {
   flex: 1;
@@ -798,34 +789,4 @@
   border-radius: var(--radius-lg);
   min-height: 400px;
   max-height: none;
-}
-
-/* ── 响应式适配 ── */
-@media (max-width: 1024px) {
-  .workbench-sidebar {
-    width: 260px;
-  }
-}
-
-@media (max-width: 768px) {
-  .workbench-layout {
-    flex-direction: column;
-  }
-
-  .workbench-sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-
-  .workbench-sidebar__section {
-    display: none;
-  }
-
-  .workbench-content {
-    padding: var(--space-3);
-  }
 }

@@ -18,7 +18,7 @@ from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import build_world_state
-from app.runtime_ext.snapshot import find_recent_autobio
+from app.runtime_ext.snapshot import build_public_state_payload, find_recent_autobio
 from app.usecases.lifecycle import wake_up
 from app.world.repository import WorldRepository
 from app.world.service import WorldStateService
@@ -72,7 +72,6 @@ def build_world_router() -> APIRouter:
         selected_goal = _select_wake_goal(goal_repository, recent_autobio)
         waking_state = wake_up(recent_autobio=recent_autobio).model_copy(
             update={
-                "self_programming_job": current_state.self_programming_job,
                 "last_proactive_source": current_state.last_proactive_source,
                 "last_proactive_at": current_state.last_proactive_at,
             }
@@ -96,7 +95,7 @@ def build_world_router() -> APIRouter:
                 }
             )
 
-        return state_store.set(waking_state).model_dump()
+        return build_public_state_payload(state_store.set(waking_state))
 
     @router.post("/lifecycle/sleep")
     def sleep(state_store: StateStore = Depends(get_state_store)) -> dict:
@@ -109,8 +108,9 @@ def build_world_router() -> APIRouter:
                 "active_goal_ids": [],
                 "today_plan": None,
                 "last_action": None,
+                "self_programming_job": None,
             }
         )
-        return state_store.set(sleeping_state).model_dump()
+        return build_public_state_payload(state_store.set(sleeping_state))
 
     return router

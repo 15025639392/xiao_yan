@@ -1584,7 +1584,7 @@ def test_post_chat_splits_recent_and_long_term_context_budget():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_includes_relevant_world_event_as_system_context():
+def test_post_chat_includes_relevant_legacy_world_memory_as_system_context():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(

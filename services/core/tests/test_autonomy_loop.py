@@ -458,7 +458,7 @@ def test_tick_once_completed_chain_goal_mentions_next_chain_step():
     assert "接下来" in state.current_thought
 
 
-def test_tick_once_records_world_event_into_memory():
+def test_tick_once_does_not_record_legacy_world_memory_into_events():
     now = datetime(2026, 4, 4, 23, 0, tzinfo=timezone.utc)
     goals = InMemoryGoalRepository()
     goal = goals.save_goal(Goal(title="整理今天的对话记忆", status=GoalStatus.ACTIVE))
@@ -468,10 +468,9 @@ def test_tick_once_records_world_event_into_memory():
 
     loop.tick_once()
     recent = list(reversed(repo.list_recent(limit=5)))
-    world_events = [event for event in recent if event.kind == "world"]
+    legacy_world_memories = [event for event in recent if event.kind == "world"]
 
-    assert len(world_events) == 1
-    assert "整理今天的对话记忆" in world_events[0].content
+    assert legacy_world_memories == []
 
 
 def test_tick_once_drops_missing_active_goal_ids_without_leaking_raw_id():
@@ -484,13 +483,9 @@ def test_tick_once_drops_missing_active_goal_ids_without_leaking_raw_id():
 
     state = loop.tick_once()
     recent = list(reversed(repo.list_recent(limit=5)))
-    world_events = [event for event in recent if event.kind == "world"]
-
     assert state.active_goal_ids == []
     assert state.current_thought is not None
     assert missing_goal_id not in state.current_thought
-    assert len(world_events) == 1
-    assert missing_goal_id not in world_events[0].content
 
 
 def test_tick_once_records_inner_stage_memory_when_chain_progress_changes():
@@ -549,7 +544,7 @@ def test_tick_once_compresses_inner_stage_memories_into_autobio_memory():
     assert "一路" in autobio_events[0].content
 
 
-def test_tick_once_does_not_duplicate_world_event_within_cooldown():
+def test_tick_once_keeps_existing_legacy_world_memory_but_does_not_append_new_one():
     now = datetime(2026, 4, 4, 23, 0, tzinfo=timezone.utc)
     goals = InMemoryGoalRepository()
     goal = goals.save_goal(Goal(title="整理今天的对话记忆", status=GoalStatus.ACTIVE))
@@ -566,12 +561,12 @@ def test_tick_once_does_not_duplicate_world_event_within_cooldown():
 
     loop.tick_once()
     recent = list(reversed(repo.list_recent(limit=5)))
-    world_events = [event for event in recent if event.kind == "world"]
+    legacy_world_memories = [event for event in recent if event.kind == "world"]
 
-    assert len(world_events) == 1
+    assert len(legacy_world_memories) == 1
 
 
-def test_tick_once_generates_goal_from_latest_world_event_when_no_user_topic():
+def test_tick_once_does_not_generate_goal_from_legacy_world_memory_when_no_user_topic():
     now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
     store = StateStore(BeingState(mode=WakeMode.AWAKE))
     repo = InMemoryMemoryRepository()
@@ -588,13 +583,8 @@ def test_tick_once_generates_goal_from_latest_world_event_when_no_user_topic():
     state = loop.tick_once()
     active_goals = goals.list_active_goals()
 
-    assert len(active_goals) == 1
-    assert active_goals[0].chain_id is not None
-    assert active_goals[0].parent_goal_id is None
-    assert active_goals[0].generation == 0
-    assert "整理今天的对话记忆" in active_goals[0].source
-    assert state.active_goal_ids == [active_goals[0].id]
-    assert "整理今天的对话记忆" in state.current_thought
+    assert active_goals == []
+    assert state.active_goal_ids == []
 
 
 def test_tick_once_completed_chain_goal_spawns_next_generation_goal():
@@ -749,7 +739,7 @@ def test_tick_once_executes_action_step_declared_in_today_plan():
     assert state.today_plan.steps[0].status == "completed"
 
 
-def test_tick_once_enters_self_programming_when_test_failure_is_detected():
+def test_tick_once_does_not_enter_self_programming_when_test_failure_is_detected():
     now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
     store = StateStore(BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY))
     repo = InMemoryMemoryRepository()
@@ -758,14 +748,11 @@ def test_tick_once_enters_self_programming_when_test_failure_is_detected():
 
     state = loop.tick_once()
 
-    assert state.focus_mode == FocusMode.SELF_IMPROVEMENT
-    assert state.self_programming_job is not None
-    assert state.self_programming_job.status == SelfProgrammingStatus.DRAFTED
-    assert "确认开工" in state.current_thought
-    assert "测试失败" in state.self_programming_job.reason
+    assert state.focus_mode == FocusMode.AUTONOMY
+    assert state.self_programming_job is None
 
 
-def test_tick_once_can_proactively_enter_self_programming_after_repeated_idle_progress():
+def test_tick_once_does_not_proactively_enter_self_programming_after_repeated_idle_progress():
     now = datetime(2026, 4, 5, 10, 0, tzinfo=timezone.utc)
     store = StateStore(
         BeingState(
@@ -782,9 +769,8 @@ def test_tick_once_can_proactively_enter_self_programming_after_repeated_idle_pr
 
     state = loop.tick_once()
 
-    assert state.focus_mode == FocusMode.SELF_IMPROVEMENT
-    assert state.self_programming_job is not None
-    assert state.self_programming_job.reason == "连续多次只产生 thought，没有形成有效行动结果。"
+    assert state.focus_mode == FocusMode.AUTONOMY
+    assert state.self_programming_job is None
 
 
 def test_tick_once_respects_self_programming_cooldown_for_proactive_trigger():

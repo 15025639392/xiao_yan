@@ -40,12 +40,6 @@ export function WorldPanel({ world }: WorldPanelProps) {
               <p className="metric-card__value">第 {world.focus_step} 步</p>
             </div>
           ) : null}
-          {world.latest_event ? (
-            <div className="metric-card" style={{ gridColumn: "1 / -1" }}>
-              <p className="metric-card__label">最近事件</p>
-              <p className="metric-card__value">{world.latest_event}</p>
-            </div>
-          ) : null}
         </div>
       ) : (
         <EmptyState size="small">

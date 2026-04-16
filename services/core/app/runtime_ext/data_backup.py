@@ -16,8 +16,6 @@ from app.config import (
     get_mempalace_palace_path,
     get_mempalace_room,
     get_mempalace_wing,
-    get_orchestrator_message_storage_path,
-    get_orchestrator_storage_path,
     get_persona_storage_path,
     get_service_root,
     get_state_storage_path,
@@ -34,8 +32,6 @@ DATA_OVERRIDE_ENV_KEYS = (
     "PERSONA_STORAGE_PATH",
     "GOAL_ADMISSION_STORAGE_PATH",
     "CAPABILITY_QUEUE_STORAGE_PATH",
-    "ORCHESTRATOR_STORAGE_PATH",
-    "ORCHESTRATOR_MESSAGE_STORAGE_PATH",
     "MEMPALACE_PALACE_PATH",
     "MEMPALACE_ROOM",
 )
@@ -225,8 +221,6 @@ def _resolve_data_entries() -> list[_DataEntry]:
         _DataEntry("persona", get_persona_storage_path().expanduser()),
         _DataEntry("goal_admission", get_goal_admission_storage_path().expanduser()),
         _DataEntry("capability_queue", get_capability_queue_storage_path().expanduser()),
-        _DataEntry("orchestrator_sessions", get_orchestrator_storage_path().expanduser()),
-        _DataEntry("orchestrator_messages", get_orchestrator_message_storage_path().expanduser()),
         _DataEntry("legacy_memory_jsonl", service_root / ".data" / "memory.jsonl"),
         _DataEntry("mempalace_palace", Path(get_mempalace_palace_path()).expanduser()),
     ]
@@ -270,8 +264,6 @@ def _enable_testing_data_mode() -> None:
         "PERSONA_STORAGE_PATH": str(testing_root / "persona.json"),
         "GOAL_ADMISSION_STORAGE_PATH": str(testing_root / "goal_admission.json"),
         "CAPABILITY_QUEUE_STORAGE_PATH": str(testing_root / "capability_queue.json"),
-        "ORCHESTRATOR_STORAGE_PATH": str(testing_root / "orchestrator_sessions.json"),
-        "ORCHESTRATOR_MESSAGE_STORAGE_PATH": str(testing_root / "orchestrator_messages.json"),
         "MEMPALACE_PALACE_PATH": str(testing_root / "mempalace" / "palace"),
         "MEMPALACE_ROOM": testing_room,
     }

@@ -15,8 +15,6 @@ def _goal_admission_snapshot() -> dict[str, float]:
         "stability_danger_rate": config.goal_admission_stability_danger_rate,
         "user_topic_min_score": float(getattr(config, "goal_admission_user_topic_min_score", 0.68)),
         "user_topic_defer_score": float(getattr(config, "goal_admission_user_topic_defer_score", 0.45)),
-        "world_event_min_score": float(getattr(config, "goal_admission_world_event_min_score", 0.75)),
-        "world_event_defer_score": float(getattr(config, "goal_admission_world_event_defer_score", 0.52)),
         "chain_next_min_score": float(getattr(config, "goal_admission_chain_next_min_score", 0.62)),
         "chain_next_defer_score": float(getattr(config, "goal_admission_chain_next_defer_score", 0.45)),
     }
@@ -30,8 +28,6 @@ def _restore_goal_admission_snapshot(snapshot: dict[str, float]) -> None:
     optional_config_attrs = {
         "goal_admission_user_topic_min_score": snapshot["user_topic_min_score"],
         "goal_admission_user_topic_defer_score": snapshot["user_topic_defer_score"],
-        "goal_admission_world_event_min_score": snapshot["world_event_min_score"],
-        "goal_admission_world_event_defer_score": snapshot["world_event_defer_score"],
         "goal_admission_chain_next_min_score": snapshot["chain_next_min_score"],
         "goal_admission_chain_next_defer_score": snapshot["chain_next_defer_score"],
     }
@@ -43,8 +39,6 @@ def _restore_goal_admission_snapshot(snapshot: dict[str, float]) -> None:
     if service is not None:
         service.min_score = snapshot["user_topic_min_score"]
         service.defer_score = snapshot["user_topic_defer_score"]
-        service.world_min_score = snapshot["world_event_min_score"]
-        service.world_defer_score = snapshot["world_event_defer_score"]
         service.chain_min_score = snapshot["chain_next_min_score"]
         service.chain_defer_score = snapshot["chain_next_defer_score"]
 
@@ -432,8 +426,6 @@ def test_get_goal_admission_config_returns_full_threshold_payload():
         "stability_danger_rate": 0.34,
         "user_topic_min_score": 0.69,
         "user_topic_defer_score": 0.44,
-        "world_event_min_score": 0.76,
-        "world_event_defer_score": 0.51,
         "chain_next_min_score": 0.63,
         "chain_next_defer_score": 0.43,
     }
@@ -458,8 +450,6 @@ def test_update_goal_admission_config_supports_source_threshold_patch_and_applie
                 "stability_danger_rate": 0.35,
                 "user_topic_min_score": 0.68,
                 "user_topic_defer_score": 0.45,
-                "world_event_min_score": 0.75,
-                "world_event_defer_score": 0.52,
                 "chain_next_min_score": 0.62,
                 "chain_next_defer_score": 0.45,
             },
@@ -482,8 +472,6 @@ def test_update_goal_admission_config_supports_source_threshold_patch_and_applie
             "stability_danger_rate": 0.4,
             "user_topic_min_score": 0.71,
             "user_topic_defer_score": 0.49,
-            "world_event_min_score": 0.75,
-            "world_event_defer_score": 0.52,
             "chain_next_min_score": 0.66,
             "chain_next_defer_score": 0.45,
         }
@@ -493,7 +481,6 @@ def test_update_goal_admission_config_supports_source_threshold_patch_and_applie
         stats_payload = stats_response.json()
         assert stats_payload["thresholds"] == {
             "user_topic": {"min_score": 0.71, "defer_score": 0.49},
-            "world_event": {"min_score": 0.75, "defer_score": 0.52},
             "chain_next": {"min_score": 0.66, "defer_score": 0.45},
         }
     finally:
@@ -511,19 +498,6 @@ def test_update_goal_admission_config_rejects_invalid_threshold_order():
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "stability_danger_rate must be <= stability_warning_rate"
-
-
-def test_update_goal_admission_config_rejects_invalid_source_threshold_order():
-    client = TestClient(app)
-    response = client.put(
-        "/config/goal-admission",
-        json={
-            "world_event_min_score": 0.5,
-            "world_event_defer_score": 0.7,
-        },
-    )
-    assert response.status_code == 400
-    assert response.json()["detail"] == "world_event_defer_score must be <= world_event_min_score"
 
 
 def test_update_goal_admission_config_rejects_empty_patch():
@@ -606,8 +580,6 @@ def test_rollback_goal_admission_config_returns_previous_revision():
             "stability_danger_rate": 0.33,
             "user_topic_min_score": snapshot["user_topic_min_score"],
             "user_topic_defer_score": snapshot["user_topic_defer_score"],
-            "world_event_min_score": snapshot["world_event_min_score"],
-            "world_event_defer_score": snapshot["world_event_defer_score"],
             "chain_next_min_score": 0.61,
             "chain_next_defer_score": 0.42,
         }

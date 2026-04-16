@@ -24,7 +24,7 @@ from app.persona.service import PersonaService
 from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import ensure_realtime_hub_initialized, ensure_runtime_initialized
-from app.runtime_ext.snapshot import deduplicate_entries
+from app.runtime_ext.snapshot import build_public_state_payload, deduplicate_entries
 from app.runtime_ext.runtime_config import get_runtime_config
 
 
@@ -74,7 +74,7 @@ def build_runtime_router() -> APIRouter:
 
     @router.get("/state")
     def get_state(state_store: StateStore = Depends(get_state_store)) -> dict:
-        return state_store.get().model_dump()
+        return build_public_state_payload(state_store.get())
 
     @router.get("/memory/backends")
     def get_memory_backends(

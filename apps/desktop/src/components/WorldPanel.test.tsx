@@ -13,7 +13,6 @@ test("renders focus stage and step for the inner world", () => {
         focus_tension: "medium",
         focus_stage: "consolidate",
         focus_step: 3,
-        latest_event: "我想先把第3步收束一下。",
       }}
     />
   );
@@ -21,7 +20,6 @@ test("renders focus stage and step for the inner world", () => {
   expect(screen.getByText("内在世界")).toBeInTheDocument();
   expect(screen.getByText("收束中")).toBeInTheDocument();
   expect(screen.getByText("第 3 步")).toBeInTheDocument();
-  expect(screen.getByText("我想先把第3步收束一下。")).toBeInTheDocument();
 });
 
 

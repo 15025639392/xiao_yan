@@ -62,7 +62,7 @@ function formatRetryAt(nextRetryAt: string): string {
 
 function sourceLabel(sourceType: DeferredGoalAdmissionCandidate["candidate"]["source_type"]): string {
   if (sourceType === "world_event") {
-    return "世界事件";
+    return "旧记忆候选";
   }
   if (sourceType === "chain_next") {
     return "链式续推";

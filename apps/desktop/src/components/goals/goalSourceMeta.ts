@@ -5,7 +5,7 @@ export type GoalSourceMeta = {
   summary: string;
   contextLabel: string;
   context: string | null;
-  tone: "user" | "world" | "chain" | "manual";
+  tone: "user" | "chain" | "manual";
 };
 
 export function getGoalSourceMeta(goal: Goal): GoalSourceMeta {
@@ -26,16 +26,6 @@ export function getGoalSourceMeta(goal: Goal): GoalSourceMeta {
       contextLabel: "用户线索",
       context: goal.source ?? null,
       tone: "user",
-    };
-  }
-
-  if (goal.title.startsWith("继续消化自己刚经历的状态：")) {
-    return {
-      label: "世界事件",
-      summary: "来自她刚经历的一次世界或内在事件。",
-      contextLabel: "事件线索",
-      context: goal.source ?? null,
-      tone: "world",
     };
   }
 

@@ -69,7 +69,6 @@ describe("app realtime client", () => {
             active_goal_ids: [],
             today_plan: null,
             last_action: null,
-            self_programming_job: null,
           },
           messages: [],
           goals: [],

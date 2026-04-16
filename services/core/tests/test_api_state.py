@@ -18,9 +18,10 @@ def test_get_state_returns_current_runtime_state():
     assert response.status_code == 200
     assert response.json()["mode"] == "awake"
     assert response.json()["focus_mode"] in {"autonomy", "morning_plan"}
+    assert "self_programming_job" not in response.json()
 
 
-def test_get_state_includes_self_programming_job():
+def test_get_state_downgrades_self_programming_focus_to_autonomy():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
@@ -51,9 +52,8 @@ def test_get_state_includes_self_programming_job():
         body = response.json()
 
         assert response.status_code == 200
-        assert body["focus_mode"] == "self_programming"
-        assert body["self_programming_job"]["target_area"] == "ui"
-        assert body["self_programming_job"]["verification"]["passed"] is True
+        assert body["focus_mode"] == "autonomy"
+        assert "self_programming_job" not in body
     finally:
         app.dependency_overrides.clear()
 

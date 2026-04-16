@@ -1019,19 +1019,6 @@
 }
 
 @media (max-width: 768px) {
-  .status-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .execute-input-group {
-    flex-wrap: wrap;
-  }
-
-  .tool-tabs {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
   .status-dl {
     grid-template-columns: 1fr;
   }

@@ -1,15 +1,5 @@
 /* === Responsive === */
 @media (max-width: 1200px) {
-  .chat-container {
-    grid-template-columns: 1fr;
-  }
-
-  .chat-sidebar {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-4);
-  }
-
   .inspector-grid__rail {
     grid-template-columns: 1fr;
   }
@@ -32,37 +22,8 @@
 }
 
 @media (max-width: 768px) {
-  .console-shell {
-    width: calc(100% - var(--space-4));
-    padding: var(--space-4) 0;
-  }
-
-  .status-strip {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-4);
-  }
-
-  .status-strip__meta {
-    justify-content: center;
-  }
-
-  .status-strip__actions {
-    justify-content: center;
-  }
-
-  .nav-tabs {
-    width: 100%;
-  }
-
-  .nav-tab {
-    flex: 1;
-    justify-content: center;
-  }
-
   .inspector-grid__rail,
-  .overview-grid,
-  .chat-sidebar {
+  .overview-grid {
     grid-template-columns: 1fr;
   }
 
@@ -74,21 +35,7 @@
     grid-template-columns: 1fr;
   }
 
-  .chat-main {
-    min-height: 400px;
-    max-height: none;
-  }
-
-  .chat-bubble {
-    max-width: 90%;
-  }
-
   .goal-card__actions {
     flex-wrap: wrap;
-  }
-
-  .goal-card__actions .btn {
-    flex: 1;
-    min-width: 60px;
   }
 }

@@ -564,6 +564,100 @@ test("updates chat model inside config modal", async () => {
   });
 });
 
+test("renders config modal above its overlay", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+
+    if (url.endsWith("/config") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          chat_context_limit: 6,
+          chat_provider: "openai",
+          chat_model: "gpt-5.4",
+          chat_read_timeout_seconds: 180,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config/chat-models")) {
+      return new Response(
+        JSON.stringify({
+          providers: [
+            {
+              provider_id: "openai",
+              provider_name: "OpenAI",
+              models: ["gpt-5.4"],
+              default_model: "gpt-5.4",
+              error: null,
+            },
+          ],
+          current_provider: "openai",
+          current_model: "gpt-5.4",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/config/data-environment") && method === "GET") {
+      return new Response(
+        JSON.stringify({
+          testing_mode: false,
+          mempalace_palace_path: "/tmp/palace",
+          mempalace_wing: "wing_xiaoyan",
+          mempalace_room: "chat_exchange",
+          default_backup_directory: "/tmp/backups",
+          switch_backup_path: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat/folder-permissions") && method === "GET") {
+      return new Response(JSON.stringify({ permissions: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    throw new Error(`unexpected request: ${url} [${method}]`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <ChatPanel
+      draft=""
+      focusGoalTitle={null}
+      focusModeLabel="常规自主"
+      isSending={false}
+      messages={[]}
+      modeLabel="运行中"
+      onDraftChange={vi.fn()}
+      onSend={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
+
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.className).toContain("z-[1001]");
+
+  const overlay = document.querySelector(".config-panel-overlay");
+  expect(overlay).not.toBeNull();
+  expect(overlay?.className).toContain("z-[1000]");
+});
+
 test("updates continuous reasoning switch inside config modal", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);

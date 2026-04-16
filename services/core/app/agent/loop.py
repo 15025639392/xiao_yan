@@ -19,13 +19,10 @@ from app.agent.loop_helpers import (
     build_proactive_thought as _build_proactive_thought,
     build_today_plan_completion_memory as _build_today_plan_completion_memory,
     build_today_plan_step_focus as _build_today_plan_step_focus,
-    build_world_goal_start as _build_world_goal_start,
-    build_world_goal_title as _build_world_goal_title,
     display_goal_title as _display_goal_title,
     find_latest_autobio_event as _find_latest_autobio_event,
     find_latest_inner_event as _find_latest_inner_event,
     find_latest_user_event as _find_latest_user_event,
-    find_latest_world_event as _find_latest_world_event,
     is_generated_goal_id as _is_generated_goal_id,
     next_focus_mode as _next_focus_mode,
     sync_today_plan as _sync_today_plan,
@@ -61,7 +58,6 @@ def _goal_admission_meta(admission, candidate: GoalCandidate | None = None) -> G
 
 
 class AutonomyLoop:
-    WORLD_EVENT_COOLDOWN = timedelta(minutes=30)
     REFLECTIVE_CHECKIN_INTERVAL = timedelta(minutes=10)
 
     def __init__(
@@ -129,23 +125,6 @@ class AutonomyLoop:
                 )
                 if maybe_state is not None:
                     return maybe_state
-
-            latest_world_event = _find_latest_world_event(recent_events)
-            if (
-                latest_world_event is not None
-                and latest_world_event.content != state.last_proactive_source
-            ):
-                maybe_state = self._try_create_world_event_goal(
-                    state=state,
-                    latest_world_event=latest_world_event,
-                    recent_events=recent_events,
-                    world_state=world_state,
-                    now=now,
-                )
-                if maybe_state is not None:
-                    return maybe_state
-
-        self._maybe_record_world_event(state, recent_events, world_state, now)
 
         current_goal = (
             None
@@ -337,52 +316,6 @@ class AutonomyLoop:
         )
         return self.state_store.set(next_state)
 
-    def _try_create_world_event_goal(self, state, latest_world_event, recent_events, world_state, now: datetime):
-        candidate = GoalCandidate(
-            source_type=GoalCandidateSource.WORLD_EVENT,
-            title=_build_world_goal_title(latest_world_event.content),
-            source_content=latest_world_event.content,
-            chain_id=uuid4().hex,
-        )
-        admission = self.goal_admission_service.evaluate_candidate(
-            candidate,
-            now=now,
-            active_goals=self.goal_repository.list_active_goals(),
-            all_goals=self.goal_repository.list_goals(),
-            recent_events=recent_events,
-        )
-        if admission.applied_decision != AdmissionDecision.ADMIT:
-            next_state = state.model_copy(
-                update={
-                    "last_proactive_source": latest_world_event.content,
-                    "last_proactive_at": now,
-                }
-            )
-            return self.state_store.set(next_state)
-
-        goal = self.goal_repository.save_goal(
-            Goal(
-                title=candidate.title,
-                source=latest_world_event.content,
-                chain_id=candidate.chain_id,
-                admission=_goal_admission_meta(admission, candidate),
-            )
-        )
-        proactive_thought = _build_world_goal_start(
-            latest_world_event.content,
-            now,
-            world_state,
-        )
-        next_state = state.model_copy(
-            update={
-                "active_goal_ids": [goal.id],
-                "current_thought": proactive_thought,
-                "last_proactive_source": latest_world_event.content,
-                "last_proactive_at": now,
-            }
-        )
-        return self.state_store.set(next_state)
-
     def _maybe_promote_deferred_candidate(self, state, recent_events, now: datetime):
         deferred = self.goal_admission_service.pop_due_candidate(now)
         if deferred is None:
@@ -432,28 +365,6 @@ class AutonomyLoop:
                     update={
                         "active_goal_ids": [goal.id],
                         "current_thought": proactive_message,
-                        "last_proactive_source": source_content,
-                        "last_proactive_at": now,
-                    }
-                )
-            )
-
-        if deferred.source_type == GoalCandidateSource.WORLD_EVENT:
-            goal = self.goal_repository.save_goal(
-                Goal(
-                    title=deferred.title,
-                    source=deferred.source_content,
-                    chain_id=deferred.chain_id or uuid4().hex,
-                    admission=_goal_admission_meta(admission, deferred),
-                )
-            )
-            world_state = self._world_state_for(state, now)
-            proactive_thought = _build_world_goal_start(deferred.source_content or deferred.title, now, world_state)
-            return self.state_store.set(
-                state.model_copy(
-                    update={
-                        "active_goal_ids": [goal.id],
-                        "current_thought": proactive_thought,
                         "last_proactive_source": source_content,
                         "last_proactive_at": now,
                     }
@@ -668,29 +579,6 @@ class AutonomyLoop:
             focused_goals=focused_goals,
             now=now,
         )
-
-    def _maybe_record_world_event(self, state, recent_events, world_state, now: datetime) -> None:
-        if _find_latest_user_event(recent_events) is not None:
-            return
-
-        latest_world_event = _find_latest_world_event(recent_events)
-        if (
-            latest_world_event is not None
-            and now - latest_world_event.created_at < self.WORLD_EVENT_COOLDOWN
-        ):
-            return
-
-        goal_title = None
-        if state.active_goal_ids:
-            current_goal = self.goal_repository.get_goal(state.active_goal_ids[0])
-            goal_title = _display_goal_title(state.active_goal_ids[0], current_goal)
-
-        entry = MemoryEntry.create(
-            kind=MemoryKind.EPISODIC,
-            content=self.world_state_service.build_event(world_state, goal_title),
-            source_context="world",
-        )
-        self.memory_repository.save_event(MemoryEvent.from_entry(entry))
 
     def _maybe_record_inner_stage_memory(self, state, recent_events, world_state, now: datetime) -> None:
         if world_state.focus_stage == "none" or world_state.focus_step is None:

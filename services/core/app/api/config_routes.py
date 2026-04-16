@@ -70,8 +70,6 @@ class GoalAdmissionConfigUpdateRequest(BaseModel):
     stability_danger_rate: float | None = Field(default=None, ge=0.0, le=1.0)
     user_topic_min_score: float | None = Field(default=None, ge=0.0, le=1.0)
     user_topic_defer_score: float | None = Field(default=None, ge=0.0, le=1.0)
-    world_event_min_score: float | None = Field(default=None, ge=0.0, le=1.0)
-    world_event_defer_score: float | None = Field(default=None, ge=0.0, le=1.0)
     chain_next_min_score: float | None = Field(default=None, ge=0.0, le=1.0)
     chain_next_defer_score: float | None = Field(default=None, ge=0.0, le=1.0)
 
@@ -81,8 +79,6 @@ class GoalAdmissionConfigResponse(BaseModel):
     stability_danger_rate: float
     user_topic_min_score: float
     user_topic_defer_score: float
-    world_event_min_score: float
-    world_event_defer_score: float
     chain_next_min_score: float
     chain_next_defer_score: float
 
@@ -94,8 +90,6 @@ class GoalAdmissionConfigHistoryItem(BaseModel):
     stability_danger_rate: float
     user_topic_min_score: float
     user_topic_defer_score: float
-    world_event_min_score: float
-    world_event_defer_score: float
     chain_next_min_score: float
     chain_next_defer_score: float
     created_at: str
@@ -237,8 +231,6 @@ def build_config_router() -> APIRouter:
             stability_danger_rate=config.goal_admission_stability_danger_rate,
             user_topic_min_score=config.goal_admission_user_topic_min_score,
             user_topic_defer_score=config.goal_admission_user_topic_defer_score,
-            world_event_min_score=config.goal_admission_world_event_min_score,
-            world_event_defer_score=config.goal_admission_world_event_defer_score,
             chain_next_min_score=config.goal_admission_chain_next_min_score,
             chain_next_defer_score=config.goal_admission_chain_next_defer_score,
         )
@@ -246,8 +238,6 @@ def build_config_router() -> APIRouter:
     def _apply_thresholds_to_admission_service(payload: dict[str, float | int], service: GoalAdmissionService) -> None:
         service.min_score = float(payload["user_topic_min_score"])
         service.defer_score = float(payload["user_topic_defer_score"])
-        service.world_min_score = float(payload["world_event_min_score"])
-        service.world_defer_score = float(payload["world_event_defer_score"])
         service.chain_min_score = float(payload["chain_next_min_score"])
         service.chain_defer_score = float(payload["chain_next_defer_score"])
 
@@ -354,8 +344,6 @@ def build_config_router() -> APIRouter:
             and request.stability_danger_rate is None
             and request.user_topic_min_score is None
             and request.user_topic_defer_score is None
-            and request.world_event_min_score is None
-            and request.world_event_defer_score is None
             and request.chain_next_min_score is None
             and request.chain_next_defer_score is None
         ):
@@ -371,8 +359,6 @@ def build_config_router() -> APIRouter:
                 stability_danger_rate=request.stability_danger_rate,
                 user_topic_min_score=request.user_topic_min_score,
                 user_topic_defer_score=request.user_topic_defer_score,
-                world_event_min_score=request.world_event_min_score,
-                world_event_defer_score=request.world_event_defer_score,
                 chain_next_min_score=request.chain_next_min_score,
                 chain_next_defer_score=request.chain_next_defer_score,
                 source="api_update",
@@ -408,8 +394,6 @@ def build_config_router() -> APIRouter:
             stability_danger_rate=float(rolled_back["stability_danger_rate"]),
             user_topic_min_score=float(rolled_back["user_topic_min_score"]),
             user_topic_defer_score=float(rolled_back["user_topic_defer_score"]),
-            world_event_min_score=float(rolled_back["world_event_min_score"]),
-            world_event_defer_score=float(rolled_back["world_event_defer_score"]),
             chain_next_min_score=float(rolled_back["chain_next_min_score"]),
             chain_next_defer_score=float(rolled_back["chain_next_defer_score"]),
             revision=int(rolled_back["revision"]),

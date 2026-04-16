@@ -294,9 +294,6 @@ export function GoalsAdmissionOverview({
               {formatThreshold("用户话题", stats.thresholds.user_topic.min_score, stats.thresholds.user_topic.defer_score)}
             </div>
             <div className="goals-admission__detail-text">
-              {formatThreshold("世界事件", stats.thresholds.world_event.min_score, stats.thresholds.world_event.defer_score)}
-            </div>
-            <div className="goals-admission__detail-text">
               {formatThreshold("链式续推", stats.thresholds.chain_next.min_score, stats.thresholds.chain_next.defer_score)}
             </div>
           </div>

@@ -248,22 +248,6 @@ def get_capability_queue_storage_path() -> Path:
     return get_service_root() / ".data" / "capability_queue.json"
 
 
-def get_orchestrator_storage_path() -> Path:
-    load_local_env()
-    configured = os.getenv("ORCHESTRATOR_STORAGE_PATH")
-    if configured:
-        return Path(configured).expanduser()
-    return get_service_root() / ".data" / "orchestrator_sessions.json"
-
-
-def get_orchestrator_message_storage_path() -> Path:
-    load_local_env()
-    configured = os.getenv("ORCHESTRATOR_MESSAGE_STORAGE_PATH")
-    if configured:
-        return Path(configured).expanduser()
-    return get_service_root() / ".data" / "orchestrator_messages.json"
-
-
 def _read_positive_float_env(name: str, default: float, *, minimum: float) -> float:
     load_local_env()
     raw = os.getenv(name, "").strip()
@@ -286,26 +270,6 @@ def _read_positive_int_env(name: str, default: int, *, minimum: int) -> int:
     except ValueError:
         return default
     return max(minimum, value)
-
-
-def get_orchestrator_max_parallel_sessions() -> int:
-    return _read_positive_int_env("ORCHESTRATOR_MAX_PARALLEL_SESSIONS", 2, minimum=1)
-
-
-def get_orchestrator_max_parallel_tasks_per_session() -> int:
-    return _read_positive_int_env("ORCHESTRATOR_MAX_PARALLEL_TASKS_PER_SESSION", 2, minimum=1)
-
-
-def get_orchestrator_delegate_soft_ping_hours() -> float:
-    return _read_positive_float_env("ORCHESTRATOR_DELEGATE_SOFT_PING_HOURS", 2.0, minimum=0.25)
-
-
-def get_orchestrator_delegate_no_receipt_hours() -> float:
-    return _read_positive_float_env("ORCHESTRATOR_DELEGATE_NO_RECEIPT_HOURS", 6.0, minimum=0.5)
-
-
-def get_orchestrator_delegate_followup_interval_minutes() -> float:
-    return _read_positive_float_env("ORCHESTRATOR_DELEGATE_FOLLOWUP_INTERVAL_MINUTES", 30.0, minimum=1.0)
 
 
 def get_goal_admission_mode() -> str:
@@ -338,30 +302,6 @@ def get_goal_admission_defer_score() -> float:
         except ValueError:
             pass
     return 0.45
-
-
-def get_goal_admission_world_min_score() -> float:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_WORLD_MIN_SCORE", "").strip()
-    if configured:
-        try:
-            value = float(configured)
-            return max(0.0, min(1.0, value))
-        except ValueError:
-            pass
-    return 0.75
-
-
-def get_goal_admission_world_defer_score() -> float:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_WORLD_DEFER_SCORE", "").strip()
-    if configured:
-        try:
-            value = float(configured)
-            return max(0.0, min(1.0, value))
-        except ValueError:
-            pass
-    return 0.52
 
 
 def get_goal_admission_chain_min_score() -> float:
@@ -398,15 +338,6 @@ def get_goal_wip_limit() -> int:
         except ValueError:
             pass
     return 2
-
-
-def is_goal_admission_world_enabled() -> bool:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_WORLD_ENABLED", "").strip().lower()
-    if not configured:
-        return True
-    return configured in {"1", "true", "yes", "on"}
-
 
 def get_goal_admission_max_retries() -> int:
     load_local_env()

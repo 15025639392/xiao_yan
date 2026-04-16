@@ -177,7 +177,7 @@ test("renders a chain summary with current step and progress", () => {
         },
         {
           id: "goal-1",
-          title: "从一次世界事件里提炼方向",
+          title: "从一次深夜观察里提炼方向",
           status: "completed",
           chain_id: "chain-2",
           parent_goal_id: null,
@@ -589,7 +589,6 @@ test("renders goal admission overview when admission stats are available", async
     wip_limit: 2,
     thresholds: {
       user_topic: { min_score: 0.68, defer_score: 0.45 },
-      world_event: { min_score: 0.75, defer_score: 0.52 },
       chain_next: { min_score: 0.62, defer_score: 0.45 },
     },
   });
@@ -649,7 +648,6 @@ test("updates stability thresholds and refreshes admission stats", async () => {
       wip_limit: 2,
       thresholds: {
         user_topic: { min_score: 0.68, defer_score: 0.45 },
-        world_event: { min_score: 0.75, defer_score: 0.52 },
         chain_next: { min_score: 0.62, defer_score: 0.45 },
       },
     })
@@ -676,7 +674,6 @@ test("updates stability thresholds and refreshes admission stats", async () => {
       wip_limit: 2,
       thresholds: {
         user_topic: { min_score: 0.68, defer_score: 0.45 },
-        world_event: { min_score: 0.75, defer_score: 0.52 },
         chain_next: { min_score: 0.62, defer_score: 0.45 },
       },
     });
@@ -771,7 +768,6 @@ test("can undo threshold update before delayed commit", async () => {
     wip_limit: 2,
     thresholds: {
       user_topic: { min_score: 0.68, defer_score: 0.45 },
-      world_event: { min_score: 0.75, defer_score: 0.52 },
       chain_next: { min_score: 0.62, defer_score: 0.45 },
     },
   });
@@ -834,7 +830,6 @@ test("can rollback thresholds to previous revision", async () => {
       wip_limit: 2,
       thresholds: {
         user_topic: { min_score: 0.68, defer_score: 0.45 },
-        world_event: { min_score: 0.75, defer_score: 0.52 },
         chain_next: { min_score: 0.62, defer_score: 0.45 },
       },
     })
@@ -861,7 +856,6 @@ test("can rollback thresholds to previous revision", async () => {
       wip_limit: 2,
       thresholds: {
         user_topic: { min_score: 0.68, defer_score: 0.45 },
-        world_event: { min_score: 0.75, defer_score: 0.52 },
         chain_next: { min_score: 0.62, defer_score: 0.45 },
       },
     });
@@ -965,7 +959,6 @@ test("shows danger signal when 24h stability rate is too low", async () => {
     wip_limit: 2,
     thresholds: {
       user_topic: { min_score: 0.68, defer_score: 0.45 },
-      world_event: { min_score: 0.75, defer_score: 0.52 },
       chain_next: { min_score: 0.62, defer_score: 0.45 },
     },
   });
@@ -1133,7 +1126,6 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
             wip_limit: 2,
             thresholds: {
               user_topic: { min_score: 0.68, defer_score: 0.45 },
-              world_event: { min_score: 0.75, defer_score: 0.52 },
               chain_next: { min_score: 0.62, defer_score: 0.45 },
             },
           },
@@ -1213,7 +1205,7 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
   expect(screen.getByText("24h 稳定")).toBeInTheDocument();
 });
 
-test("renders per-goal source explanations for user topic, world event, and chain continuation", () => {
+test("renders per-goal source explanations for user topic, manual goal, and chain continuation", () => {
   render(
     <GoalsPanel
       goals={[
@@ -1225,8 +1217,8 @@ test("renders per-goal source explanations for user topic, world event, and chai
           generation: 0,
         },
         {
-          id: "goal-world",
-          title: "继续消化自己刚经历的状态：凌晨窗外突然安静下来",
+          id: "goal-manual",
+          title: "整理凌晨想到的一件小事",
           source: "凌晨窗外突然安静下来",
           status: "active",
           generation: 0,
@@ -1250,10 +1242,10 @@ test("renders per-goal source explanations for user topic, world event, and chai
   expect(within(userGoal as HTMLElement).getByText("用户话题")).toBeInTheDocument();
   expect(within(userGoal as HTMLElement).getByText("来自最近一次用户表达或关注。")).toBeInTheDocument();
 
-  const worldGoal = screen.getByText("继续消化自己刚经历的状态：凌晨窗外突然安静下来").closest("li");
-  expect(worldGoal).not.toBeNull();
-  expect(within(worldGoal as HTMLElement).getByText("世界事件")).toBeInTheDocument();
-  expect(within(worldGoal as HTMLElement).getByText("来自她刚经历的一次世界或内在事件。")).toBeInTheDocument();
+  const manualGoal = screen.getByText("整理凌晨想到的一件小事").closest("li");
+  expect(manualGoal).not.toBeNull();
+  expect(within(manualGoal as HTMLElement).getByText("手动设定")).toBeInTheDocument();
+  expect(within(manualGoal as HTMLElement).getByText("这是当前直接录入或保留下来的目标。")).toBeInTheDocument();
 
   const chainGoal = screen.getByText("继续推进：整理今天的对话记忆").closest("li");
   expect(chainGoal).not.toBeNull();

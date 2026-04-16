@@ -26,13 +26,6 @@ def find_latest_user_event(recent_events):
     return None
 
 
-def find_latest_world_event(recent_events):
-    for event in reversed(recent_events):
-        if event.kind == "world":
-            return event
-    return None
-
-
 def find_latest_inner_event(recent_events):
     for event in reversed(recent_events):
         if event.kind == "inner":
@@ -158,16 +151,8 @@ def build_goal_title(content: str) -> str:
     return f"持续理解用户最近在意的话题：{content[:24]}"
 
 
-def build_world_goal_title(content: str) -> str:
-    return f"继续消化自己刚经历的状态：{content[:24]}"
-
-
 def build_next_goal_title(goal_title: str) -> str:
     return f"继续推进：{goal_title[:24]}"
-
-
-def build_world_goal_start(content: str, now: datetime, world_state) -> str:
-    return f"{_time_prefix(now)}{_world_tone(world_state)}我还在回味刚才那件事：“{content}”。"
 
 
 def is_generated_goal_id(value: str | None) -> bool:

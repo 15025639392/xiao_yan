@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 from logging import getLogger
 from pathlib import Path
 from threading import Event, Thread
@@ -17,17 +16,8 @@ from app.config import (
     get_goal_admission_min_score,
     get_goal_admission_mode,
     get_goal_admission_storage_path,
-    get_goal_admission_world_defer_score,
-    get_goal_admission_world_min_score,
     get_goal_wip_limit,
     get_goal_storage_path,
-    get_orchestrator_delegate_followup_interval_minutes,
-    get_orchestrator_delegate_no_receipt_hours,
-    get_orchestrator_delegate_soft_ping_hours,
-    get_orchestrator_max_parallel_sessions,
-    get_orchestrator_max_parallel_tasks_per_session,
-    get_orchestrator_message_storage_path,
-    get_orchestrator_storage_path,
     get_mempalace_palace_path,
     get_mempalace_results_limit,
     get_mempalace_room,
@@ -35,7 +25,6 @@ from app.config import (
     get_persona_storage_path,
     get_state_storage_path,
     get_world_storage_path,
-    is_goal_admission_world_enabled,
 )
 from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
 from app.goals.repository import FileGoalRepository
@@ -43,10 +32,6 @@ from app.memory.mempalace_repository import MemPalaceMemoryRepository
 from app.memory.observability import KnowledgeObservabilityTracker
 from app.memory.service import MemoryService
 from app.memory.mempalace_adapter import MemPalaceAdapter
-from app.orchestrator.conversation_repository import OrchestratorConversationRepository
-from app.orchestrator.conversation_service import OrchestratorConversationService
-from app.orchestrator.repository import OrchestratorSessionRepository
-from app.orchestrator.service import OrchestratorService
 from app.persona.service import FilePersonaRepository, PersonaService
 from app.realtime import AppRealtimeHub
 from app.runtime import StateStore
@@ -93,12 +78,9 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
         mode=get_goal_admission_mode(),
         min_score=get_goal_admission_min_score(),
         defer_score=get_goal_admission_defer_score(),
-        world_min_score=get_goal_admission_world_min_score(),
-        world_defer_score=get_goal_admission_world_defer_score(),
         chain_min_score=get_goal_admission_chain_min_score(),
         chain_defer_score=get_goal_admission_chain_defer_score(),
         wip_limit=get_goal_wip_limit(),
-        world_enabled=is_goal_admission_world_enabled(),
         max_retries=get_goal_admission_max_retries(),
     )
     world_repository = FileWorldRepository(get_world_storage_path())
@@ -110,22 +92,6 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     )
     knowledge_observability_tracker = KnowledgeObservabilityTracker()
     stop_event = Event()
-    orchestrator_repository = OrchestratorSessionRepository(get_orchestrator_storage_path())
-    orchestrator_conversation_repository = OrchestratorConversationRepository(get_orchestrator_message_storage_path())
-    orchestrator_conversation_service = OrchestratorConversationService(
-        repository=orchestrator_conversation_repository,
-        scheduler_provider=lambda: orchestrator_service.get_scheduler_snapshot(),
-    )
-    orchestrator_service = OrchestratorService(
-        repository=orchestrator_repository,
-        state_store=state_store,
-        conversation_service=orchestrator_conversation_service,
-        max_parallel_sessions=get_orchestrator_max_parallel_sessions(),
-        max_parallel_tasks_per_session=get_orchestrator_max_parallel_tasks_per_session(),
-        delegate_soft_ping_timeout=timedelta(hours=get_orchestrator_delegate_soft_ping_hours()),
-        delegate_no_receipt_timeout=timedelta(hours=get_orchestrator_delegate_no_receipt_hours()),
-        delegate_stall_followup_interval=timedelta(minutes=get_orchestrator_delegate_followup_interval_minutes()),
-    )
 
     try:
         from app.llm.gateway import ChatGateway
@@ -170,14 +136,6 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.stop_event = stop_event
     target_app.state.autonomy_thread = worker
     target_app.state.autonomy_loop = loop
-    target_app.state.orchestrator_repository = orchestrator_repository
-    target_app.state.orchestrator_conversation_repository = orchestrator_conversation_repository
-    target_app.state.orchestrator_conversation_service = orchestrator_conversation_service
-    target_app.state.orchestrator_service = orchestrator_service
-
-    current_orchestrator_session = state_store.get().orchestrator_session
-    if current_orchestrator_session is not None:
-        orchestrator_repository.save(current_orchestrator_session)
 
 
 def shutdown_runtime(target_app: FastAPI) -> None:
@@ -205,10 +163,6 @@ def reload_runtime(target_app: FastAPI) -> None:
         "stop_event",
         "autonomy_thread",
         "autonomy_loop",
-        "orchestrator_repository",
-        "orchestrator_conversation_repository",
-        "orchestrator_conversation_service",
-        "orchestrator_service",
         "realtime_hub",
     ]
     for attr in runtime_state_attrs:

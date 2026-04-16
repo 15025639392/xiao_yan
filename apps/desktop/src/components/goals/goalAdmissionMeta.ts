@@ -14,7 +14,7 @@ function explainReason(goal: Goal): string {
     return "符合用户话题准入阈值，已允许进入目标看板。";
   }
   if (reason === "world_score") {
-    return "符合世界事件准入阈值，已允许进入目标看板。";
+    return "符合旧记忆来源的准入阈值，已允许进入目标看板。";
   }
   if (reason === "chain_score") {
     return "符合链式续推准入阈值，这条线可以继续往前。";
