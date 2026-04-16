@@ -61,7 +61,6 @@ import {
 } from "./lib/chatMessages";
 import { OverviewPanel } from "./pages/OverviewPage";
 import { MemoryPage } from "./pages/MemoryPage";
-import { HistoryPage } from "./pages/HistoryPage";
 import { OrchestratorPage, type StopDelegateTaskRequest } from "./pages/OrchestratorPage";
 import {
   addImportedProject,
@@ -113,7 +112,6 @@ type AppRoute =
   | "chat"
   | "persona"
   | "memory"
-  | "history"
   | "tools"
   | "capabilities"
   | "orchestrator";
@@ -226,6 +224,11 @@ export default function App() {
   const activeOrchestratorMessages =
     activeOrchestratorSessionId == null ? [] : orchestratorMessagesBySession[activeOrchestratorSessionId] ?? [];
   const activeImportedProjectPath = importedProjectRegistry.active_project_path;
+  const shouldShowOrchestratorEntry =
+    route === "orchestrator" ||
+    state.focus_mode === "orchestrator" ||
+    sessionList.length > 0 ||
+    orchestratorConsoleState.tabs.length > 0;
 
   useEffect(() => {
     dispatchOrchestratorConsole({
@@ -521,7 +524,12 @@ export default function App() {
 
   useEffect(() => {
     const syncRoute = () => {
-      setRoute(resolveRoute(window.location.hash));
+      const nextRoute = resolveRoute(window.location.hash);
+      setRoute(nextRoute);
+
+      if (window.location.hash === "#/history") {
+        window.location.hash = routeToHash("overview");
+      }
     };
 
     if (!window.location.hash) {
@@ -572,12 +580,6 @@ export default function App() {
       stop();
     };
   }, []);
-
-  useEffect(() => {
-    if (state.focus_mode === "orchestrator" && state.orchestrator_session && route !== "orchestrator") {
-      handleNavigate("orchestrator");
-    }
-  }, [route, state.focus_mode, state.orchestrator_session]);
 
   useEffect(() => {
     const hasDispatchingSession = sessionList.some((session) => session.status === "dispatching");
@@ -1723,18 +1725,6 @@ export default function App() {
             <span>人格</span>
           </button>
           <button
-            className={`app-sidebar__nav-item ${route === "memory" ? "app-sidebar__nav-item--active" : ""}`}
-            onClick={() => handleNavigate("memory")}
-            type="button"
-          >
-            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2a10 10 0 1 0 10 10H12V2z"/>
-              <path d="M12 2a10 10 0 0 1 10 10"/>
-              <path d="M12 12L2.5 12"/>
-            </svg>
-            <span>记忆</span>
-          </button>
-          <button
             className={`app-sidebar__nav-item ${route === "tools" ? "app-sidebar__nav-item--active" : ""}`}
             onClick={() => handleNavigate("tools")}
             type="button"
@@ -1745,18 +1735,62 @@ export default function App() {
             </svg>
             <span>工具箱</span>
           </button>
-          <button
-            className={`app-sidebar__nav-item ${route === "orchestrator" ? "app-sidebar__nav-item--active" : ""}`}
-            onClick={() => handleNavigate("orchestrator")}
-            type="button"
-          >
-            <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 6h16M4 12h10M4 18h7" />
-              <path d="M17 9l3 3-3 3" />
-            </svg>
-            <span>主控工作台</span>
-          </button>
         </nav>
+
+        {shouldShowOrchestratorEntry ? (
+          <div className="app-sidebar__section">
+            <div className="app-sidebar__section-title">可选入口</div>
+            <div className="app-sidebar__actions">
+              <button
+                className={`app-sidebar__action-btn ${route === "memory" ? "app-sidebar__action-btn--primary" : ""}`}
+                onClick={() => handleNavigate("memory")}
+                type="button"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                  <path d="M12 12L2.5 12" />
+                </svg>
+                记忆库
+              </button>
+              <button
+                className={`app-sidebar__action-btn ${route === "orchestrator" ? "app-sidebar__action-btn--primary" : ""}`}
+                onClick={() => handleNavigate("orchestrator")}
+                type="button"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 6h16M4 12h10M4 18h7" />
+                  <path d="M17 9l3 3-3 3" />
+                </svg>
+                主控工作台
+              </button>
+            </div>
+            <p className="app-sidebar__section-hint">
+              运营和高自治能力保留为次级入口，避免默认导航承载治理后台。
+            </p>
+          </div>
+        ) : (
+          <div className="app-sidebar__section">
+            <div className="app-sidebar__section-title">可选入口</div>
+            <div className="app-sidebar__actions">
+              <button
+                className={`app-sidebar__action-btn ${route === "memory" ? "app-sidebar__action-btn--primary" : ""}`}
+                onClick={() => handleNavigate("memory")}
+                type="button"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                  <path d="M12 12L2.5 12" />
+                </svg>
+                记忆库
+              </button>
+            </div>
+            <p className="app-sidebar__section-hint">
+              运营和高自治能力保留为次级入口，避免默认导航承载治理后台。
+            </p>
+          </div>
+        )}
 
         <div className="app-sidebar__section">
           <div className="app-sidebar__section-title">控制</div>
@@ -1845,8 +1879,6 @@ export default function App() {
           />
         ) : route === "memory" ? (
           <MemoryPage assistantName={assistantName} />
-        ) : route === "history" ? (
-          <HistoryPage onSelectRollback={handleRollback} />
         ) : route === "orchestrator" ? (
           <OrchestratorPage
             sessions={sessionList}
@@ -2019,7 +2051,7 @@ function resolveRoute(hash: string): AppRoute {
   if (hash === "#/chat") return "chat";
   if (hash === "#/persona") return "persona";
   if (hash === "#/memory") return "memory";
-  if (hash === "#/history") return "history";
+  if (hash === "#/history") return "overview";
   if (hash === "#/tools") return "tools";
   if (hash === "#/capabilities") return "capabilities";
   if (hash === "#/orchestrator") return "orchestrator";
@@ -2030,7 +2062,6 @@ function routeToHash(route: AppRoute): string {
   if (route === "chat") return "#/chat";
   if (route === "persona") return "#/persona";
   if (route === "memory") return "#/memory";
-  if (route === "history") return "#/history";
   if (route === "tools") return "#/tools";
   if (route === "capabilities") return "#/capabilities";
   if (route === "orchestrator") return "#/orchestrator";

@@ -1,5 +1,6 @@
 import { AutobioPanel } from "../components/AutobioPanel";
 import { GoalsPanel } from "../components/GoalsPanel";
+import { SelfProgrammingHistorySection } from "../components/SelfProgrammingHistorySection";
 import { StatusPanel } from "../components/StatusPanel";
 import { WorldPanel } from "../components/WorldPanel";
 import type { BeingState, Goal, InnerWorldState, MacConsoleBootstrapStatus } from "../lib/api";
@@ -72,6 +73,10 @@ export function OverviewPanel({
         <div className="inspector-grid__col">
           <WorldPanel world={world} />
         </div>
+      </section>
+
+      <section className="history-section">
+        <SelfProgrammingHistorySection onSelectRollback={onRollback} />
       </section>
 
       <section className="autobio-section">

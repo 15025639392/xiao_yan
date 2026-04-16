@@ -1,4 +1,4 @@
-import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
 import App from "./App";
@@ -199,10 +199,13 @@ test("renders wake and sleep controls", async () => {
   );
 
   const { container } = await renderApp();
+  const mainNav = screen.getByRole("navigation", { name: "主导航" });
   expect(screen.getByRole("button", { name: "唤醒" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "休眠" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "对话" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "总览" })).toBeInTheDocument();
+  expect(within(mainNav).queryByRole("button", { name: "记忆" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "记忆库" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "能力中枢" })).not.toBeInTheDocument();
   expect(screen.getByText("小晏")).toBeInTheDocument();
   expect(screen.getByText("目标看板")).toBeInTheDocument();
@@ -210,6 +213,288 @@ test("renders wake and sleep controls", async () => {
   expect(container.querySelector(".app-sidebar")).toBeTruthy();
   expect(container.querySelector(".overview-stage")).toBeTruthy();
   expect(container.querySelector(".inspector-grid")).toBeTruthy();
+});
+
+test("keeps memory reachable as an optional entry instead of a primary nav item", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/autobio")) {
+        return new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/world")) {
+        return new Response(
+          JSON.stringify({
+            time_of_day: "night",
+            energy: "low",
+            mood: "tired",
+            focus_tension: "low",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+      if (url.endsWith("/goals")) {
+        return new Response(JSON.stringify({ goals: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/goals/admission/stats")) {
+        return new Response(
+          JSON.stringify({
+            mode: "off",
+            today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
+            admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
+            admitted_stability_24h_rate: null,
+            deferred_queue_size: 0,
+            wip_limit: 3,
+            thresholds: {
+              user_topic: { min_score: 0.6, defer_score: 0.4 },
+              world_event: { min_score: 0.6, defer_score: 0.4 },
+              chain_next: { min_score: 0.6, defer_score: 0.4 },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url.endsWith("/goals/admission/candidates")) {
+        return new Response(JSON.stringify({ deferred: [], recent: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/config/goal-admission/history")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/messages")) {
+        return new Response(JSON.stringify({ messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.endsWith("/persona/emotion")) {
+        return new Response(
+          JSON.stringify({
+            primary_emotion: "calm",
+            primary_intensity: "none",
+            secondary_emotion: null,
+            secondary_intensity: "none",
+            mood_valence: 0,
+            arousal: 0,
+            is_calm: true,
+            active_entry_count: 0,
+            active_entries: [],
+            last_updated: null,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+      if (url.endsWith("/memory/summary")) {
+        return new Response(
+          JSON.stringify({
+            total_estimated: 0,
+            by_kind: {},
+            recent_count: 0,
+            strong_memories: 0,
+            relationship: {
+              available: false,
+              boundaries: [],
+              commitments: [],
+              preferences: [],
+            },
+            available: true,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url.includes("/memory/timeline")) {
+        return new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          mode: "sleeping",
+          current_thought: null,
+          active_goal_ids: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    })
+  );
+
+  await renderApp();
+
+  fireEvent.click(screen.getByRole("button", { name: "记忆库" }));
+
+  await waitFor(() => {
+    expect(screen.getByRole("heading", { name: "记忆库" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "全部记忆" })).toBeInTheDocument();
+  });
+});
+
+test("redirects legacy history route to overview history section", async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/autobio")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "night",
+          energy: "low",
+          mood: "tired",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/goals/admission/stats")) {
+      return new Response(
+        JSON.stringify({
+          mode: "off",
+          today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
+          admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
+          admitted_stability_24h_rate: null,
+          deferred_queue_size: 0,
+          wip_limit: 3,
+          thresholds: {
+            user_topic: { min_score: 0.6, defer_score: 0.4 },
+            world_event: { min_score: 0.6, defer_score: 0.4 },
+            chain_next: { min_score: 0.6, defer_score: 0.4 },
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (url.endsWith("/goals/admission/candidates")) {
+      return new Response(JSON.stringify({ deferred: [], recent: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/config/goal-admission/history")) {
+      return new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/persona/emotion")) {
+      return new Response(
+        JSON.stringify({
+          primary_emotion: "calm",
+          primary_intensity: "none",
+          secondary_emotion: null,
+          secondary_intensity: "none",
+          mood_valence: 0,
+          arousal: 0,
+          is_calm: true,
+          active_entry_count: 0,
+          active_entries: [],
+          last_updated: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (url.endsWith("/memory/summary")) {
+      return new Response(
+        JSON.stringify({
+          total_estimated: 0,
+          by_kind: {},
+          recent_count: 0,
+          strong_memories: 0,
+          relationship: {
+            available: false,
+            boundaries: [],
+            commitments: [],
+            preferences: [],
+          },
+          available: true,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (url.endsWith("/self-programming/history")) {
+      return new Response(JSON.stringify({ entries: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(
+      JSON.stringify({
+        mode: "sleeping",
+        current_thought: null,
+        active_goal_ids: [],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  window.location.hash = "#/history";
+
+  await renderApp();
+
+  await waitFor(() => {
+    expect(window.location.hash).toBe("#/");
+  });
+  expect(screen.getByText("自我编程历史")).toBeInTheDocument();
 });
 
 test("renders capability hub when route is capabilities", async () => {

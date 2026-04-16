@@ -1,10 +1,14 @@
 import { useState } from "react";
 
-import { HistoryPanel } from "../components/HistoryPanel";
-import { Button } from "../components/ui";
+import { HistoryPanel } from "./HistoryPanel";
+import { Button } from "./ui";
 import type { SelfProgrammingHistoryEntry } from "../lib/api";
 
-export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: string) => void }) {
+type SelfProgrammingHistorySectionProps = {
+  onSelectRollback?: (jobId: string) => void;
+};
+
+export function SelfProgrammingHistorySection({ onSelectRollback }: SelfProgrammingHistorySectionProps) {
   const [selectedEntry, setSelectedEntry] = useState<SelfProgrammingHistoryEntry | null>(null);
 
   return (
@@ -51,9 +55,9 @@ export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: s
               <div className="history-detail__section">
                 <h4>触碰文件</h4>
                 <ul className="history-detail__files">
-                  {selectedEntry.touched_files.map((f: string) => (
-                    <li key={f}>
-                      <code>{f}</code>
+                  {selectedEntry.touched_files.map((filePath) => (
+                    <li key={filePath}>
+                      <code>{filePath}</code>
                     </li>
                   ))}
                 </ul>
@@ -68,7 +72,7 @@ export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: s
                 >
                   {selectedEntry.health_score.toFixed(0)}
                 </span>
-                <span style={{ color: "var(--text-tertiary)", marginLeft: varStr("space-2") }}>分</span>
+                <span style={{ color: "var(--text-tertiary)", marginLeft: cssVar("space-2") }}>分</span>
               </div>
             ) : null}
 
@@ -80,7 +84,7 @@ export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: s
                   onSelectRollback(selectedEntry.job_id);
                   setSelectedEntry(null);
                 }}
-                style={{ marginTop: varStr("space-4"), width: "100%" }}
+                style={{ marginTop: cssVar("space-4"), width: "100%" }}
               >
                 ↩️ 回滚此操作
               </Button>
@@ -92,7 +96,7 @@ export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: s
   );
 }
 
-function varStr(name: string): string {
+function cssVar(name: string): string {
   return `var(--${name})`;
 }
 
