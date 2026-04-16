@@ -15,7 +15,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
-REPO_CORE = Path(__file__).resolve().parents[1]
+REPO_CORE = Path(__file__).resolve().parents[2]
 
 
 def _load_json(path: Path) -> dict:
@@ -73,7 +73,7 @@ def _derive_baselines_from_replay(replay_report: dict) -> tuple[float, float]:
 
 
 def _run_script(script_name: str, args: list[str]) -> None:
-    cmd = [sys.executable, str(REPO_CORE / "scripts" / script_name), *args]
+    cmd = [sys.executable, str(REPO_CORE / "tools" / "goal_admission" / script_name), *args]
     result = subprocess.run(cmd, check=False, capture_output=True, text=True)
     if result.returncode != 0:
         message = (result.stderr or result.stdout or "").strip()

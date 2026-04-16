@@ -11,12 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-REPO_CORE = Path(__file__).resolve().parents[1]
+REPO_CORE = Path(__file__).resolve().parents[2]
 if str(REPO_CORE) not in sys.path:
     sys.path.insert(0, str(REPO_CORE))
 
 from app.goals.admission import GoalAdmissionStore  # noqa: E402
-from scripts.goal_admission_phase3_driver import DriverConfig, Phase3Driver  # noqa: E402
+from tools.goal_admission.goal_admission_phase3_driver import DriverConfig, Phase3Driver  # noqa: E402
 
 
 def _clamp_score(value: float) -> float:

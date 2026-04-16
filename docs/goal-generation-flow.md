@@ -180,13 +180,13 @@ flowchart TD
 
 用于快速生成准入样本并判断是否达到 Phase 3 进入门槛：
 
-- 脚本：`services/core/scripts/goal_admission_phase3_driver.py`
+- 脚本：`services/core/tools/goal_admission/goal_admission_phase3_driver.py`
 
 示例：
 
 ```bash
 cd services/core
-python scripts/goal_admission_phase3_driver.py --iterations 700
+python tools/goal_admission/goal_admission_phase3_driver.py --iterations 700
 ```
 
 常用参数：
@@ -209,13 +209,13 @@ python scripts/goal_admission_phase3_driver.py --iterations 700
 
 用于在参数变更前生成标准化对比证据，避免“凭感觉调参”：
 
-- 脚本：`services/core/scripts/goal_admission_replay_compare.py`
+- 脚本：`services/core/tools/goal_admission/goal_admission_replay_compare.py`
 
 示例：
 
 ```bash
 cd services/core
-python scripts/goal_admission_replay_compare.py \
+python tools/goal_admission/goal_admission_replay_compare.py \
   --iterations 700 \
   --seed 20260408 \
   --candidate-min-score 0.72 \
@@ -245,7 +245,7 @@ python scripts/goal_admission_replay_compare.py \
 
 - 文档：`docs/runbooks/goal-admission-phase3-canary.md`
 - 用途：定义小流量窗口、放量条件、回滚阈值、值班责任与分钟级回退步骤。
-- 配套脚本：`services/core/scripts/goal_admission_canary_summary.py`（从 canary 采样 JSON 自动生成 promote/hold/rollback 建议）。
-- 配套脚本：`services/core/scripts/goal_admission_release_report.py`（把 replay + canary 结果渲染为发布评审 Markdown）。
-- 配套脚本：`services/core/scripts/goal_admission_canary_pipeline.py`（单命令串联采样、汇总与发布报告）。
-- 配套脚本：`services/core/scripts/goal_admission_mock_samples.py`（生成演练样本，便于离线走通 pipeline）。
+- 配套脚本：`services/core/tools/goal_admission/goal_admission_canary_summary.py`（从 canary 采样 JSON 自动生成 promote/hold/rollback 建议）。
+- 配套脚本：`services/core/tools/goal_admission/goal_admission_release_report.py`（把 replay + canary 结果渲染为发布评审 Markdown）。
+- 配套脚本：`services/core/tools/goal_admission/goal_admission_canary_pipeline.py`（单命令串联采样、汇总与发布报告）。
+- 配套脚本：`services/core/tools/goal_admission/goal_admission_mock_samples.py`（生成演练样本，便于离线走通 pipeline）。

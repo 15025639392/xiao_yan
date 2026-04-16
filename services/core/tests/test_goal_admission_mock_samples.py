@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def _script_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "scripts" / "goal_admission_mock_samples.py"
+    return Path(__file__).resolve().parents[1] / "tools" / "goal_admission" / "goal_admission_mock_samples.py"
 
 
 def test_mock_samples_script_generates_requested_count_and_shape(tmp_path: Path):

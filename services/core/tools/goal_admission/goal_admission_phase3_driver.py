@@ -4,13 +4,13 @@
 Usage examples:
 
   # In-memory run (safe default), prints summary
-  python services/core/scripts/goal_admission_phase3_driver.py --iterations 700
+  python services/core/tools/goal_admission/goal_admission_phase3_driver.py --iterations 700
 
   # Persist to default admission store (will affect live stats file)
-  python services/core/scripts/goal_admission_phase3_driver.py --persist default
+  python services/core/tools/goal_admission/goal_admission_phase3_driver.py --persist default
 
   # Export JSON report
-  python services/core/scripts/goal_admission_phase3_driver.py --output /tmp/phase3-report.json --print-json
+  python services/core/tools/goal_admission/goal_admission_phase3_driver.py --output /tmp/phase3-report.json --print-json
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
-REPO_CORE = Path(__file__).resolve().parents[1]
+REPO_CORE = Path(__file__).resolve().parents[2]
 if str(REPO_CORE) not in sys.path:
     sys.path.insert(0, str(REPO_CORE))
 

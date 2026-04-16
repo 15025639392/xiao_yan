@@ -128,7 +128,7 @@ def main() -> int:
     args = parser.parse_args()
 
     turns = max(10, int(args.turns))
-    repo_root = Path(__file__).resolve().parents[3]
+    repo_root = Path(__file__).resolve().parents[4]
     output_path = Path(args.output).expanduser().resolve() if args.output else _default_output_path(repo_root)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

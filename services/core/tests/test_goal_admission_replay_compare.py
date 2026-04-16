@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def _script_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "scripts" / "goal_admission_replay_compare.py"
+    return Path(__file__).resolve().parents[1] / "tools" / "goal_admission" / "goal_admission_replay_compare.py"
 
 
 def test_replay_compare_script_generates_structured_report_with_required_metrics(tmp_path: Path):

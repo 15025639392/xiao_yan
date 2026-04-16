@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def _script_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "scripts" / "goal_admission_canary_pipeline.py"
+    return Path(__file__).resolve().parents[1] / "tools" / "goal_admission" / "goal_admission_canary_pipeline.py"
 
 
 def _write_replay_report(path: Path) -> None:

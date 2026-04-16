@@ -42,7 +42,7 @@
 
 ```bash
 cd services/core
-python scripts/goal_admission_replay_compare.py \
+python tools/goal_admission/goal_admission_replay_compare.py \
   --iterations 700 \
   --seed 20260408 \
   --candidate-min-score 0.72 \
@@ -82,7 +82,7 @@ done
 ### 5.4 自动汇总并给出建议
 
 ```bash
-python scripts/goal_admission_canary_summary.py \
+python tools/goal_admission/goal_admission_canary_summary.py \
   --input-dir reports/goal-admission/canary \
   --baseline-drop-rate 0.10 \
   --baseline-wip-blocked-rate 0.04 \
@@ -98,7 +98,7 @@ python scripts/goal_admission_canary_summary.py \
 ### 5.5 生成发布评审报告（Markdown）
 
 ```bash
-python scripts/goal_admission_release_report.py \
+python tools/goal_admission/goal_admission_release_report.py \
   --replay-report reports/goal-admission/replay-2026-04-08-1000.json \
   --canary-summary reports/goal-admission/canary-summary-2026-04-08-1130.json \
   --output reports/goal-admission/release-report-$(date +%F-%H%M).md \
@@ -119,7 +119,7 @@ python scripts/goal_admission_release_report.py \
 先生成演练样本（可选）：
 
 ```bash
-python scripts/goal_admission_mock_samples.py \
+python tools/goal_admission/goal_admission_mock_samples.py \
   --output-dir reports/goal-admission/mock-samples \
   --count 12 \
   --scenario healthy \
@@ -127,7 +127,7 @@ python scripts/goal_admission_mock_samples.py \
 ```
 
 ```bash
-python scripts/goal_admission_canary_pipeline.py \
+python tools/goal_admission/goal_admission_canary_pipeline.py \
   --replay-report reports/goal-admission/replay-2026-04-08-1000.json \
   --sample-source-dir reports/goal-admission/mock-samples \
   --sample-count 12 \

@@ -124,7 +124,7 @@ curl -s http://127.0.0.1:8000/memory/observability | jq
 
 ```bash
 cd /Users/ldy/Desktop/map/ai/services/core
-PYTHONPATH=. python scripts/mempalace_observability_preflight.py --turns 12
+PYTHONPATH=. python tools/mempalace/mempalace_observability_preflight.py --turns 12
 ```
 
 - 产出：`docs/runbooks/evidence/mempalace-preflight-*.json`
@@ -137,7 +137,7 @@ PYTHONPATH=. python scripts/mempalace_observability_preflight.py --turns 12
 
 ```bash
 cd /Users/ldy/Desktop/map/ai/services/core
-PYTHONPATH=. python scripts/mempalace_live_observability_preflight.py --base-url http://127.0.0.1:8000 --turns 12 --retries 3 --reset-first
+PYTHONPATH=. python tools/mempalace/mempalace_live_observability_preflight.py --base-url http://127.0.0.1:8000 --turns 12 --retries 3 --reset-first
 ```
 
 - 产出：`docs/runbooks/evidence/mempalace-live-preflight-*.json`
@@ -159,14 +159,14 @@ PYTHONPATH=. python scripts/mempalace_live_observability_preflight.py --base-url
 
 ```bash
 cd /Users/ldy/Desktop/map/ai/services/core
-PYTHONPATH=. python scripts/mempalace_observability_watch.py --base-url http://127.0.0.1:8000 --duration-minutes 1440 --interval-seconds 300 --reset-first
+PYTHONPATH=. python tools/mempalace/mempalace_observability_watch.py --base-url http://127.0.0.1:8000 --duration-minutes 1440 --interval-seconds 300 --reset-first
 ```
 
 - 启动方式（后台）：
 
 ```bash
 cd /Users/ldy/Desktop/map/ai/services/core
-nohup env PYTHONPATH=. python scripts/mempalace_observability_watch.py --base-url http://127.0.0.1:8000 --duration-minutes 1440 --interval-seconds 300 --reset-first > /tmp/mempalace-gray-watch.log 2>&1 &
+nohup env PYTHONPATH=. python tools/mempalace/mempalace_observability_watch.py --base-url http://127.0.0.1:8000 --duration-minutes 1440 --interval-seconds 300 --reset-first > /tmp/mempalace-gray-watch.log 2>&1 &
 ```
 
 - 产出：`docs/runbooks/evidence/mempalace-gray-watch-*.json`
