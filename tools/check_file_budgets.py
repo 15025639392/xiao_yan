@@ -94,13 +94,31 @@ def main() -> int:
         default=".",
         help="Repository root to scan. Defaults to current directory.",
     )
+    parser.add_argument(
+        "files",
+        nargs="*",
+        help="Optional file paths to check. When omitted, scan the whole repository.",
+    )
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
     warnings: list[tuple[Path, int, Budget]] = []
     failures: list[tuple[Path, int, Budget]] = []
 
-    for path in collect_candidates(root):
+    if args.files:
+        candidates = []
+        for raw_path in args.files:
+            path = (root / raw_path).resolve()
+            if not path.exists() or not path.is_file():
+                continue
+            if path.suffix not in DEFAULT_EXTENSIONS or should_skip(path):
+                continue
+            candidates.append(path)
+        candidates = sorted(set(candidates))
+    else:
+        candidates = collect_candidates(root)
+
+    for path in candidates:
         budget = budget_for(path)
         if budget is None:
             continue
