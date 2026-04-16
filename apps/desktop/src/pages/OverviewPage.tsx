@@ -23,7 +23,7 @@ export function OverviewPanel({
   state: BeingState;
   world: InnerWorldState | null;
   macConsoleStatus?: MacConsoleBootstrapStatus | null;
-  onNavigate: (route: "memory" | "orchestrator" | "persona") => void;
+  onNavigate: (route: "memory" | "persona") => void;
 }) {
   const isAwake = mode === "awake";
 
@@ -73,13 +73,6 @@ export function OverviewPanel({
         <div className="inspector-grid__col">
           <Panel icon="↗" title="继续深入" subtitle="复杂治理能力保留为次级入口">
             <div style={{ display: "grid", gap: "var(--space-3)" }}>
-              <button
-                type="button"
-                className="app-sidebar__action-btn app-sidebar__action-btn--primary"
-                onClick={() => onNavigate("orchestrator")}
-              >
-                查看执行历史
-              </button>
               <button type="button" className="app-sidebar__action-btn" onClick={() => onNavigate("memory")}>
                 打开记忆库
               </button>

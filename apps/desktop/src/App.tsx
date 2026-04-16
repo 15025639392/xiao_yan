@@ -61,7 +61,6 @@ import {
 import { OverviewPanel } from "./pages/OverviewPage";
 import { CapabilitiesPage } from "./pages/CapabilitiesPage";
 import { MemoryPage } from "./pages/MemoryPage";
-import { OrchestratorPage, type StopDelegateTaskRequest } from "./pages/OrchestratorPage";
 import {
   addImportedProject,
   buildFolderPermissionPlan,
@@ -155,6 +154,12 @@ const DELEGATE_TIMEOUT_SECONDS_BY_KIND: Record<OrchestratorTask["kind"], number>
 const DELEGATE_TIMEOUT_SECONDS_MIN = 30;
 const DELEGATE_TIMEOUT_SECONDS_MAX = 60 * 60;
 const DELEGATE_TIMEOUT_SECONDS_FALLBACK = 20 * 60;
+
+type StopDelegateTaskRequest = {
+  sessionId: string;
+  taskId: string;
+  runId: string;
+};
 
 type OrchestratorUIAction =
   | {
@@ -898,12 +903,6 @@ export default function App() {
     let pendingUserMessageId: string | null = null;
 
     try {
-      if (isExplicitOrchestratorEntry(content)) {
-        await createAndOpenOrchestratorSession(content);
-        handleNavigate("orchestrator");
-        return;
-      }
-
       const userMessage: ChatEntry = {
         id: `user-${Date.now()}`,
         role: "user",
@@ -1772,60 +1771,26 @@ export default function App() {
           </button>
         </nav>
 
-        {shouldShowOrchestratorEntry ? (
-          <div className="app-sidebar__section">
-            <div className="app-sidebar__section-title">可选入口</div>
-            <div className="app-sidebar__actions">
-              <button
-                className={`app-sidebar__action-btn ${route === "memory" ? "app-sidebar__action-btn--primary" : ""}`}
-                onClick={() => handleNavigate("memory")}
-                type="button"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
-                  <path d="M12 2a10 10 0 0 1 10 10" />
-                  <path d="M12 12L2.5 12" />
-                </svg>
-                记忆库
-              </button>
-              <button
-                className={`app-sidebar__action-btn ${route === "orchestrator" ? "app-sidebar__action-btn--primary" : ""}`}
-                onClick={() => handleNavigate("orchestrator")}
-                type="button"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 6h16M4 12h10M4 18h7" />
-                  <path d="M17 9l3 3-3 3" />
-                </svg>
-                主控工作台
-              </button>
-            </div>
-            <p className="app-sidebar__section-hint">
-              记忆、人格配置和高自治能力保留为次级入口，避免默认导航承载治理后台。
-            </p>
+        <div className="app-sidebar__section">
+          <div className="app-sidebar__section-title">可选入口</div>
+          <div className="app-sidebar__actions">
+            <button
+              className={`app-sidebar__action-btn ${route === "memory" ? "app-sidebar__action-btn--primary" : ""}`}
+              onClick={() => handleNavigate("memory")}
+              type="button"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
+                <path d="M12 2a10 10 0 0 1 10 10" />
+                <path d="M12 12L2.5 12" />
+              </svg>
+              记忆库
+            </button>
           </div>
-        ) : (
-          <div className="app-sidebar__section">
-            <div className="app-sidebar__section-title">可选入口</div>
-            <div className="app-sidebar__actions">
-              <button
-                className={`app-sidebar__action-btn ${route === "memory" ? "app-sidebar__action-btn--primary" : ""}`}
-                onClick={() => handleNavigate("memory")}
-                type="button"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2a10 10 0 1 0 10 10H12V2z" />
-                  <path d="M12 2a10 10 0 0 1 10 10" />
-                  <path d="M12 12L2.5 12" />
-                </svg>
-                记忆库
-              </button>
-            </div>
-            <p className="app-sidebar__section-hint">
-              记忆、人格配置和高自治能力保留为次级入口，避免默认导航承载治理后台。
-            </p>
-          </div>
-        )}
+          <p className="app-sidebar__section-hint">
+            记忆、人格配置和高自治能力保留为次级入口，避免默认导航承载治理后台。
+          </p>
+        </div>
 
         <div className="app-sidebar__section">
           <div className="app-sidebar__section-title">控制</div>
@@ -1872,10 +1837,6 @@ export default function App() {
             {error}
           </div>
         ) : null}
-        {route === "orchestrator" && orchestratorSendNotice ? (
-          <div className="notice-banner">{orchestratorSendNotice}</div>
-        ) : null}
-
         {route === "chat" ? (
           <ChatPanel
             assistantName={assistantName}
@@ -1914,48 +1875,6 @@ export default function App() {
           />
         ) : route === "memory" ? (
           <MemoryPage assistantName={assistantName} />
-        ) : route === "orchestrator" ? (
-          <OrchestratorPage
-            sessions={sessionList}
-            historySessions={orchestratorHistorySessions}
-            workbenchTabs={orchestratorConsoleState.tabs}
-            activeWorkbenchTabId={orchestratorConsoleState.activeTabId}
-            scheduler={orchestratorScheduler}
-            messages={activeOrchestratorMessages}
-            activeSessionId={activeOrchestratorSessionId}
-            activeProjectPath={activeImportedProjectPath}
-            draft={orchestratorDraft}
-            isSending={isOrchestratorSending}
-            historyFilter={orchestratorHistoryFilter}
-            onHistoryFilterChange={handleOrchestratorHistoryFilterChange}
-            onApplyHistoryFilter={handleApplyOrchestratorHistoryFilter}
-            onActivateWorkbenchTab={handleActivateOrchestratorTab}
-            onCloseWorkbenchTab={handleCloseOrchestratorTab}
-            onCreateBlankTab={handleCreateBlankOrchestratorTab}
-            onDraftChange={handleOrchestratorDraftChange}
-            onSendMessage={handleSendOrchestratorMessage}
-            onActivateSession={handleActivateOrchestratorSession}
-            onApprovePlan={handleApproveOrchestratorPlan}
-            onRejectPlan={handleRejectOrchestratorPlan}
-            onResumeSession={handleResumeOrchestratorSession}
-            onCancelSession={handleCancelOrchestrator}
-            onCreateSession={handleCreateOrchestratorSession}
-            onDeleteSession={handleDeleteOrchestratorSession}
-            onSendQuickMessage={handleSendOrchestratorQuickMessage}
-            onStopDelegateTask={(payload) =>
-              dispatchOrchestratorAction({
-                type: "stop_task",
-                payload,
-              })
-            }
-            projectRegistry={importedProjectRegistry}
-            isUpdatingProjects={isUpdatingProjects}
-            projectError={projectControlError}
-            tauriSupported={isTauriRuntime()}
-            onImportProject={handleImportProjectToOrchestrator}
-            onActivateProject={handleActivateOrchestratorProject}
-            onRemoveProject={handleRemoveOrchestratorProject}
-          />
         ) : route === "tools" ? (
           <ToolPanel />
         ) : route === "capabilities" ? (
@@ -2087,7 +2006,6 @@ function resolveRoute(hash: string): AppRoute {
   if (hash === "#/history") return "overview";
   if (hash === "#/tools") return "tools";
   if (hash === "#/capabilities") return "capabilities";
-  if (hash === "#/orchestrator") return "orchestrator";
   return "overview";
 }
 
@@ -2097,7 +2015,6 @@ function routeToHash(route: AppRoute): string {
   if (route === "memory") return "#/memory";
   if (route === "tools") return "#/tools";
   if (route === "capabilities") return "#/capabilities";
-  if (route === "orchestrator") return "#/orchestrator";
   return "#/";
 }
 
