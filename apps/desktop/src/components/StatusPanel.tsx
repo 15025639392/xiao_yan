@@ -21,24 +21,39 @@ type StatusPanelProps = {
   focusGoalTitle?: string | null;
   onRollback?: (jobId: string) => void;
   onApprovalDecision?: (jobId: string, approved: boolean) => void;
+  variant?: "full" | "compact";
 };
 
-export function StatusPanel({ state, macConsoleStatus, error, onRollback, onApprovalDecision }: StatusPanelProps) {
+export function StatusPanel({
+  state,
+  macConsoleStatus,
+  error,
+  onRollback,
+  onApprovalDecision,
+  variant = "full",
+}: StatusPanelProps) {
   const planCompleted =
     state.today_plan?.steps.length && state.today_plan.steps.every((step) => step.status === "completed");
   const selfProgrammingJob = state.self_programming_job;
+  const isCompact = variant === "compact";
   const [emotionState, setEmotionState] = useState<EmotionState | null>(null);
   const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const [showEmotionDetails, setShowEmotionDetails] = useState(false);
 
   useEffect(() => {
+    if (isCompact) {
+      return;
+    }
     fetchEmotionState().then(setEmotionState).catch(console.error);
     fetchMemorySummary()
       .then((summary) => setRelationship(summary.relationship))
       .catch(() => setRelationship(null));
-  }, [state.mode, state.focus_mode]);
+  }, [isCompact, state.mode, state.focus_mode]);
 
   useEffect(() => {
+    if (isCompact) {
+      return;
+    }
     const unsubscribe = subscribeAppRealtime((event) => {
       const memoryPayload =
         event.type === "snapshot" ? event.payload.memory : event.type === "memory_updated" ? event.payload : null;
@@ -50,7 +65,7 @@ export function StatusPanel({ state, macConsoleStatus, error, onRollback, onAppr
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isCompact]);
 
   const headerBadge = state.today_plan ? (
     <StatusBadge tone={planCompleted ? "completed" : "active"}>
@@ -99,7 +114,7 @@ export function StatusPanel({ state, macConsoleStatus, error, onRollback, onAppr
 
       {state.today_plan ? <TodayPlanSection plan={state.today_plan} planCompleted={Boolean(planCompleted)} /> : null}
 
-      {emotionState ? (
+      {!isCompact && emotionState ? (
         <EmotionPanel
           emotionState={emotionState}
           showDetails={showEmotionDetails}
@@ -107,7 +122,7 @@ export function StatusPanel({ state, macConsoleStatus, error, onRollback, onAppr
         />
       ) : null}
 
-      <MemoryRelationshipSummary relationship={relationship} />
+      {!isCompact ? <MemoryRelationshipSummary relationship={relationship} /> : null}
 
       {selfProgrammingJob ? (
         selfProgrammingJob.status === "pending_start_approval"
@@ -126,16 +141,16 @@ export function StatusPanel({ state, macConsoleStatus, error, onRollback, onAppr
               onApprovalDecision?.(jobId, approved);
             }}
           />
-        ) : (
+        ) : !isCompact ? (
           <SelfProgrammingPanel job={selfProgrammingJob} onRollback={onRollback} />
-        )
+        ) : null
       ) : null}
 
       {error ? (
         <InlineAlert tone="danger">{error}</InlineAlert>
       ) : null}
 
-      {selfProgrammingJob ? <SelfProgrammingCooldownSettings /> : null}
+      {!isCompact && selfProgrammingJob ? <SelfProgrammingCooldownSettings /> : null}
     </Panel>
   );
 }

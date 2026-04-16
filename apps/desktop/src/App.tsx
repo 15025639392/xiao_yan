@@ -31,7 +31,6 @@ import {
   fetchOrchestratorScheduler,
   fetchOrchestratorSessions,
   fetchGoals,
-  fetchAutobio,
   fetchMessages,
   fetchState,
   fetchWorld,
@@ -172,7 +171,6 @@ export default function App() {
   const [state, setState] = useState<BeingState>(initialState);
   const [world, setWorld] = useState<InnerWorldState | null>(null);
   const [macConsoleStatus, setMacConsoleStatus] = useState<MacConsoleBootstrapStatus | null>(null);
-  const [autobioEntries, setAutobioEntries] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [orchestratorSessions, setOrchestratorSessions] = useState<OrchestratorSession[]>([]);
@@ -267,22 +265,11 @@ export default function App() {
 
     async function syncRuntime() {
       try {
-        const [
-          nextState,
-          nextMessages,
-          nextGoals,
-          nextWorld,
-          nextAutobio,
-          nextOrchestratorSessions,
-          nextOrchestratorScheduler,
-        ] = await Promise.all([
+        const initialRoute = resolveRoute(window.location.hash);
+        const [nextState, nextGoals, nextWorld] = await Promise.all([
           fetchState(),
-          fetchMessages(),
           fetchGoals(),
           fetchWorld(),
-          fetchAutobio(),
-          fetchOrchestratorSessions().catch(() => []),
-          fetchOrchestratorScheduler().catch(() => defaultOrchestratorScheduler),
         ]);
 
         if (cancelled) {
@@ -290,14 +277,33 @@ export default function App() {
         }
 
         setState(nextState);
-        setMessages((current) => syncMessagesFromRuntime(current, nextMessages.messages));
         setGoals(nextGoals.goals);
         setWorld(nextWorld);
-        setAutobioEntries(nextAutobio.entries);
-        const normalizedSessions = normalizeOrchestratorSessions(nextOrchestratorSessions);
-        setOrchestratorSessions(normalizedSessions);
-        setOrchestratorHistorySessions(normalizedSessions);
-        setOrchestratorScheduler(normalizeOrchestratorScheduler(nextOrchestratorScheduler));
+        if (initialRoute === "chat") {
+          void fetchMessages()
+            .then((nextMessages) => {
+              if (!cancelled) {
+                setMessages((current) => syncMessagesFromRuntime(current, nextMessages.messages));
+              }
+            })
+            .catch(() => {
+              // Messages remain lazy-loaded when chat opens.
+            });
+        }
+        if (initialRoute === "orchestrator") {
+          void Promise.all([
+            fetchOrchestratorSessions().catch(() => []),
+            fetchOrchestratorScheduler().catch(() => defaultOrchestratorScheduler),
+          ]).then(([nextOrchestratorSessions, nextOrchestratorScheduler]) => {
+            if (cancelled) {
+              return;
+            }
+            const normalizedSessions = normalizeOrchestratorSessions(nextOrchestratorSessions);
+            setOrchestratorSessions(normalizedSessions);
+            setOrchestratorHistorySessions(normalizedSessions);
+            setOrchestratorScheduler(normalizeOrchestratorScheduler(nextOrchestratorScheduler));
+          });
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "同步失败");
@@ -464,7 +470,6 @@ export default function App() {
       if (runtimePayload.mac_console_status !== undefined) {
         setMacConsoleStatus(runtimePayload.mac_console_status ?? null);
       }
-      setAutobioEntries(runtimePayload.autobio);
       setError("");
     });
 
@@ -488,6 +493,59 @@ export default function App() {
       unsubscribePersona();
     };
   }, []);
+
+  useEffect(() => {
+    if (route !== "chat") {
+      return;
+    }
+
+    let cancelled = false;
+    void fetchMessages()
+      .then((nextMessages) => {
+        if (!cancelled) {
+          setMessages((current) => syncMessagesFromRuntime(current, nextMessages.messages));
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("加载聊天消息失败:", err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [route]);
+
+  useEffect(() => {
+    if (route !== "orchestrator") {
+      return;
+    }
+
+    let cancelled = false;
+    void Promise.all([
+      fetchOrchestratorSessions().catch(() => []),
+      fetchOrchestratorScheduler().catch(() => defaultOrchestratorScheduler),
+    ])
+      .then(([nextOrchestratorSessions, nextOrchestratorScheduler]) => {
+        if (cancelled) {
+          return;
+        }
+        const normalizedSessions = normalizeOrchestratorSessions(nextOrchestratorSessions);
+        setOrchestratorSessions(normalizedSessions);
+        setOrchestratorHistorySessions(normalizedSessions);
+        setOrchestratorScheduler(normalizeOrchestratorScheduler(nextOrchestratorScheduler));
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("加载主控数据失败:", err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [route]);
 
   useEffect(() => {
     if (!activeOrchestratorSessionId) {
@@ -1008,19 +1066,17 @@ export default function App() {
 
   async function handlePersonaUpdated() {
     try {
-      const [nextState, nextMessages, nextGoals, nextWorld, nextAutobio] = await Promise.all([
+      const [nextState, nextMessages, nextGoals, nextWorld] = await Promise.all([
         fetchState(),
         fetchMessages(),
         fetchGoals(),
         fetchWorld(),
-        fetchAutobio(),
       ]);
 
       setState(nextState);
       setMessages(syncMessagesFromRuntime([], nextMessages.messages));
       setGoals(nextGoals.goals);
       setWorld(nextWorld);
-      setAutobioEntries(nextAutobio.entries);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "同步失败");
@@ -1935,9 +1991,9 @@ export default function App() {
             state={state}
             world={world}
             macConsoleStatus={macConsoleStatus}
-            autobioEntries={autobioEntries}
             onRollback={handleRollback}
             onApprovalDecision={handleApprovalDecision}
+            onNavigate={handleNavigate}
           />
         )}
 

@@ -12,6 +12,7 @@ type GoalItemProps = {
   onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
   onDecomposeGoal: (goalId: string) => void;
   loadingDecompose: Set<string>;
+  decomposeSupported: boolean;
   relationship: RelationshipSummary | null;
 };
 
@@ -22,6 +23,7 @@ export function GoalItem({
   onUpdateGoalStatus,
   onDecomposeGoal,
   loadingDecompose,
+  decomposeSupported,
   relationship,
 }: GoalItemProps) {
   const admissionDisplay = getGoalAdmissionDisplay(goal);
@@ -83,7 +85,7 @@ export function GoalItem({
         </section>
       ) : null}
 
-      {goal.generation === 0 && goal.status === "active" ? (
+      {decomposeSupported && goal.generation === 0 && goal.status === "active" ? (
         <div
           style={{
             marginTop: "var(--space-2)",

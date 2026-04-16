@@ -31,9 +31,11 @@ import { Panel } from "./ui/Panel";
 type GoalsPanelProps = {
   goals: Goal[];
   onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
+  mode?: "full" | "summary";
 };
 
-export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
+export function GoalsPanel({ goals, onUpdateGoalStatus, mode = "full" }: GoalsPanelProps) {
+  const isSummary = mode === "summary";
   const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const [admissionStats, setAdmissionStats] = useState<GoalAdmissionStats | null>(null);
   const [admissionCandidates, setAdmissionCandidates] = useState<GoalAdmissionCandidateSnapshot | null>(null);
@@ -47,6 +49,8 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     executionStats,
     activeExecutions,
     loadingDecompose,
+    executionStatsSupported,
+    goalDecomposeSupported,
     openConfirm,
     closeConfirm,
     confirmAction,
@@ -68,6 +72,9 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
   }
 
   useEffect(() => {
+    if (isSummary) {
+      return;
+    }
     fetchMemorySummary()
       .then((summary) => setRelationship(summary.relationship))
       .catch(() => setRelationship(null));
@@ -94,7 +101,7 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isSummary]);
 
   async function handleUpdateAdmissionThresholds(patch: Partial<GoalAdmissionRuntimeConfig>): Promise<void> {
     await updateGoalAdmissionConfig(patch);
@@ -117,6 +124,9 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
   }
 
   useEffect(() => {
+    if (isSummary) {
+      return;
+    }
     let cancelled = false;
 
     fetchGoalAdmissionStats()
@@ -158,33 +168,36 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isSummary]);
 
   return (
     <Panel
       icon="🎯"
       title="目标看板"
-      subtitle="管理和追踪所有目标"
+      subtitle={isSummary ? "默认首页只保留核心目标推进" : "管理和追踪所有目标"}
       actions={
         <GoalsHeaderActions
           goalsCount={goals.length}
+          executionStatsSupported={!isSummary && executionStatsSupported}
           showExecutionPanel={showExecutionPanel}
           onToggleExecutionPanel={toggleExecutionPanel}
         />
       }
     >
-      {showExecutionPanel && executionStats ? (
+      {!isSummary && showExecutionPanel && executionStats ? (
         <ExecutionStatsPanel executionStats={executionStats} activeExecutions={activeExecutions} goals={goals} />
       ) : null}
 
-      <GoalsRelationshipGuidance relationship={relationship} />
-      <GoalsAdmissionOverview
-        stats={admissionStats}
-        history={admissionConfigHistory}
-        onUpdateStabilityThresholds={handleUpdateAdmissionThresholds}
-        onRollbackStabilityThresholds={handleRollbackAdmissionThresholds}
-      />
-      <GoalsAdmissionCandidates snapshot={admissionCandidates} />
+      {!isSummary ? <GoalsRelationshipGuidance relationship={relationship} /> : null}
+      {!isSummary ? (
+        <GoalsAdmissionOverview
+          stats={admissionStats}
+          history={admissionConfigHistory}
+          onUpdateStabilityThresholds={handleUpdateAdmissionThresholds}
+          onRollbackStabilityThresholds={handleRollbackAdmissionThresholds}
+        />
+      ) : null}
+      {!isSummary ? <GoalsAdmissionCandidates snapshot={admissionCandidates} /> : null}
 
       {goals.length === 0 ? (
         <EmptyState size="small">
@@ -192,7 +205,7 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
         </EmptyState>
       ) : null}
 
-      <GoalsChainsSection chainedGroups={chainedGroups} />
+      {!isSummary ? <GoalsChainsSection chainedGroups={chainedGroups} /> : null}
 
       <GoalBoard
         columns={columns}
@@ -204,6 +217,7 @@ export function GoalsPanel({ goals, onUpdateGoalStatus }: GoalsPanelProps) {
         onUpdateGoalStatus={onUpdateGoalStatus}
         onDecomposeGoal={handleDecomposeGoal}
         loadingDecompose={loadingDecompose}
+        decomposeSupported={!isSummary && goalDecomposeSupported}
       />
 
       <GoalsConfirmModal

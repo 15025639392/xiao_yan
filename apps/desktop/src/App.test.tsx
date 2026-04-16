@@ -72,131 +72,105 @@ async function openRealtimeSocket() {
   return socket;
 }
 
-test("renders wake and sleep controls", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/autobio")) {
-        return new Response(JSON.stringify({ entries: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.endsWith("/world")) {
-        return new Response(
-          JSON.stringify({
-            time_of_day: "night",
-            energy: "low",
-            mood: "tired",
-            focus_tension: "low",
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }
-        );
-      }
-      if (url.endsWith("/goals")) {
-        return new Response(JSON.stringify({ goals: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.endsWith("/goals/admission/stats")) {
-        return new Response(
-          JSON.stringify({
-            mode: "off",
-            today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
-            admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
-            admitted_stability_24h_rate: null,
-            deferred_queue_size: 0,
-            wip_limit: 3,
-            thresholds: {
-              user_topic: { min_score: 0.6, defer_score: 0.4 },
-              world_event: { min_score: 0.6, defer_score: 0.4 },
-              chain_next: { min_score: 0.6, defer_score: 0.4 },
-            },
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-      if (url.endsWith("/goals/admission/candidates")) {
-        return new Response(JSON.stringify({ deferred: [], recent: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.includes("/config/goal-admission/history")) {
-        return new Response(JSON.stringify({ items: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.endsWith("/messages")) {
-        return new Response(JSON.stringify({ messages: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.endsWith("/persona/emotion")) {
-        return new Response(
-          JSON.stringify({
-            primary_emotion: "calm",
-            primary_intensity: "none",
-            secondary_emotion: null,
-            secondary_intensity: "none",
-            mood_valence: 0,
-            arousal: 0,
-            is_calm: true,
-            active_entry_count: 0,
-            active_entries: [],
-            last_updated: null,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-      if (url.endsWith("/memory/summary")) {
-        return new Response(
-          JSON.stringify({
-            total_estimated: 0,
-            by_kind: {},
-            recent_count: 0,
-            strong_memories: 0,
-            relationship: {
-              available: false,
-              boundaries: [],
-              commitments: [],
-              preferences: [],
-            },
-            available: true,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
+function jsonResponse(body: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+}
 
-      return new Response(
-        JSON.stringify({
-          mode: "sleeping",
-          current_thought: null,
-          active_goal_ids: [],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    })
-  );
+type FetchHandler = (url: string, init?: RequestInit) => Response | Promise<Response> | null | undefined;
+
+function createAppShellFetchMock(handlers: FetchHandler[] = []) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    for (const handler of handlers) {
+      const response = await handler(url, init);
+      if (response) {
+        return response;
+      }
+    }
+
+    if (url.endsWith("/world")) {
+      return jsonResponse({
+        time_of_day: "night",
+        energy: "low",
+        mood: "tired",
+        focus_tension: "low",
+      });
+    }
+    if (url.endsWith("/goals")) {
+      return jsonResponse({ goals: [] });
+    }
+    if (url.endsWith("/goals/admission/stats")) {
+      return jsonResponse({
+        mode: "off",
+        today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
+        admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
+        admitted_stability_24h_rate: null,
+        deferred_queue_size: 0,
+        wip_limit: 3,
+        thresholds: {
+          user_topic: { min_score: 0.6, defer_score: 0.4 },
+          world_event: { min_score: 0.6, defer_score: 0.4 },
+          chain_next: { min_score: 0.6, defer_score: 0.4 },
+        },
+      });
+    }
+    if (url.endsWith("/goals/admission/candidates")) {
+      return jsonResponse({ deferred: [], recent: [] });
+    }
+    if (url.includes("/config/goal-admission/history")) {
+      return jsonResponse({ items: [] });
+    }
+    if (url.endsWith("/messages")) {
+      return jsonResponse({ messages: [] });
+    }
+    if (url.endsWith("/persona/emotion")) {
+      return jsonResponse({
+        primary_emotion: "calm",
+        primary_intensity: "none",
+        secondary_emotion: null,
+        secondary_intensity: "none",
+        mood_valence: 0,
+        arousal: 0,
+        is_calm: true,
+        active_entry_count: 0,
+        active_entries: [],
+        last_updated: null,
+      });
+    }
+    if (url.endsWith("/memory/summary")) {
+      return jsonResponse({
+        total_estimated: 0,
+        by_kind: {},
+        recent_count: 0,
+        strong_memories: 0,
+        relationship: {
+          available: false,
+          boundaries: [],
+          commitments: [],
+          preferences: [],
+        },
+        available: true,
+      });
+    }
+    if (url.includes("/memory/timeline")) {
+      return jsonResponse({ entries: [] });
+    }
+
+    return jsonResponse({
+      mode: "sleeping",
+      current_thought: null,
+      active_goal_ids: [],
+    });
+  });
+}
+
+test("renders wake and sleep controls", async () => {
+  vi.stubGlobal("fetch", createAppShellFetchMock());
 
   const { container } = await renderApp();
   const mainNav = screen.getByRole("navigation", { name: "主导航" });
@@ -216,136 +190,7 @@ test("renders wake and sleep controls", async () => {
 });
 
 test("keeps memory reachable as an optional entry instead of a primary nav item", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/autobio")) {
-        return new Response(JSON.stringify({ entries: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.endsWith("/world")) {
-        return new Response(
-          JSON.stringify({
-            time_of_day: "night",
-            energy: "low",
-            mood: "tired",
-            focus_tension: "low",
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }
-        );
-      }
-      if (url.endsWith("/goals")) {
-        return new Response(JSON.stringify({ goals: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.endsWith("/goals/admission/stats")) {
-        return new Response(
-          JSON.stringify({
-            mode: "off",
-            today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
-            admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
-            admitted_stability_24h_rate: null,
-            deferred_queue_size: 0,
-            wip_limit: 3,
-            thresholds: {
-              user_topic: { min_score: 0.6, defer_score: 0.4 },
-              world_event: { min_score: 0.6, defer_score: 0.4 },
-              chain_next: { min_score: 0.6, defer_score: 0.4 },
-            },
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-      if (url.endsWith("/goals/admission/candidates")) {
-        return new Response(JSON.stringify({ deferred: [], recent: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.includes("/config/goal-admission/history")) {
-        return new Response(JSON.stringify({ items: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.endsWith("/messages")) {
-        return new Response(JSON.stringify({ messages: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      if (url.endsWith("/persona/emotion")) {
-        return new Response(
-          JSON.stringify({
-            primary_emotion: "calm",
-            primary_intensity: "none",
-            secondary_emotion: null,
-            secondary_intensity: "none",
-            mood_valence: 0,
-            arousal: 0,
-            is_calm: true,
-            active_entry_count: 0,
-            active_entries: [],
-            last_updated: null,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }
-        );
-      }
-      if (url.endsWith("/memory/summary")) {
-        return new Response(
-          JSON.stringify({
-            total_estimated: 0,
-            by_kind: {},
-            recent_count: 0,
-            strong_memories: 0,
-            relationship: {
-              available: false,
-              boundaries: [],
-              commitments: [],
-              preferences: [],
-            },
-            available: true,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-      if (url.includes("/memory/timeline")) {
-        return new Response(JSON.stringify({ entries: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      return new Response(
-        JSON.stringify({
-          mode: "sleeping",
-          current_thought: null,
-          active_goal_ids: [],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    })
-  );
+  vi.stubGlobal("fetch", createAppShellFetchMock());
 
   await renderApp();
 
@@ -357,134 +202,10 @@ test("keeps memory reachable as an optional entry instead of a primary nav item"
   });
 });
 
-test("redirects legacy history route to overview history section", async () => {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.endsWith("/world")) {
-      return new Response(
-        JSON.stringify({
-          time_of_day: "night",
-          energy: "low",
-          mood: "tired",
-          focus_tension: "low",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.endsWith("/goals/admission/stats")) {
-      return new Response(
-        JSON.stringify({
-          mode: "off",
-          today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
-          admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
-          admitted_stability_24h_rate: null,
-          deferred_queue_size: 0,
-          wip_limit: 3,
-          thresholds: {
-            user_topic: { min_score: 0.6, defer_score: 0.4 },
-            world_event: { min_score: 0.6, defer_score: 0.4 },
-            chain_next: { min_score: 0.6, defer_score: 0.4 },
-          },
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-    if (url.endsWith("/goals/admission/candidates")) {
-      return new Response(JSON.stringify({ deferred: [], recent: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.includes("/config/goal-admission/history")) {
-      return new Response(JSON.stringify({ items: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.endsWith("/messages")) {
-      return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.endsWith("/persona/emotion")) {
-      return new Response(
-        JSON.stringify({
-          primary_emotion: "calm",
-          primary_intensity: "none",
-          secondary_emotion: null,
-          secondary_intensity: "none",
-          mood_valence: 0,
-          arousal: 0,
-          is_calm: true,
-          active_entry_count: 0,
-          active_entries: [],
-          last_updated: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-    if (url.endsWith("/memory/summary")) {
-      return new Response(
-        JSON.stringify({
-          total_estimated: 0,
-          by_kind: {},
-          recent_count: 0,
-          strong_memories: 0,
-          relationship: {
-            available: false,
-            boundaries: [],
-            commitments: [],
-            preferences: [],
-          },
-          available: true,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-    if (url.endsWith("/self-programming/history")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(
-      JSON.stringify({
-        mode: "sleeping",
-        current_thought: null,
-        active_goal_ids: [],
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  });
+test("redirects legacy history route to overview and exposes a history entry", async () => {
+  const fetchMock = createAppShellFetchMock([
+    (url) => (url.endsWith("/self-programming/history") ? jsonResponse({ entries: [] }) : null),
+  ]);
 
   vi.stubGlobal("fetch", fetchMock);
   window.location.hash = "#/history";
@@ -494,80 +215,14 @@ test("redirects legacy history route to overview history section", async () => {
   await waitFor(() => {
     expect(window.location.hash).toBe("#/");
   });
-  expect(screen.getByText("自我编程历史")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "查看执行历史" })).toBeInTheDocument();
 });
 
 test("renders capability hub when route is capabilities", async () => {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.endsWith("/world")) {
-      return new Response(
-        JSON.stringify({
-          time_of_day: "night",
-          energy: "low",
-          mood: "tired",
-          focus_tension: "low",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.endsWith("/goals/admission/stats")) {
-      return new Response(
-        JSON.stringify({
-          mode: "off",
-          today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
-          admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
-          admitted_stability_24h_rate: null,
-          deferred_queue_size: 0,
-          wip_limit: 3,
-          thresholds: {
-            user_topic: { min_score: 0.6, defer_score: 0.4 },
-            world_event: { min_score: 0.6, defer_score: 0.4 },
-            chain_next: { min_score: 0.6, defer_score: 0.4 },
-          },
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-    if (url.endsWith("/goals/admission/candidates")) {
-      return new Response(JSON.stringify({ deferred: [], recent: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.includes("/config/goal-admission/history")) {
-      return new Response(JSON.stringify({ items: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.endsWith("/messages")) {
-      return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.endsWith("/capabilities/contract")) {
-      return new Response(
-        JSON.stringify({
+  const fetchMock = createAppShellFetchMock([
+    (url) => {
+      if (url.endsWith("/capabilities/contract")) {
+        return jsonResponse({
           version: "v0",
           descriptors: [
             {
@@ -578,59 +233,36 @@ test("renders capability hub when route is capabilities", async () => {
               current_binding: "chat file tool",
             },
           ],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-    if (url.endsWith("/capabilities/queue/status")) {
-      return new Response(
-        JSON.stringify({
+        });
+      }
+      if (url.endsWith("/capabilities/queue/status")) {
+        return jsonResponse({
           pending: 1,
           pending_approval: 0,
           in_progress: 1,
           completed: 12,
           dead_letter: 0,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-    if (url.includes("/capabilities/jobs")) {
-      return new Response(JSON.stringify({ items: [], next_cursor: null }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.includes("/capabilities/approvals/pending")) {
-      return new Response(JSON.stringify({ items: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.includes("/capabilities/approvals/history")) {
-      return new Response(JSON.stringify({ items: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(
-      JSON.stringify({
-        mode: "awake",
-        current_thought: null,
-        active_goal_ids: [],
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+        });
       }
-    );
-  });
+      if (url.includes("/capabilities/jobs")) {
+        return jsonResponse({ items: [], next_cursor: null });
+      }
+      if (url.includes("/capabilities/approvals/pending")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("/capabilities/approvals/history")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.endsWith("/state")) {
+        return jsonResponse({
+          mode: "awake",
+          current_thought: null,
+          active_goal_ids: [],
+        });
+      }
+      return null;
+    },
+  ]);
 
   vi.stubGlobal("fetch", fetchMock);
   window.location.hash = "#/capabilities";
@@ -663,13 +295,6 @@ test("streams assistant reply over realtime chat events", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -822,13 +447,6 @@ test("supports retrying a failed user message send", async () => {
       });
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
@@ -929,13 +547,6 @@ test("sends selected mcp_servers in chat request body", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1064,13 +675,6 @@ test("sends reasoning payload when bootstrap config enables continuous reasoning
       });
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
@@ -1175,13 +779,6 @@ test("sends toolbox-selected skills in chat request body", async () => {
       });
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
@@ -1266,13 +863,6 @@ test("does not duplicate text when chat delta payloads are cumulative snapshots"
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1449,13 +1039,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
       );
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
@@ -1587,13 +1170,6 @@ test("keeps just-sent local user message when a transient runtime update has emp
       });
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
@@ -1716,13 +1292,6 @@ test("keeps just-completed local assistant reply when a transient runtime update
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1907,13 +1476,6 @@ test("syncs active imported project permission before entering orchestrator mode
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2180,13 +1742,6 @@ test("restores imported project registry to core folder permissions on app start
       });
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
@@ -2340,13 +1895,6 @@ test("does not duplicate text when chat delta payloads overlap with previous suf
       });
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
@@ -2473,13 +2021,6 @@ test("continues generation in the same assistant bubble after failure", async ()
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2810,13 +2351,6 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
       });
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
@@ -3003,13 +2537,6 @@ test("renders proactive replies from realtime runtime updates in the chat panel"
       );
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(
-        JSON.stringify({ entries: [] }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
     if (url.endsWith("/world")) {
       return new Response(
         JSON.stringify({
@@ -3104,13 +2631,6 @@ test("syncs assistant name across app chrome when persona updates arrive", async
 
     if (url.endsWith("/goals")) {
       return new Response(JSON.stringify({ goals: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -3322,13 +2842,6 @@ test("updates a goal status from the app and refreshes the rendered goal", async
       );
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     if (url.endsWith("/goals/goal-1/status")) {
       expect(init?.method).toBe("POST");
       expect(init?.body).toBe(JSON.stringify({ status: "paused" }));
@@ -3460,13 +2973,6 @@ test("polls world state and renders the inner world panel", async () => {
       );
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     throw new Error(`unexpected request: ${url}`);
   });
 
@@ -3482,7 +2988,7 @@ test("polls world state and renders the inner world panel", async () => {
   expect(screen.getByText("夜里很安静，我有点困，但还惦记着整理今天的对话记忆。")).toBeInTheDocument();
 });
 
-test("renders self programming state from polled runtime state", async () => {
+test("renders a compact self programming overview from polled runtime state", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
 
@@ -3597,13 +3103,6 @@ test("renders self programming state from polled runtime state", async () => {
       );
     }
 
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     throw new Error(`unexpected request: ${url}`);
   });
 
@@ -3611,7 +3110,9 @@ test("renders self programming state from polled runtime state", async () => {
 
   await renderApp();
 
-  expect(await screen.findByText("已修改状态面板并通过测试。")).toBeInTheDocument();
+  expect(await screen.findByText("我准备修一下自己的状态展示。")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "查看执行历史" })).toBeInTheDocument();
+  expect(screen.queryByText("已修改状态面板并通过测试。")).not.toBeInTheDocument();
 });
 
 test("sends chat request with attached folder context after picking a folder", async () => {
@@ -3638,13 +3139,6 @@ test("sends chat request with attached folder context after picking a folder", a
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -3753,13 +3247,6 @@ test("sends chat request with attached files and images", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -3911,13 +3398,6 @@ test("blocks duplicate orchestrator quick command sends and shows notice", async
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/autobio")) {
-      return new Response(JSON.stringify({ entries: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });

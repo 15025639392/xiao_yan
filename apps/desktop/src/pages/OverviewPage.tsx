@@ -1,7 +1,6 @@
-import { AutobioPanel } from "../components/AutobioPanel";
 import { GoalsPanel } from "../components/GoalsPanel";
-import { SelfProgrammingHistorySection } from "../components/SelfProgrammingHistorySection";
 import { StatusPanel } from "../components/StatusPanel";
+import { Panel } from "../components/ui/Panel";
 import { WorldPanel } from "../components/WorldPanel";
 import type { BeingState, Goal, InnerWorldState, MacConsoleBootstrapStatus } from "../lib/api";
 
@@ -14,9 +13,9 @@ export function OverviewPanel({
   state,
   world,
   macConsoleStatus,
-  autobioEntries,
   onRollback,
   onApprovalDecision,
+  onNavigate,
 }: {
   focusGoalTitle: string | null;
   goals: Goal[];
@@ -26,9 +25,9 @@ export function OverviewPanel({
   state: BeingState;
   world: InnerWorldState | null;
   macConsoleStatus?: MacConsoleBootstrapStatus | null;
-  autobioEntries: string[];
   onRollback?: (jobId: string) => void;
   onApprovalDecision?: (jobId: string, approved: boolean) => void;
+  onNavigate: (route: "memory" | "orchestrator") => void;
 }) {
   const isAwake = mode === "awake";
 
@@ -68,6 +67,7 @@ export function OverviewPanel({
             macConsoleStatus={macConsoleStatus}
             onRollback={onRollback}
             onApprovalDecision={onApprovalDecision}
+            variant="compact"
           />
         </div>
         <div className="inspector-grid__col">
@@ -75,16 +75,27 @@ export function OverviewPanel({
         </div>
       </section>
 
-      <section className="history-section">
-        <SelfProgrammingHistorySection onSelectRollback={onRollback} />
-      </section>
-
-      <section className="autobio-section">
-        <AutobioPanel entries={autobioEntries} />
+      <section className="inspector-grid inspector-grid--balanced">
+        <div className="inspector-grid__col">
+          <Panel icon="↗" title="继续深入" subtitle="复杂治理能力保留为次级入口">
+            <div style={{ display: "grid", gap: "var(--space-3)" }}>
+              <button
+                type="button"
+                className="app-sidebar__action-btn app-sidebar__action-btn--primary"
+                onClick={() => onNavigate("orchestrator")}
+              >
+                查看执行历史
+              </button>
+              <button type="button" className="app-sidebar__action-btn" onClick={() => onNavigate("memory")}>
+                打开记忆库
+              </button>
+            </div>
+          </Panel>
+        </div>
       </section>
 
       <section className="mission-board">
-        <GoalsPanel goals={goals} onUpdateGoalStatus={onUpdateGoalStatus} />
+        <GoalsPanel goals={goals} onUpdateGoalStatus={onUpdateGoalStatus} mode="summary" />
       </section>
     </div>
   );

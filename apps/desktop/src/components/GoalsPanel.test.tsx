@@ -6,6 +6,9 @@ const {
   fetchGoalAdmissionStats,
   fetchGoalAdmissionCandidates,
   fetchGoalAdmissionConfigHistory,
+  fetchTaskExecutionStats,
+  fetchActiveTaskExecutions,
+  decomposeGoal,
   updateGoalAdmissionConfig,
   rollbackGoalAdmissionConfig,
 } = vi.hoisted(() => ({
@@ -13,6 +16,9 @@ const {
   fetchGoalAdmissionStats: vi.fn(),
   fetchGoalAdmissionCandidates: vi.fn(),
   fetchGoalAdmissionConfigHistory: vi.fn(),
+  fetchTaskExecutionStats: vi.fn(),
+  fetchActiveTaskExecutions: vi.fn(),
+  decomposeGoal: vi.fn(),
   updateGoalAdmissionConfig: vi.fn(),
   rollbackGoalAdmissionConfig: vi.fn(),
 }));
@@ -29,6 +35,9 @@ vi.mock("../lib/api", async () => {
     fetchGoalAdmissionStats,
     fetchGoalAdmissionCandidates,
     fetchGoalAdmissionConfigHistory,
+    fetchTaskExecutionStats,
+    fetchActiveTaskExecutions,
+    decomposeGoal,
     updateGoalAdmissionConfig,
     rollbackGoalAdmissionConfig,
   };
@@ -45,6 +54,9 @@ beforeEach(() => {
   fetchGoalAdmissionStats.mockReset();
   fetchGoalAdmissionCandidates.mockReset();
   fetchGoalAdmissionConfigHistory.mockReset();
+  fetchTaskExecutionStats.mockReset();
+  fetchActiveTaskExecutions.mockReset();
+  decomposeGoal.mockReset();
   updateGoalAdmissionConfig.mockReset();
   rollbackGoalAdmissionConfig.mockReset();
   subscribeAppRealtime.mockReset();
@@ -52,6 +64,24 @@ beforeEach(() => {
   fetchGoalAdmissionStats.mockReturnValue(new Promise(() => {}));
   fetchGoalAdmissionCandidates.mockReturnValue(new Promise(() => {}));
   fetchGoalAdmissionConfigHistory.mockReturnValue(new Promise(() => {}));
+  fetchTaskExecutionStats.mockResolvedValue({
+    total_tasks: 0,
+    completed: 0,
+    failed: 0,
+    abandoned: 0,
+    active: 0,
+    success_rate: 0,
+  });
+  fetchActiveTaskExecutions.mockResolvedValue([]);
+  decomposeGoal.mockResolvedValue({
+    parent_goal_id: "goal-1",
+    subgoals: [],
+    complexity: {
+      level: "简单",
+      score: 0,
+      factors: {},
+    },
+  });
   updateGoalAdmissionConfig.mockResolvedValue({
     stability_warning_rate: 0.6,
     stability_danger_rate: 0.35,
@@ -223,6 +253,71 @@ test("renders standalone goals in a separate group with Chinese controls", () =>
   expect(screen.getByRole("button", { name: "恢复" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "完成" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "放弃" })).toBeInTheDocument();
+});
+
+test("summary mode hides governance overlays and keeps the core goal board", () => {
+  render(
+    <GoalsPanel
+      mode="summary"
+      goals={[
+        {
+          id: "goal-1",
+          title: "把默认首页收敛成摘要页",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />
+  );
+
+  expect(screen.getByText("默认首页只保留核心目标推进")).toBeInTheDocument();
+  expect(screen.getByText("把默认首页收敛成摘要页")).toBeInTheDocument();
+  expect(screen.queryByText("目标链")).not.toBeInTheDocument();
+  expect(screen.queryByText("关系状态")).not.toBeInTheDocument();
+  expect(fetchMemorySummary).not.toHaveBeenCalled();
+  expect(fetchGoalAdmissionStats).not.toHaveBeenCalled();
+});
+
+test("hides execution stats action after optional API returns 404", async () => {
+  fetchTaskExecutionStats.mockRejectedValueOnce(new Error("request failed: 404"));
+
+  render(
+    <GoalsPanel
+      goals={[]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "📊 执行统计" }));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("button", { name: "📊 执行统计" })).not.toBeInTheDocument();
+  });
+});
+
+test("hides decompose action after optional API returns 404", async () => {
+  decomposeGoal.mockRejectedValueOnce(new Error("request failed: 404"));
+
+  render(
+    <GoalsPanel
+      goals={[
+        {
+          id: "goal-1",
+          title: "整理今天的世界观察",
+          status: "active",
+          generation: 0,
+        },
+      ]}
+      onUpdateGoalStatus={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "🔧 分解任务" }));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("button", { name: "🔧 分解任务" })).not.toBeInTheDocument();
+  });
 });
 
 test("shows confirmation modal when clicking abandon", async () => {

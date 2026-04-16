@@ -639,10 +639,6 @@ export type GoalAdmissionCandidateSnapshot = {
   admitted?: RecentGoalAdmissionDecision[];
 };
 
-export type AutobioResponse = {
-  entries: string[];
-};
-
 const DEFAULT_BASE_URL = "http://127.0.0.1:8000";
 
 function normalizeBaseUrl(value: string | undefined | null): string | null {
@@ -687,6 +683,10 @@ async function buildHttpError(response: Response): Promise<Error> {
     return new Error(`request failed: ${response.status} (${detail})`);
   }
   return new Error(`request failed: ${response.status}`);
+}
+
+export function isRequestStatusError(error: unknown, status: number): boolean {
+  return error instanceof Error && error.message.startsWith(`request failed: ${status}`);
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -948,10 +948,6 @@ export function fetchGoalAdmissionCandidates(): Promise<GoalAdmissionCandidateSn
 
 export function fetchWorld(): Promise<InnerWorldState> {
   return get<InnerWorldState>("/world");
-}
-
-export function fetchAutobio(): Promise<AutobioResponse> {
-  return get<AutobioResponse>("/autobio");
 }
 
 export function updateGoalStatus(

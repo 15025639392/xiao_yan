@@ -12,6 +12,7 @@ type GoalBoardProps = {
   onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
   onDecomposeGoal: (goalId: string) => void;
   loadingDecompose: Set<string>;
+  decomposeSupported: boolean;
   relationship: RelationshipSummary | null;
 };
 
@@ -24,6 +25,7 @@ export function GoalBoard({
   onUpdateGoalStatus,
   onDecomposeGoal,
   loadingDecompose,
+  decomposeSupported,
   relationship,
 }: GoalBoardProps) {
   return (
@@ -69,6 +71,7 @@ export function GoalBoard({
                             onUpdateGoalStatus={onUpdateGoalStatus}
                             onDecomposeGoal={onDecomposeGoal}
                             loadingDecompose={loadingDecompose}
+                            decomposeSupported={decomposeSupported}
                             relationship={relationship}
                           />
                         ))}
@@ -118,6 +121,7 @@ export function GoalBoard({
                         onUpdateGoalStatus={onUpdateGoalStatus}
                         onDecomposeGoal={onDecomposeGoal}
                         loadingDecompose={loadingDecompose}
+                        decomposeSupported={decomposeSupported}
                         relationship={relationship}
                       />
                     ))}

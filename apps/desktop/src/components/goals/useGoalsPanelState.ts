@@ -1,6 +1,11 @@
 import { useMemo, useState } from "react";
 import type { Goal, TaskExecution, TaskExecutionStats } from "../../lib/api";
-import { decomposeGoal, fetchActiveTaskExecutions, fetchTaskExecutionStats } from "../../lib/api";
+import {
+  decomposeGoal,
+  fetchActiveTaskExecutions,
+  fetchTaskExecutionStats,
+  isRequestStatusError,
+} from "../../lib/api";
 import { groupGoals } from "./goalsUtils";
 
 type GoalConfirmState = {
@@ -30,6 +35,8 @@ export function useGoalsPanelState({ goals, onUpdateGoalStatus }: UseGoalsPanelS
   const [executionStats, setExecutionStats] = useState<TaskExecutionStats | null>(null);
   const [activeExecutions, setActiveExecutions] = useState<TaskExecution[]>([]);
   const [loadingDecompose, setLoadingDecompose] = useState<Set<string>>(new Set());
+  const [executionStatsSupported, setExecutionStatsSupported] = useState(true);
+  const [goalDecomposeSupported, setGoalDecomposeSupported] = useState(true);
 
   function openConfirm(goalId: string, goalTitle: string, action: "abandon" | "complete") {
     setConfirmModal({ isOpen: true, goalId, goalTitle, action });
@@ -64,17 +71,28 @@ export function useGoalsPanelState({ goals, onUpdateGoalStatus }: UseGoalsPanelS
       setExecutionStats(stats);
       const executions = await fetchActiveTaskExecutions();
       setActiveExecutions(executions);
+      setExecutionStatsSupported(true);
     } catch (error) {
+      if (isRequestStatusError(error, 404)) {
+        setExecutionStatsSupported(false);
+        setExecutionStats(null);
+        setActiveExecutions([]);
+        return;
+      }
       console.error("Failed to load execution stats:", error);
     }
   }
 
   async function handleDecomposeGoal(goalId: string) {
-    if (loadingDecompose.has(goalId)) return;
+    if (!goalDecomposeSupported || loadingDecompose.has(goalId)) return;
     setLoadingDecompose((prev) => new Set([...prev, goalId]));
     try {
       await decomposeGoal(goalId);
     } catch (error) {
+      if (isRequestStatusError(error, 404)) {
+        setGoalDecomposeSupported(false);
+        return;
+      }
       console.error("Failed to decompose goal:", error);
     } finally {
       setLoadingDecompose((prev) => {
@@ -103,6 +121,8 @@ export function useGoalsPanelState({ goals, onUpdateGoalStatus }: UseGoalsPanelS
     executionStats,
     activeExecutions,
     loadingDecompose,
+    executionStatsSupported,
+    goalDecomposeSupported,
     openConfirm,
     closeConfirm,
     confirmAction,

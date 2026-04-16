@@ -230,6 +230,33 @@ test("renders relationship state when relationship summary is available", async 
   expect(screen.getByText("更喜欢先讨论再执行")).toBeInTheDocument();
 });
 
+test("compact variant keeps today plan visible and skips secondary insight fetches", () => {
+  render(
+    <StatusPanel
+      error=""
+      variant="compact"
+      state={{
+        mode: "awake",
+        focus_mode: "morning_plan",
+        current_thought: "先保留主链路。",
+        active_goal_ids: ["goal-1"],
+        last_action: null,
+        self_programming_job: null,
+        today_plan: {
+          goal_id: "goal-1",
+          goal_title: "收敛默认首页",
+          steps: [{ content: "删掉重型默认挂载", status: "pending" }],
+        },
+      }}
+    />
+  );
+
+  expect(screen.getByText("收敛默认首页")).toBeInTheDocument();
+  expect(fetchEmotionState).not.toHaveBeenCalled();
+  expect(fetchMemorySummary).not.toHaveBeenCalled();
+  expect(subscribeAppRealtime).not.toHaveBeenCalled();
+});
+
 test("updates relationship state from realtime memory events", async () => {
   fetchMemorySummary.mockResolvedValue({
     total_estimated: 0,
