@@ -137,8 +137,17 @@ export function KnowledgeReviewPanel({ className }: KnowledgeReviewPanelProps) {
     };
 
     tick();
-    const timer = window.setInterval(tick, 250);
-    return () => window.clearInterval(timer);
+    const countdownTimer = window.setInterval(tick, 250);
+    const unlockDelayMs = Math.max(0, retryLockedUntilMs - Date.now());
+    const unlockTimer = window.setTimeout(() => {
+      setRetryNowMs(Date.now());
+      setRetryLockedUntilMs(null);
+    }, unlockDelayMs);
+
+    return () => {
+      window.clearInterval(countdownTimer);
+      window.clearTimeout(unlockTimer);
+    };
   }, [retryLockedUntilMs]);
 
   const retryRemainingSeconds = useMemo(() => {

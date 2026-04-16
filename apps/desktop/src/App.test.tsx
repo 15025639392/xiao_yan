@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
 import App from "./App";
@@ -43,11 +43,36 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   window.localStorage.removeItem(CHAT_TOOLBOX_SELECTED_SKILLS_KEY);
+  window.localStorage.removeItem(IMPORTED_PROJECTS_STORAGE_KEY);
   window.location.hash = "";
   MockWebSocket.instances = [];
 });
 
-test("renders wake and sleep controls", () => {
+async function renderApp() {
+  let view: ReturnType<typeof rtlRender> | null = null;
+
+  await act(async () => {
+    view = rtlRender(<App />);
+  });
+
+  return view!;
+}
+
+async function openRealtimeSocket() {
+  const socket = MockWebSocket.instances.at(-1);
+  if (!socket) {
+    throw new Error("expected App to create a websocket connection");
+  }
+
+  await act(async () => {
+    socket.open();
+    await Promise.resolve();
+  });
+
+  return socket;
+}
+
+test("renders wake and sleep controls", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
@@ -78,11 +103,85 @@ test("renders wake and sleep controls", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
+      if (url.endsWith("/goals/admission/stats")) {
+        return new Response(
+          JSON.stringify({
+            mode: "off",
+            today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
+            admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
+            admitted_stability_24h_rate: null,
+            deferred_queue_size: 0,
+            wip_limit: 3,
+            thresholds: {
+              user_topic: { min_score: 0.6, defer_score: 0.4 },
+              world_event: { min_score: 0.6, defer_score: 0.4 },
+              chain_next: { min_score: 0.6, defer_score: 0.4 },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url.endsWith("/goals/admission/candidates")) {
+        return new Response(JSON.stringify({ deferred: [], recent: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/config/goal-admission/history")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       if (url.endsWith("/messages")) {
         return new Response(JSON.stringify({ messages: [] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+      if (url.endsWith("/persona/emotion")) {
+        return new Response(
+          JSON.stringify({
+            primary_emotion: "calm",
+            primary_intensity: "none",
+            secondary_emotion: null,
+            secondary_intensity: "none",
+            mood_valence: 0,
+            arousal: 0,
+            is_calm: true,
+            active_entry_count: 0,
+            active_entries: [],
+            last_updated: null,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (url.endsWith("/memory/summary")) {
+        return new Response(
+          JSON.stringify({
+            total_estimated: 0,
+            by_kind: {},
+            recent_count: 0,
+            strong_memories: 0,
+            relationship: {
+              available: false,
+              boundaries: [],
+              commitments: [],
+              preferences: [],
+            },
+            available: true,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(
@@ -99,7 +198,7 @@ test("renders wake and sleep controls", () => {
     })
   );
 
-  const { container } = render(<App />);
+  const { container } = await renderApp();
   expect(screen.getByRole("button", { name: "唤醒" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "休眠" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "对话" })).toBeInTheDocument();
@@ -250,7 +349,7 @@ test("renders capability hub when route is capabilities", async () => {
   vi.stubGlobal("fetch", fetchMock);
   window.location.hash = "#/capabilities";
 
-  render(<App />);
+  await renderApp();
 
   await waitFor(() => {
     expect(screen.getByRole("heading", { name: "能力中枢" })).toBeInTheDocument();
@@ -327,9 +426,8 @@ test("streams assistant reply over realtime chat events", async () => {
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
   expect(window.location.hash).toBe("#/chat");
   expect(screen.getAllByText("对话").length).toBeGreaterThanOrEqual(1);
 
@@ -380,18 +478,21 @@ test("streams assistant reply over realtime chat events", async () => {
     expect(screen.getByText("hello human▍")).toBeInTheDocument();
   });
 
-  resolveChatRequest?.(
-    new Response(
-      JSON.stringify({
-        response_id: "resp_123",
-        assistant_message_id: "assistant_123",
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
+  await act(async () => {
+    resolveChatRequest?.(
+      new Response(
+        JSON.stringify({
+          response_id: "resp_123",
+          assistant_message_id: "assistant_123",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await Promise.resolve();
+  });
 
   await act(async () => {
     socket.emit({
@@ -495,9 +596,8 @@ test("supports retrying a failed user message send", async () => {
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "请重发这条消息" },
@@ -632,9 +732,8 @@ test("sends selected mcp_servers in chat request body", async () => {
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.click(screen.getByRole("button", { name: "选择 MCP Servers" }));
   await waitFor(() => {
@@ -749,9 +848,8 @@ test("sends reasoning payload when bootstrap config enables continuous reasoning
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "继续说" },
@@ -848,9 +946,8 @@ test("sends toolbox-selected skills in chat request body", async () => {
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "按需求流程分析这个任务" },
@@ -932,9 +1029,8 @@ test("does not duplicate text when chat delta payloads are cumulative snapshots"
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "你好" },
@@ -1135,9 +1231,8 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   await waitFor(() => {
     expect(screen.getByText("旧聊天内容")).toBeInTheDocument();
@@ -1249,9 +1344,8 @@ test("keeps just-sent local user message when a transient runtime update has emp
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "first hi" },
@@ -1293,18 +1387,21 @@ test("keeps just-sent local user message when a transient runtime update has emp
     expect(screen.getByText("first hi")).toBeInTheDocument();
   });
 
-  resolveChatRequest?.(
-    new Response(
-      JSON.stringify({
-        response_id: "resp_pending_1",
-        assistant_message_id: "assistant_pending_1",
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
+  await act(async () => {
+    resolveChatRequest?.(
+      new Response(
+        JSON.stringify({
+          response_id: "resp_pending_1",
+          assistant_message_id: "assistant_pending_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await Promise.resolve();
+  });
 });
 
 test("keeps just-completed local assistant reply when a transient runtime update has empty messages", async () => {
@@ -1381,9 +1478,8 @@ test("keeps just-completed local assistant reply when a transient runtime update
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "first hi" },
@@ -1453,18 +1549,21 @@ test("keeps just-completed local assistant reply when a transient runtime update
     expect(screen.getByText("first hi")).toBeInTheDocument();
   });
 
-  resolveChatRequest?.(
-    new Response(
-      JSON.stringify({
-        response_id: "resp_local_1",
-        assistant_message_id: "assistant_local_1",
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
+  await act(async () => {
+    resolveChatRequest?.(
+      new Response(
+        JSON.stringify({
+          response_id: "resp_local_1",
+          assistant_message_id: "assistant_local_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await Promise.resolve();
+  });
 });
 
 test("syncs active imported project permission before entering orchestrator mode", async () => {
@@ -1722,8 +1821,8 @@ test("syncs active imported project permission before entering orchestrator mode
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  MockWebSocket.instances[0]?.open();
+  await renderApp();
+  await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "进入主控，处理当前项目" },
@@ -1902,7 +2001,7 @@ test("restores imported project registry to core folder permissions on app start
 
   vi.stubGlobal("fetch", fetchMock);
 
-  render(<App />);
+  await renderApp();
 
   await waitFor(() => {
     const permissionCalls = fetchMock.mock.calls.filter(([input, init]) =>
@@ -1999,9 +2098,8 @@ test("does not duplicate text when chat delta payloads overlap with previous suf
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "hello" },
@@ -2047,18 +2145,21 @@ test("does not duplicate text when chat delta payloads overlap with previous suf
   });
   expect(screen.queryByText("hellollo world▍")).not.toBeInTheDocument();
 
-  resolveChatRequest?.(
-    new Response(
-      JSON.stringify({
-        response_id: "resp_789",
-        assistant_message_id: "assistant_789",
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
+  await act(async () => {
+    resolveChatRequest?.(
+      new Response(
+        JSON.stringify({
+          response_id: "resp_789",
+          assistant_message_id: "assistant_789",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await Promise.resolve();
+  });
 });
 
 test("continues generation in the same assistant bubble after failure", async () => {
@@ -2238,9 +2339,8 @@ test("continues generation in the same assistant bubble after failure", async ()
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
   fireEvent.click(await screen.findByLabelText("启用持续推理"));
@@ -2294,12 +2394,15 @@ test("continues generation in the same assistant bubble after failure", async ()
     });
   });
 
-  resolveChatRequest?.(
-    new Response(JSON.stringify({ detail: "Bad Gateway" }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    }),
-  );
+  await act(async () => {
+    resolveChatRequest?.(
+      new Response(JSON.stringify({ detail: "Bad Gateway" }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await Promise.resolve();
+  });
 
   await waitFor(() => {
     expect(screen.getByText("前半句，")).toBeInTheDocument();
@@ -2348,18 +2451,21 @@ test("continues generation in the same assistant bubble after failure", async ()
     expect(screen.getByText("前半句，后半句。▍")).toBeInTheDocument();
   });
 
-  resolveResumeRequest?.(
-    new Response(
-      JSON.stringify({
-        response_id: "resp_resume_1",
-        assistant_message_id: "assistant_resume_1",
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
+  await act(async () => {
+    resolveResumeRequest?.(
+      new Response(
+        JSON.stringify({
+          response_id: "resp_resume_1",
+          assistant_message_id: "assistant_resume_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await Promise.resolve();
+  });
 
   await act(async () => {
     socket.emit({
@@ -2462,9 +2568,8 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  await renderApp();
+  const socket = await openRealtimeSocket();
 
   fireEvent.change(screen.getByLabelText("对话输入"), {
     target: { value: "你好" },
@@ -2537,18 +2642,21 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
     expect(screen.getByText("你好呀，我是小晏。很高兴见到你～")).toBeInTheDocument();
   });
 
-  resolveChatRequest?.(
-    new Response(
-      JSON.stringify({
-        response_id: "resp_race_1",
-        assistant_message_id: "assistant_race_1",
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
+  await act(async () => {
+    resolveChatRequest?.(
+      new Response(
+        JSON.stringify({
+          response_id: "resp_race_1",
+          assistant_message_id: "assistant_race_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await Promise.resolve();
+  });
 
   await act(async () => {
     socket.emit({
@@ -2638,15 +2746,14 @@ test("renders proactive replies from realtime runtime updates in the chat panel"
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
+  await renderApp();
 
   // 等待初始加载
   await waitFor(() => {
     expect(screen.getByText("自由对话")).toBeInTheDocument();
   });
 
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  const socket = await openRealtimeSocket();
 
   await act(async () => {
     socket.emit({
@@ -2745,14 +2852,13 @@ test("syncs assistant name across app chrome when persona updates arrive", async
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
+  await renderApp();
 
   await waitFor(() => {
     expect(screen.getByText("小晏")).toBeInTheDocument();
   });
 
-  const socket = MockWebSocket.instances[0];
-  socket.open();
+  const socket = await openRealtimeSocket();
 
   await act(async () => {
     socket.emit({
@@ -2958,7 +3064,7 @@ test("updates a goal status from the app and refreshes the rendered goal", async
 
   vi.stubGlobal("fetch", fetchMock);
 
-  render(<App />);
+  await renderApp();
 
   expect(await screen.findByText("推进中")).toBeInTheDocument();
 
@@ -3080,7 +3186,7 @@ test("polls world state and renders the inner world panel", async () => {
 
   vi.stubGlobal("fetch", fetchMock);
 
-  render(<App />);
+  await renderApp();
 
   expect(await screen.findByText("内在世界")).toBeInTheDocument();
   expect(screen.getByText("夜晚")).toBeInTheDocument();
@@ -3217,7 +3323,7 @@ test("renders self programming state from polled runtime state", async () => {
 
   vi.stubGlobal("fetch", fetchMock);
 
-  render(<App />);
+  await renderApp();
 
   expect(await screen.findByText("已修改状态面板并通过测试。")).toBeInTheDocument();
 });
@@ -3313,8 +3419,8 @@ test("sends chat request with attached folder context after picking a folder", a
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  MockWebSocket.instances[0]?.open();
+  await renderApp();
+  await openRealtimeSocket();
 
   fireEvent.click(await screen.findByRole("button", { name: "添加文件夹" }));
   await waitFor(() => {
@@ -3428,8 +3534,8 @@ test("sends chat request with attached files and images", async () => {
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/chat";
 
-  render(<App />);
-  MockWebSocket.instances[0]?.open();
+  await renderApp();
+  await openRealtimeSocket();
 
   fireEvent.click(await screen.findByRole("button", { name: "添加文件" }));
   fireEvent.click(screen.getByRole("button", { name: "添加图片" }));
@@ -3606,8 +3712,8 @@ test("blocks duplicate orchestrator quick command sends and shows notice", async
   vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   window.location.hash = "#/orchestrator";
 
-  render(<App />);
-  MockWebSocket.instances[0]?.open();
+  await renderApp();
+  await openRealtimeSocket();
 
   await waitFor(() => {
     expect(screen.getByRole("button", { name: /查看进度/ })).toBeInTheDocument();
@@ -3621,17 +3727,20 @@ test("blocks duplicate orchestrator quick command sends and shows notice", async
     expect(screen.getByText("同一条主控指令正在发送中，已为你拦截重复点击。")).toBeInTheDocument();
   });
 
-  resolveConsoleCommand?.(
-    new Response(
-      JSON.stringify({
-        session: sessionPayload,
-        assistant_message_id: "assistant-next-action-2",
-        created_session: false,
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
+  await act(async () => {
+    resolveConsoleCommand?.(
+      new Response(
+        JSON.stringify({
+          session: sessionPayload,
+          assistant_message_id: "assistant-next-action-2",
+          created_session: false,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await Promise.resolve();
+  });
 });
