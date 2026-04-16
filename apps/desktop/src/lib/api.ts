@@ -1646,14 +1646,6 @@ export function fetchTools(): Promise<ToolsListResponse> {
   return get<ToolsListResponse>("/tools");
 }
 
-/** 执行工具命令 */
-export function executeTool(command: string, timeoutOverride?: number): Promise<ToolExecutionResult> {
-  return post<ToolExecutionResult>("/tools/execute", {
-    command,
-    timeout_override: timeoutOverride,
-  });
-}
-
 /** 获取执行历史 */
 export function fetchToolHistory(limit?: number): Promise<ToolsHistoryResponse> {
   return get<ToolsHistoryResponse>(`/tools/history?limit=${limit ?? 30}`);

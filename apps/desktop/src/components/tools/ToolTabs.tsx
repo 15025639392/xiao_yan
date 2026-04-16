@@ -7,7 +7,6 @@ type ToolTabsProps = {
 };
 
 const DEFAULT_TABS: [ToolTabType, string, string][] = [
-  ["execute", "⚡ 执行", "运行工具命令"],
   ["files", "📁 文件", "文件浏览与搜索"],
 ];
 

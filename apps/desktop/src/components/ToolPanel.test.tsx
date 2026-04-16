@@ -4,13 +4,11 @@ import { beforeEach, vi } from "vitest";
 const {
   fetchTools,
   fetchToolsStatus,
-  fetchToolHistory,
   fetchConfig,
   fetchChatSkills,
 } = vi.hoisted(() => ({
   fetchTools: vi.fn(),
   fetchToolsStatus: vi.fn(),
-  fetchToolHistory: vi.fn(),
   fetchConfig: vi.fn(),
   fetchChatSkills: vi.fn(),
 }));
@@ -21,7 +19,6 @@ vi.mock("../lib/api", async () => {
     ...actual,
     fetchTools,
     fetchToolsStatus,
-    fetchToolHistory,
     fetchConfig,
     fetchChatSkills,
   };
@@ -32,7 +29,6 @@ import { ToolPanel } from "./ToolPanel";
 beforeEach(() => {
   fetchTools.mockReset();
   fetchToolsStatus.mockReset();
-  fetchToolHistory.mockReset();
   fetchConfig.mockReset();
   fetchChatSkills.mockReset();
 
@@ -52,7 +48,6 @@ beforeEach(() => {
     history_size: 0,
     recently_used_tools: [],
   });
-  fetchToolHistory.mockResolvedValue({ entries: [] });
   fetchConfig.mockResolvedValue({
     chat_mcp_enabled: false,
     chat_mcp_servers: [],
@@ -60,18 +55,16 @@ beforeEach(() => {
   fetchChatSkills.mockResolvedValue({ skills: [] });
 });
 
-test("renders only execute and files as default tool tabs", async () => {
+test("renders files as the only default tool tab", async () => {
   render(<ToolPanel />);
 
-  expect(screen.getByRole("tab", { name: "⚡ 执行" })).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: "📁 文件" })).toBeInTheDocument();
+  expect(screen.queryByRole("tab", { name: "⚡ 执行" })).not.toBeInTheDocument();
   expect(screen.queryByRole("tab", { name: "📋 工具" })).not.toBeInTheDocument();
   expect(screen.queryByRole("tab", { name: "🧠 能力" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "工具目录" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "运行状态" })).toBeInTheDocument();
-  await waitFor(() => {
-    expect(fetchTools).toHaveBeenCalledTimes(1);
-  });
+  expect(fetchTools).not.toHaveBeenCalled();
 });
 
 test("loads status lazily when opening the secondary status view", async () => {

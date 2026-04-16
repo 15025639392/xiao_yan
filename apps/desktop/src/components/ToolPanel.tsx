@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ToolsListResponse, ToolsStatusResponse } from "../lib/api";
-import { fetchToolHistory, fetchTools, fetchToolsStatus } from "../lib/api";
+import { fetchTools, fetchToolsStatus } from "../lib/api";
 import { Button, StatusBadge } from "./ui";
-import { ExecuteTab } from "./tools/ExecuteTab";
 import { FilesTab } from "./tools/FilesTab";
 import { HistoryTab } from "./tools/HistoryTab";
 import { StatusTab } from "./tools/StatusTab";
@@ -17,7 +16,7 @@ type ToolPanelProps = {
   initialTab?: ToolTabType;
 };
 
-const TOOL_COLLECTION_TABS: ToolTabType[] = ["execute", "tools"];
+const TOOL_COLLECTION_TABS: ToolTabType[] = ["tools"];
 
 const SECONDARY_TAB_ACTIONS: Array<{ tab: ToolTabType; label: string }> = [
   { tab: "tools", label: "工具目录" },
@@ -27,7 +26,7 @@ const SECONDARY_TAB_ACTIONS: Array<{ tab: ToolTabType; label: string }> = [
   { tab: "skills", label: "Skills 管理" },
 ];
 
-export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
+export function ToolPanel({ initialTab = "files" }: ToolPanelProps) {
   const [activeTab, setActiveTab] = useState<ToolTabType>(initialTab);
   const [tools, setTools] = useState<ToolsListResponse | null>(null);
   const [status, setStatus] = useState<ToolsStatusResponse | null>(null);
@@ -62,7 +61,7 @@ export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
           <div className="panel__icon">🛠️</div>
           <div>
             <h2 className="panel__title">工具箱</h2>
-            <p className="panel__subtitle">命令执行 · MCP/Skills · 文件操作 · 工具状态</p>
+            <p className="panel__subtitle">文件操作 · 工具目录 · MCP/Skills · 工具状态</p>
           </div>
         </div>
 
@@ -105,9 +104,6 @@ export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
       </div>
 
       <div className="tool-panel__body">
-        {activeTab === "execute" ? (
-          <ExecuteTab tools={tools} onExecuted={() => void fetchToolHistory().catch(() => {})} />
-        ) : null}
         {activeTab === "tools" ? <ToolsBrowseTab tools={tools} /> : null}
         {activeTab === "mcp" ? <McpManageTab /> : null}
         {activeTab === "skills" ? <SkillsManageTab /> : null}
