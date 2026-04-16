@@ -46,10 +46,6 @@ from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
 from app.memory.repository import MemoryRepository
 from app.planning.morning_plan import MorningPlanPlanner
 from app.runtime import StateStore
-from app.self_programming.executor import SelfProgrammingExecutor
-from app.self_programming.history_store import SelfProgrammingHistory
-from app.self_programming.llm_planner import LLMPlanner
-from app.self_programming.planner import SelfProgrammingPlanner
 from app.self_programming.service import SelfProgrammingService
 from app.tools.runner import CommandRunner
 from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
@@ -81,7 +77,6 @@ class AutonomyLoop:
         morning_plan_planner: MorningPlanPlanner | None = None,
         goal_admission_service: GoalAdmissionService | None = None,
         self_programming_service: SelfProgrammingService | None = None,
-        self_programming_history: SelfProgrammingHistory | None = None,
         gateway=None,
     ) -> None:
         self.state_store = state_store
@@ -96,28 +91,7 @@ class AutonomyLoop:
         self.goal_admission_service = goal_admission_service or GoalAdmissionService(
             store=GoalAdmissionStore.in_memory(),
         )
-        workspace_root = _workspace_root()
-
-        # 构建自我编程服务：优先使用 LLMPlanner（如果提供了 gateway）
-        if self_programming_service is not None:
-            self.self_programming_service = self_programming_service
-        else:
-            rule_planner = SelfProgrammingPlanner(workspace_root=workspace_root)
-            executor = SelfProgrammingExecutor(workspace_root)
-            if gateway is not None:
-                llm_planner = LLMPlanner(
-                    gateway=gateway,
-                    workspace_root=workspace_root,
-                    fallback_planner=rule_planner,
-                )
-                planner = llm_planner  # type: ignore[assignment]
-            else:
-                planner = rule_planner  # type: ignore[assignment]
-            self.self_programming_service = SelfProgrammingService(
-                planner=planner,  # type: ignore[arg-type]
-                executor=executor,
-                history=self_programming_history,
-            )
+        self.self_programming_service = self_programming_service
 
     def tick_once(self):
         state = self.state_store.get()
@@ -691,6 +665,8 @@ class AutonomyLoop:
         return self.state_store.set(next_state)
 
     def _advance_self_programming(self, state, recent_events, now: datetime):
+        if self.self_programming_service is None:
+            return None
         if state.focus_mode == FocusMode.SELF_IMPROVEMENT:
             next_state = self.self_programming_service.tick_job(state)
             if next_state is None:

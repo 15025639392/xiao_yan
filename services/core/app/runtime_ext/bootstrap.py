@@ -55,7 +55,6 @@ from app.runtime_ext.snapshot import (
     build_app_snapshot,
     build_world_state,
 )
-from app.self_programming.history_store import SelfProgrammingHistory
 from app.world.repository import FileWorldRepository
 from app.world.service import WorldStateService
 
@@ -111,9 +110,6 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     )
     knowledge_observability_tracker = KnowledgeObservabilityTracker()
     stop_event = Event()
-    self_programming_history = SelfProgrammingHistory(
-        storage_path=get_state_storage_path().parent / ".self-programming-history.json",
-    )
     orchestrator_repository = OrchestratorSessionRepository(get_orchestrator_storage_path())
     orchestrator_conversation_repository = OrchestratorConversationRepository(get_orchestrator_message_storage_path())
     orchestrator_conversation_service = OrchestratorConversationService(
@@ -144,7 +140,6 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
         goal_repository,
         goal_admission_service=goal_admission_service,
         gateway=loop_gateway,
-        self_programming_history=self_programming_history,
     )
     world_state_service = WorldStateService()
 
@@ -175,7 +170,6 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.stop_event = stop_event
     target_app.state.autonomy_thread = worker
     target_app.state.autonomy_loop = loop
-    target_app.state.self_programming_history = self_programming_history
     target_app.state.orchestrator_repository = orchestrator_repository
     target_app.state.orchestrator_conversation_repository = orchestrator_conversation_repository
     target_app.state.orchestrator_conversation_service = orchestrator_conversation_service
@@ -211,7 +205,6 @@ def reload_runtime(target_app: FastAPI) -> None:
         "stop_event",
         "autonomy_thread",
         "autonomy_loop",
-        "self_programming_history",
         "orchestrator_repository",
         "orchestrator_conversation_repository",
         "orchestrator_conversation_service",
