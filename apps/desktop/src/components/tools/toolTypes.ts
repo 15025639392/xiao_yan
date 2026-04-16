@@ -1,9 +1,8 @@
 export type ToolTabType =
   | "execute"
+  | "files"
   | "tools"
   | "mcp"
   | "skills"
-  | "files"
   | "history"
-  | "status"
-  | "capabilities";
+  | "status";

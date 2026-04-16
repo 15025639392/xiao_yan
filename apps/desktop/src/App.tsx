@@ -59,6 +59,7 @@ import {
   upsertAssistantMessage,
 } from "./lib/chatMessages";
 import { OverviewPanel } from "./pages/OverviewPage";
+import { CapabilitiesPage } from "./pages/CapabilitiesPage";
 import { MemoryPage } from "./pages/MemoryPage";
 import { OrchestratorPage, type StopDelegateTaskRequest } from "./pages/OrchestratorPage";
 import {
@@ -1980,7 +1981,7 @@ export default function App() {
         ) : route === "tools" ? (
           <ToolPanel />
         ) : route === "capabilities" ? (
-          <ToolPanel initialTab="capabilities" />
+          <CapabilitiesPage />
         ) : (
           <OverviewPanel
             focusGoalTitle={focusGoalTitle}

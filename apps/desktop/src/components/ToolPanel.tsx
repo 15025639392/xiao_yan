@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ToolsListResponse, ToolsStatusResponse } from "../lib/api";
 import { fetchToolHistory, fetchTools, fetchToolsStatus } from "../lib/api";
-import { StatusBadge } from "./ui";
+import { Button, StatusBadge } from "./ui";
 import { ExecuteTab } from "./tools/ExecuteTab";
 import { FilesTab } from "./tools/FilesTab";
 import { HistoryTab } from "./tools/HistoryTab";
@@ -12,11 +12,20 @@ import { getSuccessRateBadgeStyle } from "./tools/toolUtils";
 import { ToolsBrowseTab } from "./tools/ToolsBrowseTab";
 import { McpManageTab } from "./tools/McpManageTab";
 import { SkillsManageTab } from "./tools/SkillsManageTab";
-import { CapabilitiesPage } from "../pages/CapabilitiesPage";
 
 type ToolPanelProps = {
   initialTab?: ToolTabType;
 };
+
+const TOOL_COLLECTION_TABS: ToolTabType[] = ["execute", "tools"];
+
+const SECONDARY_TAB_ACTIONS: Array<{ tab: ToolTabType; label: string }> = [
+  { tab: "tools", label: "工具目录" },
+  { tab: "history", label: "执行历史" },
+  { tab: "status", label: "运行状态" },
+  { tab: "mcp", label: "MCP 管理" },
+  { tab: "skills", label: "Skills 管理" },
+];
 
 export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
   const [activeTab, setActiveTab] = useState<ToolTabType>(initialTab);
@@ -24,9 +33,18 @@ export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
   const [status, setStatus] = useState<ToolsStatusResponse | null>(null);
 
   useEffect(() => {
+    if (!TOOL_COLLECTION_TABS.includes(activeTab) || tools) {
+      return;
+    }
     fetchTools().then(setTools).catch(() => {});
+  }, [activeTab, tools]);
+
+  useEffect(() => {
+    if (activeTab !== "status" || status) {
+      return;
+    }
     fetchToolsStatus().then(setStatus).catch(() => {});
-  }, []);
+  }, [activeTab, status]);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -59,7 +77,7 @@ export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
             ) : null}
             {typeof allowedCommandCount === "number" ? (
               <span style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>
-                {allowedCommandCount} 个工具可用
+                {allowedCommandCount} 个扩展工具可用
               </span>
             ) : null}
           </div>
@@ -67,6 +85,24 @@ export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
       </div>
 
       <ToolTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+      <div className="tool-panel__secondary">
+        <div className="tool-panel__secondary-label">更多工具</div>
+        <div className="tool-panel__secondary-actions">
+          {SECONDARY_TAB_ACTIONS.map(({ tab, label }) => (
+            <Button
+              key={tab}
+              type="button"
+              variant={activeTab === tab ? "default" : "secondary"}
+              size="sm"
+              className="tool-panel__secondary-btn"
+              onClick={() => setActiveTab(tab)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
 
       <div className="tool-panel__body">
         {activeTab === "execute" ? (
@@ -80,7 +116,6 @@ export function ToolPanel({ initialTab = "execute" }: ToolPanelProps) {
         {activeTab === "status" ? (
           <StatusTab status={status} onRefresh={() => void fetchToolsStatus().then(setStatus).catch(() => {})} />
         ) : null}
-        {activeTab === "capabilities" ? <CapabilitiesPage /> : null}
       </div>
     </section>
   );

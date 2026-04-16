@@ -44,6 +44,33 @@
   overflow-x: auto;
 }
 
+.tool-panel__secondary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.tool-panel__secondary-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.tool-panel__secondary-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tool-panel__secondary-btn {
+  white-space: nowrap;
+}
+
 .tool-tab {
   display: flex;
   align-items: center;
