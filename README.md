@@ -132,7 +132,30 @@ cd ai
 
 ```bash
 cd services/core
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+默认推荐安装 `.[dev]`，这会提供 `FastAPI + Pydantic + httpx` 的核心依赖，以及本地开发需要的 `pytest`、`uvicorn`。
+
+如果只想安装最小运行依赖：
+
+```bash
 pip install -e .
+```
+
+如果需要额外能力，可以按需安装：
+
+```bash
+# 长期记忆 / 向量检索
+pip install -e ".[memory]"
+
+# PDF 附件文本提取
+pip install -e ".[docs]"
+
+# 一次性安装全部可选能力
+pip install -e ".[full]"
 ```
 
 #### 3. 配置环境变量
@@ -146,7 +169,7 @@ WORLD_STORAGE_PATH=/path/to/world.json
 STATE_STORAGE_PATH=/path/to/state.json
 PERSONA_STORAGE_PATH=/path/to/persona.json
 
-# MemPalace 记忆存储（聊天与结构化记忆统一使用）
+# MemPalace 记忆存储（可选：启用长期记忆 / 向量检索时使用）
 MEMPALACE_PALACE_PATH=~/.mempalace/palace
 MEMPALACE_RESULTS_LIMIT=3
 MEMPALACE_WING=wing_xiaoyan
@@ -186,6 +209,7 @@ npm install
 ```
 
 服务将在 `http://127.0.0.1:8000` 启动。
+脚本会优先确保 `services/core/.venv` 中具备 `.[dev]` 依赖；`memory` 和 `docs` 相关依赖默认不是启动硬前置。
 默认关闭 `--reload`，以避免本地数据目录频繁写入导致 CPU 抖动或 websocket 断连。
 
 如果需要通过局域网 IP 访问（例如手机或其他电脑）：
