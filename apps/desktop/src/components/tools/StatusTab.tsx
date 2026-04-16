@@ -1,4 +1,5 @@
 import type { ToolsStatusResponse } from "../../lib/api";
+import { Button } from "../ui";
 import { getSuccessRateColor } from "./toolUtils";
 
 type StatusTabProps = {
@@ -81,9 +82,9 @@ export function StatusTab({ status, onRefresh }: StatusTabProps) {
         </div>
       ) : null}
 
-      <button type="button" className="btn btn--sm" onClick={onRefresh} style={{ marginTop: "var(--space-4)" }}>
+      <Button type="button" variant="secondary" size="sm" onClick={onRefresh} style={{ marginTop: "var(--space-4)" }}>
         🔄 刷新状态
-      </button>
+      </Button>
     </div>
   );
 }

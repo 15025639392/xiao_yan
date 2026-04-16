@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import type { ChatMcpServerConfig, RelationshipSummary } from "../../lib/api";
+import { Button, Checkbox, Textarea } from "../ui";
 import { ChatResponseGuidance } from "./ChatResponseGuidance";
 import { ChatRelationshipContext } from "./ChatRelationshipContext";
 import { LoadingSpinner, SendIcon } from "./ChatIcons";
@@ -75,9 +76,11 @@ export function ChatInputForm({
           event.preventDefault();
           onSubmit();
         }}
-      >
+        >
         <div className="chat-page__input-toolbar">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             className={`chat-page__toolbar-btn ${attachedFolders.length > 0 ? "chat-page__toolbar-btn--active" : ""}`}
             type="button"
             aria-label="添加文件夹"
@@ -86,8 +89,10 @@ export function ChatInputForm({
             disabled={isSending}
           >
             📁
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             className={`chat-page__toolbar-btn ${attachedFiles.length > 0 ? "chat-page__toolbar-btn--active" : ""}`}
             type="button"
             aria-label="添加文件"
@@ -96,8 +101,10 @@ export function ChatInputForm({
             disabled={isSending}
           >
             📄
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             className={`chat-page__toolbar-btn ${attachedImages.length > 0 ? "chat-page__toolbar-btn--active" : ""}`}
             type="button"
             aria-label="添加图片"
@@ -106,8 +113,9 @@ export function ChatInputForm({
             disabled={isSending}
           >
             🖼️
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             className={`chat-page__toolbar-btn chat-page__toolbar-btn--text ${showMcpSelector ? "chat-page__toolbar-btn--active" : ""}`}
             type="button"
             aria-label="选择 MCP Servers"
@@ -122,52 +130,58 @@ export function ChatInputForm({
             }}
           >
             🧩 {mcpToolbarLabel}
-          </button>
+          </Button>
           {totalAttachments > 0 ? (
             <div className="chat-page__attached-folders" aria-label="已附加附件">
               {attachedFolders.map((path) => (
                 <span key={path} className="chat-page__attached-folder-chip">
                   <span className="chat-page__attached-folder-type">📁</span>
                   <span className="chat-page__attached-folder-path">{path}</span>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     className="chat-page__attached-folder-remove"
                     aria-label={`移除文件夹 ${path}`}
                     onClick={() => onRemoveAttachedFolder?.(path)}
                     disabled={isSending}
                   >
                     ×
-                  </button>
+                  </Button>
                 </span>
               ))}
               {attachedFiles.map((path) => (
                 <span key={`file:${path}`} className="chat-page__attached-folder-chip">
                   <span className="chat-page__attached-folder-type">📄</span>
                   <span className="chat-page__attached-folder-path">{path}</span>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     className="chat-page__attached-folder-remove"
                     aria-label={`移除文件 ${path}`}
                     onClick={() => onRemoveAttachedFile?.(path)}
                     disabled={isSending}
                   >
                     ×
-                  </button>
+                  </Button>
                 </span>
               ))}
               {attachedImages.map((path) => (
                 <span key={`image:${path}`} className="chat-page__attached-folder-chip">
                   <span className="chat-page__attached-folder-type">🖼️</span>
                   <span className="chat-page__attached-folder-path">{path}</span>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     className="chat-page__attached-folder-remove"
                     aria-label={`移除图片 ${path}`}
                     onClick={() => onRemoveAttachedImage?.(path)}
                     disabled={isSending}
                   >
                     ×
-                  </button>
+                  </Button>
                 </span>
               ))}
             </div>
@@ -184,8 +198,7 @@ export function ChatInputForm({
               <div className="chat-page__mcp-options">
                 {enabledMcpServers.map((server) => (
                   <label key={server.server_id} className="chat-page__mcp-option">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       aria-label={`MCP Server ${server.server_id}`}
                       checked={effectiveSelectedMcpServerIds.includes(server.server_id)}
                       disabled={isSending}
@@ -203,7 +216,7 @@ export function ChatInputForm({
           对话输入
         </label>
         <div className="chat-page__input-wrapper">
-          <textarea
+          <Textarea
             ref={textareaRef}
             id="chat-input"
             className="chat-page__textarea"
@@ -214,9 +227,9 @@ export function ChatInputForm({
             rows={1}
             disabled={isSending}
           />
-          <button className="chat-page__send-btn" type="submit" disabled={isSending || !draft.trim()} aria-label="发送">
+          <Button className="chat-page__send-btn" type="submit" disabled={isSending || !draft.trim()} aria-label="发送">
             {isSending ? <LoadingSpinner /> : <SendIcon />}
-          </button>
+          </Button>
         </div>
         <div className="chat-page__input-hint">
           <span>Enter 发送 · Shift+Enter 换行</span>

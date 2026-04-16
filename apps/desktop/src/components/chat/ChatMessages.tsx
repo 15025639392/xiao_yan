@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import type { RelationshipSummary } from "../../lib/api";
 import { MarkdownMessage } from "../MarkdownMessage";
+import { Button } from "../ui";
 import type { ChatEntry } from "./chatTypes";
 import { ChatMemoryContext } from "./ChatMemoryContext";
 import { ChatMessageResponseReference } from "./ChatMessageResponseReference";
@@ -43,20 +44,22 @@ export const ChatMessages = memo(function ChatMessages({
         <p className="chat-page__empty-title">开始对话</p>
         <p className="chat-page__empty-desc">在下方输入框输入消息，与{assistantName}开始交流</p>
         <div className="chat-page__quick-actions">
-          <button
+          <Button
             className="chat-page__quick-btn"
+            variant="secondary"
             onClick={() => onDraftChange("帮我制定今天的计划")}
             type="button"
           >
             制定今日计划
-          </button>
-          <button
+          </Button>
+          <Button
             className="chat-page__quick-btn"
+            variant="secondary"
             onClick={() => onDraftChange("总结一下我们刚才聊的内容")}
             type="button"
           >
             总结对话
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -133,25 +136,27 @@ export const ChatMessages = memo(function ChatMessages({
           ) : null}
 
           {message.role === "assistant" && message.state === "failed" && message.requestMessage ? (
-            <button
+            <Button
               className="chat-page__action-btn"
+              variant="secondary"
               onClick={() => onResume?.(message)}
               type="button"
               disabled={isSending}
             >
               继续生成
-            </button>
+            </Button>
           ) : null}
 
           {message.role === "user" && message.state === "failed" ? (
-            <button
+            <Button
               className="chat-page__action-btn"
+              variant="secondary"
               onClick={() => onRetry?.(message)}
               type="button"
               disabled={isSending}
             >
               重发
-            </button>
+            </Button>
           ) : null}
         </article>
       ))}

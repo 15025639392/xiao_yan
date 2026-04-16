@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { HistoryPanel } from "../components/HistoryPanel";
+import { Button } from "../components/ui";
 import type { SelfProgrammingHistoryEntry } from "../lib/api";
 
 export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: string) => void }) {
@@ -14,9 +15,9 @@ export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: s
         <aside className="history-detail">
           <header className="history-detail__header">
             <h3>详情</h3>
-            <button type="button" className="btn btn--sm" onClick={() => setSelectedEntry(null)}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setSelectedEntry(null)}>
               关闭
-            </button>
+            </Button>
           </header>
           <div className="history-detail__body">
             <dl className="history-detail__list">
@@ -72,9 +73,9 @@ export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: s
             ) : null}
 
             {onSelectRollback && selectedEntry.status === "applied" ? (
-              <button
+              <Button
                 type="button"
-                className="btn btn--danger"
+                variant="destructive"
                 onClick={() => {
                   onSelectRollback(selectedEntry.job_id);
                   setSelectedEntry(null);
@@ -82,7 +83,7 @@ export function HistoryPage({ onSelectRollback }: { onSelectRollback?: (jobId: s
                 style={{ marginTop: varStr("space-4"), width: "100%" }}
               >
                 ↩️ 回滚此操作
-              </button>
+              </Button>
             ) : null}
           </div>
         </aside>

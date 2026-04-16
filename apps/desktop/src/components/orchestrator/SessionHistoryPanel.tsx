@@ -1,4 +1,5 @@
 import type { SessionHistoryFilter, SessionHubViewModel } from "../../lib/orchestratorWorkbench";
+import { Button, Checkbox, Input } from "../ui";
 
 type SessionHistoryPanelProps = {
   viewModel: SessionHubViewModel;
@@ -34,7 +35,7 @@ export function SessionHistoryPanel({
     <section className="orchestrator-side-section">
       <div className="orchestrator-history-filters" aria-label="会话历史筛选">
         <div className="orchestrator-history-filter-grid">
-          <input
+          <Input
             className="chat-page__textarea orchestrator-history-filter-input"
             value={filter.keyword}
             placeholder="关键词或项目名"
@@ -47,8 +48,7 @@ export function SessionHistoryPanel({
             const checked = filter.status.includes(option.value);
             return (
               <label key={option.value} className="orchestrator-history-status-chip">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={checked}
                   onChange={() => {
                     const nextStatus = checked
@@ -61,9 +61,9 @@ export function SessionHistoryPanel({
               </label>
             );
           })}
-          <button className="btn btn--secondary btn--sm" type="button" onClick={() => void onApplyFilter(filter)}>
+          <Button variant="secondary" size="sm" type="button" onClick={() => void onApplyFilter(filter)}>
             筛选
-          </button>
+          </Button>
         </div>
       </div>
 

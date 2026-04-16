@@ -1,4 +1,5 @@
 import type { Goal, TodayPlan } from "../../lib/api";
+import { Button } from "../ui";
 
 type ChatHeaderProps = {
   focusGoalTitle?: string | null;
@@ -26,13 +27,13 @@ export function ChatHeader({
         ) : null}
       </div>
       <div className="chat-page__header-actions">
-        <button className="chat-page__action-btn" onClick={onToggleConfig} type="button" title="配置">
+        <Button className="chat-page__action-btn" variant="secondary" onClick={onToggleConfig} type="button" title="配置">
           ⚙️ 配置
-        </button>
+        </Button>
         {todayPlan?.steps.some((step) => step.status === "pending") && activeGoals && activeGoals[0] && onCompleteGoal ? (
-          <button className="chat-page__action-btn" onClick={() => void onCompleteGoal(activeGoals[0].id)} type="button">
+          <Button className="chat-page__action-btn" variant="secondary" onClick={() => void onCompleteGoal(activeGoals[0].id)} type="button">
             完成目标
-          </button>
+          </Button>
         ) : null}
       </div>
     </header>

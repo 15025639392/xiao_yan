@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { MarkdownMessage } from "../MarkdownMessage";
+import { Button } from "../ui";
 import type {
   OrchestratorMessage,
   OrchestratorMessageBlock,
@@ -169,11 +170,13 @@ function OrchestratorBlockCard(props: OrchestratorBlockCardProps) {
 function AsyncActionButton({
   className,
   label,
+  variant = "secondary",
   pendingLabel = "处理中...",
   onAction,
 }: {
   className: string;
   label: string;
+  variant?: "default" | "secondary" | "destructive" | "ghost";
   pendingLabel?: string;
   onAction: () => Promise<void> | void;
 }) {
@@ -193,9 +196,9 @@ function AsyncActionButton({
   }
 
   return (
-    <button className={className} type="button" disabled={pending} onClick={() => void handleClick()}>
+    <Button className={className} variant={variant} type="button" disabled={pending} onClick={() => void handleClick()}>
       {pending ? pendingLabel : label}
-    </button>
+    </Button>
   );
 }
 
@@ -215,13 +218,14 @@ function PlanCard({ plan }: { plan: NonNullable<OrchestratorMessageBlock["plan"]
         {plan.constraints.length > 0 ? <span className="orchestrator-pill">约束 {plan.constraints.length}</span> : null}
       </div>
       {hasExpandableDetails ? (
-        <button
+        <Button
           className="chat-page__action-btn orchestrator-inline-card__toggle"
+          variant="secondary"
           type="button"
           onClick={() => setShowDetails((current) => !current)}
         >
           {showDetails ? "收起完整计划" : "查看完整计划"}
-        </button>
+        </Button>
       ) : null}
       {showDetails ? (
         <>

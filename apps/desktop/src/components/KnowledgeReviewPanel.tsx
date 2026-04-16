@@ -9,6 +9,7 @@ import {
   type KnowledgeReviewStatus,
   type KnowledgeSummaryResponse,
 } from "../lib/api";
+import { Button, Checkbox, Input } from "./ui";
 
 type KnowledgeReviewPanelProps = {
   className?: string;
@@ -332,7 +333,7 @@ export function KnowledgeReviewPanel({ className }: KnowledgeReviewPanelProps) {
       </div>
 
       <div className="knowledge-review-panel__toolbar">
-        <input
+        <Input
           className="knowledge-review-panel__search"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
@@ -340,16 +341,17 @@ export function KnowledgeReviewPanel({ className }: KnowledgeReviewPanelProps) {
         />
         <div className="knowledge-review-panel__filters" role="tablist" aria-label="审核状态筛选">
           {(["pending_review", "approved", "rejected", "all"] as const).map((status) => (
-            <button
+            <Button
               key={status}
               type="button"
               role="tab"
               aria-selected={reviewFilter === status}
+              variant="ghost"
               className={`knowledge-review-panel__filter-btn ${reviewFilter === status ? "knowledge-review-panel__filter-btn--active" : ""}`}
               onClick={() => setReviewFilter(status)}
             >
               {status === "all" ? "全部" : REVIEW_STATUS_LABELS[status]}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -358,8 +360,7 @@ export function KnowledgeReviewPanel({ className }: KnowledgeReviewPanelProps) {
 
       <div className="knowledge-review-panel__batch">
         <label className="knowledge-review-panel__batch-select">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={items.length > 0 && selectedIds.size === items.length}
             onChange={toggleSelectAll}
           />
@@ -367,30 +368,33 @@ export function KnowledgeReviewPanel({ className }: KnowledgeReviewPanelProps) {
         </label>
         <span className="knowledge-review-panel__batch-count">已选 {selectedIds.size} 条</span>
         <div className="knowledge-review-panel__batch-actions">
-          <button
+          <Button
             type="button"
             disabled={selectedIds.size === 0 || batchReviewing}
+            variant="default"
             className="knowledge-review-panel__action-btn knowledge-review-panel__action-btn--approve"
             onClick={() => void handleBatchReview("approve")}
           >
             批量通过
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             disabled={selectedIds.size === 0 || batchReviewing}
+            variant="destructive"
             className="knowledge-review-panel__action-btn knowledge-review-panel__action-btn--reject"
             onClick={() => void handleBatchReview("reject")}
           >
             批量驳回
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             disabled={selectedIds.size === 0 || batchReviewing}
+            variant="secondary"
             className="knowledge-review-panel__action-btn"
             onClick={() => void handleBatchReview("pend")}
           >
             批量置待审
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -403,8 +407,7 @@ export function KnowledgeReviewPanel({ className }: KnowledgeReviewPanelProps) {
         {!loading && items.map((item) => (
           <article key={item.id} className="knowledge-review-panel__item">
             <label className="knowledge-review-panel__item-check">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={selectedIds.has(item.id)}
                 onChange={() => toggleSelection(item.id)}
               />
@@ -424,37 +427,41 @@ export function KnowledgeReviewPanel({ className }: KnowledgeReviewPanelProps) {
               </div>
             </div>
             <div className="knowledge-review-panel__item-actions">
-              <button
+              <Button
                 type="button"
                 disabled={reviewingId === item.id}
+                variant="default"
                 className="knowledge-review-panel__action-btn knowledge-review-panel__action-btn--approve"
                 onClick={() => void handleReview(item.id, "approve")}
               >
                 通过
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 disabled={reviewingId === item.id}
+                variant="destructive"
                 className="knowledge-review-panel__action-btn knowledge-review-panel__action-btn--reject"
                 onClick={() => void handleReview(item.id, "reject")}
               >
                 驳回
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 disabled={reviewingId === item.id}
+                variant="secondary"
                 className="knowledge-review-panel__action-btn"
                 onClick={() => void handleReview(item.id, "pend")}
               >
                 置待审
-              </button>
+              </Button>
             </div>
           </article>
         ))}
 
         {!loading && items.length > 0 && nextCursor && loadMoreFailed ? (
-          <button
+          <Button
             type="button"
+            variant="secondary"
             className="knowledge-review-panel__load-more"
             disabled={loadingMore || retryLocked}
             onClick={() => void handleLoadMore()}
@@ -464,7 +471,7 @@ export function KnowledgeReviewPanel({ className }: KnowledgeReviewPanelProps) {
               : retryLocked
                 ? `重试加载更多（${retryRemainingSeconds}s后）`
                 : `重试加载更多（${items.length}/${totalCount}）`}
-          </button>
+          </Button>
         ) : null}
       </div>
     </section>

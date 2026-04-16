@@ -4,6 +4,7 @@ import { OrchestratorConversationPanel } from "../components/orchestrator/Orches
 import { ExecutorPanel } from "../components/orchestrator/ExecutorPanel";
 import { SessionHistoryPanel } from "../components/orchestrator/SessionHistoryPanel";
 import { TaskBoardPanel } from "../components/orchestrator/TaskBoardPanel";
+import { Button } from "../components/ui";
 import type { OrchestratorMessage, OrchestratorSchedulerSnapshot, OrchestratorSession, WorkbenchTab } from "../lib/api";
 import {
   buildWorkbenchViewModel,
@@ -147,33 +148,37 @@ export function OrchestratorPage({
                   key={tab.tab_id}
                   className={`orchestrator-workbench-tab ${isActive ? "orchestrator-workbench-tab--active" : ""}`}
                 >
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     className="orchestrator-workbench-tab__label"
                     onClick={() => onActivateWorkbenchTab(tab.tab_id)}
                   >
                     {label}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     className="orchestrator-workbench-tab__close"
                     onClick={() => onCloseWorkbenchTab(tab.tab_id)}
                     aria-label={`关闭${label}`}
                   >
                     ×
-                  </button>
+                  </Button>
                 </div>
               );
             })}
           </div>
-          <button
+          <Button
             type="button"
+            variant="secondary"
             className="orchestrator-workbench-tab__add"
             onClick={onCreateBlankTab}
             aria-label="新建空白会话"
           >
             + 新建会话
-          </button>
+          </Button>
         </section>
 
         <OrchestratorConversationPanel

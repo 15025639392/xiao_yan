@@ -1,4 +1,5 @@
 import type { ExpressionHabit, FormalLevel } from "../../lib/api";
+import { Button, Input } from "../ui";
 import {
   EXPRESSION_HABIT_OPTIONS,
   FORMAL_LEVEL_OPTIONS,
@@ -39,14 +40,15 @@ export function PersonaStyleTab({
           <label className="persona-form__label">正式程度</label>
           <div className="style-options">
             {FORMAL_LEVEL_OPTIONS.map(([value, label]) => (
-              <button
+              <Button
                 key={value}
                 type="button"
+                variant="ghost"
                 className={`style-option ${formalLevel === value ? "style-option--active" : ""}`}
                 onClick={() => onFormalLevelChange(value)}
               >
                 {label}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -55,14 +57,15 @@ export function PersonaStyleTab({
           <label className="persona-form__label">表达习惯</label>
           <div className="style-options">
             {EXPRESSION_HABIT_OPTIONS.map(([value, label]) => (
-              <button
+              <Button
                 key={value}
                 type="button"
+                variant="ghost"
                 className={`style-option ${expressionHabit === value ? "style-option--active" : ""}`}
                 onClick={() => onExpressionHabitChange(value)}
               >
                 {label}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -71,14 +74,15 @@ export function PersonaStyleTab({
           <label className="persona-form__label">回复长度</label>
           <div className="style-options">
             {RESPONSE_LENGTH_OPTIONS.map((value) => (
-              <button
+              <Button
                 key={value}
                 type="button"
+                variant="ghost"
                 className={`style-option ${responseLength === value ? "style-option--active" : ""}`}
                 onClick={() => onResponseLengthChange(value)}
               >
                 {{ short: "简洁", mixed: "适中", long: "详细" }[value]}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -88,7 +92,7 @@ export function PersonaStyleTab({
             口头禅
             <span className="persona-form__hint">常用语，用逗号或顿号分隔</span>
           </label>
-          <input
+          <Input
             id="wb-persona-tics"
             type="text"
             className="persona-form__input"
@@ -100,11 +104,10 @@ export function PersonaStyleTab({
       </div>
 
       <div className="persona-form__actions">
-        <button type="button" className="btn btn--primary" onClick={onSave} disabled={saving}>
+        <Button type="button" variant="default" onClick={onSave} disabled={saving}>
           {saving ? "保存中..." : "保存风格"}
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
-

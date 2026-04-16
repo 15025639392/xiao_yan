@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { TaskBoardViewModel } from "../../lib/orchestratorWorkbench";
+import { Button } from "../ui";
 
 type TaskBoardPanelProps = {
   viewModel: TaskBoardViewModel;
@@ -54,21 +55,23 @@ export function TaskBoardPanel({ viewModel, onSendQuickMessage }: TaskBoardPanel
                   {task.stallLevel ? <span className="orchestrator-pill">{task.stallLevel}</span> : null}
                 </div>
                 <div className="orchestrator-inline-card__actions">
-                  <button
+                  <Button
                     className="chat-page__action-btn"
+                    variant="secondary"
                     type="button"
                     onClick={() => void onSendQuickMessage(`解释一下任务「${task.title}」当前状态与下一步`)}
                   >
                     查看回执
-                  </button>
+                  </Button>
                   {task.status === "failed" ? (
-                    <button
+                    <Button
                       className="chat-page__action-btn"
+                      variant="secondary"
                       type="button"
                       onClick={() => void onSendQuickMessage(`分析任务「${task.title}」失败原因并给修复建议`)}
                     >
                       分析失败
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               </div>
@@ -78,13 +81,14 @@ export function TaskBoardPanel({ viewModel, onSendQuickMessage }: TaskBoardPanel
       ) : null}
 
       {secondaryTaskCount > 0 ? (
-        <button
+        <Button
           className="chat-page__action-btn orchestrator-taskboard__toggle"
+          variant="secondary"
           type="button"
           onClick={() => setShowAllTasks((current) => !current)}
         >
           {showAllTasks ? "收起非关键任务" : `查看全部任务（${viewModel.tasks.length}）`}
-        </button>
+        </Button>
       ) : null}
     </section>
   );

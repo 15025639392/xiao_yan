@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { ExecutorViewModel } from "../../lib/orchestratorWorkbench";
+import { Button } from "../ui";
 
 type StopTaskRequest = {
   sessionId: string;
@@ -56,15 +57,17 @@ export function ExecutorPanel({ executors, onSendQuickMessage, onStopTask }: Exe
               </div>
 
               <div className="orchestrator-inline-card__actions">
-                <button
+                <Button
                   className="chat-page__action-btn"
+                  variant="secondary"
                   type="button"
                   onClick={() => void onSendQuickMessage(executor.followupCommand)}
                 >
                   追问卡点
-                </button>
-                <button
+                </Button>
+                <Button
                   className="chat-page__action-btn"
+                  variant="secondary"
                   type="button"
                   onClick={() =>
                     void onSendQuickMessage(
@@ -73,9 +76,10 @@ export function ExecutorPanel({ executors, onSendQuickMessage, onStopTask }: Exe
                   }
                 >
                   生成建议
-                </button>
-                <button
+                </Button>
+                <Button
                   className="chat-page__action-btn"
+                  variant="secondary"
                   type="button"
                   onClick={() =>
                     void onSendQuickMessage(
@@ -84,9 +88,10 @@ export function ExecutorPanel({ executors, onSendQuickMessage, onStopTask }: Exe
                   }
                 >
                   主控介入摘要
-                </button>
-                <button
+                </Button>
+                <Button
                   className="chat-page__action-btn"
+                  variant="secondary"
                   type="button"
                   disabled={!canStop || state === "pending" || state === "success"}
                   onClick={async () => {
@@ -115,7 +120,7 @@ export function ExecutorPanel({ executors, onSendQuickMessage, onStopTask }: Exe
                       : state === "fail"
                         ? "停止失败"
                         : "停止任务"}
-                </button>
+                </Button>
               </div>
             </li>
           );

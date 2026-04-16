@@ -1,3 +1,5 @@
+import { Button } from "../ui";
+
 type MemoryFooterProps = {
   loading: boolean;
   displayCount: number;
@@ -19,11 +21,10 @@ export function MemoryFooter({
     <div className="memory-footer">
       <span>显示 {displayCount} 条</span>
       {showSearchOnly && searchQuery ? (
-        <button className="memory-footer__clear-filter" onClick={onClearSearch} type="button">
+        <Button className="memory-footer__clear-filter" variant="secondary" onClick={onClearSearch} type="button">
           清除搜索
-        </button>
+        </Button>
       ) : null}
     </div>
   );
 }
-

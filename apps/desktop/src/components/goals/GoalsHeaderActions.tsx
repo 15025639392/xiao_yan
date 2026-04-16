@@ -1,4 +1,4 @@
-import { StatusBadge } from "../ui";
+import { Button, StatusBadge } from "../ui";
 
 type GoalsHeaderActionsProps = {
   goalsCount: number;
@@ -13,14 +13,15 @@ export function GoalsHeaderActions({
 }: GoalsHeaderActionsProps) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-      <button
-        className="btn btn--secondary btn--sm"
+      <Button
+        variant="secondary"
+        size="sm"
         type="button"
         onClick={onToggleExecutionPanel}
         style={{ fontSize: "0.75rem" }}
       >
         {showExecutionPanel ? "📊 隐藏统计" : "📊 执行统计"}
-      </button>
+      </Button>
       <StatusBadge tone="awake">{goalsCount} 个目标</StatusBadge>
     </div>
   );

@@ -1,4 +1,5 @@
 import type { SearchResult } from "../../lib/api";
+import { Button } from "../ui";
 
 type FilesSearchResultsProps = {
   searchQuery: string;
@@ -41,9 +42,9 @@ export function FilesSearchResults({ searchQuery, searchResult, onReadFile, onBa
       ) : (
         <p style={{ color: "var(--text-tertiary)" }}>未找到匹配结果</p>
       )}
-      <button type="button" className="btn btn--sm" onClick={onBack}>
+      <Button type="button" variant="secondary" size="sm" onClick={onBack}>
         返回目录
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import type { FileReadResult } from "../../lib/api";
 import { formatBytes } from "../../lib/utils";
+import { Button } from "../ui";
 
 type FileViewerProps = {
   fileContent: FileReadResult;
@@ -11,9 +12,9 @@ export function FileViewer({ fileContent, onClose }: FileViewerProps) {
     <div className="file-viewer">
       <div className="file-viewer__header">
         <code>{fileContent.path}</code>
-        <button type="button" className="btn btn--sm" onClick={onClose}>
+        <Button type="button" variant="secondary" size="sm" onClick={onClose}>
           ✕ 关闭
-        </button>
+        </Button>
       </div>
       <div className="file-viewer__meta">
         {fileContent.line_count} 行 · {formatBytes(fileContent.size_bytes)}

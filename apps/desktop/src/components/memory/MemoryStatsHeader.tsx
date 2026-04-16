@@ -1,4 +1,5 @@
 import type { MemorySummary } from "../../lib/api";
+import { Button } from "../ui";
 import { KIND_LABELS } from "./memoryConstants";
 
 type MemoryStatsHeaderProps = {
@@ -19,8 +20,9 @@ export function MemoryStatsHeader({ summary, activeFilter, onFilterToggle }: Mem
           const info = KIND_LABELS[kind];
           if (!info) return null;
           return (
-            <button
+            <Button
               key={kind}
+              variant="ghost"
               className={`memory-stats__chip ${activeFilter === kind ? "memory-stats__chip--active" : ""}`}
               onClick={() => onFilterToggle(kind)}
               title={info.label}
@@ -28,11 +30,10 @@ export function MemoryStatsHeader({ summary, activeFilter, onFilterToggle }: Mem
             >
               <span>{info.icon}</span>
               <span>{count}</span>
-            </button>
+            </Button>
           );
         })}
       </div>
     </div>
   );
 }
-

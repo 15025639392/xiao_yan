@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { MemoryPanel, type MemoryPanelMode } from "../components/MemoryPanel";
 import { KnowledgeReviewPanel } from "../components/KnowledgeReviewPanel";
+import { Button } from "../components/ui";
 
 export function MemoryPage({ assistantName }: { assistantName: string }) {
   const [mode, setMode] = useState<MemoryPanelMode | "review">("all");
@@ -20,33 +21,36 @@ export function MemoryPage({ assistantName }: { assistantName: string }) {
         <h2 className="memory-page__title">记忆库</h2>
         <p className="memory-page__subtitle">{subtitle}</p>
         <div className="memory-page__mode-switch" role="tablist" aria-label="记忆模式切换">
-          <button
+          <Button
             type="button"
             role="tab"
             aria-selected={mode === "all"}
+            variant="ghost"
             className={`memory-page__mode-btn ${mode === "all" ? "memory-page__mode-btn--active" : ""}`}
             onClick={() => setMode("all")}
           >
             全部记忆
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             role="tab"
             aria-selected={mode === "knowledge"}
+            variant="ghost"
             className={`memory-page__mode-btn ${mode === "knowledge" ? "memory-page__mode-btn--active" : ""}`}
             onClick={() => setMode("knowledge")}
           >
             结构化知识
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             role="tab"
             aria-selected={mode === "review"}
+            variant="ghost"
             className={`memory-page__mode-btn ${mode === "review" ? "memory-page__mode-btn--active" : ""}`}
             onClick={() => setMode("review")}
           >
             知识审核
-          </button>
+          </Button>
         </div>
       </header>
       <div className="memory-page__content">

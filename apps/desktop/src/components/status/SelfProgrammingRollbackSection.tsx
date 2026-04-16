@@ -1,3 +1,5 @@
+import { Button } from "../ui";
+
 type SelfProgrammingRollbackSectionProps = {
   canRollback: boolean;
   rollbackInfo?: string | null;
@@ -32,9 +34,9 @@ export function SelfProgrammingRollbackSection({
           <h4 className="si-section__title">回滚操作</h4>
           <p className="si-rollback-hint">此操作将恢复到修改前的文件状态（快照已保存）</p>
           <div className="si-rollback-actions">
-            <button type="button" className="btn btn--danger btn--sm" disabled={rollingBack} onClick={onOpenConfirm}>
+            <Button type="button" variant="destructive" size="sm" disabled={rollingBack} onClick={onOpenConfirm}>
               {rollingBack ? "⏳ 回滚中..." : "↩️ 执行回滚"}
-            </button>
+            </Button>
           </div>
           {rollbackOk ? <div className="si-rollback-banner si-rollback-banner--success">{rollbackOk}</div> : null}
           {rollbackErr ? <div className="si-rollback-banner si-rollback-banner--error">{rollbackErr}</div> : null}

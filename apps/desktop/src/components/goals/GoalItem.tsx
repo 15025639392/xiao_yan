@@ -1,5 +1,5 @@
 import type { Goal, RelationshipSummary } from "../../lib/api";
-import { StatusBadge } from "../ui";
+import { Button, StatusBadge } from "../ui";
 import { getGoalAdmissionDisplay } from "./goalAdmissionMeta";
 import { renderGoalStatus } from "./goalsUtils";
 import { getGoalSourceMeta } from "./goalSourceMeta";
@@ -91,47 +91,50 @@ export function GoalItem({
             borderTop: "1px solid var(--border-default)",
           }}
         >
-          <button
-            className="btn btn--secondary btn--sm"
+          <Button
+            variant="secondary"
+            size="sm"
             type="button"
             onClick={() => onDecomposeGoal(goal.id)}
             disabled={loadingDecompose.has(goal.id)}
             style={{ fontSize: "0.75rem", padding: "var(--space-1) var(--space-2)" }}
           >
             {loadingDecompose.has(goal.id) ? "⏳ 分解中..." : "🔧 分解任务"}
-          </button>
+          </Button>
         </div>
       ) : null}
 
       {goal.status !== "completed" && goal.status !== "abandoned" ? (
         <div className="goal-card__actions">
           {goal.status === "active" ? (
-            <button
-              className="btn btn--secondary btn--sm"
+            <Button
+              variant="secondary"
+              size="sm"
               type="button"
               onClick={() => onUpdateGoalStatus(goal.id, "paused")}
             >
               暂停
-            </button>
+            </Button>
           ) : null}
 
           {goal.status === "paused" ? (
-            <button
-              className="btn btn--secondary btn--sm"
+            <Button
+              variant="secondary"
+              size="sm"
               type="button"
               onClick={() => onUpdateGoalStatus(goal.id, "active")}
             >
               恢复
-            </button>
+            </Button>
           ) : null}
 
-          <button className="btn btn--primary btn--sm" type="button" onClick={() => onCompleteClick(goal.id, goal.title)}>
+          <Button variant="default" size="sm" type="button" onClick={() => onCompleteClick(goal.id, goal.title)}>
             完成
-          </button>
+          </Button>
 
-          <button className="btn btn--danger btn--sm" type="button" onClick={() => onAbandonClick(goal.id, goal.title)}>
+          <Button variant="destructive" size="sm" type="button" onClick={() => onAbandonClick(goal.id, goal.title)}>
             放弃
-          </button>
+          </Button>
         </div>
       ) : null}
     </li>

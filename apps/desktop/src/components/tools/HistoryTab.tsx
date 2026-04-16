@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ToolHistoryEntry } from "../../lib/api";
 import { clearToolHistory, fetchToolHistory } from "../../lib/api";
+import { Button } from "../ui";
 
 export function HistoryTab() {
   const [history, setHistory] = useState<ToolHistoryEntry[]>([]);
@@ -29,9 +30,9 @@ export function HistoryTab() {
       <div className="history-tab__actions">
         <span className="history-count">{history.length} 条记录</span>
         {history.length > 0 ? (
-          <button type="button" className="btn btn--sm" onClick={() => void handleClear()}>
+          <Button type="button" variant="secondary" size="sm" onClick={() => void handleClear()}>
             🗑 清空历史
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -62,4 +63,3 @@ export function HistoryTab() {
     </div>
   );
 }
-

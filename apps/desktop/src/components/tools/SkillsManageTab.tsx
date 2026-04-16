@@ -6,6 +6,7 @@ import {
   loadChatToolboxSelectedSkills,
   saveChatToolboxSelectedSkills,
 } from "../../lib/chatToolboxPreferences";
+import { Button, Checkbox, Input } from "../ui";
 
 export function SkillsManageTab() {
   const [skills, setSkills] = useState<ChatSkillEntry[]>([]);
@@ -95,19 +96,19 @@ export function SkillsManageTab() {
         </div>
 
         <div className="tool-config-actions">
-          <input
+          <Input
             className="tool-config-input"
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索 skill 名称、描述或路径"
           />
-          <button type="button" className="tool-config-btn" onClick={selectAllVisibleSkills} disabled={isLoading || filteredSkills.length === 0}>
+          <Button type="button" variant="secondary" className="tool-config-btn" onClick={selectAllVisibleSkills} disabled={isLoading || filteredSkills.length === 0}>
             选择筛选结果
-          </button>
-          <button type="button" className="tool-config-btn tool-config-btn--danger" onClick={clearAllSkills} disabled={isLoading || selectedSkillNames.length === 0}>
+          </Button>
+          <Button type="button" variant="destructive" className="tool-config-btn tool-config-btn--danger" onClick={clearAllSkills} disabled={isLoading || selectedSkillNames.length === 0}>
             清空选择
-          </button>
+          </Button>
         </div>
 
         {isLoading ? <p className="tool-config-hint">加载 skills...</p> : null}
@@ -118,8 +119,7 @@ export function SkillsManageTab() {
           <div className="tool-skill-list">
             {filteredSkills.map((skill) => (
               <label key={skill.name} className="tool-skill-item">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={selectedSet.has(skill.name)}
                   onChange={() => toggleSkillSelection(skill.name)}
                 />

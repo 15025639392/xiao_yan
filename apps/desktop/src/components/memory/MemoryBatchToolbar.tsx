@@ -1,3 +1,5 @@
+import { Button } from "../ui";
+
 type MemoryBatchToolbarProps = {
   show: boolean;
   selectedCount: number;
@@ -22,30 +24,37 @@ export function MemoryBatchToolbar({
   return (
     <div className="memory-batch-toolbar">
       <div className="memory-batch-toolbar__left">
-        <button className="memory-batch-toolbar__btn" onClick={onToggleSelectAll} disabled={batchDeleting} type="button">
+        <Button
+          variant="secondary"
+          className="memory-batch-toolbar__btn"
+          onClick={onToggleSelectAll}
+          disabled={batchDeleting}
+          type="button"
+        >
           {selectedCount === totalDisplayCount ? "取消全选" : "全选"}
-        </button>
+        </Button>
         <span className="memory-batch-toolbar__count">已选 {selectedCount} 条</span>
       </div>
       <div className="memory-batch-toolbar__right">
-        <button
+        <Button
+          variant="destructive"
           className="memory-batch-toolbar__btn memory-batch-toolbar__btn--danger"
           onClick={onBatchDelete}
           disabled={selectedCount === 0 || batchDeleting}
           type="button"
         >
           {batchDeleting ? "删除中..." : `删除 (${selectedCount})`}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="secondary"
           className="memory-batch-toolbar__btn memory-batch-toolbar__btn--secondary"
           onClick={onCancel}
           disabled={batchDeleting}
           type="button"
         >
           取消
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
-

@@ -1,4 +1,5 @@
 import { DimensionSlider } from "./DimensionSlider";
+import { Button } from "../ui";
 
 type PersonaPersonalityTabProps = {
   openness: number;
@@ -51,11 +52,10 @@ export function PersonaPersonalityTab({
       </div>
 
       <div className="persona-form__actions">
-        <button type="button" className="btn btn--primary" onClick={onSave} disabled={saving}>
+        <Button type="button" variant="default" onClick={onSave} disabled={saving}>
           {saving ? "保存中..." : "保存性格"}
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
-

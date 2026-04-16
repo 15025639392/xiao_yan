@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AppConfig, ChatMcpServerConfig } from "../../lib/api";
 import { fetchConfig, updateConfig } from "../../lib/api";
+import { Button, Checkbox, Input, Textarea } from "../ui";
 
 type McpServerDraft = {
   server_id: string;
@@ -235,9 +236,8 @@ export function McpManageTab() {
           </div>
           <label className="tool-config-switch" htmlFor="toolbox-mcp-enabled">
             <span>启用 MCP</span>
-            <input
+            <Checkbox
               id="toolbox-mcp-enabled"
-              type="checkbox"
               checked={mcpEnabled}
               disabled={isLoading || isSaving || config === null}
               onChange={(event) => {
@@ -248,13 +248,13 @@ export function McpManageTab() {
         </div>
 
         <div className="tool-config-actions">
-          <button type="button" className="tool-config-btn" onClick={startAddMcpServer} disabled={isLoading || isSaving || config === null}>
+          <Button type="button" variant="secondary" className="tool-config-btn" onClick={startAddMcpServer} disabled={isLoading || isSaving || config === null}>
             新增 MCP Server
-          </button>
+          </Button>
           {mcpFormVisible ? (
-            <button type="button" className="tool-config-btn" onClick={resetMcpForm} disabled={isSaving}>
+            <Button type="button" variant="secondary" className="tool-config-btn" onClick={resetMcpForm} disabled={isSaving}>
               取消编辑
-            </button>
+            </Button>
           ) : null}
         </div>
 
@@ -265,7 +265,7 @@ export function McpManageTab() {
           <div className="tool-mcp-form">
             <label>
               <span>MCP Server ID</span>
-              <input
+              <Input
                 type="text"
                 value={mcpDraft.server_id}
                 disabled={isSaving}
@@ -278,7 +278,7 @@ export function McpManageTab() {
 
             <label>
               <span>MCP Command</span>
-              <input
+              <Input
                 type="text"
                 value={mcpDraft.command}
                 disabled={isSaving}
@@ -291,7 +291,7 @@ export function McpManageTab() {
 
             <label>
               <span>MCP Args（每行一个）</span>
-              <textarea
+              <Textarea
                 value={mcpDraft.argsText}
                 disabled={isSaving}
                 onChange={(event) => {
@@ -303,7 +303,7 @@ export function McpManageTab() {
 
             <label>
               <span>MCP CWD（可选）</span>
-              <input
+              <Input
                 type="text"
                 value={mcpDraft.cwd}
                 disabled={isSaving}
@@ -316,7 +316,7 @@ export function McpManageTab() {
 
             <label>
               <span>MCP Env（每行 KEY=VALUE）</span>
-              <textarea
+              <Textarea
                 value={mcpDraft.envText}
                 disabled={isSaving}
                 onChange={(event) => {
@@ -328,7 +328,7 @@ export function McpManageTab() {
 
             <label>
               <span>MCP Timeout（秒）</span>
-              <input
+              <Input
                 type="number"
                 min={1}
                 max={120}
@@ -346,9 +346,8 @@ export function McpManageTab() {
 
             <label className="tool-config-switch tool-config-switch--compact" htmlFor="toolbox-mcp-default-enabled">
               <span>默认启用</span>
-              <input
+              <Checkbox
                 id="toolbox-mcp-default-enabled"
-                type="checkbox"
                 checked={mcpDraft.enabled}
                 disabled={isSaving}
                 onChange={(event) => {
@@ -358,8 +357,9 @@ export function McpManageTab() {
             </label>
 
             <div className="tool-config-actions">
-              <button
+              <Button
                 type="button"
+                variant="default"
                 className="tool-config-btn tool-config-btn--primary"
                 disabled={isSaving}
                 onClick={() => {
@@ -367,7 +367,7 @@ export function McpManageTab() {
                 }}
               >
                 保存 MCP Server
-              </button>
+              </Button>
             </div>
 
             {formError ? <p className="tool-config-error">{formError}</p> : null}
@@ -393,8 +393,7 @@ export function McpManageTab() {
                 <div className="tool-mcp-item__actions">
                   <label className="tool-config-switch tool-config-switch--compact">
                     <span>启用</span>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={server.enabled}
                       disabled={isSaving}
                       onChange={(event) => {
@@ -402,11 +401,12 @@ export function McpManageTab() {
                       }}
                     />
                   </label>
-                  <button type="button" className="tool-config-btn" disabled={isSaving} onClick={() => startEditMcpServer(server)}>
+                  <Button type="button" variant="secondary" className="tool-config-btn" disabled={isSaving} onClick={() => startEditMcpServer(server)}>
                     编辑
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="destructive"
                     className="tool-config-btn tool-config-btn--danger"
                     disabled={isSaving}
                     onClick={() => {
@@ -414,7 +414,7 @@ export function McpManageTab() {
                     }}
                   >
                     删除
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}

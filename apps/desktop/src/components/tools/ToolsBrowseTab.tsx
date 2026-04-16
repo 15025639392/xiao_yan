@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ToolInfo, ToolsListResponse } from "../../lib/api";
+import { Button, Input } from "../ui";
 import { getCategoryIcon, getCategoryName, getSafetyLevelColor, getSafetyLevelLabel } from "./toolUtils";
 
 type ToolsBrowseTabProps = {
@@ -27,7 +28,7 @@ export function ToolsBrowseTab({ tools }: ToolsBrowseTabProps) {
 
   return (
     <div className="tools-browse-tab">
-      <input
+      <Input
         type="text"
         className="tools-search"
         value={filter}
@@ -59,14 +60,15 @@ export function ToolsBrowseTab({ tools }: ToolsBrowseTabProps) {
                 {tool.examples.length > 0 ? (
                   <div className="tool-card__examples">
                     {tool.examples.slice(0, 3).map((example) => (
-                      <button
+                      <Button
                         key={example}
                         type="button"
+                        variant="secondary"
                         className="tool-example-btn"
                         title="点击填入执行框"
                       >
                         {example.length > 40 ? example.slice(0, 40) + "..." : example}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 ) : null}

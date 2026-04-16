@@ -16,7 +16,7 @@ import type {
   CapabilityJobAuditItem,
   CapabilityQueueStatusResponse,
 } from "../lib/capabilities/types";
-import { Panel, StatusBadge } from "../components/ui";
+import { Button, Panel, StatusBadge } from "../components/ui";
 
 type CapabilityHubSnapshot = {
   descriptors: CapabilityDescriptor[];
@@ -104,14 +104,15 @@ export function CapabilitiesPage() {
           {lastUpdatedAt ? (
             <span className="capability-hub-updated-at">更新于 {formatDateTime(lastUpdatedAt.toISOString())}</span>
           ) : null}
-          <button
+          <Button
             type="button"
-            className="btn btn--secondary btn--sm"
+            variant="secondary"
+            size="sm"
             onClick={() => void load(true)}
             disabled={loading || refreshing}
           >
             {refreshing ? "刷新中..." : "刷新"}
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -222,22 +223,24 @@ export function CapabilitiesPage() {
                     <p className="capability-hub-item__desc">{item.request.context.reason}</p>
                   ) : null}
                   <div className="capability-hub-item__actions">
-                    <button
+                    <Button
                       type="button"
-                      className="btn btn--primary btn--sm"
+                      variant="default"
+                      size="sm"
                       disabled={decisionLoadingId === item.request.request_id}
                       onClick={() => void handleApprove(item.request.request_id)}
                     >
                       {decisionLoadingId === item.request.request_id ? "处理中..." : "批准"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="btn btn--danger btn--sm"
+                      variant="destructive"
+                      size="sm"
                       disabled={decisionLoadingId === item.request.request_id}
                       onClick={() => void handleReject(item.request.request_id)}
                     >
                       {decisionLoadingId === item.request.request_id ? "处理中..." : "拒绝"}
-                    </button>
+                    </Button>
                   </div>
                 </li>
               ))}

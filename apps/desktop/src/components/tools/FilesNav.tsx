@@ -1,3 +1,5 @@
+import { Button } from "../ui";
+
 type FilesNavProps = {
   currentPath: string;
   onNavigateUp: () => void;
@@ -7,13 +9,13 @@ type FilesNavProps = {
 export function FilesNav({ currentPath, onNavigateUp, onRefresh }: FilesNavProps) {
   return (
     <div className="files-nav">
-      <button type="button" className="btn btn--sm" onClick={onNavigateUp} disabled={currentPath === "."}>
+      <Button type="button" variant="secondary" size="sm" onClick={onNavigateUp} disabled={currentPath === "."}>
         ↑ ..
-      </button>
+      </Button>
       <code className="files-current-path">{currentPath}</code>
-      <button type="button" className="btn btn--sm" onClick={onRefresh}>
+      <Button type="button" variant="secondary" size="sm" onClick={onRefresh}>
         🔄 刷新
-      </button>
+      </Button>
     </div>
   );
 }

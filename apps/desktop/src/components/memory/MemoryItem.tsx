@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { MemoryEntryDisplay } from "../../lib/api";
+import { Button, Checkbox, Textarea } from "../ui";
 import { KIND_LABELS, STRENGTH_COLORS } from "./memoryConstants";
 import { formatRelativeTime, roleLabelFor } from "./memoryUtils";
 
@@ -56,8 +57,7 @@ export function MemoryItem({
     >
       {isBatchMode ? (
         <div className="memory-item__checkbox">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={isSelected}
             onChange={() => onToggleSelection(entry.id)}
             onClick={(e) => e.stopPropagation()}
@@ -78,7 +78,7 @@ export function MemoryItem({
       <div className="memory-item__body">
         {isEditing ? (
           <div className="memory-edit-form">
-            <textarea
+            <Textarea
               className="memory-edit-input"
               value={editContent}
               onChange={(e) => onEditContentChange(e.target.value)}
@@ -90,16 +90,17 @@ export function MemoryItem({
               }}
             />
             <div className="memory-edit-actions">
-              <button
+              <Button
+                variant="default"
                 className="memory-edit-btn memory-edit-btn--save"
                 onClick={() => onSaveEdit(entry.id)}
                 disabled={!editContent.trim() || editContent.trim().length < 2}
               >
                 保存 (⌘+↵)
-              </button>
-              <button className="memory-edit-btn memory-edit-btn--cancel" onClick={onCancelEdit}>
+              </Button>
+              <Button variant="secondary" className="memory-edit-btn memory-edit-btn--cancel" onClick={onCancelEdit}>
                 取消
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
@@ -130,23 +131,27 @@ export function MemoryItem({
       <div className="memory-item__right">
         {!isBatchMode && !isEditing ? (
           <div className="memory-item__actions memory-item__actions--visible">
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               className={`memory-action-btn ${isStarred ? "memory-action-btn--starred" : ""}`}
               onClick={() => onStar(entry.id, entry.importance)}
               title={isStarred ? "取消标记重要" : "标记为重要"}
             >
               {isStarred ? "★" : "☆"}
-            </button>
-            <button className="memory-action-btn memory-action-btn--edit" onClick={() => onStartEdit(entry)} title="编辑内容">
+            </Button>
+            <Button variant="ghost" size="icon" className="memory-action-btn memory-action-btn--edit" onClick={() => onStartEdit(entry)} title="编辑内容">
               ✎
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               className="memory-action-btn memory-action-btn--delete"
               onClick={() => onRequestDelete(entry.id, entry.content)}
               title="删除此记忆"
             >
               ✕
-            </button>
+            </Button>
           </div>
         ) : null}
         <span className="memory-item__time">{formatRelativeTime(entry.created_at)}</span>
@@ -154,4 +159,3 @@ export function MemoryItem({
     </div>
   );
 }
-
