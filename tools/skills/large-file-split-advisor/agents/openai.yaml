@@ -1,0 +1,7 @@
+interface:
+  display_name: "Large File Split Advisor"
+  short_description: "Plan the smallest safe split for oversized hot files"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#7A4DCC"
+  default_prompt: "Use $large-file-split-advisor to decide whether this oversized file should stay stable or be split, and propose the smallest safe split plan."

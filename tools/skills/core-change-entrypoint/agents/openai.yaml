@@ -1,0 +1,7 @@
+interface:
+  display_name: "Core Change Entrypoint"
+  short_description: "Find the right entrypoint and smallest safe edit path"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#2F6BFF"
+  default_prompt: "Use $core-change-entrypoint to locate the entrypoint, dependency chain, tests, and safest edit point for this core change."

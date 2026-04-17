@@ -1,0 +1,7 @@
+interface:
+  display_name: "Project Simplifier"
+  short_description: "Simplify Xiao Yan safely around the main product path"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#D8891C"
+  default_prompt: "Use $project-simplifier to analyze this area, keep the main Xiao Yan path intact, and propose the safest simplification plan."

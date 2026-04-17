@@ -1,0 +1,7 @@
+interface:
+  display_name: "Runtime Bug Triage"
+  short_description: "Triage runtime bugs with evidence before fixing them"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#E85D2A"
+  default_prompt: "Use $runtime-bug-triage to reproduce this issue, collect evidence across the runtime chain, and identify the smallest verified fix surface."

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Optional Dependency Boundary Check"
+  short_description: "Keep optional dependencies isolated from core runtime"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#4C7B3A"
+  default_prompt: "Use $optional-dependency-boundary-check to verify that this optional dependency stays at the edge, keeps a clear fallback path, and does not become required."

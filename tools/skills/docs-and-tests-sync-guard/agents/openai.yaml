@@ -1,0 +1,7 @@
+interface:
+  display_name: "Docs and Tests Sync Guard"
+  short_description: "Keep docs, tests, and checks aligned after changes"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#1F9D68"
+  default_prompt: "Use $docs-and-tests-sync-guard to check which docs, tests, and verification commands must be updated after this change."

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Xiao Yan Architecture Guardian"
+  short_description: "Guard architecture decisions for Xiao Yan core changes"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#1F8A8A"
+  default_prompt: "Use $xiao-yan-architecture-guardian to review whether this change protects Xiao Yan as a digital being before we implement it."
