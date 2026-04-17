@@ -23,6 +23,13 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
     const incomingSessionId = message.session_id;
     const incomingReasoningSessionId = resolveIncomingReasoningSessionId(message);
     const incomingReasoningState = resolveIncomingReasoningState(message);
+    const previousIncomingUserContent = findPreviousIncomingUserContent(incoming, index);
+    const previousIncomingUserRequestKey = findPreviousIncomingUserRequestKey(merged, incoming, index);
+    const incomingRequestKey = message.request_key ?? undefined;
+    const linkedAssistantRequestKey =
+      incomingRequestKey ?? (message.role === "assistant" ? previousIncomingUserRequestKey : undefined);
+    const incomingRequestMessage =
+      message.role === "assistant" ? (previousIncomingUserContent ?? undefined) : undefined;
     const exactMatchIndex =
       incomingMessageId == null ? -1 : merged.findIndex((entry) => entry.id === incomingMessageId);
     if (exactMatchIndex >= 0 && incomingMessageId != null) {
@@ -31,11 +38,17 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
           id: incomingMessageId,
           role: message.role,
           content: message.content,
-          requestKey: message.request_key ?? undefined,
+          requestKey: incomingRequestKey,
           reasoningSessionId: incomingReasoningSessionId,
           reasoningState: incomingReasoningState,
         }),
       );
+      if (incomingRequestMessage && merged[exactMatchIndex].role === "assistant") {
+        merged[exactMatchIndex] = {
+          ...merged[exactMatchIndex],
+          requestMessage: merged[exactMatchIndex].requestMessage ?? incomingRequestMessage,
+        };
+      }
       matchedIndexes.add(exactMatchIndex);
       return;
     }
@@ -54,11 +67,17 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
           id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
           role: message.role,
           content: message.content,
-          requestKey: message.request_key ?? undefined,
+          requestKey: incomingRequestKey,
           reasoningSessionId: incomingReasoningSessionId,
           reasoningState: incomingReasoningState,
         }),
       );
+      if (incomingRequestMessage && merged[sessionMatchIndex].role === "assistant") {
+        merged[sessionMatchIndex] = {
+          ...merged[sessionMatchIndex],
+          requestMessage: merged[sessionMatchIndex].requestMessage ?? incomingRequestMessage,
+        };
+      }
       matchedIndexes.add(sessionMatchIndex);
       return;
     }
@@ -75,7 +94,7 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
           id: incomingMessageId ?? merged[localUserMatchIndex].id,
           role: message.role,
           content: message.content,
-          requestKey: message.request_key ?? undefined,
+          requestKey: incomingRequestKey,
         }),
       );
       matchedIndexes.add(localUserMatchIndex);
@@ -94,17 +113,20 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
           id: incomingMessageId ?? merged[fallbackMatchIndex].id,
           role: message.role,
           content: message.content,
-          requestKey: message.request_key ?? undefined,
+          requestKey: incomingRequestKey,
           reasoningSessionId: incomingReasoningSessionId,
           reasoningState: incomingReasoningState,
         }),
       );
+      if (incomingRequestMessage && merged[fallbackMatchIndex].role === "assistant") {
+        merged[fallbackMatchIndex] = {
+          ...merged[fallbackMatchIndex],
+          requestMessage: merged[fallbackMatchIndex].requestMessage ?? incomingRequestMessage,
+        };
+      }
       matchedIndexes.add(fallbackMatchIndex);
       return;
     }
-
-    const previousIncomingUserContent = findPreviousIncomingUserContent(incoming, index);
-    const previousIncomingUserRequestKey = findPreviousIncomingUserRequestKey(merged, incoming, index);
     const inFlightMatchIndex = findInFlightAssistantMatchIndex(
       merged,
       matchedIndexes,
@@ -120,32 +142,49 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
           id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
           role: message.role,
           content: message.content,
-          requestKey: message.request_key ?? undefined,
+          requestKey: incomingRequestKey,
           reasoningSessionId: incomingReasoningSessionId,
           reasoningState: incomingReasoningState,
         }),
       );
+      if (incomingRequestMessage && merged[inFlightMatchIndex].role === "assistant") {
+        merged[inFlightMatchIndex] = {
+          ...merged[inFlightMatchIndex],
+          requestMessage: merged[inFlightMatchIndex].requestMessage ?? incomingRequestMessage,
+        };
+      }
       matchedIndexes.add(inFlightMatchIndex);
       return;
     }
 
-    merged.push(
-      applyRuntimeMessagePatch(
-        {
-          id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
-          role: message.role,
-          content: message.content,
-        },
-        {
-          id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
-          role: message.role,
-          content: message.content,
-          requestKey: message.request_key ?? undefined,
+    if (message.role === "assistant") {
+      merged.push(
+        createAssistantEntry(incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`, message.content, {
+          requestKey: linkedAssistantRequestKey,
+          requestMessage: incomingRequestMessage,
           reasoningSessionId: incomingReasoningSessionId,
           reasoningState: incomingReasoningState,
-        },
-      ),
-    );
+        }),
+      );
+    } else {
+      merged.push(
+        applyRuntimeMessagePatch(
+          {
+            id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
+            role: message.role,
+            content: message.content,
+          },
+          {
+            id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
+            role: message.role,
+            content: message.content,
+            requestKey: incomingRequestKey,
+            reasoningSessionId: incomingReasoningSessionId,
+            reasoningState: incomingReasoningState,
+          },
+        ),
+      );
+    }
     matchedIndexes.add(merged.length - 1);
   });
 
@@ -238,9 +277,9 @@ export function appendAssistantDelta(
       undefined,
       sequence,
       undefined,
-      requestKey,
       reasoningSessionId,
       reasoningState,
+      requestKey,
     );
   }
 
@@ -363,9 +402,9 @@ export function markAssistantMessageFailed(
       undefined,
       sequence,
       undefined,
-      requestKey,
       reasoningSessionId,
       reasoningState,
+      requestKey,
     );
   }
 

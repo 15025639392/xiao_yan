@@ -30,6 +30,12 @@ export const ChatMessages = memo(function ChatMessages({
   onDraftChange,
 }: ChatMessagesProps) {
   const [showKnowledgeContext, setShowKnowledgeContext] = useState<Set<string>>(new Set());
+  const hasStreamingAssistantPlaceholder = messages.some(
+    (message) => message.role === "assistant" && message.state === "streaming",
+  );
+  const hasVisibleAssistantReply = messages.some(
+    (message) => message.role === "assistant" && message.content.trim().length > 0,
+  );
 
   function toggleKnowledgeContext(messageId: string) {
     setShowKnowledgeContext((prev) => {
@@ -165,7 +171,7 @@ export const ChatMessages = memo(function ChatMessages({
         })()
       ))}
 
-      {isSending && !messages.some((message) => message.role === "assistant" && message.state === "streaming") ? (
+      {isSending && !hasStreamingAssistantPlaceholder && !hasVisibleAssistantReply ? (
         <article className="chat-message chat-message--loading">
           <div className="chat-message__bubble chat-message__bubble--loading">
             <div className="chat-message__loading-body" aria-live="polite">

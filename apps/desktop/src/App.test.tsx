@@ -1384,6 +1384,147 @@ test("keeps just-sent local user message when a transient runtime update has emp
   });
 });
 
+test("does not append a late placeholder when runtime assistant content arrives before chat submission resolves", async () => {
+  let resolveChatRequest: ((response: Response) => void) | null = null;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return new Response(
+        JSON.stringify({
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/messages")) {
+      return new Response(JSON.stringify({ messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return new Response(JSON.stringify({ goals: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/world")) {
+      return new Response(
+        JSON.stringify({
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/chat")) {
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "你好" });
+      return await new Promise<Response>((resolve) => {
+        resolveChatRequest = resolve;
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  await renderApp();
+  const socket = await openRealtimeSocket();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "你好" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await act(async () => {
+    socket.emit({
+      type: "runtime_updated",
+      payload: {
+        state: {
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+        },
+        messages: [
+          { id: "mem-user-before-submit", role: "user", content: "你好" },
+          { id: "mem-assistant-before-submit", role: "assistant", content: "我在，慢慢说。" },
+        ],
+        goals: [],
+        world: {
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        },
+        autobio: [],
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("我在，慢慢说。")).toBeInTheDocument();
+  });
+
+  await act(async () => {
+    resolveChatRequest?.(
+      new Response(
+        JSON.stringify({
+          response_id: "resp_late_placeholder_1",
+          assistant_message_id: "assistant_late_placeholder_1",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    await Promise.resolve();
+  });
+
+  expect(screen.queryByText("小晏正在整理这句话。")).toBeNull();
+  expect(screen.queryAllByText("我在，慢慢说。")).toHaveLength(1);
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_completed",
+      payload: {
+        assistant_message_id: "assistant_late_placeholder_1",
+        response_id: "resp_late_placeholder_1",
+        content: "我在，慢慢说。",
+        sequence: 2,
+      },
+    });
+  });
+
+  expect(screen.queryAllByText("我在，慢慢说。")).toHaveLength(1);
+  expect(screen.queryByText("小晏正在整理这句话。")).toBeNull();
+});
+
 test("keeps just-completed local assistant reply when a transient runtime update has empty messages", async () => {
   let resolveChatRequest: ((response: Response) => void) | null = null;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2263,6 +2404,8 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
   await waitFor(() => {
     expect(screen.getByText("你好呀，我是小晏。很高兴见到你～")).toBeInTheDocument();
   });
+
+  expect(screen.queryByText("小晏正在整理这句话。")).toBeNull();
 
   await act(async () => {
     resolveChatRequest?.(

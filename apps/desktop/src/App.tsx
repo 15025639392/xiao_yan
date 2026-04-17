@@ -6,6 +6,10 @@ import { AppMainContent } from "./components/app/AppMainContent";
 import { applyChatRealtimeEvent } from "./components/app/chatRealtimeUpdates";
 import { AppSidebar } from "./components/app/AppSidebar";
 import type { PendingChatRequest } from "./components/app/chatRequestKey";
+import {
+  hasVisibleAssistantContent,
+  shouldSettleSendingAfterChatEvent,
+} from "./components/app/chatSendingState";
 import { syncMessagesFromRuntime } from "./components/app/chatRuntimeMessages";
 import { applyRuntimeRealtimeEvent, getRuntimeRealtimePayload } from "./components/app/runtimeRealtimeUpdates";
 import { useAppChrome } from "./components/app/useAppChrome";
@@ -55,8 +59,10 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
+  const messagesRef = useRef<ChatEntry[]>([]);
   const pendingRequestMessageRef = useRef<PendingChatRequest | null>(null);
   const importedProjectRegistryRef = useRef(loadImportedProjectRegistry());
+  messagesRef.current = messages;
   const {
     route,
     theme,
@@ -193,12 +199,15 @@ export default function App() {
         event.type === "chat_failed"
       ) {
         const pendingRequest = pendingRequestMessageRef.current;
-        setMessages((current) => {
-          const nextChatUpdate = applyChatRealtimeEvent(current, event, pendingRequest);
-          return nextChatUpdate?.messages ?? current;
-        });
+        const nextChatUpdate = applyChatRealtimeEvent(messagesRef.current, event, pendingRequest);
+        const nextMessages = nextChatUpdate?.messages ?? messagesRef.current;
+        messagesRef.current = nextMessages;
+        setMessages(nextMessages);
         if (event.type === "chat_started") {
           pendingRequestMessageRef.current = null;
+        }
+        if (shouldSettleSendingAfterChatEvent(event) || hasVisibleAssistantContent(nextMessages)) {
+          setIsSending(false);
         }
         setError(event.type === "chat_failed" ? event.payload.error : "");
         return;
@@ -210,10 +219,13 @@ export default function App() {
       }
 
       setState(runtimePayload.state);
-      setMessages((current) => {
-        const nextRuntimeUpdate = applyRuntimeRealtimeEvent(current, event);
-        return nextRuntimeUpdate?.messages ?? current;
-      });
+      const nextRuntimeUpdate = applyRuntimeRealtimeEvent(messagesRef.current, event);
+      const nextMessages = nextRuntimeUpdate?.messages ?? messagesRef.current;
+      messagesRef.current = nextMessages;
+      setMessages(nextMessages);
+      if (hasVisibleAssistantContent(nextMessages)) {
+        setIsSending(false);
+      }
       setGoals(runtimePayload.goals);
       setWorld(runtimePayload.world);
       if (runtimePayload.mac_console_status !== undefined) {

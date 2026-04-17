@@ -285,6 +285,20 @@ function ensureAssistantPlaceholder(
     return current;
   }
 
+  const linkedAssistantIndex = findLinkedAssistantIndex(current, requestMessage, requestKey);
+  if (linkedAssistantIndex >= 0) {
+    return current.map((entry, index) =>
+      index === linkedAssistantIndex
+        ? {
+            ...entry,
+            id: assistantMessageId,
+            requestKey,
+            requestMessage: entry.requestMessage ?? requestMessage,
+          }
+        : entry,
+    );
+  }
+
   return [
     ...current,
     {
@@ -296,4 +310,25 @@ function ensureAssistantPlaceholder(
       requestMessage,
     },
   ];
+}
+
+function findLinkedAssistantIndex(current: ChatEntry[], requestMessage: string, requestKey: string): number {
+  for (let index = current.length - 1; index >= 0; index -= 1) {
+    const entry = current[index];
+    if (entry.role === "assistant" && entry.requestKey === requestKey) {
+      return index;
+    }
+  }
+
+  for (let index = current.length - 1; index >= 0; index -= 1) {
+    const entry = current[index];
+    if (entry.role !== "assistant") {
+      continue;
+    }
+    if (entry.requestMessage === requestMessage) {
+      return index;
+    }
+  }
+
+  return -1;
 }

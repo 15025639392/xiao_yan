@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatEntry } from "../components/chat/chatTypes";
-import { finalizeAssistantMessage, mergeMessages } from "./chatMessages";
+import { appendAssistantDelta, finalizeAssistantMessage, mergeMessages } from "./chatMessages";
 import type { ChatHistoryMessage } from "./api";
 
 describe("mergeMessages", () => {
@@ -222,6 +222,43 @@ describe("mergeMessages", () => {
 });
 
 describe("finalizeAssistantMessage", () => {
+  it("preserves request and reasoning linkage when the first assistant delta creates the bubble", () => {
+    const appended = appendAssistantDelta(
+      [],
+      "assistant_0",
+      "你好",
+      1,
+      "reasoning_0",
+      {
+        session_id: "reasoning_0",
+        phase: "exploring",
+        step_index: 1,
+        summary: "先起一稿。",
+        updated_at: "2026-04-16T10:00:00+00:00",
+      },
+      "request_0",
+    );
+
+    expect(appended).toEqual([
+      {
+        id: "assistant_0",
+        role: "assistant",
+        content: "你好",
+        state: "streaming",
+        requestKey: "request_0",
+        reasoningSessionId: "reasoning_0",
+        reasoningState: {
+          session_id: "reasoning_0",
+          phase: "exploring",
+          step_index: 1,
+          summary: "先起一稿。",
+          updated_at: "2026-04-16T10:00:00+00:00",
+        },
+        streamSequence: 1,
+      },
+    ]);
+  });
+
   it("stores knowledge references when assistant stream completes", () => {
     const current: ChatEntry[] = [
       {

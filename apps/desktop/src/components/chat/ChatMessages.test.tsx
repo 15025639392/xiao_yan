@@ -233,6 +233,30 @@ test("renders placeholder copy while waiting for assistant content", () => {
   expect(screen.getByText("小晏正在整理这句话。")).toBeInTheDocument();
 });
 
+test("hides the global loading bubble once assistant text is already visible", () => {
+  render(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[
+        { id: "user-1", role: "user", content: "你在吗" },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "我在，继续说吧。",
+        },
+      ]}
+      relationship={null}
+      isSending={true}
+      showMemoryContext={new Set()}
+      onToggleMemoryContext={() => {}}
+      onDraftChange={() => {}}
+    />,
+  );
+
+  expect(screen.getByText("我在，继续说吧。")).toBeInTheDocument();
+  expect(screen.queryByText("小晏正在整理这句话。")).toBeNull();
+});
+
 test("shows resume copy for failed assistant message", () => {
   const onResume = vi.fn();
 
