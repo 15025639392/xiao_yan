@@ -1,3 +1,5 @@
+from app.llm.deepseek_chat_completions_stream_wire import iter_deepseek_chat_completions_stream_events
+from app.llm.minimax_chat_completions_stream_wire import iter_minimax_chat_completions_stream_events
 from app.llm.openai_responses_stream_wire import iter_openai_responses_stream_events
 from app.llm.stream_wire import iter_chat_completions_stream_events, iter_responses_stream_events
 
@@ -202,5 +204,105 @@ def test_iter_openai_responses_stream_events_ignores_tool_and_content_part_delta
             "type": "response_completed",
             "response_id": "resp_openai_1",
             "output_text": "保留这段文本。",
+        },
+    ]
+
+
+def test_iter_deepseek_chat_completions_stream_events_ignores_reasoning_content_but_keeps_text():
+    events = list(
+        iter_deepseek_chat_completions_stream_events(
+            [
+                'data: {"id":"deepseek_1","choices":[{"delta":{"role":"assistant"}}]}',
+                "",
+                'data: {"id":"deepseek_1","choices":[{"delta":{"reasoning_content":"先想一下"}}]}',
+                "",
+                'data: {"id":"deepseek_1","choices":[{"delta":{"content":"最终回答"}}]}',
+                "",
+                'data: {"id":"deepseek_1","choices":[{"finish_reason":"stop"}]}',
+                "",
+                "data: [DONE]",
+                "",
+            ]
+        )
+    )
+
+    assert events == [
+        {"type": "response_started", "response_id": "deepseek_1"},
+        {"type": "text_delta", "delta": "最终回答"},
+        {
+            "type": "response_completed",
+            "response_id": "deepseek_1",
+            "output_text": "最终回答",
+        },
+    ]
+
+
+def test_iter_minimax_chat_completions_stream_events_ignores_reasoning_details_but_keeps_text():
+    events = list(
+        iter_minimax_chat_completions_stream_events(
+            [
+                'data: {"id":"minimax_1","choices":[{"delta":{"role":"assistant"}}]}',
+                "",
+                (
+                    'data: {"id":"minimax_1","choices":[{"delta":{"reasoning_details":'
+                    '[{"type":"text","text":"先分析工具是否需要调用"}]}}]}'
+                ),
+                "",
+                'data: {"id":"minimax_1","choices":[{"delta":{"content":"我先给出结论。"}}]}',
+                "",
+                'data: {"id":"minimax_1","choices":[{"finish_reason":"stop"}]}',
+                "",
+                "data: [DONE]",
+                "",
+            ]
+        )
+    )
+
+    assert events == [
+        {"type": "response_started", "response_id": "minimax_1"},
+        {"type": "text_delta", "delta": "我先给出结论。"},
+        {
+            "type": "response_completed",
+            "response_id": "minimax_1",
+            "output_text": "我先给出结论。",
+        },
+    ]
+
+
+def test_iter_deepseek_chat_completions_stream_events_preserves_text_when_reasoning_and_tool_calls_mix():
+    events = list(
+        iter_deepseek_chat_completions_stream_events(
+            [
+                'data: {"id":"deepseek_tool_1","choices":[{"delta":{"role":"assistant"}}]}',
+                "",
+                'data: {"id":"deepseek_tool_1","choices":[{"delta":{"reasoning_content":"先判断是否要调工具"}}]}',
+                "",
+                'data: {"id":"deepseek_tool_1","choices":[{"delta":{"content":"我先查一下。"}}]}',
+                "",
+                (
+                    'data: {"id":"deepseek_tool_1","choices":[{"delta":{"tool_calls":'
+                    '[{"index":0,"id":"call_ds_1","type":"function","function":{"name":"search_docs","arguments":"{\\"q\\":\\"he"}}]}}]}'
+                ),
+                "",
+                (
+                    'data: {"id":"deepseek_tool_1","choices":[{"delta":{"tool_calls":'
+                    '[{"index":0,"function":{"arguments":"llo\\"}"}}]}}]}'
+                ),
+                "",
+                'data: {"id":"deepseek_tool_1","choices":[{"finish_reason":"tool_calls"}]}',
+                "",
+                "data: [DONE]",
+                "",
+            ]
+        )
+    )
+
+    assert events == [
+        {"type": "response_started", "response_id": "deepseek_tool_1"},
+        {"type": "text_delta", "delta": "我先查一下。"},
+        {
+            "type": "response_completed",
+            "response_id": "deepseek_tool_1",
+            "output_text": "我先查一下。",
         },
     ]
