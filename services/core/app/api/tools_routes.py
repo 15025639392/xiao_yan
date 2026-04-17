@@ -5,21 +5,14 @@ from pathlib import Path
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.api.file_tool_helpers import build_file_tools, default_files_base_path, file_policy_args
 from app.capabilities.models import CapabilityDispatchRequest, RiskLevel
 from app.capabilities.runtime import dispatch_and_wait, has_recent_capability_executor
-from app.runtime_ext.runtime_config import get_runtime_config
 from app.tools.runner import CommandRunner
 from app.tools.models import ToolExecutionResult
 from app.tools.sandbox import CommandSandbox, SandboxViolation, ToolSafetyLevel
 
 _tool_runner_instance: CommandRunner | None = None
-
-
-def _default_files_base_path() -> Path:
-    try:
-        return Path.home().resolve()
-    except Exception:  # noqa: BLE001
-        return Path(__file__).resolve().parents[4]
 
 
 def _get_command_runner() -> CommandRunner:
@@ -38,26 +31,9 @@ def _get_command_runner() -> CommandRunner:
     return _tool_runner_instance
 
 
-def _get_file_tools():
-    from app.tools.file_tools import FileTools
-
-    default_base_path = _default_files_base_path()
-    config = get_runtime_config()
-    granted_folders = {path: access_level for path, access_level in config.list_folder_permissions()}
-    return FileTools(
-        allowed_base_path=default_base_path,
-        folder_permissions=granted_folders,
-    )
-
-
 class ToolExecuteRequest(BaseModel):
     command: str
     timeout_override: float | None = None
-
-
-def _file_policy_args() -> dict:
-    config = get_runtime_config()
-    return {"file_policy": config.get_capability_file_policy()}
 
 
 def _try_dispatch_file_capability(
@@ -72,7 +48,7 @@ def _try_dispatch_file_capability(
     result = dispatch_and_wait(
         CapabilityDispatchRequest(
             capability=capability,
-            args={**args, **_file_policy_args()},
+            args={**args, **file_policy_args()},
             risk_level=RiskLevel.SAFE if capability in {"fs.read", "fs.list"} else RiskLevel.RESTRICTED,
             requires_approval=False,
         ),
@@ -318,7 +294,7 @@ def build_tools_router() -> APIRouter:
         if capability_result is not None:
             return capability_result
 
-        ft = _get_file_tools()
+        ft = build_file_tools()
         result = ft.read_file(path, max_bytes=max_bytes)
         return result.to_dict()
 
@@ -331,7 +307,7 @@ def build_tools_router() -> APIRouter:
         if capability_result is not None:
             return capability_result
 
-        ft = _get_file_tools()
+        ft = build_file_tools()
         result = ft.list_directory(path, recursive=recursive, pattern=pattern)
         return result.to_dict()
 
@@ -351,7 +327,7 @@ def build_tools_router() -> APIRouter:
         if capability_result is not None:
             return capability_result
 
-        ft = _get_file_tools()
+        ft = build_file_tools()
         result = ft.search_content(query, search_path, file_pattern=file_pattern, max_results=max_results)
         return result.to_dict()
 

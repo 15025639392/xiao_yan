@@ -4,6 +4,8 @@ import os
 import re
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+
 CHAT_SKILL_MENTION_PATTERN = re.compile(r"\$(?P<name>[A-Za-z0-9][A-Za-z0-9._-]{0,127})")
 CHAT_SKILL_PREFIX_TRIGGERS: dict[str, tuple[str, ...]] = {
     "bugfix-workflow": ("bugfix:", "修复:", "bug:", "修复bug:"),
@@ -16,6 +18,17 @@ CHAT_SKILL_PREFIX_TRIGGERS: dict[str, tuple[str, ...]] = {
 }
 CHAT_SKILL_MAX_PROMPT_CHARS_PER_SKILL = 8_000
 CHAT_SKILL_MAX_PROMPT_TOTAL_CHARS = 20_000
+
+
+class ChatSkillEntry(BaseModel):
+    name: str
+    description: str | None = None
+    path: str
+    trigger_prefixes: list[str] = Field(default_factory=list)
+
+
+class ChatSkillListResponse(BaseModel):
+    skills: list[ChatSkillEntry]
 
 
 def _default_files_base_path() -> Path:

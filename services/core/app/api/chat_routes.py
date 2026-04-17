@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from logging import getLogger
-from pathlib import Path
 from time import perf_counter
-from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Request
 import httpx
 
@@ -32,6 +30,12 @@ from app.api.chat_config_helpers import (
 )
 from app.api.chat_postprocess import finalize_chat_submission
 from app.api.chat_reasoning import ChatReasoningController
+from app.api.chat_runtime_helpers import (
+    get_observability_tracker,
+    merge_chat_stream_content,
+    should_fallback_to_stream_without_tools,
+)
+from app.api.file_tool_helpers import build_file_tools, file_policy_args
 from app.api.chat_tool_calls import (
     build_function_call_signature,
     execute_tool_call,
@@ -46,7 +50,7 @@ from app.api.deps import (
     get_persona_service,
     get_state_store,
 )
-from app.api.chat_skills import append_skill_context, discover_chat_skills
+from app.api.chat_skills import ChatSkillEntry, ChatSkillListResponse, append_skill_context, discover_chat_skills
 from app.config import get_chat_knowledge_extraction_enabled
 from app.goals.repository import GoalRepository
 from app.llm.gateway import ChatGateway
@@ -58,7 +62,6 @@ from app.llm.schemas import (
     ChatSubmissionResult,
 )
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
-from app.memory.observability import KnowledgeObservabilityTracker
 from app.memory.repository import MemoryRepository
 from app.persona.service import PersonaService
 from app.runtime import StateStore
@@ -128,40 +131,9 @@ CHAT_FILE_TOOL_DEFINITIONS = [
 
 logger = getLogger(__name__)
 
-class ChatSkillEntry(BaseModel):
-    name: str
-    description: str | None = None
-    path: str
-    trigger_prefixes: list[str] = Field(default_factory=list)
-
-
-class ChatSkillListResponse(BaseModel):
-    skills: list[ChatSkillEntry]
-
 def build_chat_router() -> APIRouter:
     router = APIRouter()
     reasoning = ChatReasoningController(logger=logger, recovery_scan_limit=800)
-
-    def _default_files_base_path() -> Path:
-        try:
-            return Path.home().resolve()
-        except Exception:  # noqa: BLE001
-            return Path(__file__).resolve().parents[4]
-
-    def _merge_chat_stream_content(current_content: str, delta: str) -> str:
-        if not current_content:
-            return delta
-        if not delta:
-            return current_content
-        if delta.startswith(current_content):
-            return delta
-        if current_content.startswith(delta) or delta in current_content:
-            return current_content
-        max_overlap = min(len(current_content), len(delta))
-        for overlap in range(max_overlap, 0, -1):
-            if current_content[-overlap:] == delta[:overlap]:
-                return f"{current_content}{delta[overlap:]}"
-        return f"{current_content}{delta}"
 
     def _build_resume_instruction(partial_content: str) -> str:
         return (
@@ -170,22 +142,6 @@ def build_chat_router() -> APIRouter:
             "不要重复已经说过的文字，不要重开话题，不要改写前文。\n\n"
             f"已输出内容：\n{partial_content}"
         )
-
-    def _should_fallback_to_stream_without_tools(exception: Exception) -> bool:
-        if not isinstance(exception, httpx.HTTPStatusError):
-            return False
-        status_code = exception.response.status_code if exception.response is not None else None
-        return status_code in {400, 404, 405, 415, 422, 501}
-
-    def _file_policy_args() -> dict:
-        config = get_runtime_config()
-        return {"file_policy": config.get_capability_file_policy()}
-
-    def _get_observability_tracker(request: Request) -> KnowledgeObservabilityTracker | None:
-        tracker = getattr(request.app.state, "knowledge_observability_tracker", None)
-        if isinstance(tracker, KnowledgeObservabilityTracker):
-            return tracker
-        return None
 
     def _run_chat_submission(
         *,
@@ -235,7 +191,7 @@ def build_chat_router() -> APIRouter:
                     if not delta:
                         continue
 
-                    output_text = _merge_chat_stream_content(output_text, delta)
+                    output_text = merge_chat_stream_content(output_text, delta)
                     if hub is not None:
                         hub.publish_chat_delta(
                             assistant_message_id,
@@ -314,17 +270,6 @@ def build_chat_router() -> APIRouter:
             output_text,
         )
 
-    def _build_chat_file_tools():
-        from app.tools.file_tools import FileTools
-
-        default_base_path = _default_files_base_path()
-        config = get_runtime_config()
-        granted_folders = {path: access_level for path, access_level in config.list_folder_permissions()}
-        return FileTools(
-            allowed_base_path=default_base_path,
-            folder_permissions=granted_folders,
-        )
-
     def _run_chat_submission_with_tools(
         *,
         request: Request,
@@ -358,7 +303,7 @@ def build_chat_router() -> APIRouter:
         response_id: str | None = None
         reasoning_payload = reasoning_state.model_dump(mode="json") if reasoning_state is not None else None
 
-        file_tools = _build_chat_file_tools()
+        file_tools = build_file_tools()
         tool_definitions = [*CHAT_FILE_TOOL_DEFINITIONS, *(extra_tools or [])]
         accumulated_input: list[dict] = [message.model_dump() for message in chat_messages]
         max_tool_rounds = 8
@@ -402,7 +347,7 @@ def build_chat_router() -> APIRouter:
                     if (
                         not started
                         and len(accumulated_input) == len(chat_messages)
-                        and _should_fallback_to_stream_without_tools(exception)
+                        and should_fallback_to_stream_without_tools(exception)
                     ):
                         return _run_chat_submission(
                             request=request,
@@ -427,7 +372,7 @@ def build_chat_router() -> APIRouter:
                 if not function_calls:
                     output_text = extract_output_text(response_payload)
                     if initial_output_text:
-                        output_text = _merge_chat_stream_content(initial_output_text, output_text)
+                        output_text = merge_chat_stream_content(initial_output_text, output_text)
 
                     # Some providers may return an empty non-stream tool response even when normal
                     # streaming works. On the first turn, degrade to plain streaming to avoid
@@ -510,7 +455,7 @@ def build_chat_router() -> APIRouter:
                         file_tools,
                         tool_name,
                         arguments,
-                        file_policy_args=_file_policy_args(),
+                        file_policy_args=file_policy_args(),
                         mcp_registry=mcp_registry,
                     )
                     tool_outputs.append(
@@ -654,7 +599,7 @@ def build_chat_router() -> APIRouter:
             file_paths=attached_file_paths,
         )
 
-        tracker = _get_observability_tracker(request)
+        tracker = get_observability_tracker(request)
         retrieval_started_at = perf_counter()
         knowledge_references = extract_knowledge_references(prepared_context.memory_context)
         if prepared_context.retrieval_attempted:
@@ -774,7 +719,7 @@ def build_chat_router() -> APIRouter:
             state=state,
             user_message=request_body.message,
         )
-        tracker = _get_observability_tracker(request)
+        tracker = get_observability_tracker(request)
         retrieval_started_at = perf_counter()
         knowledge_references = extract_knowledge_references(prepared_context.memory_context)
         if prepared_context.retrieval_attempted:
