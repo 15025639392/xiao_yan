@@ -82,10 +82,11 @@ export const ChatMessages = memo(function ChatMessages({
       {messages.map((message) => (
         (() => {
           const display = getChatMessageDisplayState(message, assistantName);
+          const messageKey = getChatMessageRenderKey(message);
 
           return (
             <article
-              key={message.id}
+              key={messageKey}
               className={`chat-message chat-message--${message.role} ${message.state === "failed" ? "chat-message--failed" : ""}`}
             >
               <div className="chat-message__bubble">
@@ -190,3 +191,11 @@ export const ChatMessages = memo(function ChatMessages({
 });
 
 ChatMessages.displayName = "ChatMessages";
+
+function getChatMessageRenderKey(message: ChatEntry): string {
+  if (message.requestKey) {
+    return `${message.role}:${message.requestKey}`;
+  }
+
+  return `${message.role}:${message.id}`;
+}

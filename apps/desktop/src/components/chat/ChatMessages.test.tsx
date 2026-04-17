@@ -109,6 +109,56 @@ test("does not rerender markdown when messages props are unchanged", () => {
   expect(markdownRenderSpy).toHaveBeenCalledTimes(1);
 });
 
+test("keeps the same assistant DOM node when only the runtime id is reconciled", () => {
+  const showMemoryContext = new Set<string>();
+  const onToggleMemoryContext = vi.fn();
+  const onDraftChange = vi.fn();
+
+  const { rerender } = render(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[
+        {
+          id: "mem-assistant-before-submit",
+          role: "assistant",
+          content: "我在，慢慢说。",
+          requestKey: "request-1",
+          requestMessage: "你好",
+        },
+      ]}
+      relationship={null}
+      isSending={false}
+      showMemoryContext={showMemoryContext}
+      onToggleMemoryContext={onToggleMemoryContext}
+      onDraftChange={onDraftChange}
+    />,
+  );
+
+  const firstNode = screen.getByTestId("markdown-message");
+
+  rerender(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[
+        {
+          id: "assistant-late-placeholder-1",
+          role: "assistant",
+          content: "我在，慢慢说。",
+          requestKey: "request-1",
+          requestMessage: "你好",
+        },
+      ]}
+      relationship={null}
+      isSending={false}
+      showMemoryContext={showMemoryContext}
+      onToggleMemoryContext={onToggleMemoryContext}
+      onDraftChange={onDraftChange}
+    />,
+  );
+
+  expect(screen.getByTestId("markdown-message")).toBe(firstNode);
+});
+
 test("renders knowledge references for assistant messages", () => {
   render(
     <ChatMessages
