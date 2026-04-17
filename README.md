@@ -160,31 +160,48 @@ pip install -e ".[full]"
 
 #### 3. 配置环境变量
 
-创建 `.env.local` 文件（可选）：
+后端环境变量会按以下顺序读取，且只在变量尚未存在时写入进程环境：
+
+1. 当前工作目录下的 `.env.local`
+2. `services/core/.env.local`
+
+推荐直接从模板复制：
 
 ```bash
-# 核心存储路径配置（可选，默认使用 .data 目录）
-GOAL_STORAGE_PATH=/path/to/goals.json
-WORLD_STORAGE_PATH=/path/to/world.json
-STATE_STORAGE_PATH=/path/to/state.json
-PERSONA_STORAGE_PATH=/path/to/persona.json
+cp services/core/.env.local.example services/core/.env.local
+```
 
-# MemPalace 记忆存储（可选：启用长期记忆 / 向量检索时使用）
-MEMPALACE_PALACE_PATH=~/.mempalace/palace
-MEMPALACE_RESULTS_LIMIT=3
-MEMPALACE_WING=wing_xiaoyan
-MEMPALACE_ROOM=chat_exchange
+常用配置最少只需要填一个可用 LLM provider，例如：
 
-# 晨间计划 LLM 功能开关（可选）
-MORNING_PLAN_LLM_ENABLED=true
+```bash
+OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
+# OPENAI_BASE_URL=https://api.openai.com/v1
+# OPENAI_MODEL=gpt-5.4
+# CHAT_PROVIDER=openai
+```
 
-# DeepSeek（可选：接入深度求索服务商）
-DEEPSEEK_API_KEY=sk-xxxxx
+也可以改用内置的其他 provider：
+
+```bash
+DEEPSEEK_API_KEY=<YOUR_DEEPSEEK_API_KEY>
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_WIRE_API=chat
 CHAT_PROVIDER=deepseek
 ```
+
+完整可选项见：
+
+- `services/core/.env.local.example`
+- `apps/desktop/.env.local.example`
+
+其中后端模板已经按当前代码整理，包含：
+
+- OpenAI / DeepSeek / MiniMax / 自定义 provider 配置
+- `CHAT_MODEL`、`CHAT_CONTEXT_LIMIT`、`CHAT_KNOWLEDGE_EXTRACTION_ENABLED`
+- `GOAL_ADMISSION_*` 目标准入阈值
+- `MEMPALACE_*` 长期记忆配置
+- `*_STORAGE_PATH` 数据落盘路径
 
 #### 4. 安装前端依赖
 
@@ -225,9 +242,10 @@ cd apps/desktop
 npm run dev
 ```
 
-如需连接非默认后端地址，可在 `apps/desktop/.env.local` 中配置：
+如需连接非默认后端地址，可先复制模板再在 `apps/desktop/.env.local` 中配置：
 
 ```bash
+cp apps/desktop/.env.local.example apps/desktop/.env.local
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
@@ -384,7 +402,7 @@ npm run test
 
 ### Q: 如何配置 LLM API？
 
-A: 在 `services/core/.env.local` 文件中配置相关 API 密钥。
+A: 从 `services/core/.env.local.example` 复制出 `services/core/.env.local`，再填写对应 provider 的 API 密钥。当前代码内置支持 `OpenAI`、`DeepSeek`、`MiniMax`，也支持通过 `LLM_PROVIDER_IDS` 注册自定义 provider。
 
 ### Q: 数据存储在哪里？
 

@@ -73,7 +73,7 @@ def extract_output_text(response_payload: dict[str, Any]) -> str:
                 if not isinstance(content_item, dict):
                     continue
                 text = content_item.get("text")
-                if content_item.get("type") == "output_text" and isinstance(text, str) and text:
+                if content_item.get("type") in {"output_text", "text"} and isinstance(text, str) and text:
                     segments.append(text)
 
     return "".join(segments)

@@ -140,6 +140,41 @@ class ToolFallbackResumeGateway:
         }
 
 
+class ResponsesTextContentToolGateway:
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        _ = (input_items, instructions, tools, previous_response_id)
+        return {
+            "id": "resp_text_content_1",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "第一段。"},
+                    ],
+                },
+                {
+                    "type": "reasoning",
+                    "summary": [{"type": "summary_text", "text": "忽略"}],
+                },
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "第二段。"},
+                    ],
+                },
+            ],
+        }
+
+
 def test_run_chat_submission_with_tools_replays_mixed_assistant_text_before_tool_output(monkeypatch):
     monkeypatch.setattr(chat_submission_runner, "execute_tool_call", lambda *args, **kwargs: '{"ok":true}')
     gateway = MixedAssistantTextToolGateway()
@@ -203,3 +238,19 @@ def test_run_chat_submission_with_tools_resume_fallback_keeps_request_key_and_re
     assert hub.completed[0]["request_key"] == "request_resume_1"
     assert hub.completed[0]["reasoning_session_id"] == "reasoning_resume_1"
     assert hub.completed[0]["content"] == "前半句，继续补完"
+
+
+def test_run_chat_submission_with_tools_accepts_text_content_items_in_final_response():
+    gateway = ResponsesTextContentToolGateway()
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(realtime_hub=None)))
+
+    result, output_text = run_chat_submission_with_tools(
+        request=request,
+        gateway=gateway,
+        chat_messages=[ChatMessage(role="user", content="给我结论")],
+        instructions="直接回答",
+        assistant_message_id="assistant_text_content_1",
+    )
+
+    assert result.response_id == "resp_text_content_1"
+    assert output_text == "第一段。第二段。"
