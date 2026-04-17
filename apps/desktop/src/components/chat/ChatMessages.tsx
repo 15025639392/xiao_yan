@@ -80,6 +80,8 @@ export const ChatMessages = memo(function ChatMessages({
         (() => {
           const display = getChatMessageDisplayState(message, assistantName);
           const messageKey = getChatMessageRenderKey(message);
+          const hasBody = display.bodyMode !== "none";
+          const hasDetails = Boolean(display.status || display.showKnowledgeContext);
 
           return (
             <article
@@ -87,45 +89,53 @@ export const ChatMessages = memo(function ChatMessages({
               className={`chat-message chat-message--${message.role} ${message.state === "failed" ? "chat-message--failed" : ""}`}
             >
               <div className="chat-message__bubble">
-                {display.bodyMode === "markdown" ? (
-                  <div className="chat-message__markdown">
-                    <MarkdownMessage
-                      content={message.state === "streaming" ? `${message.content}▍` : message.content}
-                    />
+                {hasBody ? (
+                  <div className={`chat-message__body chat-message__body--${display.bodyMode}`}>
+                    {display.bodyMode === "markdown" ? (
+                      <div className="chat-message__markdown">
+                        <MarkdownMessage
+                          content={message.state === "streaming" ? `${message.content}▍` : message.content}
+                        />
+                      </div>
+                    ) : null}
+
+                    {display.bodyMode === "streaming-placeholder" ? (
+                      <div className="chat-message__streaming-placeholder" aria-live="polite">
+                        <div className="chat-message__dots" aria-hidden="true">
+                          <span />
+                          <span />
+                          <span />
+                        </div>
+                        <p className="chat-message__placeholder-text">{assistantName}正在整理这句话。</p>
+                      </div>
+                    ) : null}
+
+                    {display.bodyMode === "plain-text" ? (
+                      <p className="chat-message__content">{message.content}</p>
+                    ) : null}
                   </div>
                 ) : null}
 
-                {display.bodyMode === "streaming-placeholder" ? (
-                  <div className="chat-message__streaming-placeholder" aria-live="polite">
-                    <div className="chat-message__dots" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                    <p className="chat-message__placeholder-text">{assistantName}正在整理这句话。</p>
+                {hasDetails ? (
+                  <div className={`chat-message__details ${hasBody ? "chat-message__details--with-body" : ""}`}>
+                    {display.status ? (
+                      <div
+                        className={`chat-message__status chat-message__status--${display.status.tone}`}
+                        aria-live="polite"
+                      >
+                        <span className="chat-message__status-dot" aria-hidden="true" />
+                        <span>{display.status.text}</span>
+                      </div>
+                    ) : null}
+
+                    {display.showKnowledgeContext ? (
+                      <ChatKnowledgeContext
+                        references={message.knowledgeReferences ?? []}
+                        isExpanded={showKnowledgeContext.has(message.id)}
+                        onToggle={() => toggleKnowledgeContext(message.id)}
+                      />
+                    ) : null}
                   </div>
-                ) : null}
-
-                {display.bodyMode === "plain-text" ? (
-                  <p className="chat-message__content">{message.content}</p>
-                ) : null}
-
-                {display.status ? (
-                  <div
-                    className={`chat-message__status chat-message__status--${display.status.tone}`}
-                    aria-live="polite"
-                  >
-                    <span className="chat-message__status-dot" aria-hidden="true" />
-                    <span>{display.status.text}</span>
-                  </div>
-                ) : null}
-
-                {display.showKnowledgeContext ? (
-              <ChatKnowledgeContext
-                references={message.knowledgeReferences ?? []}
-                isExpanded={showKnowledgeContext.has(message.id)}
-                onToggle={() => toggleKnowledgeContext(message.id)}
-              />
                 ) : null}
               </div>
 

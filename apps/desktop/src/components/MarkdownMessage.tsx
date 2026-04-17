@@ -1,11 +1,14 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { normalizeMarkdownContent } from "./markdownMessageFormatting";
 
 interface MarkdownMessageProps {
   content: string;
 }
 
 export function MarkdownMessage({ content }: MarkdownMessageProps) {
+  const normalizedContent = normalizeMarkdownContent(content);
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -93,7 +96,7 @@ export function MarkdownMessage({ content }: MarkdownMessageProps) {
         },
       }}
     >
-      {content}
+      {normalizedContent}
     </ReactMarkdown>
   );
 }
