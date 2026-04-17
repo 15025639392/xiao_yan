@@ -87,7 +87,7 @@ export function useChatScrollBehavior({
     const currentHash = latestContentHashRef.current;
     const contentChanged = previousContentHashRef.current !== currentHash;
     const startedSending = !previousIsSendingRef.current && isSending;
-    const shouldAutoScroll = autoScrollEnabledRef.current || startedSending;
+    const shouldAutoScroll = autoScrollEnabledRef.current;
 
     previousContentHashRef.current = currentHash;
     previousIsSendingRef.current = isSending;

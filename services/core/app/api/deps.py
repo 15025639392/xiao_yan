@@ -4,7 +4,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import httpx
-from fastapi import Request
+from fastapi import Depends, Request
 
 from app.config import (
     get_chat_provider,
@@ -17,6 +17,7 @@ from app.config import (
 from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.gateway import ChatGateway
+from app.memory.chat_memory_runtime import ChatMemoryBackend, ChatMemoryRuntime
 from app.memory.repository import MemoryRepository
 from app.memory.service import MemoryService
 from app.memory.mempalace_adapter import MemPalaceAdapter
@@ -45,7 +46,7 @@ def get_memory_service(request: Request) -> MemoryService:
     return request.app.state.memory_service  # type: ignore[attr-defined]
 
 
-def get_mempalace_adapter(request: Request) -> MemPalaceAdapter:
+def get_mempalace_adapter(request: Request) -> ChatMemoryBackend:
     ensure_runtime_initialized(request.app)
     adapter = getattr(request.app.state, "mempalace_adapter", None)
     if adapter is None:
@@ -97,6 +98,24 @@ def get_chat_gateway() -> Generator[ChatGateway, None, None]:
 def get_memory_repository(request: Request) -> MemoryRepository:
     ensure_runtime_initialized(request.app)
     return request.app.state.memory_repository
+
+
+def get_chat_memory_runtime(
+    request: Request,
+    memory_repository: MemoryRepository = Depends(get_memory_repository),
+    chat_memory_backend: ChatMemoryBackend = Depends(get_mempalace_adapter),
+) -> ChatMemoryRuntime:
+    ensure_runtime_initialized(request.app)
+    repository = memory_repository
+    backend = chat_memory_backend
+    runtime = getattr(request.app.state, "chat_memory_runtime", None)
+    if runtime is None or getattr(runtime, "repository", None) is not repository or getattr(runtime, "backend", None) is not backend:
+        runtime = ChatMemoryRuntime(
+            backend=backend,
+            repository=repository,
+        )
+        request.app.state.chat_memory_runtime = runtime
+    return runtime
 
 
 def get_state_store(request: Request) -> StateStore:

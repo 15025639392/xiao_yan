@@ -116,3 +116,39 @@ test("auto-scrolls when user is near the bottom", () => {
 
   expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
 });
+
+test("does not force-scroll when sending starts while user is reading older messages", () => {
+  const { getByTestId, rerender } = render(<ScrollHarness messages={baseMessages} isSending={false} />);
+  const container = getByTestId("messages-container") as HTMLDivElement;
+
+  setContainerMetrics(container, {
+    scrollTop: 180,
+    clientHeight: 400,
+    scrollHeight: 1200,
+  });
+  fireEvent.scroll(container);
+
+  scrollIntoViewMock.mockClear();
+
+  rerender(<ScrollHarness messages={baseMessages} isSending={true} />);
+
+  expect(scrollIntoViewMock).not.toHaveBeenCalled();
+});
+
+test("still scrolls when sending starts near the bottom", () => {
+  const { getByTestId, rerender } = render(<ScrollHarness messages={baseMessages} isSending={false} />);
+  const container = getByTestId("messages-container") as HTMLDivElement;
+
+  setContainerMetrics(container, {
+    scrollTop: 760,
+    clientHeight: 400,
+    scrollHeight: 1200,
+  });
+  fireEvent.scroll(container);
+
+  scrollIntoViewMock.mockClear();
+
+  rerender(<ScrollHarness messages={baseMessages} isSending={true} />);
+
+  expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
+});

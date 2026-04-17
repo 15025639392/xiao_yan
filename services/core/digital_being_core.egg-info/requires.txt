@@ -1,9 +1,23 @@
 fastapi>=0.115.0
+pydantic<3,>=2
 httpx>=0.27.0
-websockets>=12.0
-mempalace>=3.1.0
-chromadb<0.7,>=0.5
 
 [dev]
 pytest>=7.4.0
 httpx>=0.27.0
+uvicorn>=0.30.0
+
+[docs]
+pypdf<6,>=5
+
+[full]
+pytest>=7.4.0
+httpx>=0.27.0
+uvicorn>=0.30.0
+mempalace>=3.1.0
+chromadb<0.7,>=0.5
+pypdf<6,>=5
+
+[memory]
+mempalace>=3.1.0
+chromadb<0.7,>=0.5

@@ -55,7 +55,13 @@ test("shows retry action for failed user message", () => {
     <ChatMessages
       assistantName="小晏"
       messages={[
-        { id: "user-failed", role: "user", content: "这条消息发送失败了", state: "failed" },
+        {
+          id: "user-failed",
+          role: "user",
+          content: "这条消息发送失败了",
+          state: "failed",
+          errorMessage: "网络有点不稳",
+        },
       ]}
       relationship={null}
       isSending={false}
@@ -66,7 +72,9 @@ test("shows retry action for failed user message", () => {
     />,
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "重发" }));
+  expect(screen.getByText("这句话还没顺利送到小晏那里：网络有点不稳")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "重新发送" }));
   expect(onRetry).toHaveBeenCalledTimes(1);
   expect(onRetry.mock.calls[0][0]).toMatchObject({ id: "user-failed", role: "user" });
 });
@@ -141,7 +149,7 @@ test("renders knowledge references for assistant messages", () => {
   expect(screen.getByText("你喜欢结构化输出。")).toBeInTheDocument();
 });
 
-test("renders continuous reasoning state for assistant messages", () => {
+test("renders natural streaming status for assistant reasoning", () => {
   render(
     <ChatMessages
       assistantName="小晏"
@@ -150,6 +158,7 @@ test("renders continuous reasoning state for assistant messages", () => {
           id: "assistant-1",
           role: "assistant",
           content: "我先继续推理。",
+          state: "streaming",
           reasoningSessionId: "reasoning_1",
           reasoningState: {
             session_id: "reasoning_1",
@@ -168,8 +177,54 @@ test("renders continuous reasoning state for assistant messages", () => {
     />,
   );
 
-  expect(screen.getByLabelText("持续推理状态")).toBeInTheDocument();
-  expect(screen.getByText("步骤 3")).toBeInTheDocument();
-  expect(screen.getByText("阶段 exploring")).toBeInTheDocument();
   expect(screen.getByText("先收敛约束，再确认可行路径。")).toBeInTheDocument();
+  expect(screen.queryByText("持续推理")).toBeNull();
+  expect(screen.queryByText("步骤 3")).toBeNull();
+  expect(screen.queryByText("阶段 exploring")).toBeNull();
+});
+
+test("renders placeholder copy while waiting for assistant content", () => {
+  render(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[{ id: "user-1", role: "user", content: "你在吗" }]}
+      relationship={null}
+      isSending={true}
+      showMemoryContext={new Set()}
+      onToggleMemoryContext={() => {}}
+      onDraftChange={() => {}}
+    />,
+  );
+
+  expect(screen.getByText("小晏正在整理这句话。")).toBeInTheDocument();
+});
+
+test("shows resume copy for failed assistant message", () => {
+  const onResume = vi.fn();
+
+  render(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[
+        {
+          id: "assistant-failed",
+          role: "assistant",
+          content: "我先把结论说一半",
+          state: "failed",
+          errorMessage: "连接暂时断开了",
+          requestMessage: "继续说",
+        },
+      ]}
+      relationship={null}
+      isSending={false}
+      showMemoryContext={new Set()}
+      onToggleMemoryContext={() => {}}
+      onResume={onResume}
+      onDraftChange={() => {}}
+    />,
+  );
+
+  expect(screen.getByText("小晏刚才停下来了：连接暂时断开了")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "接着说完" }));
+  expect(onResume).toHaveBeenCalledTimes(1);
 });

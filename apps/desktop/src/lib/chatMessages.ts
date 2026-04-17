@@ -1,5 +1,12 @@
 import type { ChatEntry } from "../components/ChatPanel";
 import type { ChatHistoryMessage } from "./api";
+import {
+  findAssistantSessionMatchIndex,
+  findInFlightAssistantMatchIndex,
+  findLocalUserMatchIndex,
+  findPreviousIncomingUserContent,
+  findPreviousIncomingUserRequestKey,
+} from "./chatMessageMatching";
 
 export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage[]): ChatEntry[] {
   const merged = [...current];
@@ -13,14 +20,14 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
     const exactMatchIndex =
       incomingMessageId == null ? -1 : merged.findIndex((entry) => entry.id === incomingMessageId);
     if (exactMatchIndex >= 0 && incomingMessageId != null) {
-      merged[exactMatchIndex] = {
+      merged[exactMatchIndex] = reconcileRuntimeMessage({
         ...merged[exactMatchIndex],
         id: incomingMessageId,
         role: message.role,
         content: message.content,
         reasoningSessionId: incomingReasoningSessionId ?? merged[exactMatchIndex].reasoningSessionId,
         reasoningState: incomingReasoningState ?? merged[exactMatchIndex].reasoningState,
-      };
+      });
       matchedIndexes.add(exactMatchIndex);
       return;
     }
@@ -34,15 +41,32 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
     if (sessionMatchIndex >= 0) {
       const currentEntry = merged[sessionMatchIndex];
       const keepStreamingId = currentEntry.state === "streaming" || currentEntry.state === "failed";
-      merged[sessionMatchIndex] = {
+      merged[sessionMatchIndex] = reconcileRuntimeMessage({
         ...currentEntry,
         id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
         role: message.role,
         content: message.content,
         reasoningSessionId: incomingReasoningSessionId ?? currentEntry.reasoningSessionId,
         reasoningState: incomingReasoningState ?? currentEntry.reasoningState,
-      };
+      });
       matchedIndexes.add(sessionMatchIndex);
+      return;
+    }
+
+    const localUserMatchIndex = findLocalUserMatchIndex(
+      merged,
+      matchedIndexes,
+      message.role,
+      message.content,
+    );
+    if (localUserMatchIndex >= 0) {
+      merged[localUserMatchIndex] = reconcileRuntimeMessage({
+        ...merged[localUserMatchIndex],
+        id: incomingMessageId ?? merged[localUserMatchIndex].id,
+        role: message.role,
+        content: message.content,
+      });
+      matchedIndexes.add(localUserMatchIndex);
       return;
     }
 
@@ -53,36 +77,38 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
         entry.content === message.content,
     );
     if (fallbackMatchIndex >= 0) {
-      merged[fallbackMatchIndex] = {
+      merged[fallbackMatchIndex] = reconcileRuntimeMessage({
         ...merged[fallbackMatchIndex],
         id: incomingMessageId ?? merged[fallbackMatchIndex].id,
         role: message.role,
         content: message.content,
         reasoningSessionId: incomingReasoningSessionId ?? merged[fallbackMatchIndex].reasoningSessionId,
         reasoningState: incomingReasoningState ?? merged[fallbackMatchIndex].reasoningState,
-      };
+      });
       matchedIndexes.add(fallbackMatchIndex);
       return;
     }
 
     const previousIncomingUserContent = findPreviousIncomingUserContent(incoming, index);
+    const previousIncomingUserRequestKey = findPreviousIncomingUserRequestKey(merged, incoming, index);
     const inFlightMatchIndex = findInFlightAssistantMatchIndex(
       merged,
       matchedIndexes,
       message,
       previousIncomingUserContent,
+      previousIncomingUserRequestKey,
     );
     if (inFlightMatchIndex >= 0) {
       const currentEntry = merged[inFlightMatchIndex];
       const keepStreamingId = currentEntry.state === "streaming" || currentEntry.state === "failed";
-      merged[inFlightMatchIndex] = {
+      merged[inFlightMatchIndex] = reconcileRuntimeMessage({
         ...currentEntry,
         id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
         role: message.role,
         content: message.content,
         reasoningSessionId: incomingReasoningSessionId ?? currentEntry.reasoningSessionId,
         reasoningState: incomingReasoningState ?? currentEntry.reasoningState,
-      };
+      });
       matchedIndexes.add(inFlightMatchIndex);
       return;
     }
@@ -100,79 +126,28 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
   return merged;
 }
 
-function findAssistantSessionMatchIndex(
-  current: ChatEntry[],
-  matchedIndexes: Set<number>,
-  role: ChatHistoryMessage["role"],
-  sessionId: string | null | undefined,
-): number {
-  if (role !== "assistant" || !sessionId) {
-    return -1;
+function reconcileRuntimeMessage(entry: ChatEntry): ChatEntry {
+  if (entry.role === "user") {
+    if (entry.state !== "failed" && entry.errorMessage == null) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      state: undefined,
+      errorMessage: undefined,
+    };
   }
 
-  return current.findIndex(
-    (entry, index) => !matchedIndexes.has(index) && entry.role === "assistant" && entry.id === sessionId,
-  );
-}
-
-function findPreviousIncomingUserContent(incoming: ChatHistoryMessage[], currentIndex: number): string | null {
-  for (let index = currentIndex - 1; index >= 0; index -= 1) {
-    if (incoming[index].role === "user") {
-      return incoming[index].content;
-    }
+  if (entry.state !== "streaming" && entry.state !== "failed" && entry.errorMessage == null) {
+    return entry;
   }
 
-  return null;
-}
-
-function findInFlightAssistantMatchIndex(
-  current: ChatEntry[],
-  matchedIndexes: Set<number>,
-  incoming: ChatHistoryMessage,
-  previousIncomingUserContent: string | null,
-): number {
-  if (incoming.role !== "assistant") {
-    return -1;
-  }
-
-  for (let index = current.length - 1; index >= 0; index -= 1) {
-    const entry = current[index];
-    if (matchedIndexes.has(index)) {
-      continue;
-    }
-    if (entry.role !== "assistant") {
-      continue;
-    }
-    const isInFlight = entry.state === "streaming" || entry.state === "failed";
-
-    // Runtime snapshots may arrive after local streaming is already finalized.
-    // If this assistant bubble is still a local one tied to the same request,
-    // reconcile it instead of appending a duplicate assistant reply.
-    if (
-      previousIncomingUserContent != null &&
-      entry.requestMessage != null &&
-      entry.requestMessage === previousIncomingUserContent &&
-      (isInFlight || entry.id.startsWith("assistant_"))
-    ) {
-      return index;
-    }
-
-    if (!isInFlight) {
-      continue;
-    }
-    if (
-      previousIncomingUserContent != null &&
-      entry.requestMessage != null &&
-      entry.requestMessage === previousIncomingUserContent
-    ) {
-      return index;
-    }
-    if (incoming.content.startsWith(entry.content) || entry.content.startsWith(incoming.content)) {
-      return index;
-    }
-  }
-
-  return -1;
+  return {
+    ...entry,
+    state: undefined,
+    errorMessage: undefined,
+  };
 }
 
 function resolveIncomingReasoningSessionId(message: ChatHistoryMessage): string | undefined {
@@ -208,6 +183,7 @@ export function upsertAssistantMessage(
   knowledgeReferences?: ChatEntry["knowledgeReferences"],
   reasoningSessionId?: string,
   reasoningState?: ChatEntry["reasoningState"],
+  requestKey?: string,
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (existing) {
@@ -217,6 +193,7 @@ export function upsertAssistantMessage(
             ...message,
             content: content || message.content,
             state,
+            requestKey: requestKey ?? message.requestKey,
             requestMessage: requestMessage ?? message.requestMessage,
             knowledgeReferences: knowledgeReferences ?? message.knowledgeReferences,
             reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
@@ -234,6 +211,7 @@ export function upsertAssistantMessage(
       role: "assistant",
       content,
       state,
+      requestKey,
       requestMessage,
       knowledgeReferences,
       reasoningSessionId,
@@ -370,6 +348,7 @@ export function markAssistantMessageFailed(
   sequence?: number,
   reasoningSessionId?: string,
   reasoningState?: ChatEntry["reasoningState"],
+  errorMessage?: string,
 ): ChatEntry[] {
   const existing = current.find((message) => message.id === assistantMessageId);
   if (!existing) {
@@ -392,9 +371,10 @@ export function markAssistantMessageFailed(
 
   return current.map((message) =>
     message.id === assistantMessageId
-      ? {
+        ? {
           ...message,
           state: "failed",
+          errorMessage: errorMessage ?? message.errorMessage,
           reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
           reasoningState: reasoningState ?? message.reasoningState,
           streamSequence: maxStreamSequence(message.streamSequence, sequence),
@@ -404,7 +384,9 @@ export function markAssistantMessageFailed(
 }
 
 export function markAssistantMessageStreaming(current: ChatEntry[], assistantMessageId: string): ChatEntry[] {
-  return current.map((message) => (message.id === assistantMessageId ? { ...message, state: "streaming" } : message));
+  return current.map((message) =>
+    message.id === assistantMessageId ? { ...message, state: "streaming", errorMessage: undefined } : message,
+  );
 }
 
 function shouldApplyStreamSequence(currentSequence?: number, incomingSequence?: number): boolean {

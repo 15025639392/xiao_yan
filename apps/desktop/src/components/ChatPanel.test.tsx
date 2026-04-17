@@ -394,8 +394,8 @@ test("renders quick actions in empty state", () => {
   );
 
   // 空状态下显示快捷操作按钮
-  expect(screen.getByRole("button", { name: "制定今日计划" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "总结对话" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "理一理今天" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "陪我捋一捋" })).toBeInTheDocument();
 });
 
 test("quick action buttons populate draft", () => {
@@ -414,8 +414,8 @@ test("quick action buttons populate draft", () => {
     />,
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "制定今日计划" }));
-  expect(onDraftChange).toHaveBeenCalledWith("帮我制定今天的计划");
+  fireEvent.click(screen.getByRole("button", { name: "理一理今天" }));
+  expect(onDraftChange).toHaveBeenCalledWith("小晏，陪我理一下今天最该先做的事");
 });
 
 test("supports adding and removing attached folders in chat input", () => {

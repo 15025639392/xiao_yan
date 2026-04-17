@@ -2,6 +2,7 @@ import { memo, useMemo } from "react";
 import type { RelationshipSummary } from "../../lib/api";
 import { MarkdownMessage } from "../MarkdownMessage";
 import { Button } from "../ui";
+import { getAssistantStatus, getUserFailedStatus } from "./chatMessagePresentation";
 import type { ChatEntry } from "./chatTypes";
 import { ChatMemoryContext } from "./ChatMemoryContext";
 import { ChatMessageResponseReference } from "./ChatMessageResponseReference";
@@ -41,24 +42,24 @@ export const ChatMessages = memo(function ChatMessages({
     return (
       <div className="chat-page__empty">
         <div className="chat-page__empty-icon">💬</div>
-        <p className="chat-page__empty-title">开始对话</p>
-        <p className="chat-page__empty-desc">在下方输入框输入消息，与{assistantName}开始交流</p>
+        <p className="chat-page__empty-title">和{assistantName}说说现在的事</p>
+        <p className="chat-page__empty-desc">可以从今天的安排、当下的情绪，或者你刚冒出来的念头开始。</p>
         <div className="chat-page__quick-actions">
           <Button
             className="chat-page__quick-btn"
             variant="secondary"
-            onClick={() => onDraftChange("帮我制定今天的计划")}
+            onClick={() => onDraftChange("小晏，陪我理一下今天最该先做的事")}
             type="button"
           >
-            制定今日计划
+            理一理今天
           </Button>
           <Button
             className="chat-page__quick-btn"
             variant="secondary"
-            onClick={() => onDraftChange("总结一下我们刚才聊的内容")}
+            onClick={() => onDraftChange("我现在有点乱，陪我一起捋一下")}
             type="button"
           >
-            总结对话
+            陪我捋一捋
           </Button>
         </div>
       </div>
@@ -74,25 +75,44 @@ export const ChatMessages = memo(function ChatMessages({
         >
           <div className="chat-message__bubble">
             {message.role === "assistant" ? (
-              <div className="chat-message__markdown">
-                <MarkdownMessage
-                  content={message.state === "streaming" ? `${message.content}▍` : message.content}
-                />
-              </div>
+              <>
+                {message.content ? (
+                  <div className="chat-message__markdown">
+                    <MarkdownMessage
+                      content={message.state === "streaming" ? `${message.content}▍` : message.content}
+                    />
+                  </div>
+                ) : message.state === "streaming" ? (
+                  <div className="chat-message__streaming-placeholder" aria-live="polite">
+                    <div className="chat-message__dots" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <p className="chat-message__placeholder-text">{assistantName}正在整理这句话。</p>
+                  </div>
+                ) : null}
+
+                {(() => {
+                  const assistantStatus = getAssistantStatus(message, assistantName);
+                  if (!assistantStatus) {
+                    return null;
+                  }
+
+                  return (
+                    <div
+                      className={`chat-message__status chat-message__status--${assistantStatus.tone}`}
+                      aria-live="polite"
+                    >
+                      <span className="chat-message__status-dot" aria-hidden="true" />
+                      <span>{assistantStatus.text}</span>
+                    </div>
+                  );
+                })()}
+              </>
             ) : (
               <p className="chat-message__content">{message.content}</p>
             )}
-
-            {message.role === "assistant" && message.reasoningState ? (
-              <div className="chat-message__reasoning" aria-label="持续推理状态">
-                <div className="chat-message__reasoning-head">
-                  <span>持续推理</span>
-                  <span>步骤 {message.reasoningState.step_index}</span>
-                  <span>阶段 {message.reasoningState.phase}</span>
-                </div>
-                <p className="chat-message__reasoning-summary">{message.reasoningState.summary}</p>
-              </div>
-            ) : null}
 
             {message.role === "assistant" && message.id === latestAssistantMessageId ? (
               <ChatMessageResponseReference relationship={relationship} />
@@ -136,27 +156,35 @@ export const ChatMessages = memo(function ChatMessages({
           ) : null}
 
           {message.role === "assistant" && message.state === "failed" && message.requestMessage ? (
-            <Button
-              className="chat-page__action-btn"
-              variant="secondary"
-              onClick={() => onResume?.(message)}
-              type="button"
-              disabled={isSending}
-            >
-              继续生成
-            </Button>
+            <div className="chat-message__actions">
+              <Button
+                className="chat-page__action-btn"
+                variant="secondary"
+                onClick={() => onResume?.(message)}
+                type="button"
+                disabled={isSending}
+              >
+                接着说完
+              </Button>
+            </div>
           ) : null}
 
           {message.role === "user" && message.state === "failed" ? (
-            <Button
-              className="chat-page__action-btn"
-              variant="secondary"
-              onClick={() => onRetry?.(message)}
-              type="button"
-              disabled={isSending}
-            >
-              重发
-            </Button>
+            <div className="chat-message__actions">
+              <div className="chat-message__status chat-message__status--failed" aria-live="polite">
+                <span className="chat-message__status-dot" aria-hidden="true" />
+                <span>{getUserFailedStatus(message, assistantName).text}</span>
+              </div>
+              <Button
+                className="chat-page__action-btn"
+                variant="secondary"
+                onClick={() => onRetry?.(message)}
+                type="button"
+                disabled={isSending}
+              >
+                重新发送
+              </Button>
+            </div>
           ) : null}
         </article>
       ))}
@@ -164,10 +192,13 @@ export const ChatMessages = memo(function ChatMessages({
       {isSending && !messages.some((message) => message.role === "assistant" && message.state === "streaming") ? (
         <article className="chat-message chat-message--loading">
           <div className="chat-message__bubble chat-message__bubble--loading">
-            <div className="chat-message__dots">
-              <span />
-              <span />
-              <span />
+            <div className="chat-message__loading-body" aria-live="polite">
+              <div className="chat-message__dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <p className="chat-message__placeholder-text">{assistantName}正在整理这句话。</p>
             </div>
           </div>
         </article>

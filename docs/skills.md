@@ -220,6 +220,124 @@
 - 如果文件已经超预算，不要等改完再想拆分。
 - 如果涉及可选依赖，不要跳过边界检查，哪怕功能看起来已经跑通。
 
+## 提示词 Demo
+
+下面这些 demo 尽量结合当前仓库的真实模块、文件和问题类型来写，可以直接复制后再改一两处细节。
+
+### 单 skill Demo
+
+`xiao-yan-architecture-guardian`
+
+```text
+先用 $xiao-yan-architecture-guardian 评审一下：我想调整 goals 和 world event 的主流程，让小晏在没有 active goal 时更主动地创建新目标。先判断这会不会削弱数字人本体、意图优先或边界感，再告诉我这轮应该直接改代码还是先出设计结论。
+```
+
+```text
+用 $xiao-yan-architecture-guardian 看一下，把 self_programming 的一些执行步骤进一步自动化，会不会让产品更像工具平台而不是数字人。请结合当前 services/core/app/self_programming 和主运行时流程给出结论。
+```
+
+`core-change-entrypoint`
+
+```text
+先用 $core-change-entrypoint 帮我定位 goal admission 这条链路。我要改“无 active goal 时创建候选目标”的行为，请找出真实入口、经过的 service / repository、相关状态文件和现有测试，不要直接开始改。
+```
+
+```text
+用 $core-change-entrypoint 看一下 persona 页面配置保存失败这条链路，帮我从桌面端入口一直定位到 services/core 的 API 和 service 层，并判断最小安全改动点在哪里。
+```
+
+`runtime-bug-triage`
+
+```text
+先用 $runtime-bug-triage 排查一个问题：桌面端有时会显示 active goal，但服务端 admission 实际已经 defer 了。请结合 goals admission stats、前端状态映射和 API 返回链路，先拿证据再判断最小修复面。
+```
+
+```text
+用 $runtime-bug-triage 看一下 memory 相关异常：有些对话事件似乎没被 mempalace 正常召回，但服务本身还能启动。先判断是写入、读取、降级路径还是前端展示问题。
+```
+
+`project-simplifier`
+
+```text
+简化分析: 围绕 apps/desktop + services/core + chat/runtime 收敛主链路，评估当前 tools、self_programming、memory 扩展能力里哪些应该先冻结，哪些必须保留。请输出保留清单、延后清单、删除候选和实施顺序。
+```
+
+```text
+用 $project-simplifier 分析一下当前目标管理相关功能，看看 goal admission、history、canary、回放工具里哪些是主链必需，哪些是二级资产，目标是降低接手复杂度但不破坏小晏的数字人主线。
+```
+
+`large-file-split-advisor`
+
+```text
+先用 $large-file-split-advisor 看一下 apps/desktop/src/App.tsx 这轮还适不适合继续加逻辑。如果我要继续改 persona、goals 和 tools 导航相关状态，应该不拆、提 helper，还是先拆容器层？
+```
+
+```text
+用 $large-file-split-advisor 评估 services/core/app/api/chat_routes.py。这个文件已经很大了，如果我要补一段和 chat skill 注入相关的逻辑，最小安全拆分方案应该是什么？
+```
+
+`optional-dependency-boundary-check`
+
+```text
+先用 $optional-dependency-boundary-check 看一下 mempalace 相关实现有没有越界。请重点检查 import、实例化、fallback 和启动路径，确认 services/core 在缺少 mempalace 时是否仍然能清晰降级。
+```
+
+```text
+用 $optional-dependency-boundary-check 评估一下 chromadb 或 pypdf 如果后面重新接回来，会不会污染核心路径。请按 repository / adapter / domain / service 的边界给出风险判断。
+```
+
+`docs-and-tests-sync-guard`
+
+```text
+最后用 $docs-and-tests-sync-guard 过一遍：我刚改了 goals admission 的行为和相关 API，请告诉我 docs、runbook、tests、验证命令里哪些要同步更新，哪些可以保持不动。
+```
+
+```text
+用 $docs-and-tests-sync-guard 检查这轮 skill 体系改动还缺哪些同步项，尤其是 docs/、tools/skills/、测试说明和文件预算检查命令。
+```
+
+### 组合 Demo
+
+#### 1. 先评审，再定位，再改
+
+适合主流程、状态模型、权限边界类问题：
+
+```text
+先用 $xiao-yan-architecture-guardian 判断这次 goals 主流程调整是否会影响小晏的主体性和意图优先；如果允许继续，再用 $core-change-entrypoint 找出真实入口、依赖链和最小改动点，最后再开始实现。
+```
+
+#### 2. 先排障，再决定要不要拆
+
+适合大文件里的 bug 修复：
+
+```text
+先用 $runtime-bug-triage 定位 chat runtime 状态异常，再用 $large-file-split-advisor 判断 services/core/app/api/chat_routes.py 这轮到底应该局部修还是先拆一层。不要一开始就大重构。
+```
+
+#### 3. 先查依赖边界，再决定如何改
+
+适合 mempalace / chromadb / pypdf：
+
+```text
+先用 $optional-dependency-boundary-check 看当前 memory 能力有没有把 mempalace 扩散进核心路径；如果边界没问题，再用 $core-change-entrypoint 找到这轮真正该改的 adapter 或 repository 落点。
+```
+
+#### 4. 做减法时带上本体约束
+
+适合收敛项目范围：
+
+```text
+先用 $project-simplifier 评估当前前后端主链路和删除候选；如果某些删改涉及 goals、memory 或 persona 的长期表达，再补一次 $xiao-yan-architecture-guardian，确认不会把小晏做成纯工具平台。
+```
+
+#### 5. 改完统一收尾
+
+适合任何实现完成后的最后一步：
+
+```text
+这轮改动已经做完了，最后用 $docs-and-tests-sync-guard 检查 docs、tests、runbook、skills 文档和验证命令是否都同步了，并明确告诉我还剩什么风险。
+```
+
 ## 维护建议
 
 - 新增 skill 时，优先补齐 `SKILL.md`、`agents/openai.yaml`、图标资源。

@@ -27,6 +27,7 @@ from app.config import (
     get_world_storage_path,
 )
 from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
+from app.memory.chat_memory_runtime import ChatMemoryRuntime
 from app.goals.repository import FileGoalRepository
 from app.memory.mempalace_repository import MemPalaceMemoryRepository
 from app.memory.observability import KnowledgeObservabilityTracker
@@ -90,6 +91,10 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
         repository=memory_repository,
         personality=persona_service.profile.personality,
     )
+    chat_memory_runtime = ChatMemoryRuntime(
+        backend=mempalace_adapter,
+        repository=memory_repository,
+    )
     knowledge_observability_tracker = KnowledgeObservabilityTracker()
     stop_event = Event()
 
@@ -131,6 +136,7 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     target_app.state.world_repository = world_repository
     target_app.state.persona_service = persona_service
     target_app.state.memory_service = memory_service
+    target_app.state.chat_memory_runtime = chat_memory_runtime
     target_app.state.knowledge_observability_tracker = knowledge_observability_tracker
     target_app.state.mempalace_adapter = mempalace_adapter
     target_app.state.stop_event = stop_event
@@ -158,6 +164,7 @@ def reload_runtime(target_app: FastAPI) -> None:
         "world_repository",
         "persona_service",
         "memory_service",
+        "chat_memory_runtime",
         "knowledge_observability_tracker",
         "mempalace_adapter",
         "stop_event",

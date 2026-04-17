@@ -516,20 +516,23 @@ test("supports retrying a failed user message send", async () => {
   fireEvent.click(screen.getByLabelText("发送"));
 
   await waitFor(() => {
-    expect(screen.getByRole("button", { name: "重发" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新发送" })).toBeInTheDocument();
+    expect(screen.getByText(/这句话还没顺利送到小晏那里/)).toBeInTheDocument();
+    expect(screen.getAllByText(/upstream timeout/).length).toBeGreaterThanOrEqual(1);
   });
 
-  fireEvent.click(screen.getByRole("button", { name: "重发" }));
+  fireEvent.click(screen.getByRole("button", { name: "重新发送" }));
 
   await waitFor(() => {
     expect(chatCallCount).toBe(2);
   });
 
   await waitFor(() => {
-    expect(screen.queryByRole("button", { name: "重发" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重新发送" })).not.toBeInTheDocument();
   });
 
-  expect(screen.getAllByText("请重发这条消息")).toHaveLength(1);
+  expect(screen.getByDisplayValue("请重发这条消息")).toBeInTheDocument();
+  expect(screen.getAllByText("请重发这条消息").length).toBeGreaterThanOrEqual(1);
 });
 
 test("sends selected mcp_servers in chat request body", async () => {
@@ -1888,10 +1891,11 @@ test("continues generation in the same assistant bubble after failure", async ()
 
   await waitFor(() => {
     expect(screen.getByText("前半句，")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "继续生成" })).toBeInTheDocument();
+    expect(screen.getByText("小晏刚才停下来了：request failed: 502")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "接着说完" })).toBeInTheDocument();
   });
 
-  fireEvent.click(screen.getByRole("button", { name: "继续生成" }));
+  fireEvent.click(screen.getByRole("button", { name: "接着说完" }));
 
   await act(async () => {
     socket.emit({
@@ -1970,7 +1974,7 @@ test("continues generation in the same assistant bubble after failure", async ()
 
   await waitFor(() => {
     expect(screen.getByText("前半句，后半句。")).toBeInTheDocument();
-    expect(screen.getByText("续写完成")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "接着说完" })).not.toBeInTheDocument();
   });
 
   expect(screen.queryAllByText("前半句，后半句。")).toHaveLength(1);
@@ -2375,7 +2379,7 @@ test("syncs assistant name across app chrome when persona updates arrive", async
 
   await waitFor(() => {
     expect(screen.getByText("阿晏")).toBeInTheDocument();
-    expect(screen.getByText("在下方输入框输入消息，与阿晏开始交流")).toBeInTheDocument();
+    expect(screen.getByText("和阿晏说说现在的事")).toBeInTheDocument();
   });
 });
 

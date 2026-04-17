@@ -68,6 +68,157 @@ describe("mergeMessages", () => {
     expect(assistant?.reasoningSessionId).toBe("reasoning_abc");
     expect(assistant?.reasoningState?.step_index).toBe(3);
   });
+
+  it("clears transient failed state when runtime history brings back the assistant reply", () => {
+    const current: ChatEntry[] = [
+      { id: "user-local-1", role: "user", content: "继续" },
+      {
+        id: "assistant_resume_local",
+        role: "assistant",
+        content: "前半句，",
+        state: "failed",
+        errorMessage: "request failed: 502",
+        requestMessage: "继续",
+      },
+    ];
+    const incoming: ChatHistoryMessage[] = [
+      { id: "mem-user-2", role: "user", content: "继续" },
+      {
+        id: "mem-assistant-2",
+        role: "assistant",
+        content: "前半句，后半句。",
+        session_id: null,
+      },
+    ];
+
+    const merged = mergeMessages(current, incoming);
+    const assistant = merged.find((entry) => entry.role === "assistant");
+
+    expect(assistant?.content).toBe("前半句，后半句。");
+    expect(assistant?.state).toBeUndefined();
+    expect(assistant?.errorMessage).toBeUndefined();
+  });
+
+  it("clears transient failed state when runtime history brings back the user message", () => {
+    const current: ChatEntry[] = [
+      {
+        id: "user-local-1",
+        role: "user",
+        content: "请帮我继续",
+        state: "failed",
+        errorMessage: "network timeout",
+      },
+    ];
+    const incoming: ChatHistoryMessage[] = [
+      {
+        id: "mem-user-2",
+        role: "user",
+        content: "请帮我继续",
+      },
+    ];
+
+    const merged = mergeMessages(current, incoming);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: "mem-user-2",
+      role: "user",
+      content: "请帮我继续",
+    });
+    expect(merged[0].state).toBeUndefined();
+    expect(merged[0].errorMessage).toBeUndefined();
+  });
+
+  it("prefers matching runtime user history to local pending user messages before generic fallback", () => {
+    const current: ChatEntry[] = [
+      {
+        id: "user-1",
+        role: "user",
+        content: "收到",
+      },
+      {
+        id: "mem-user-existing",
+        role: "user",
+        content: "收到",
+      },
+    ];
+    const incoming: ChatHistoryMessage[] = [
+      {
+        id: "mem-user-new",
+        role: "user",
+        content: "收到",
+      },
+    ];
+
+    const merged = mergeMessages(current, incoming);
+
+    expect(merged).toHaveLength(2);
+    expect(merged[0]).toMatchObject({
+      id: "mem-user-new",
+      role: "user",
+      content: "收到",
+    });
+    expect(merged[1]).toMatchObject({
+      id: "mem-user-existing",
+      role: "user",
+      content: "收到",
+    });
+  });
+
+  it("matches repeated same-content assistant replies to the latest local request instead of duplicating", () => {
+    const current: ChatEntry[] = [
+      {
+        id: "mem-user-old",
+        role: "user",
+        content: "你好",
+        requestKey: "request-old",
+      },
+      {
+        id: "mem-assistant-old",
+        role: "assistant",
+        content: "上一次回复",
+        requestKey: "request-old",
+        requestMessage: "你好",
+      },
+      {
+        id: "user-local-new",
+        role: "user",
+        content: "你好",
+        requestKey: "request-new",
+      },
+      {
+        id: "assistant_local_new",
+        role: "assistant",
+        content: "",
+        state: "streaming",
+        requestKey: "request-new",
+        requestMessage: "你好",
+      },
+    ];
+    const incoming: ChatHistoryMessage[] = [
+      { id: "mem-user-old", role: "user", content: "你好" },
+      { id: "mem-assistant-old", role: "assistant", content: "上一次回复", session_id: null },
+      { id: "mem-user-new", role: "user", content: "你好" },
+      { id: "mem-assistant-new", role: "assistant", content: "这一次回复", session_id: null },
+    ];
+
+    const merged = mergeMessages(current, incoming);
+
+    expect(merged).toHaveLength(4);
+    expect(merged[2]).toMatchObject({
+      id: "mem-user-new",
+      role: "user",
+      content: "你好",
+      requestKey: "request-new",
+    });
+    expect(merged[3]).toMatchObject({
+      role: "assistant",
+      content: "这一次回复",
+      requestKey: "request-new",
+      requestMessage: "你好",
+    });
+    expect(merged.filter((entry) => entry.role === "assistant" && entry.content === "这一次回复")).toHaveLength(1);
+  });
 });
 
 describe("finalizeAssistantMessage", () => {

@@ -13,6 +13,8 @@ export type ChatEntry = {
   role: "user" | "assistant";
   content: string;
   state?: "streaming" | "failed";
+  errorMessage?: string;
+  requestKey?: string;
   requestMessage?: string;
   retryRequestBody?: ChatRequestBody;
   relatedMemories?: MemoryEntryDisplay[];

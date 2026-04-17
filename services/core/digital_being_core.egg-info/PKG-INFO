@@ -4,10 +4,21 @@ Version: 0.1.0
 Summary: Core service for the digital being MVP
 Requires-Python: >=3.11
 Requires-Dist: fastapi>=0.115.0
+Requires-Dist: pydantic<3,>=2
 Requires-Dist: httpx>=0.27.0
-Requires-Dist: websockets>=12.0
-Requires-Dist: mempalace>=3.1.0
-Requires-Dist: chromadb<0.7,>=0.5
 Provides-Extra: dev
 Requires-Dist: pytest>=7.4.0; extra == "dev"
 Requires-Dist: httpx>=0.27.0; extra == "dev"
+Requires-Dist: uvicorn>=0.30.0; extra == "dev"
+Provides-Extra: memory
+Requires-Dist: mempalace>=3.1.0; extra == "memory"
+Requires-Dist: chromadb<0.7,>=0.5; extra == "memory"
+Provides-Extra: docs
+Requires-Dist: pypdf<6,>=5; extra == "docs"
+Provides-Extra: full
+Requires-Dist: pytest>=7.4.0; extra == "full"
+Requires-Dist: httpx>=0.27.0; extra == "full"
+Requires-Dist: uvicorn>=0.30.0; extra == "full"
+Requires-Dist: mempalace>=3.1.0; extra == "full"
+Requires-Dist: chromadb<0.7,>=0.5; extra == "full"
+Requires-Dist: pypdf<6,>=5; extra == "full"
