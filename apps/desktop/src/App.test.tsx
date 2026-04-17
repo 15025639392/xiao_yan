@@ -331,7 +331,7 @@ test("streams assistant reply over realtime chat events", async () => {
 
     if (url.endsWith("/chat")) {
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ message: "hello xiao yan" }));
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "hello xiao yan" });
       return await new Promise<Response>((resolve) => {
         resolveChatRequest = resolve;
       });
@@ -479,7 +479,7 @@ test("supports retrying a failed user message send", async () => {
     if (url.endsWith("/chat")) {
       chatCallCount += 1;
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ message: "请重发这条消息" }));
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "请重发这条消息" });
 
       if (chatCallCount === 1) {
         return new Response(JSON.stringify({ detail: "upstream timeout" }), {
@@ -619,7 +619,10 @@ test("sends selected mcp_servers in chat request body", async () => {
     if (url.endsWith("/chat")) {
       chatRequested = true;
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ message: "用 browser 工具检查页面", mcp_servers: ["browser"] }));
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({
+        message: "用 browser 工具检查页面",
+        mcp_servers: ["browser"],
+      });
       return new Response(
         JSON.stringify({
           response_id: "resp_mcp_1",
@@ -728,7 +731,10 @@ test("sends reasoning payload when bootstrap config enables continuous reasoning
     if (url.endsWith("/chat")) {
       chatRequested = true;
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ message: "继续说", reasoning: { enabled: true } }));
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({
+        message: "继续说",
+        reasoning: { enabled: true },
+      });
       return new Response(
         JSON.stringify({
           response_id: "resp_reasoning_bootstrap_1",
@@ -902,7 +908,7 @@ test("does not duplicate text when chat delta payloads are cumulative snapshots"
 
     if (url.endsWith("/chat")) {
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ message: "你好" }));
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "你好" });
       return await new Promise<Response>((resolve) => {
         resolveChatRequest = resolve;
       });
@@ -1577,7 +1583,7 @@ test("does not duplicate text when chat delta payloads overlap with previous suf
 
     if (url.endsWith("/chat")) {
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ message: "hello" }));
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "hello" });
       return await new Promise<Response>((resolve) => {
         resolveChatRequest = resolve;
       });
@@ -1791,14 +1797,12 @@ test("continues generation in the same assistant bubble after failure", async ()
 
     if (url.endsWith("/chat/resume")) {
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(
-        JSON.stringify({
-          message: "继续说",
-          assistant_message_id: "assistant_resume_1",
-          partial_content: "前半句，",
-          reasoning_session_id: reasoningSessionId,
-        }),
-      );
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({
+        message: "继续说",
+        assistant_message_id: "assistant_resume_1",
+        partial_content: "前半句，",
+        reasoning_session_id: reasoningSessionId,
+      });
       return await new Promise<Response>((resolve) => {
         resolveResumeRequest = resolve;
       });
@@ -2033,7 +2037,7 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
 
     if (url.endsWith("/chat")) {
       expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ message: "你好" }));
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "你好" });
       return await new Promise<Response>((resolve) => {
         resolveChatRequest = resolve;
       });
@@ -2738,7 +2742,7 @@ test("sends chat request with attached folder context after picking a folder", a
   fireEvent.click(screen.getByLabelText("发送"));
 
   await waitFor(() => {
-    expect(chatRequestBody).toEqual({
+    expect(chatRequestBody).toMatchObject({
       message: "请分析这个目录结构",
       attachments: [{ type: "folder", path: "/tmp/project-folder" }],
     });
@@ -2848,7 +2852,7 @@ test("sends chat request with attached files and images", async () => {
   fireEvent.click(screen.getByLabelText("发送"));
 
   await waitFor(() => {
-    expect(chatRequestBody).toEqual({
+    expect(chatRequestBody).toMatchObject({
       message: "请同时参考这两个附件",
       attachments: [
         { type: "file", path: "/tmp/project-folder/README.md" },

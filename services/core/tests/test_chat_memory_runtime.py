@@ -62,10 +62,11 @@ class _StubChatMemoryBackend:
         user_message: str,
         assistant_response: str,
         assistant_session_id: str | None = None,
+        request_key: str | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict | None = None,
     ) -> bool:
-        _ = (reasoning_session_id, reasoning_state)
+        _ = (request_key, reasoning_session_id, reasoning_state)
         self.record_calls.append((user_message, assistant_response, assistant_session_id))
         return True
 

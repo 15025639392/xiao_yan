@@ -326,6 +326,7 @@ export type ChatReasoningState = {
 
 export type ChatRequestBody = {
   message: string;
+  request_key?: string;
   attachments?: ChatAttachment[];
   mcp_servers?: string[];
   skills?: string[];
@@ -358,6 +359,7 @@ export type ChatResumeRequest = {
   message: string;
   assistant_message_id: string;
   partial_content: string;
+  request_key?: string;
   reasoning_session_id?: string;
 };
 
@@ -367,6 +369,7 @@ export type ChatHistoryMessage = {
   content: string;
   created_at?: string | null;
   session_id?: string | null;
+  request_key?: string | null;
   reasoning_session_id?: string | null;
   reasoning_state?: ChatReasoningState | null;
 };

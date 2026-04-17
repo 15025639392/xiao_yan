@@ -46,6 +46,7 @@ export type AppRealtimeSnapshot = {
 export type AppChatStartedPayload = {
   assistant_message_id: string;
   response_id: string | null;
+  request_key?: string;
   reasoning_session_id?: string;
   reasoning_state?: ChatReasoningState;
   session_id?: string;
@@ -56,6 +57,7 @@ export type AppChatStartedPayload = {
 export type AppChatDeltaPayload = {
   assistant_message_id: string;
   delta: string;
+  request_key?: string;
   reasoning_session_id?: string;
   reasoning_state?: ChatReasoningState;
   session_id?: string;
@@ -75,6 +77,7 @@ export type AppChatCompletedPayload = {
   assistant_message_id: string;
   response_id: string | null;
   content: string;
+  request_key?: string;
   knowledge_references?: AppKnowledgeReferencePayload[];
   reasoning_session_id?: string;
   reasoning_state?: ChatReasoningState;
@@ -86,6 +89,7 @@ export type AppChatCompletedPayload = {
 export type AppChatFailedPayload = {
   assistant_message_id: string;
   error: string;
+  request_key?: string;
   reasoning_session_id?: string;
   reasoning_state?: ChatReasoningState;
   session_id?: string;

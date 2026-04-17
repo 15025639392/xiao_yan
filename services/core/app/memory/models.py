@@ -267,6 +267,7 @@ class MemoryEvent(BaseModel):
     content: str
     role: str | None = None
     session_id: str | None = None
+    request_key: str | None = Field(default=None, description="前后端请求关联键")
     source_context: str | None = None
     reasoning_session_id: str | None = Field(default=None, description="持续推理会话 ID")
     reasoning_state: dict[str, Any] | None = Field(default=None, description="持续推理状态快照")
@@ -359,6 +360,10 @@ class MemoryEvent(BaseModel):
         if self.reasoning_session_id is not None:
             normalized_reasoning_session_id = self.reasoning_session_id.strip()
             self.reasoning_session_id = normalized_reasoning_session_id or None
+
+        if self.request_key is not None:
+            normalized_request_key = self.request_key.strip()
+            self.request_key = normalized_request_key or None
 
         if self.reasoning_state is not None:
             if not isinstance(self.reasoning_state, dict):

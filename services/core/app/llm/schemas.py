@@ -30,6 +30,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    request_key: str | None = None
     attachments: list[ChatAttachment] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     mcp_servers: list[str] = Field(default_factory=list)
@@ -40,6 +41,7 @@ class ChatResumeRequest(BaseModel):
     message: str
     assistant_message_id: str
     partial_content: str
+    request_key: str | None = None
     reasoning_session_id: str | None = None
 
 
@@ -51,6 +53,7 @@ class ChatResult(BaseModel):
 class ChatSubmissionResult(BaseModel):
     response_id: str | None = None
     assistant_message_id: str
+    request_key: str | None = None
     reasoning_session_id: str | None = None
     reasoning_state: ChatReasoningState | None = None
 
@@ -61,6 +64,7 @@ class ChatHistoryMessage(BaseModel):
     content: str
     created_at: str | None = None
     session_id: str | None = None
+    request_key: str | None = None
     reasoning_session_id: str | None = None
     reasoning_state: ChatReasoningState | None = None
 

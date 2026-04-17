@@ -98,6 +98,7 @@ export function useChatComposer({
         attachedImages,
       };
       const requestKey = createChatRequestKey();
+      requestBody.request_key = requestKey;
       const userMessageId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
       setError("");
@@ -162,6 +163,7 @@ export function useChatComposer({
     async (message: ChatEntry) => {
       const requestBody = message.retryRequestBody ?? { message: message.content };
       const requestKey = message.requestKey ?? createChatRequestKey();
+      requestBody.request_key = requestKey;
 
       setError("");
       setIsSending(true);
@@ -237,6 +239,7 @@ export function useChatComposer({
           message: requestMessage,
           assistant_message_id: message.id,
           partial_content: message.content,
+          request_key: message.requestKey,
           reasoning_session_id: message.reasoningSessionId,
         });
       } catch (err) {

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 
 import type { ChatEntry, ChatSendOptions } from "./components/ChatPanel";
 import { AboutDialog } from "./components/app/AboutDialog";
@@ -7,8 +6,10 @@ import { AppMainContent } from "./components/app/AppMainContent";
 import { AppSidebar } from "./components/app/AppSidebar";
 import type { PendingChatRequest } from "./components/app/chatRequestKey";
 import { syncMessagesFromRuntime } from "./components/app/chatRuntimeMessages";
+import { useAppChrome } from "./components/app/useAppChrome";
 import { useChatAttachments } from "./components/app/useChatAttachments";
 import { useChatComposer } from "./components/app/useChatComposer";
+import { useDesktopPet } from "./components/app/useDesktopPet";
 import type {
   BeingState,
   Goal,
@@ -24,7 +25,6 @@ import {
   sleep,
   upsertChatFolderPermission,
   updateGoalStatus,
-  updatePersonaFeatures,
   wake,
 } from "./lib/api";
 import { subscribeAppRealtime } from "./lib/realtime";
@@ -39,8 +39,6 @@ import {
   buildFolderPermissionPlan,
   loadImportedProjectRegistry,
 } from "./lib/projects";
-import type { AppRoute } from "./lib/appRoutes";
-import { normalizeLegacyHash, resolveRoute, routeToHash } from "./lib/appRoutes";
 
 const initialState: BeingState = {
   mode: "sleeping",
@@ -52,7 +50,6 @@ const initialState: BeingState = {
 };
 
 export default function App() {
-  const [route, setRoute] = useState<AppRoute>(() => resolveRoute(normalizeLegacyHash(window.location.hash)));
   const [state, setState] = useState<BeingState>(initialState);
   const [world, setWorld] = useState<InnerWorldState | null>(null);
   const [macConsoleStatus, setMacConsoleStatus] = useState<MacConsoleBootstrapStatus | null>(null);
@@ -62,12 +59,17 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
-  const [theme, setTheme] = useState<"dark" | "light">(() => loadThemePreference());
-  const [showBrandMenu, setShowBrandMenu] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
-  const [petVisible, setPetVisible] = useState(false);
   const pendingRequestMessageRef = useRef<PendingChatRequest | null>(null);
   const importedProjectRegistryRef = useRef(loadImportedProjectRegistry());
+  const {
+    route,
+    theme,
+    showAbout,
+    setShowAbout,
+    showBrandMenu,
+    setShowBrandMenu,
+    handleNavigate,
+  } = useAppChrome();
   const {
     attachedFiles,
     attachedFolders,
@@ -115,6 +117,11 @@ export default function App() {
     setError,
     setIsSending,
     setMessages,
+  });
+  const { petVisible, handlePetEnabledChange } = useDesktopPet({
+    onError: setError,
+    onPersonaChange: setPersona,
+    persona,
   });
   const focusGoalTitle = resolveFocusGoalTitle(state, goals);
   const assistantName = persona?.name?.trim() || "小晏";
@@ -196,7 +203,7 @@ export default function App() {
             undefined,
             event.payload.reasoning_session_id,
             event.payload.reasoning_state,
-            pendingRequest?.requestKey,
+            event.payload.request_key ?? pendingRequest?.requestKey,
           )
         );
         pendingRequestMessageRef.current = null;
@@ -213,6 +220,7 @@ export default function App() {
             event.payload.sequence,
             event.payload.reasoning_session_id,
             event.payload.reasoning_state,
+            event.payload.request_key,
           );
           return updated;
         });
@@ -230,6 +238,7 @@ export default function App() {
             event.payload.knowledge_references,
             event.payload.reasoning_session_id,
             event.payload.reasoning_state,
+            event.payload.request_key,
           );
           return updated;
         });
@@ -246,6 +255,7 @@ export default function App() {
             event.payload.reasoning_session_id,
             event.payload.reasoning_state,
             event.payload.error,
+            event.payload.request_key,
           )
         );
         setError(event.payload.error);
@@ -312,65 +322,6 @@ export default function App() {
     };
   }, [route]);
 
-  // 主题切换：更新 DOM 和 localStorage
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    const syncRoute = () => {
-      const normalizedHash = normalizeLegacyHash(window.location.hash);
-      if (normalizedHash !== window.location.hash) {
-        window.location.hash = normalizedHash;
-        return;
-      }
-
-      const nextRoute = resolveRoute(normalizedHash);
-      setRoute(nextRoute);
-    };
-
-    if (!window.location.hash) {
-      window.location.hash = routeToHash("overview");
-    } else {
-      syncRoute();
-    }
-
-    window.addEventListener("hashchange", syncRoute);
-    return () => {
-      window.removeEventListener("hashchange", syncRoute);
-    };
-  }, []);
-
-  // Pet visibility probe (Tauri). Best-effort: feature might be unavailable on some platforms.
-  useEffect(() => {
-    invoke("pet_is_visible")
-      .then((result: any) => {
-        if (result && typeof result.visible === "boolean") {
-          setPetVisible(result.visible);
-        }
-      })
-      .catch(() => {
-        // ignore
-      });
-  }, []);
-
-  // Keep pet window in sync with persona feature toggle.
-  useEffect(() => {
-    const enabled = persona?.features?.avatar_enabled ?? false;
-    invoke(enabled ? "pet_show" : "pet_close")
-      .then((result: any) => {
-        if (result && typeof result.visible === "boolean") {
-          setPetVisible(result.visible);
-        } else {
-          setPetVisible(enabled);
-        }
-      })
-      .catch(() => {
-        // ignore
-      });
-  }, [persona?.features?.avatar_enabled]);
-
   // Desktop capability worker: pull pending capability requests from core and execute locally.
   useEffect(() => {
     const stop = startCapabilityWorker();
@@ -394,28 +345,6 @@ export default function App() {
       setState(await sleep());
     } catch (err) {
       setError(err instanceof Error ? err.message : "休眠失败");
-    }
-  }
-
-  // ===== Pet (Desktop Pet) =====
-  async function handlePetEnabledChange(enabled: boolean) {
-    try {
-      setError("");
-      const updated = await updatePersonaFeatures({ avatar_enabled: enabled });
-      setPersona(updated.profile);
-      // Window lifecycle is centralized in the persona-sync effect
-      // to avoid duplicate concurrent `pet_show` / `pet_close` calls.
-      setPetVisible(enabled);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === "string"
-            ? err
-            : err
-              ? JSON.stringify(err)
-              : "";
-      setError(message || "宠物操作失败");
     }
   }
 
@@ -451,16 +380,6 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "同步失败");
     }
-  }
-
-  function handleNavigate(nextRoute: AppRoute) {
-    const nextHash = routeToHash(nextRoute);
-    if (window.location.hash !== nextHash) {
-      window.location.hash = nextHash;
-      return;
-    }
-
-    setRoute(nextRoute);
   }
 
   const isAwake = state.mode === "awake";
@@ -569,19 +488,4 @@ function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {
     return "休眠";
   }
   return "专注中";
-}
-
-function loadThemePreference(): "dark" | "light" {
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-  const saved = localStorage.getItem("theme");
-  if (saved === "light" || saved === "dark") {
-    return saved;
-  }
-  // 检测系统偏好
-  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
-    return "light";
-  }
-  return "dark";
 }

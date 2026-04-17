@@ -23,6 +23,7 @@ import {
   updateGoalAdmissionConfig,
   reviewKnowledgeItem,
   reviewKnowledgeItemsBatch,
+  resumeChat,
   upsertChatFolderPermission,
   updatePersona,
   updatePersonaFeatures,
@@ -109,6 +110,46 @@ describe("persona api methods", () => {
       3,
       "http://127.0.0.1:8000/chat/folder-permissions?path=%2Ftmp%2Fproject",
       expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  test("sends request_key for chat and resume requests", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ response_id: "resp_1", assistant_message_id: "assistant_1" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await chat({ message: "你好", request_key: "request_1" });
+    await resumeChat({
+      message: "继续",
+      assistant_message_id: "assistant_1",
+      partial_content: "前半句",
+      request_key: "request_1",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://127.0.0.1:8000/chat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ message: "你好", request_key: "request_1" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8000/chat/resume",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          message: "继续",
+          assistant_message_id: "assistant_1",
+          partial_content: "前半句",
+          request_key: "request_1",
+        }),
+      }),
     );
   });
 

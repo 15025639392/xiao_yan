@@ -177,6 +177,7 @@ describe("app realtime client", () => {
       payload: {
         assistant_message_id: "assistant_1",
         response_id: "resp_1",
+        request_key: "request_1",
         session_id: "assistant_1",
         sequence: 1,
       },
@@ -186,6 +187,7 @@ describe("app realtime client", () => {
       payload: {
         assistant_message_id: "assistant_1",
         delta: "你",
+        request_key: "request_1",
         session_id: "assistant_1",
         sequence: 2,
       },
@@ -196,6 +198,7 @@ describe("app realtime client", () => {
         assistant_message_id: "assistant_1",
         response_id: "resp_1",
         content: "你好",
+        request_key: "request_1",
         knowledge_references: [
           {
             source: "wing_xiaoyan/knowledge",
@@ -214,6 +217,7 @@ describe("app realtime client", () => {
       payload: {
         assistant_message_id: "assistant_1",
         delta: "好",
+        request_key: "request_1",
         session_id: "assistant_1",
         sequence: 3,
       },
@@ -226,6 +230,7 @@ describe("app realtime client", () => {
           payload: {
             assistant_message_id: "assistant_1",
             response_id: "resp_1",
+            request_key: "request_1",
             session_id: "assistant_1",
             sequence: 1,
           },
@@ -237,6 +242,7 @@ describe("app realtime client", () => {
           payload: {
             assistant_message_id: "assistant_1",
             delta: "你",
+            request_key: "request_1",
             session_id: "assistant_1",
             sequence: 2,
           },
@@ -248,6 +254,7 @@ describe("app realtime client", () => {
           payload: {
             assistant_message_id: "assistant_1",
             delta: "好",
+            request_key: "request_1",
             session_id: "assistant_1",
             sequence: 3,
           },
@@ -260,6 +267,7 @@ describe("app realtime client", () => {
             assistant_message_id: "assistant_1",
             response_id: "resp_1",
             content: "你好",
+            request_key: "request_1",
             knowledge_references: [
               {
                 source: "wing_xiaoyan/knowledge",

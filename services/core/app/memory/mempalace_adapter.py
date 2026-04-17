@@ -114,6 +114,7 @@ class MemPalaceAdapter:
         user_message: str,
         assistant_response: str,
         assistant_session_id: str | None = None,
+        request_key: str | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict | None = None,
     ) -> bool:
@@ -130,6 +131,7 @@ class MemPalaceAdapter:
                 content=content,
                 source_context=source_context,
                 session_id=assistant_session_id,
+                request_key=request_key,
                 reasoning_session_id=reasoning_session_id,
                 reasoning_state=reasoning_state,
             )
@@ -278,6 +280,7 @@ class MemPalaceAdapter:
         content: str,
         source_context: str,
         session_id: str | None,
+        request_key: str | None,
         reasoning_session_id: str | None,
         reasoning_state: dict | None,
     ) -> bool:
@@ -287,6 +290,7 @@ class MemPalaceAdapter:
                     content=content,
                     source_context=source_context,
                     session_id=session_id,
+                    request_key=request_key,
                     reasoning_session_id=reasoning_session_id,
                     reasoning_state=reasoning_state,
                 )
@@ -316,6 +320,7 @@ class MemPalaceAdapter:
                     "added_by": "xiaoyan",
                     "filed_at": now.isoformat(),
                     "session_id": session_id or "",
+                    "request_key": (request_key or "").strip(),
                     "reasoning_session_id": (reasoning_session_id or "").strip(),
                     "reasoning_state": _encode_reasoning_state(reasoning_state),
                 }
@@ -342,7 +347,7 @@ class MemPalaceAdapter:
         metadatas = payload.get("metadatas") or []
         ids = payload.get("ids") or []
 
-        rows: list[tuple[str, str, str, str, str | None, str | None, dict | None]] = []
+        rows: list[tuple[str, str, str, str, str | None, str | None, str | None, dict | None]] = []
         for index, raw_document in enumerate(documents):
             if not isinstance(raw_document, str):
                 continue
@@ -352,6 +357,9 @@ class MemPalaceAdapter:
             raw_session_id = metadata.get("session_id")
             session_id = str(raw_session_id).strip() if raw_session_id is not None else ""
             normalized_session_id = session_id or None
+            raw_request_key = metadata.get("request_key")
+            request_key = str(raw_request_key).strip() if raw_request_key is not None else ""
+            normalized_request_key = request_key or None
             raw_reasoning_session_id = metadata.get("reasoning_session_id")
             reasoning_session_id = str(raw_reasoning_session_id).strip() if raw_reasoning_session_id is not None else ""
             normalized_reasoning_session_id = reasoning_session_id or None
@@ -363,7 +371,7 @@ class MemPalaceAdapter:
 
             user_text, assistant_text = _parse_exchange_document(raw_document)
             if user_text:
-                rows.append((filed_at, drawer_id, "user", user_text, normalized_session_id, None, None))
+                rows.append((filed_at, drawer_id, "user", user_text, normalized_session_id, normalized_request_key, None, None))
             if assistant_text:
                 rows.append(
                     (
@@ -372,6 +380,7 @@ class MemPalaceAdapter:
                         "assistant",
                         assistant_text,
                         normalized_session_id,
+                        normalized_request_key,
                         normalized_reasoning_session_id,
                         normalized_reasoning_state,
                     )
@@ -387,6 +396,7 @@ class MemPalaceAdapter:
                             "assistant",
                             compact,
                             normalized_session_id,
+                            normalized_request_key,
                             normalized_reasoning_session_id,
                             normalized_reasoning_state,
                         )
@@ -394,7 +404,7 @@ class MemPalaceAdapter:
 
         rows.sort(key=lambda item: item[0])
         events: list[dict] = []
-        for filed_at, drawer_id, role, content, session_id, reasoning_session_id, reasoning_state in rows:
+        for filed_at, drawer_id, role, content, session_id, request_key, reasoning_session_id, reasoning_state in rows:
             message_id = f"{drawer_id}:{role}:{len(events)}"
             events.append(
                 {
@@ -403,6 +413,7 @@ class MemPalaceAdapter:
                     "content": content,
                     "created_at": filed_at or None,
                     "session_id": session_id,
+                    "request_key": request_key,
                     "reasoning_session_id": reasoning_session_id if role == "assistant" else None,
                     "reasoning_state": reasoning_state if role == "assistant" else None,
                 }

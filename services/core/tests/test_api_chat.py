@@ -466,6 +466,7 @@ class StubMemPalaceAdapter:
         user_message: str,
         assistant_response: str,
         assistant_session_id: str | None = None,
+        request_key: str | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict | None = None,
     ) -> bool:
@@ -473,7 +474,7 @@ class StubMemPalaceAdapter:
         if self.raise_on_record:
             raise RuntimeError("record boom")
         self.record_calls.append((user_message, assistant_response, assistant_session_id))
-        self.record_reasoning_calls.append((reasoning_session_id, reasoning_state))
+        self.record_reasoning_calls.append((request_key, reasoning_session_id, reasoning_state))
         event_seed = len(self.chat_history)
         self.chat_history.append(
             {
@@ -482,6 +483,7 @@ class StubMemPalaceAdapter:
                 "content": user_message,
                 "created_at": None,
                 "session_id": None,
+                "request_key": request_key,
                 "reasoning_session_id": None,
                 "reasoning_state": None,
             }
@@ -493,6 +495,7 @@ class StubMemPalaceAdapter:
                 "content": assistant_response,
                 "created_at": None,
                 "session_id": assistant_session_id,
+                "request_key": request_key,
                 "reasoning_session_id": reasoning_session_id,
                 "reasoning_state": reasoning_state,
             }
@@ -527,9 +530,44 @@ def test_post_chat_returns_submission_confirmation():
         assert response.status_code == 200
         assert response.json()["response_id"] == "resp_test"
         assert response.json()["assistant_message_id"].startswith("assistant_")
+        assert "request_key" not in response.json()
         assert mempalace_adapter.record_calls == [
             ("hello", "echo:hello", response.json()["assistant_message_id"])
         ]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_round_trips_request_key_into_response_and_runtime_messages():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "hello", "request_key": "request_1"})
+        assert response.status_code == 200
+        assert response.json()["request_key"] == "request_1"
+        assert mempalace_adapter.record_reasoning_calls[-1][0] == "request_1"
+        messages = client.get("/messages").json()["messages"]
+        assert messages[-1]["request_key"] == "request_1"
+        assert messages[-2]["request_key"] == "request_1"
     finally:
         app.dependency_overrides.clear()
 
@@ -2176,6 +2214,7 @@ def test_get_messages_returns_recent_chat_events():
                 "content": "第一句",
                 "created_at": payload["messages"][0]["created_at"],
                 "session_id": None,
+                "request_key": None,
                 "reasoning_session_id": None,
                 "reasoning_state": None,
             },
@@ -2185,6 +2224,7 @@ def test_get_messages_returns_recent_chat_events():
                 "content": "第二句",
                 "created_at": payload["messages"][1]["created_at"],
                 "session_id": "assistant_2",
+                "request_key": None,
                 "reasoning_session_id": "reasoning_2",
                 "reasoning_state": {
                     "session_id": "reasoning_2",

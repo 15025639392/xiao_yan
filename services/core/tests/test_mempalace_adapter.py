@@ -220,12 +220,14 @@ def test_mempalace_adapter_record_exchange_calls_write_backend():
         content: str,
         source_context: str,
         session_id: str | None,
+        request_key: str | None,
         reasoning_session_id: str | None,
         reasoning_state: dict | None,
     ) -> bool:
         captured["content"] = content
         captured["source_context"] = source_context
         captured["session_id"] = session_id or ""
+        captured["request_key"] = request_key or ""
         captured["reasoning_session_id"] = reasoning_session_id or ""
         captured["reasoning_state"] = "" if reasoning_state is None else str(reasoning_state.get("session_id") or "")
         return True
@@ -240,6 +242,7 @@ def test_mempalace_adapter_record_exchange_calls_write_backend():
         "你还记得星星吗",
         "我记得",
         "assistant_42",
+        request_key="request_42",
         reasoning_session_id="reasoning_42",
         reasoning_state={
             "session_id": "reasoning_42",
@@ -255,6 +258,7 @@ def test_mempalace_adapter_record_exchange_calls_write_backend():
     assert "我记得" in captured["content"]
     assert captured["source_context"] == "xiaoyan_chat_exchange"
     assert captured["session_id"] == "assistant_42"
+    assert captured["request_key"] == "request_42"
     assert captured["reasoning_session_id"] == "reasoning_42"
     assert captured["reasoning_state"] == "reasoning_42"
 
@@ -265,10 +269,11 @@ def test_mempalace_adapter_does_not_fallback_to_local_history_when_write_backend
         content: str,
         source_context: str,
         session_id: str | None,
+        request_key: str | None,
         reasoning_session_id: str | None,
         reasoning_state: dict | None,
     ) -> bool:
-        _ = (reasoning_session_id, reasoning_state)
+        _ = (request_key, reasoning_session_id, reasoning_state)
         raise RuntimeError("write unavailable")
 
     adapter = MemPalaceAdapter(
@@ -299,6 +304,7 @@ def test_mempalace_adapter_list_recent_chat_messages_keeps_session_id_from_metad
                         "room": "chat_exchange",
                         "filed_at": "2026-04-11T00:00:00+00:00",
                         "session_id": "assistant_abc123",
+                        "request_key": "request_abc123",
                         "reasoning_session_id": "reasoning_abc123",
                         "reasoning_state": (
                             '{"session_id":"reasoning_abc123","phase":"exploring",'
@@ -316,11 +322,13 @@ def test_mempalace_adapter_list_recent_chat_messages_keeps_session_id_from_metad
     assert len(recent) == 2
     assert recent[0]["role"] == "assistant"
     assert recent[0]["session_id"] == "assistant_abc123"
+    assert recent[0]["request_key"] == "request_abc123"
     assert recent[0]["reasoning_session_id"] == "reasoning_abc123"
     assert recent[0]["reasoning_state"]["step_index"] == 3
     assert recent[1]["role"] == "user"
     assert observed_limits == [200]
     assert recent[1]["session_id"] == "assistant_abc123"
+    assert recent[1]["request_key"] == "request_abc123"
     assert recent[1]["reasoning_session_id"] is None
     assert recent[1]["reasoning_state"] is None
 

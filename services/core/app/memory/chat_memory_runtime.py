@@ -40,6 +40,7 @@ class ChatMemoryBackend(Protocol):
         user_message: str,
         assistant_response: str,
         assistant_session_id: str | None = None,
+        request_key: str | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict | None = None,
     ) -> bool:
@@ -112,6 +113,7 @@ class ChatMemoryRuntime:
         user_message: str,
         assistant_response: str,
         assistant_session_id: str | None = None,
+        request_key: str | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict | None = None,
     ) -> bool:
@@ -119,6 +121,7 @@ class ChatMemoryRuntime:
             user_message,
             assistant_response,
             assistant_session_id,
+            request_key=request_key,
             reasoning_session_id=reasoning_session_id,
             reasoning_state=reasoning_state,
         )

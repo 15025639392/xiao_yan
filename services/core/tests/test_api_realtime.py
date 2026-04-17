@@ -140,6 +140,37 @@ def test_realtime_snapshot_includes_reasoning_fields_in_runtime_messages():
     assert assistant["reasoning_state"]["step_index"] == 2
 
 
+def test_realtime_snapshot_includes_request_key_in_runtime_messages():
+    _, memory_repository, _, _, _, _ = _install_runtime_for_realtime_test()
+    memory_repository.save_event(MemoryEvent(kind="chat", role="user", content="先看个思路", request_key="request_1"))
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="chat",
+            role="assistant",
+            content="我先继续推理。",
+            session_id="assistant_reasoning_1",
+            request_key="request_1",
+        )
+    )
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws/app") as websocket:
+        snapshot = websocket.receive_json()
+
+    assistant = next(
+        message
+        for message in snapshot["payload"]["runtime"]["messages"]
+        if message["role"] == "assistant" and message["content"] == "我先继续推理。"
+    )
+    user = next(
+        message
+        for message in snapshot["payload"]["runtime"]["messages"]
+        if message["role"] == "user" and message["content"] == "先看个思路"
+    )
+    assert assistant["request_key"] == "request_1"
+    assert user["request_key"] == "request_1"
+
+
 def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
     state_store, memory_repository, goal_repository, world_repository, persona_service, goal_admission_service = _install_runtime_for_realtime_test()
     world_repository.save_world_state(

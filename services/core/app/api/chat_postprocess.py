@@ -37,6 +37,7 @@ def mirror_exchange_to_memory_repository(
     user_message: str,
     assistant_response: str,
     assistant_session_id: str,
+    request_key: str | None = None,
     reasoning_session_id: str | None = None,
     reasoning_state: ChatReasoningState | None = None,
 ) -> None:
@@ -46,13 +47,14 @@ def mirror_exchange_to_memory_repository(
         return
 
     reasoning_payload = reasoning_state.model_dump(mode="json") if reasoning_state is not None else None
-    memory_repository.save_event(MemoryEvent(kind="chat", content=user_text, role="user"))
+    memory_repository.save_event(MemoryEvent(kind="chat", content=user_text, role="user", request_key=request_key))
     memory_repository.save_event(
         MemoryEvent(
             kind="chat",
             content=assistant_text,
             role="assistant",
             session_id=assistant_session_id,
+            request_key=request_key,
             reasoning_session_id=reasoning_session_id,
             reasoning_state=reasoning_payload,
         )
@@ -104,6 +106,7 @@ def finalize_chat_submission(
     tracker: KnowledgeObservabilityTracker | None,
     user_message: str,
     output_text: str,
+    request_key: str | None = None,
 ) -> ChatSubmissionResult:
     finalized_reasoning_state = reasoning.update_reasoning_session_after_completion(
         reasoning_state=reasoning_state,
@@ -122,6 +125,7 @@ def finalize_chat_submission(
                 user_message,
                 output_text,
                 assistant_message_id,
+                request_key=request_key,
                 reasoning_session_id=finalized_reasoning_session_id,
                 reasoning_state=(
                     finalized_reasoning_state.model_dump(mode="json")
@@ -142,6 +146,7 @@ def finalize_chat_submission(
             user_message=user_message,
             assistant_response=output_text,
             assistant_session_id=assistant_message_id,
+            request_key=request_key,
             reasoning_session_id=finalized_reasoning_session_id,
             reasoning_state=finalized_reasoning_state,
         )
@@ -173,6 +178,7 @@ def finalize_chat_submission(
     )
     return submission.model_copy(
         update={
+            "request_key": request_key,
             "reasoning_session_id": finalized_reasoning_state.session_id,
             "reasoning_state": finalized_reasoning_state,
         }

@@ -94,6 +94,7 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
                 content=str(event.get("content") or ""),
                 created_at=event.get("created_at"),
                 session_id=event.get("session_id"),
+                request_key=event.get("request_key"),
                 reasoning_session_id=event.get("reasoning_session_id"),
                 reasoning_state=(event.get("reasoning_state") if isinstance(event.get("reasoning_state"), dict) else None),
             ).model_dump()
@@ -115,6 +116,7 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
                 content=str(event.get("content") or ""),
                 created_at=event.get("created_at"),
                 session_id=event.get("session_id"),
+                request_key=event.get("request_key"),
                 reasoning_session_id=event.get("reasoning_session_id"),
                 reasoning_state=(event.get("reasoning_state") if isinstance(event.get("reasoning_state"), dict) else None),
             ).model_dump()
@@ -129,6 +131,7 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
                 content=event.content,
                 created_at=event.created_at.isoformat() if event.created_at else None,
                 session_id=event.session_id,
+                request_key=event.request_key,
                 reasoning_session_id=event.reasoning_session_id,
                 reasoning_state=event.reasoning_state,
             ).model_dump()

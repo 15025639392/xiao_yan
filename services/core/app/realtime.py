@@ -165,6 +165,7 @@ class AppRealtimeHub:
         assistant_message_id: str,
         response_id: str | None = None,
         session_id: str | None = None,
+        request_key: str | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict[str, Any] | None = None,
     ) -> None:
@@ -176,6 +177,8 @@ class AppRealtimeHub:
             "sequence": seq,
             "timestamp_ms": _current_timestamp_ms(),
         }
+        if request_key:
+            payload["request_key"] = request_key
         if reasoning_session_id:
             payload["reasoning_session_id"] = reasoning_session_id
         if reasoning_state:
@@ -187,6 +190,7 @@ class AppRealtimeHub:
         assistant_message_id: str,
         delta: str,
         session_id: str | None = None,
+        request_key: str | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict[str, Any] | None = None,
     ) -> None:
@@ -198,6 +202,8 @@ class AppRealtimeHub:
             "sequence": seq,
             "timestamp_ms": _current_timestamp_ms(),
         }
+        if request_key:
+            payload["request_key"] = request_key
         if reasoning_session_id:
             payload["reasoning_session_id"] = reasoning_session_id
         if reasoning_state:
@@ -210,6 +216,7 @@ class AppRealtimeHub:
         response_id: str | None,
         content: str,
         session_id: str | None = None,
+        request_key: str | None = None,
         knowledge_references: list[dict[str, Any]] | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict[str, Any] | None = None,
@@ -223,6 +230,8 @@ class AppRealtimeHub:
             "sequence": seq,
             "timestamp_ms": _current_timestamp_ms(),
         }
+        if request_key:
+            payload["request_key"] = request_key
         if knowledge_references:
             payload["knowledge_references"] = knowledge_references
         if reasoning_session_id:
@@ -236,6 +245,7 @@ class AppRealtimeHub:
         assistant_message_id: str,
         error: str,
         session_id: str | None = None,
+        request_key: str | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict[str, Any] | None = None,
     ) -> None:
@@ -247,6 +257,8 @@ class AppRealtimeHub:
             "sequence": seq,
             "timestamp_ms": _current_timestamp_ms(),
         }
+        if request_key:
+            payload["request_key"] = request_key
         if reasoning_session_id:
             payload["reasoning_session_id"] = reasoning_session_id
         if reasoning_state:
