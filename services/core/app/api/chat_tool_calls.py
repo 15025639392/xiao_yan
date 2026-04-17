@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.llm.output_text_wire import collect_output_message_texts
 from app.mcp import ChatMcpCallRegistry, call_chat_mcp_tool
 
 
@@ -43,12 +44,17 @@ def extract_function_calls(response_payload: dict[str, Any]) -> list[tuple[str, 
 def build_function_call_signature(function_calls: list[tuple[str, str, dict[str, Any]]]) -> str:
     normalized = [
         {
-            "call_id": call_id,
             "tool_name": tool_name,
             "arguments": arguments,
         }
         for call_id, tool_name, arguments in function_calls
     ]
+    normalized.sort(
+        key=lambda item: (
+            str(item["tool_name"]),
+            json.dumps(item["arguments"], ensure_ascii=False, sort_keys=True),
+        )
+    )
     return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
 
 
@@ -57,26 +63,7 @@ def extract_output_text(response_payload: dict[str, Any]) -> str:
     if isinstance(output_text, str) and output_text.strip():
         return output_text
 
-    segments: list[str] = []
-    outputs = response_payload.get("output", [])
-    if not isinstance(outputs, list):
-        return ""
-
-    for item in outputs:
-        if not isinstance(item, dict):
-            continue
-        if item.get("type") == "message":
-            content_items = item.get("content", [])
-            if not isinstance(content_items, list):
-                continue
-            for content_item in content_items:
-                if not isinstance(content_item, dict):
-                    continue
-                text = content_item.get("text")
-                if content_item.get("type") in {"output_text", "text"} and isinstance(text, str) and text:
-                    segments.append(text)
-
-    return "".join(segments)
+    return collect_output_message_texts(response_payload.get("output", []))
 
 
 def execute_tool_call(

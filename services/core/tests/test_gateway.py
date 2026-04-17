@@ -8,14 +8,12 @@ from app.llm.chat_wire import (
     convert_input_items_to_chat_messages,
     normalize_chat_completion_response,
 )
+from app.llm.adapter_factory import get_wire_adapter
+from app.llm.deepseek_chat_completions_adapter import DeepSeekChatCompletionsWireAdapter
+from app.llm.generic_chat_completions_adapter import GenericChatCompletionsWireAdapter
 from app.llm.gateway import ChatGateway
-from app.llm.protocol_adapters import (
-    DeepSeekChatCompletionsWireAdapter,
-    GenericChatCompletionsWireAdapter,
-    MiniMaxChatCompletionsWireAdapter,
-    OpenAIResponsesWireAdapter,
-    get_wire_adapter,
-)
+from app.llm.minimax_chat_completions_adapter import MiniMaxChatCompletionsWireAdapter
+from app.llm.openai_responses_adapter import OpenAIResponsesWireAdapter
 from app.llm.provider_defaults import MINIMAX_SUPPORTED_CHAT_MODELS
 from app.llm.request_wire import build_responses_payload
 from app.llm.schemas import ChatMessage
@@ -190,6 +188,63 @@ def test_gateway_streams_responses_api_events():
             "type": "response_completed",
             "response_id": "resp_123",
             "output_text": "hello world",
+        },
+    ]
+
+
+def test_gateway_openai_responses_stream_ignores_function_call_argument_deltas():
+    class StubStreamResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self):
+            return iter(
+                [
+                    'event: response.created',
+                    'data: {"response":{"id":"resp_tool_stream_1"}}',
+                    "",
+                    'event: response.output_text.delta',
+                    'data: {"delta":"我先查一下。"}',
+                    "",
+                    'event: response.function_call_arguments.delta',
+                    'data: {"delta":"{\\"path\\":\\"/tmp\\"}"}',
+                    "",
+                    'event: response.completed',
+                    'data: {"response":{"id":"resp_tool_stream_1"}}',
+                    "",
+                ]
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class StubStreamClient:
+        def stream(self, method: str, url: str, headers: dict, json: dict):
+            assert method == "POST"
+            assert url == "http://example.test/v1/responses"
+            return StubStreamResponse()
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="gpt-5.4",
+        base_url="http://example.test/v1",
+        wire_api="responses",
+        provider_id="openai",
+        http_client=StubStreamClient(),
+    )
+
+    events = list(gateway.stream_response([ChatMessage(role="user", content="hi")]))
+
+    assert events == [
+        {"type": "response_started", "response_id": "resp_tool_stream_1"},
+        {"type": "text_delta", "delta": "我先查一下。"},
+        {
+            "type": "response_completed",
+            "response_id": "resp_tool_stream_1",
+            "output_text": "我先查一下。",
         },
     ]
 
@@ -421,6 +476,69 @@ def test_gateway_streams_chat_completions_events_when_wire_api_chat():
             "type": "response_completed",
             "response_id": "chatcmpl_123",
             "output_text": "hello world",
+        },
+    ]
+
+
+def test_gateway_openai_chat_stream_preserves_text_when_tool_call_deltas_follow():
+    class StubStreamResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self):
+            return iter(
+                [
+                    'data: {"id":"chatcmpl_openai_tool_1","choices":[{"delta":{"role":"assistant"}}]}',
+                    "",
+                    'data: {"id":"chatcmpl_openai_tool_1","choices":[{"delta":{"content":"我先查一下天气。"}}]}',
+                    "",
+                    (
+                        'data: {"id":"chatcmpl_openai_tool_1","choices":[{"delta":{"tool_calls":'
+                        '[{"index":0,"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\\"city\\":\\"Bei"}}]}}]}'
+                    ),
+                    "",
+                    (
+                        'data: {"id":"chatcmpl_openai_tool_1","choices":[{"delta":{"tool_calls":'
+                        '[{"index":0,"function":{"arguments":"jing\\"}"}}]}}]}'
+                    ),
+                    "",
+                    'data: {"id":"chatcmpl_openai_tool_1","choices":[{"finish_reason":"tool_calls"}]}',
+                    "",
+                    "data: [DONE]",
+                    "",
+                ]
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class StubStreamClient:
+        def stream(self, method: str, url: str, headers: dict, json: dict):
+            assert method == "POST"
+            assert url == "http://example.test/v1/chat/completions"
+            return StubStreamResponse()
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="gpt-5.4",
+        base_url="http://example.test/v1",
+        wire_api="chat",
+        provider_id="openai",
+        http_client=StubStreamClient(),
+    )
+
+    events = list(gateway.stream_response([ChatMessage(role="user", content="hi")]))
+
+    assert events == [
+        {"type": "response_started", "response_id": "chatcmpl_openai_tool_1"},
+        {"type": "text_delta", "delta": "我先查一下天气。"},
+        {
+            "type": "response_completed",
+            "response_id": "chatcmpl_openai_tool_1",
+            "output_text": "我先查一下天气。",
         },
     ]
 

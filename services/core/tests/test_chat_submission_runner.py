@@ -175,6 +175,119 @@ class ResponsesTextContentToolGateway:
         }
 
 
+class RotatingCallIdLoopGateway:
+    def __init__(self) -> None:
+        self.create_call_count = 0
+        self.stream_call_count = 0
+
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        _ = (input_items, instructions, tools, previous_response_id)
+        self.create_call_count += 1
+        return {
+            "id": f"resp_loop_{self.create_call_count}",
+            "output": [
+                {
+                    "type": "function_call",
+                    "call_id": f"call_{self.create_call_count}",
+                    "name": "search_files",
+                    "arguments": '{"query":"same"}',
+                }
+            ],
+        }
+
+    def stream_response(self, messages, instructions=None):
+        _ = (messages, instructions)
+        self.stream_call_count += 1
+        yield {
+            "type": "response_started",
+            "response_id": "resp_loop_fallback",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "停止循环后直接回答。",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_loop_fallback",
+            "output_text": "停止循环后直接回答。",
+        }
+
+
+class ReorderedMultiToolLoopGateway:
+    def __init__(self) -> None:
+        self.create_call_count = 0
+        self.stream_call_count = 0
+
+    def create_response_with_tools(
+        self,
+        input_items,
+        *,
+        instructions=None,
+        tools=None,
+        previous_response_id=None,
+    ):
+        _ = (input_items, instructions, tools, previous_response_id)
+        self.create_call_count += 1
+        if self.create_call_count % 2 == 1:
+            output = [
+                {
+                    "type": "function_call",
+                    "call_id": f"call_a_{self.create_call_count}",
+                    "name": "search_files",
+                    "arguments": '{"query":"same","search_path":"/tmp"}',
+                },
+                {
+                    "type": "function_call",
+                    "call_id": f"call_b_{self.create_call_count}",
+                    "name": "list_directory",
+                    "arguments": '{"path":"/tmp","recursive":false}',
+                },
+            ]
+        else:
+            output = [
+                {
+                    "type": "function_call",
+                    "call_id": f"call_b_{self.create_call_count}",
+                    "name": "list_directory",
+                    "arguments": '{"recursive":false,"path":"/tmp"}',
+                },
+                {
+                    "type": "function_call",
+                    "call_id": f"call_a_{self.create_call_count}",
+                    "name": "search_files",
+                    "arguments": '{"search_path":"/tmp","query":"same"}',
+                },
+            ]
+        return {
+            "id": f"resp_multi_loop_{self.create_call_count}",
+            "output": output,
+        }
+
+    def stream_response(self, messages, instructions=None):
+        _ = (messages, instructions)
+        self.stream_call_count += 1
+        yield {
+            "type": "response_started",
+            "response_id": "resp_multi_loop_fallback",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "检测到重复工具集合后直接回答。",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_multi_loop_fallback",
+            "output_text": "检测到重复工具集合后直接回答。",
+        }
+
+
 def test_run_chat_submission_with_tools_replays_mixed_assistant_text_before_tool_output(monkeypatch):
     monkeypatch.setattr(chat_submission_runner, "execute_tool_call", lambda *args, **kwargs: '{"ok":true}')
     gateway = MixedAssistantTextToolGateway()
@@ -254,3 +367,39 @@ def test_run_chat_submission_with_tools_accepts_text_content_items_in_final_resp
 
     assert result.response_id == "resp_text_content_1"
     assert output_text == "第一段。第二段。"
+
+
+def test_run_chat_submission_with_tools_detects_repeated_calls_even_when_call_ids_change():
+    gateway = RotatingCallIdLoopGateway()
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(realtime_hub=None)))
+
+    result, output_text = run_chat_submission_with_tools(
+        request=request,
+        gateway=gateway,
+        chat_messages=[ChatMessage(role="user", content="继续试")],
+        instructions="能用工具就用工具",
+        assistant_message_id="assistant_loop_1",
+    )
+
+    assert result.response_id == "resp_loop_fallback"
+    assert output_text == "停止循环后直接回答。"
+    assert gateway.stream_call_count == 1
+    assert gateway.create_call_count == 3
+
+
+def test_run_chat_submission_with_tools_detects_repeated_multi_calls_even_when_order_changes():
+    gateway = ReorderedMultiToolLoopGateway()
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(realtime_hub=None)))
+
+    result, output_text = run_chat_submission_with_tools(
+        request=request,
+        gateway=gateway,
+        chat_messages=[ChatMessage(role="user", content="继续试")],
+        instructions="能用工具就用工具",
+        assistant_message_id="assistant_multi_loop_1",
+    )
+
+    assert result.response_id == "resp_multi_loop_fallback"
+    assert output_text == "检测到重复工具集合后直接回答。"
+    assert gateway.stream_call_count == 1
+    assert gateway.create_call_count == 3

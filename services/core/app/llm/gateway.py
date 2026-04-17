@@ -3,12 +3,12 @@ from collections.abc import Generator
 import httpx
 
 from app.config import LLMProviderConfig
+from app.llm.adapter_factory import get_wire_adapter as _get_wire_adapter
 from app.llm.gateway_bootstrap import (
     build_gateway_init_kwargs as _build_gateway_init_kwargs,
     select_chat_provider_config as _select_chat_provider_config,
 )
 from app.llm.http_wire import build_auth_headers as _build_auth_headers
-from app.llm.protocol_adapters import get_wire_adapter as _get_wire_adapter
 from app.llm.response_wire import (
     create_chat_result_from_stream_events as _create_chat_result_from_stream_events,
 )

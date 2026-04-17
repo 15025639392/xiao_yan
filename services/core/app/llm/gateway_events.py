@@ -2,26 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
+from app.llm.output_text_wire import collect_output_message_texts
+
 
 def extract_output_text(data: dict) -> str:
     if data.get("output_text"):
         return data["output_text"]
 
-    fragments: list[str] = []
-    for item in data.get("output", []):
-        if item.get("type") != "message":
-            continue
-
-        for content in item.get("content", []):
-            if content.get("type") not in {"output_text", "text"}:
-                continue
-
-            text = content.get("text")
-            if text:
-                fragments.append(text)
-
+    fragments = collect_output_message_texts(data.get("output", []))
     if fragments:
-        return "".join(fragments)
+        return fragments
 
     raise ValueError("response payload did not contain output text")
 

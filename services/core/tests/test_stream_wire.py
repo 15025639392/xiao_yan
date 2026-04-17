@@ -1,3 +1,4 @@
+from app.llm.openai_responses_stream_wire import iter_openai_responses_stream_events
 from app.llm.stream_wire import iter_chat_completions_stream_events, iter_responses_stream_events
 
 
@@ -164,5 +165,42 @@ def test_iter_responses_stream_events_completed_payload_concatenates_multiple_me
             "type": "response_completed",
             "response_id": "resp_multi_1",
             "output_text": "第一段。第二段。",
+        },
+    ]
+
+
+def test_iter_openai_responses_stream_events_ignores_tool_and_content_part_deltas():
+    events = list(
+        iter_openai_responses_stream_events(
+            [
+                'event: response.created',
+                'data: {"response":{"id":"resp_openai_1"}}',
+                "",
+                'event: response.output_item.added',
+                'data: {"item":{"type":"function_call","id":"fc_1"}}',
+                "",
+                'event: response.content_part.added',
+                'data: {"part":{"type":"output_text","text":"ignored carrier"}}',
+                "",
+                'event: response.output_text.delta',
+                'data: {"delta":"保留这段文本。"}',
+                "",
+                'event: response.function_call_arguments.delta',
+                'data: {"delta":"{\\"query\\":\\"hello\\"}"}',
+                "",
+                'event: response.completed',
+                'data: {"response":{"id":"resp_openai_1"}}',
+                "",
+            ]
+        )
+    )
+
+    assert events == [
+        {"type": "response_started", "response_id": "resp_openai_1"},
+        {"type": "text_delta", "delta": "保留这段文本。"},
+        {
+            "type": "response_completed",
+            "response_id": "resp_openai_1",
+            "output_text": "保留这段文本。",
         },
     ]
