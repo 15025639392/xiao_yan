@@ -202,6 +202,7 @@ npm install
 ```
 
 服务将在 `http://127.0.0.1:8000` 启动。
+`services/core/scripts` 当前只保留这个默认后端启动脚本；历史 rollout/canary/report/watch 类脚本已冻结或移出，不再属于默认启动链路。
 脚本会优先确保 `services/core/.venv` 中具备 `.[dev]` 依赖；`memory` 和 `docs` 相关依赖默认不是启动硬前置。
 默认关闭 `--reload`，以避免本地数据目录频繁写入导致 CPU 抖动或 websocket 断连。
 

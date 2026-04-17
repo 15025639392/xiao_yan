@@ -21,3 +21,9 @@ apps/desktop/src-tauri/gen/
 
 # IDE
 .idea/
+services/core/.mempalace/palace/chroma.sqlite3
+services/core/.mempalace/palace/1f5bac9f-505c-4769-872d-71ccb609c8db/data_level0.bin
+services/core/.mempalace/palace/1f5bac9f-505c-4769-872d-71ccb609c8db/header.bin
+services/core/.mempalace/palace/1f5bac9f-505c-4769-872d-71ccb609c8db/index_metadata.pickle
+services/core/.mempalace/palace/1f5bac9f-505c-4769-872d-71ccb609c8db/length.bin
+services/core/.mempalace/palace/1f5bac9f-505c-4769-872d-71ccb609c8db/link_lists.bin

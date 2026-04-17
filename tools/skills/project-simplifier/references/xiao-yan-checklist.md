@@ -35,7 +35,7 @@
 - `services/core/app/orchestrator`
 - `services/core/app/self_programming`
 - `services/core/app/memory` 中重依赖 `mempalace` 与 `chromadb` 的路径
-- `services/core/scripts` 下与 rollout、canary、report、watch 相关的脚本
+- `services/core/scripts` 是否仍然只保留默认启动脚本，没有重新混入 rollout、canary、report、watch 类脚本
 - `apps/desktop/src/pages/OrchestratorPage.tsx`
 - `apps/desktop/src/components/orchestrator`
 - `docs/requirements` 与 `docs/checkpoints` 中大量历史需求产物

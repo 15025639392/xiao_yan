@@ -1,0 +1,171 @@
+/* Persona config panel and form */
+
+.persona-config-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.persona-config-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  position: relative;
+}
+
+.persona-config-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.persona-config-tab:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+}
+
+.persona-config-tab--active {
+  background: var(--primary-muted);
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.persona-config-toast {
+  position: absolute;
+  right: var(--space-5);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.8125rem;
+  color: var(--success);
+  font-weight: 500;
+  animation: persona-toast-in 0.2s ease;
+}
+
+@keyframes persona-toast-in {
+  from { opacity: 0; transform: translateY(-50%) translateX(10px); }
+  to { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+.persona-config-body {
+  padding: var(--space-5);
+}
+
+.persona-config-tab-skeleton {
+  width: 80px;
+  height: 32px;
+  background: var(--bg-surface-overlay);
+  border-radius: var(--radius-md);
+  animation: persona-pulse 1.5s infinite;
+}
+
+.persona-form-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-2);
+}
+
+.persona-form-skeleton__field {
+  height: 60px;
+  background: var(--bg-surface-overlay);
+  border-radius: var(--radius-md);
+  animation: persona-pulse 1.5s infinite;
+}
+
+.persona-form-skeleton__field:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.persona-form-skeleton__field:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.persona-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.persona-form__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.persona-form__section-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.persona-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.persona-form__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.persona-form__hint {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.persona-form__input,
+.persona-form__textarea {
+  padding: 10px 14px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  font-family: inherit;
+}
+
+.persona-form__input:focus,
+.persona-form__textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.persona-form__input::placeholder,
+.persona-form__textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.persona-form__textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.persona-form__actions {
+  display: flex;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}

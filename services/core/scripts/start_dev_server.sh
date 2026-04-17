@@ -7,6 +7,9 @@ CORE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENV_DIR="${CORE_DIR}/.venv"
 VENV_PY="${VENV_DIR}/bin/python"
 
+# Keep services/core/scripts focused on the default backend entrypoint.
+# Freeze or move one-off rollout/canary tooling elsewhere instead of adding it here.
+
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 ENABLE_RELOAD="${ENABLE_RELOAD:-0}"
@@ -49,7 +52,7 @@ fi
 
 echo "[INFO] Starting backend with ${VENV_PY}"
 
-UVICORN_ARGS=(app.main:app --host "${HOST}" --port "${PORT}")
+UVICORN_ARGS=(--app-dir "${CORE_DIR}" app.main:app --host "${HOST}" --port "${PORT}")
 if [[ "${ENABLE_RELOAD}" == "1" ]]; then
   UVICORN_ARGS+=(
     --reload
