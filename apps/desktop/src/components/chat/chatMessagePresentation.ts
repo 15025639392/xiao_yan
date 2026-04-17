@@ -83,10 +83,11 @@ export function getChatMessageDisplayState(
 ): ChatMessageDisplayState {
   const isAssistant = isAssistantChatEntry(message);
   const hasAssistantContent = isAssistant && Boolean(message.content);
+  const hasReasoningStatus = Boolean(message.reasoningState?.summary || message.reasoningState?.phase);
   const assistantStatus = isAssistant ? getAssistantStatus(message, assistantName) : null;
   const shouldShowAssistantStatus =
     assistantStatus != null &&
-    (message.state === "failed" || (message.state === "streaming" && !hasAssistantContent));
+    (message.state === "failed" || (message.state === "streaming" && (!hasAssistantContent ? hasReasoningStatus : false)));
 
   if (isAssistant) {
     return {

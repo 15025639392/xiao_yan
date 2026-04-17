@@ -281,6 +281,7 @@ test("renders placeholder copy while waiting for assistant content", () => {
   );
 
   expect(screen.getByText("小晏正在整理这句话。")).toBeInTheDocument();
+  expect(screen.queryAllByText("小晏正在整理这句话。")).toHaveLength(1);
 });
 
 test("shows waiting feedback for the latest turn even when older assistant messages already exist", () => {
