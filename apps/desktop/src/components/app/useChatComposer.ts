@@ -117,6 +117,7 @@ export function useChatComposer({
           requestKey,
           retryRequestBody: requestBody,
         },
+        createPendingAssistantEntry(requestKey, message),
       ]);
       setDraft("");
 
@@ -173,16 +174,19 @@ export function useChatComposer({
       setIsSending(true);
       pendingRequestMessageRef.current = { message: requestBody.message, requestKey };
       setMessages((current) =>
-        current.map((entry) =>
-          entry.id === message.id
-            ? {
-                ...entry,
-                state: undefined,
-                errorMessage: undefined,
-                requestKey,
-              }
-            : entry,
-        ),
+        [
+          ...current.map((entry) =>
+            entry.id === message.id
+              ? {
+                  ...entry,
+                  state: undefined,
+                  errorMessage: undefined,
+                  requestKey,
+                }
+              : entry,
+          ),
+          createPendingAssistantEntry(requestKey, requestBody.message),
+        ],
       );
 
       try {
@@ -331,4 +335,15 @@ function findLinkedAssistantIndex(current: ChatEntry[], requestMessage: string, 
   }
 
   return -1;
+}
+
+function createPendingAssistantEntry(requestKey: string, requestMessage: string): ChatEntry {
+  return {
+    id: `assistant-pending:${requestKey}`,
+    role: "assistant",
+    content: "",
+    state: "streaming",
+    requestKey,
+    requestMessage,
+  };
 }

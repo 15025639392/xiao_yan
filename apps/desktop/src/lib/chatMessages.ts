@@ -226,20 +226,24 @@ export function upsertAssistantMessage(
   reasoningState?: ChatEntry["reasoningState"],
   requestKey?: string,
 ): ChatEntry[] {
-  const existing = current.find((message) => message.id === assistantMessageId);
+  const existingIndex = findAssistantEntryIndex(current, assistantMessageId, requestKey, requestMessage);
+  const existing = existingIndex >= 0 ? current[existingIndex] : undefined;
   if (existing) {
     return current.map((message) =>
-      message.id === assistantMessageId
-        ? applyAssistantEntryPatch(message, {
-            content,
-            state,
-            requestKey,
-            requestMessage,
-            knowledgeReferences,
-            reasoningSessionId,
-            reasoningState,
-            streamSequence: maxStreamSequence(message.streamSequence, sequence),
-          })
+      message.id === existing.id
+        ? {
+            ...applyAssistantEntryPatch(message, {
+              content,
+              state,
+              requestKey,
+              requestMessage,
+              knowledgeReferences,
+              reasoningSessionId,
+              reasoningState,
+              streamSequence: maxStreamSequence(message.streamSequence, sequence),
+            }),
+            id: assistantMessageId,
+          }
         : message,
     );
   }
@@ -267,7 +271,8 @@ export function appendAssistantDelta(
   reasoningState?: ChatEntry["reasoningState"],
   requestKey?: string,
 ): ChatEntry[] {
-  const existing = current.find((message) => message.id === assistantMessageId);
+  const existingIndex = findAssistantEntryIndex(current, assistantMessageId, requestKey);
+  const existing = existingIndex >= 0 ? current[existingIndex] : undefined;
   if (!existing) {
     return upsertAssistantMessage(
       current,
@@ -287,15 +292,18 @@ export function appendAssistantDelta(
     return current;
   }
   return current.map((message) =>
-    message.id === assistantMessageId
-      ? applyAssistantEntryPatch(message, {
-          content: mergeAssistantStreamContent(message.content, delta, message.streamSequence, sequence),
-          state: "streaming",
-          requestKey,
-          reasoningSessionId,
-          reasoningState,
-          streamSequence: maxStreamSequence(message.streamSequence, sequence),
-        })
+    message.id === existing.id
+      ? {
+          ...applyAssistantEntryPatch(message, {
+            content: mergeAssistantStreamContent(message.content, delta, message.streamSequence, sequence),
+            state: "streaming",
+            requestKey,
+            reasoningSessionId,
+            reasoningState,
+            streamSequence: maxStreamSequence(message.streamSequence, sequence),
+          }),
+          id: assistantMessageId,
+        }
       : message,
   );
 }
@@ -347,7 +355,8 @@ export function finalizeAssistantMessage(
   reasoningState?: ChatEntry["reasoningState"],
   requestKey?: string,
 ): ChatEntry[] {
-  const existing = current.find((message) => message.id === assistantMessageId);
+  const existingIndex = findAssistantEntryIndex(current, assistantMessageId, requestKey);
+  const existing = existingIndex >= 0 ? current[existingIndex] : undefined;
   if (existing) {
     if (!shouldApplyStreamSequence(existing.streamSequence, sequence)) {
       return current;
@@ -355,16 +364,19 @@ export function finalizeAssistantMessage(
 
     // Preserve other fields (requestMessage, etc).
     return current.map((message) =>
-      message.id === assistantMessageId
-        ? applyAssistantEntryPatch(message, {
-            content,
-            state: undefined,
-            requestKey,
-            knowledgeReferences,
-            reasoningSessionId,
-            reasoningState,
-            streamSequence: maxStreamSequence(message.streamSequence, sequence),
-          })
+      message.id === existing.id
+        ? {
+            ...applyAssistantEntryPatch(message, {
+              content,
+              state: undefined,
+              requestKey,
+              knowledgeReferences,
+              reasoningSessionId,
+              reasoningState,
+              streamSequence: maxStreamSequence(message.streamSequence, sequence),
+            }),
+            id: assistantMessageId,
+          }
         : message,
     );
   }
@@ -392,7 +404,8 @@ export function markAssistantMessageFailed(
   errorMessage?: string,
   requestKey?: string,
 ): ChatEntry[] {
-  const existing = current.find((message) => message.id === assistantMessageId);
+  const existingIndex = findAssistantEntryIndex(current, assistantMessageId, requestKey);
+  const existing = existingIndex >= 0 ? current[existingIndex] : undefined;
   if (!existing) {
     return upsertAssistantMessage(
       current,
@@ -413,17 +426,55 @@ export function markAssistantMessageFailed(
   }
 
   return current.map((message) =>
-    message.id === assistantMessageId
-      ? applyAssistantEntryPatch(message, {
-          state: "failed",
-          errorMessage,
-          requestKey,
-          reasoningSessionId,
-          reasoningState,
-          streamSequence: maxStreamSequence(message.streamSequence, sequence),
-        })
+    message.id === existing.id
+      ? {
+          ...applyAssistantEntryPatch(message, {
+            state: "failed",
+            errorMessage,
+            requestKey,
+            reasoningSessionId,
+            reasoningState,
+            streamSequence: maxStreamSequence(message.streamSequence, sequence),
+          }),
+          id: assistantMessageId,
+        }
       : message,
   );
+}
+
+function findAssistantEntryIndex(
+  current: ChatEntry[],
+  assistantMessageId: string,
+  requestKey?: string,
+  requestMessage?: string,
+): number {
+  const exactIndex = current.findIndex((message) => message.id === assistantMessageId);
+  if (exactIndex >= 0) {
+    return exactIndex;
+  }
+
+  if (requestKey) {
+    const requestKeyIndex = current.findIndex(
+      (message) =>
+        message.role === "assistant" &&
+        message.requestKey === requestKey &&
+        (message.state === "streaming" || message.state === "failed"),
+    );
+    if (requestKeyIndex >= 0) {
+      return requestKeyIndex;
+    }
+  }
+
+  if (requestMessage) {
+    return current.findIndex(
+      (message) =>
+        message.role === "assistant" &&
+        message.requestMessage === requestMessage &&
+        (message.state === "streaming" || message.state === "failed"),
+    );
+  }
+
+  return -1;
 }
 
 export function markAssistantMessageStreaming(current: ChatEntry[], assistantMessageId: string): ChatEntry[] {

@@ -283,6 +283,26 @@ test("renders placeholder copy while waiting for assistant content", () => {
   expect(screen.getByText("小晏正在整理这句话。")).toBeInTheDocument();
 });
 
+test("shows waiting feedback for the latest turn even when older assistant messages already exist", () => {
+  render(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[
+        { id: "user-1", role: "user", content: "第一句" },
+        { id: "assistant-1", role: "assistant", content: "先聊到这里。" },
+        { id: "user-2", role: "user", content: "第二句" },
+      ]}
+      relationship={null}
+      isSending={true}
+      showMemoryContext={new Set()}
+      onToggleMemoryContext={() => {}}
+      onDraftChange={() => {}}
+    />,
+  );
+
+  expect(screen.getByText("小晏正在整理这句话。")).toBeInTheDocument();
+});
+
 test("hides the global loading bubble once assistant text is already visible", () => {
   render(
     <ChatMessages

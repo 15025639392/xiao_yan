@@ -358,6 +358,8 @@ test("streams assistant reply over realtime chat events", async () => {
     expect(screen.getByText("hello xiao yan")).toBeInTheDocument();
   });
 
+  expect(screen.getAllByText("小晏正在整理这句话。").length).toBeGreaterThan(0);
+
   await act(async () => {
     socket.emit({
       type: "chat_started",
@@ -425,6 +427,87 @@ test("streams assistant reply over realtime chat events", async () => {
 
   await waitFor(() => {
     expect(screen.getByText("hello human")).toBeInTheDocument();
+  });
+});
+
+test("shows immediate waiting feedback for a follow-up message before the next reply arrives", async () => {
+  let resolveChatRequest: ((response: Response) => void) | null = null;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return jsonResponse({
+        mode: "awake",
+        focus_mode: "autonomy",
+        current_thought: null,
+        active_goal_ids: [],
+        today_plan: null,
+        last_action: null,
+      });
+    }
+
+    if (url.endsWith("/messages")) {
+      return jsonResponse({
+        messages: [
+          { id: "mem-user-1", role: "user", content: "上一句" },
+          { id: "mem-assistant-1", role: "assistant", content: "上一句我听到了。" },
+        ],
+      });
+    }
+
+    if (url.endsWith("/goals")) {
+      return jsonResponse({ goals: [] });
+    }
+
+    if (url.endsWith("/world")) {
+      return jsonResponse({
+        time_of_day: "morning",
+        energy: "high",
+        mood: "engaged",
+        focus_tension: "low",
+      });
+    }
+
+    if (url.endsWith("/chat")) {
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "这是下一句" });
+      return await new Promise<Response>((resolve) => {
+        resolveChatRequest = resolve;
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  await renderApp();
+
+  await waitFor(() => {
+    expect(screen.getByText("上一句我听到了。")).toBeInTheDocument();
+  });
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "这是下一句" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(screen.getByText("这是下一句")).toBeInTheDocument();
+  });
+
+  expect(screen.getAllByText("小晏正在整理这句话。").length).toBeGreaterThan(0);
+
+  await act(async () => {
+    resolveChatRequest?.(
+      jsonResponse({
+        response_id: "resp_followup_1",
+        assistant_message_id: "assistant_followup_1",
+      }),
+    );
+    await Promise.resolve();
   });
 });
 

@@ -222,6 +222,41 @@ describe("mergeMessages", () => {
 });
 
 describe("finalizeAssistantMessage", () => {
+  it("reuses the optimistic placeholder for chat_started and final content updates", () => {
+    const current: ChatEntry[] = [
+      {
+        id: "assistant-pending:request-1",
+        role: "assistant",
+        content: "",
+        state: "streaming",
+        requestKey: "request-1",
+        requestMessage: "你好",
+      },
+    ];
+
+    const started = appendAssistantDelta(current, "assistant-real-1", "你好", 1, undefined, undefined, "request-1");
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({
+      id: "assistant-real-1",
+      role: "assistant",
+      content: "你好",
+      state: "streaming",
+      requestKey: "request-1",
+      requestMessage: "你好",
+    });
+
+    const finalized = finalizeAssistantMessage(started, "assistant-real-1", "你好，我在。", 2, undefined, undefined, undefined, "request-1");
+    expect(finalized).toHaveLength(1);
+    expect(finalized[0]).toMatchObject({
+      id: "assistant-real-1",
+      role: "assistant",
+      content: "你好，我在。",
+      requestKey: "request-1",
+      requestMessage: "你好",
+    });
+    expect(finalized[0].state).toBeUndefined();
+  });
+
   it("preserves request and reasoning linkage when the first assistant delta creates the bubble", () => {
     const appended = appendAssistantDelta(
       [],

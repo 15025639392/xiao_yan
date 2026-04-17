@@ -30,12 +30,9 @@ export const ChatMessages = memo(function ChatMessages({
   onDraftChange,
 }: ChatMessagesProps) {
   const [showKnowledgeContext, setShowKnowledgeContext] = useState<Set<string>>(new Set());
-  const hasStreamingAssistantPlaceholder = messages.some(
-    (message) => message.role === "assistant" && message.state === "streaming",
-  );
-  const hasVisibleAssistantReply = messages.some(
-    (message) => message.role === "assistant" && message.content.trim().length > 0,
-  );
+  const latestUserIndex = findLatestUserIndex(messages);
+  const hasAssistantAfterLatestUser =
+    latestUserIndex >= 0 && messages.slice(latestUserIndex + 1).some((message) => message.role === "assistant");
 
   function toggleKnowledgeContext(messageId: string) {
     setShowKnowledgeContext((prev) => {
@@ -172,7 +169,7 @@ export const ChatMessages = memo(function ChatMessages({
         })()
       ))}
 
-      {isSending && !hasStreamingAssistantPlaceholder && !hasVisibleAssistantReply ? (
+      {isSending && latestUserIndex >= 0 && !hasAssistantAfterLatestUser ? (
         <article className="chat-message chat-message--loading">
           <div className="chat-message__bubble chat-message__bubble--loading">
             <div className="chat-message__loading-body" aria-live="polite">
@@ -198,4 +195,14 @@ function getChatMessageRenderKey(message: ChatEntry): string {
   }
 
   return `${message.role}:${message.id}`;
+}
+
+function findLatestUserIndex(messages: ChatEntry[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") {
+      return index;
+    }
+  }
+
+  return -1;
 }
