@@ -1,4 +1,4 @@
-import { GoalsPanel } from "../components/GoalsPanel";
+import { GoalsSummaryPanel } from "../components/GoalsSummaryPanel";
 import { StatusPanel } from "../components/StatusPanel";
 import { Panel } from "../components/ui/Panel";
 import { WorldPanel } from "../components/WorldPanel";
@@ -85,7 +85,7 @@ export function OverviewPanel({
       </section>
 
       <section className="mission-board">
-        <GoalsPanel goals={goals} onUpdateGoalStatus={onUpdateGoalStatus} mode="summary" />
+        <GoalsSummaryPanel goals={goals} onUpdateGoalStatus={onUpdateGoalStatus} />
       </section>
     </div>
   );
