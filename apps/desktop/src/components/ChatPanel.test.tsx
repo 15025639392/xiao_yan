@@ -288,7 +288,10 @@ test("sends selected MCP server ids with onSend", async () => {
   fireEvent.click(screen.getByLabelText("MCP Server filesystem"));
   fireEvent.click(screen.getByLabelText("发送"));
 
-  expect(onSend).toHaveBeenCalledWith({ mcpServerIds: ["browser"] });
+  expect(onSend).toHaveBeenCalledWith({
+    mcpServerIds: ["browser"],
+    continuousReasoningEnabled: true,
+  });
 });
 
 test("sends message on Enter key press", () => {

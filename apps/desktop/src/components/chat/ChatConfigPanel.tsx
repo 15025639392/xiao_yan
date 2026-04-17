@@ -34,9 +34,9 @@ type ChatConfigPanelProps = {
 };
 
 const CONTEXT_LIMIT_PRESETS = [
-  { label: "保守 (3)", value: 3 },
-  { label: "默认 (6)", value: 6 },
-  { label: "开放 (10)", value: 10 },
+  { label: "紧凑 (3)", value: 3 },
+  { label: "平衡 (6)", value: 6 },
+  { label: "延续 (10)", value: 10 },
 ];
 
 const READ_TIMEOUT_PRESETS = [
@@ -121,7 +121,8 @@ export function ChatConfigPanel({
     >
       <div className="config-panel__row">
         <RangeSettingField
-          label="聊天上下文限制"
+          label="聊天记忆预算"
+          description="控制近期对话与长期记忆检索的预算，不限制 persona、system、附件或技能说明等其他提示层。"
           min={1}
           max={20}
           value={config.chat_context_limit}
@@ -133,7 +134,8 @@ export function ChatConfigPanel({
         />
 
         <RangeSettingField
-          label="Read 超时 (秒)"
+          label="上游读取超时 (秒)"
+          description="控制与上游聊天模型通信时的读取超时；主要影响流式输出和工具链路等待，不是前端页面等待时间。"
           min={10}
           max={600}
           value={config.chat_read_timeout_seconds}
@@ -241,7 +243,7 @@ export function ChatConfigPanel({
           </label>
         </div>
         <p className="config-panel__description">
-          开启后每轮对话都会携带持续推理参数，并在失败后继续生成时沿用同一推理会话。
+          开启后会为当前回复附带 reasoning session 标记，并在失败后继续生成时沿用同一会话；普通新一轮对话会优先接续最近一次推理会话。
         </p>
         <label className="config-panel__switch-row" htmlFor="chat-config-continuous-reasoning">
           <span>启用持续推理</span>

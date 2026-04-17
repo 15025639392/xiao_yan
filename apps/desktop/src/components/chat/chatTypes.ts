@@ -27,4 +27,5 @@ export type ChatEntry = {
 export type ChatSendOptions = {
   mcpServerIds?: string[];
   continuousReasoningEnabled?: boolean;
+  reasoningSessionId?: string;
 };

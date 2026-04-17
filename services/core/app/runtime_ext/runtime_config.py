@@ -127,6 +127,7 @@ class RuntimeConfig:
         instance._chat_provider = get_chat_provider()
         instance._chat_model = get_chat_model()
         instance._chat_read_timeout_seconds = get_chat_read_timeout_seconds()
+        # Controls the chat-side reasoning session metadata flow, not a provider-native reasoning mode.
         instance._chat_continuous_reasoning_enabled = True
         instance._chat_mcp_enabled = False
         instance._chat_mcp_servers: dict[str, dict[str, Any]] = {}

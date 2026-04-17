@@ -11,6 +11,8 @@ from app.memory.repository import MemoryRepository
 
 
 class ChatReasoningController:
+    """Tracks chat-side reasoning sessions for status continuity and resume flow."""
+
     def __init__(self, *, logger: Logger, recovery_scan_limit: int = 800) -> None:
         self._logger = logger
         self._recovery_scan_limit = recovery_scan_limit

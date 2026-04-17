@@ -357,7 +357,7 @@ def is_morning_plan_llm_enabled() -> bool:
 
 
 def get_chat_context_limit() -> int:
-    """获取聊天上下文轮次基线（会在运行时映射为消息上限和 token 预算）。"""
+    """获取聊天记忆预算基线（会映射为近期对话预算与长期检索命中数）。"""
     load_local_env()
     configured = os.getenv("CHAT_CONTEXT_LIMIT")
     if configured:
@@ -366,7 +366,7 @@ def get_chat_context_limit() -> int:
             return max(1, min(20, value))  # 限制在 1-20 之间
         except ValueError:
             pass
-    return 6  # 默认轮次基线
+    return 6  # 默认聊天记忆预算基线
 
 
 def get_chat_knowledge_extraction_enabled() -> bool:
@@ -375,7 +375,7 @@ def get_chat_knowledge_extraction_enabled() -> bool:
 
 
 def get_chat_read_timeout_seconds() -> int:
-    """获取聊天 read 超时时间（秒）。用于流式输出：只要持续有输出，read 超时会自动刷新。"""
+    """获取上游聊天模型读取超时时间（秒），适用于流式读取与工具链路等待。"""
     load_local_env()
     configured = os.getenv("CHAT_READ_TIMEOUT_SECONDS", "").strip()
     if configured:

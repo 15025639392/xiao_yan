@@ -240,6 +240,8 @@ def _event_timestamp(event: MemoryEvent) -> float:
 
 
 def _split_context_budget(context_limit: int) -> tuple[int, int]:
+    # Keep a single user-facing budget for now, then split it into recent dialogue
+    # continuity and long-term retrieval breadth.
     total = max(1, int(context_limit))
     long_term_hits = max(1, int(round(total * LONG_TERM_CONTEXT_WEIGHT)))
     recent_turn_limit = max(1, int(round(total * RECENT_CONTEXT_WEIGHT)))

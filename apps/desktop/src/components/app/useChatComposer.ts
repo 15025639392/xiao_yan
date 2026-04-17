@@ -60,7 +60,10 @@ function buildChatRequestBody(
     body.skills = selectedSkills;
   }
   if (options?.continuousReasoningEnabled) {
-    body.reasoning = { enabled: true };
+    body.reasoning = {
+      enabled: true,
+      ...(options.reasoningSessionId ? { session_id: options.reasoningSessionId } : {}),
+    };
   }
 
   return body;

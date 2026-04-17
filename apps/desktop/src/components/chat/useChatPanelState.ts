@@ -94,7 +94,7 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     chat_provider: DEFAULT_CHAT_PROVIDER,
     chat_model: DEFAULT_CHAT_MODEL,
     chat_read_timeout_seconds: 180,
-    chat_continuous_reasoning_enabled: false,
+    chat_continuous_reasoning_enabled: true,
     chat_mcp_enabled: false,
     chat_mcp_servers: [],
   });
@@ -247,6 +247,13 @@ export function useChatPanelState({ draft, messages, isSending, onSend }: UseCha
     }
     if (config.chat_continuous_reasoning_enabled) {
       options.continuousReasoningEnabled = true;
+      const latestReasoningSessionId = [...messages]
+        .reverse()
+        .find((message) => message.role === "assistant" && typeof message.reasoningSessionId === "string")
+        ?.reasoningSessionId;
+      if (latestReasoningSessionId) {
+        options.reasoningSessionId = latestReasoningSessionId;
+      }
     }
     return Object.keys(options).length > 0 ? options : undefined;
   }

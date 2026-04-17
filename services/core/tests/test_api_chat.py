@@ -1504,6 +1504,52 @@ def test_post_chat_resume_recovers_reasoning_session_from_persisted_chat_event()
         app.dependency_overrides.clear()
 
 
+def test_post_chat_advances_reasoning_step_index_when_same_session_is_reused():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    try:
+        client = TestClient(app)
+        first = client.post(
+            "/chat",
+            json={
+                "message": "先想第一步",
+                "reasoning": {"enabled": True},
+            },
+        )
+        assert first.status_code == 200
+        first_payload = first.json()
+
+        second = client.post(
+            "/chat",
+            json={
+                "message": "继续推进第二步",
+                "reasoning": {
+                    "enabled": True,
+                    "session_id": first_payload["reasoning_session_id"],
+                },
+            },
+        )
+        assert second.status_code == 200
+        second_payload = second.json()
+        assert second_payload["reasoning_session_id"] == first_payload["reasoning_session_id"]
+        assert second_payload["reasoning_state"]["step_index"] == 2
+        assert second_payload["reasoning_state"]["phase"] == "exploring"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_chat_falls_back_to_plain_stream_when_tools_response_has_empty_output():
     memory_repository = InMemoryMemoryRepository()
     gateway = EmptyToolOutputFallbackGateway()

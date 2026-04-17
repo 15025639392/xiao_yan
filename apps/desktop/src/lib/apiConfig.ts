@@ -157,7 +157,7 @@ function normalizeAppConfig(payload: Partial<AppConfig> | null | undefined): App
     chat_read_timeout_seconds:
       typeof source.chat_read_timeout_seconds === "number" ? source.chat_read_timeout_seconds : 180,
     chat_continuous_reasoning_enabled:
-      typeof source.chat_continuous_reasoning_enabled === "boolean" ? source.chat_continuous_reasoning_enabled : false,
+      typeof source.chat_continuous_reasoning_enabled === "boolean" ? source.chat_continuous_reasoning_enabled : true,
     chat_mcp_enabled: typeof source.chat_mcp_enabled === "boolean" ? source.chat_mcp_enabled : false,
     chat_mcp_servers: normalizedMcpServers,
   };

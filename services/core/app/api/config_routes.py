@@ -23,11 +23,24 @@ from app.runtime_ext.data_backup import (
 from app.runtime_ext.runtime_config import get_runtime_config
 
 class ConfigUpdateRequest(BaseModel):
-    chat_context_limit: int | None = Field(default=None, ge=1, le=20, description="聊天上下文轮次基线（1-20）")
+    chat_context_limit: int | None = Field(
+        default=None,
+        ge=1,
+        le=20,
+        description="聊天记忆预算基线（1-20），会映射为近期对话预算与长期检索命中数",
+    )
     chat_provider: str | None = Field(default=None, min_length=1, description="聊天服务商标识，例如 openai/minimaxi/deepseek")
     chat_model: str | None = Field(default=None, min_length=1, description="聊天模型名称，例如 gpt-5.4")
-    chat_read_timeout_seconds: int | None = Field(default=None, ge=10, le=600, description="聊天 read 超时（秒），默认 180")
-    chat_continuous_reasoning_enabled: bool | None = Field(default=None, description="是否启用 chat 持续推理能力")
+    chat_read_timeout_seconds: int | None = Field(
+        default=None,
+        ge=10,
+        le=600,
+        description="上游聊天模型读取超时（秒），默认 180",
+    )
+    chat_continuous_reasoning_enabled: bool | None = Field(
+        default=None,
+        description="是否启用 chat reasoning session 机制（用于状态追踪与续写衔接）",
+    )
     chat_mcp_enabled: bool | None = Field(default=None, description="是否启用 chat MCP 工具")
     chat_mcp_servers: list[dict[str, object]] | None = Field(default=None, description="chat MCP server 配置列表")
 

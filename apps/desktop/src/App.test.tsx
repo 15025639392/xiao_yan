@@ -767,6 +767,148 @@ test("sends reasoning payload when bootstrap config enables continuous reasoning
   });
 });
 
+test("reuses latest reasoning session id for the next normal chat turn", async () => {
+  let chatCallCount = 0;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+
+    if (url.endsWith("/state")) {
+      return jsonResponse({
+        mode: "awake",
+        current_thought: null,
+        active_goal_ids: [],
+      });
+    }
+
+    if (url.endsWith("/messages")) {
+      return jsonResponse({ messages: [] });
+    }
+
+    if (url.endsWith("/goals")) {
+      return jsonResponse({ goals: [] });
+    }
+
+    if (url.endsWith("/world")) {
+      return jsonResponse({
+        time_of_day: "morning",
+        energy: "high",
+        mood: "engaged",
+        focus_tension: "low",
+      });
+    }
+
+    if (url.endsWith("/config") && method === "GET") {
+      return jsonResponse({
+        chat_context_limit: 6,
+        chat_provider: "openai",
+        chat_model: "gpt-5.4",
+        chat_read_timeout_seconds: 180,
+        chat_continuous_reasoning_enabled: true,
+        chat_mcp_enabled: false,
+        chat_mcp_servers: [],
+      });
+    }
+
+    if (url.endsWith("/chat")) {
+      chatCallCount += 1;
+      expect(init?.method).toBe("POST");
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (chatCallCount === 1) {
+        expect(body).toMatchObject({
+          message: "先继续说",
+          reasoning: { enabled: true },
+        });
+        expect(body.reasoning.session_id).toBeUndefined();
+        return jsonResponse({
+          response_id: "resp_reasoning_turn_1",
+          assistant_message_id: "assistant_reasoning_turn_1",
+        });
+      }
+
+      expect(body).toEqual({
+        message: "再往下接着聊",
+        reasoning: {
+          enabled: true,
+          session_id: "reasoning_turn_shared_1",
+        },
+      });
+      return jsonResponse({
+        response_id: "resp_reasoning_turn_2",
+        assistant_message_id: "assistant_reasoning_turn_2",
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  await renderApp();
+  const socket = await openRealtimeSocket();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "先继续说" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(chatCallCount).toBe(1);
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_started",
+      payload: {
+        assistant_message_id: "assistant_reasoning_turn_1",
+        response_id: "resp_reasoning_turn_1",
+        reasoning_session_id: "reasoning_turn_shared_1",
+        reasoning_state: {
+          session_id: "reasoning_turn_shared_1",
+          phase: "exploring",
+          step_index: 1,
+          summary: "先接住当前线索",
+          updated_at: "2026-04-18T10:00:00Z",
+        },
+      },
+    });
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_completed",
+      payload: {
+        assistant_message_id: "assistant_reasoning_turn_1",
+        response_id: "resp_reasoning_turn_1",
+        content: "我先接住这条线。",
+        reasoning_session_id: "reasoning_turn_shared_1",
+        reasoning_state: {
+          session_id: "reasoning_turn_shared_1",
+          phase: "completed",
+          step_index: 1,
+          summary: "先接住当前线索",
+          updated_at: "2026-04-18T10:00:05Z",
+        },
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("我先接住这条线。")).toBeInTheDocument();
+  });
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "再往下接着聊" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(chatCallCount).toBe(2);
+  });
+});
+
 test("sends toolbox-selected skills in chat request body", async () => {
   localStorage.setItem(CHAT_TOOLBOX_SELECTED_SKILLS_KEY, JSON.stringify(["requirement-workflow", "bugfix-workflow"]));
   let chatRequested = false;

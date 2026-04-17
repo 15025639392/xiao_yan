@@ -156,8 +156,8 @@ class MemPalaceAdapter:
         if not normalized:
             return []
 
-        # Treat limit as a turn baseline instead of a raw event count.
-        # This keeps enough nearby dialogue while bounding prompt growth.
+        # Treat limit as the recent-dialogue share of the overall chat memory budget
+        # instead of a raw event count. This keeps nearby continuity while bounding growth.
         total_turn_limit = max(1, int(limit))
         if recent_weight is None:
             turn_limit = total_turn_limit

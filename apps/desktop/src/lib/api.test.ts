@@ -235,7 +235,7 @@ describe("persona api methods", () => {
 
     expect(updated.chat_context_limit).toBe(8);
     expect(updated.chat_model).toBe("gpt-5.4-mini");
-    expect(updated.chat_continuous_reasoning_enabled).toBe(false);
+    expect(updated.chat_continuous_reasoning_enabled).toBe(true);
     expect(updated.chat_mcp_enabled).toBe(false);
     expect(updated.chat_mcp_servers).toEqual([]);
   });
