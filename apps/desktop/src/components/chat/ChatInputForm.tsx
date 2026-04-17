@@ -1,9 +1,7 @@
 import { useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-import type { ChatMcpServerConfig, RelationshipSummary } from "../../lib/api";
+import type { ChatMcpServerConfig } from "../../lib/api";
 import { Button, Checkbox, Textarea } from "../ui";
-import { ChatResponseGuidance } from "./ChatResponseGuidance";
-import { ChatRelationshipContext } from "./ChatRelationshipContext";
 import { LoadingSpinner, SendIcon } from "./ChatIcons";
 
 type ChatInputFormProps = {
@@ -12,7 +10,6 @@ type ChatInputFormProps = {
   attachedFolders?: string[];
   attachedFiles?: string[];
   attachedImages?: string[];
-  relationship: RelationshipSummary | null;
   textareaRef: RefObject<HTMLTextAreaElement>;
   onDraftChange: (value: string) => void;
   onPickFolder?: () => void;
@@ -38,7 +35,6 @@ export function ChatInputForm({
   attachedFolders = [],
   attachedFiles = [],
   attachedImages = [],
-  relationship,
   textareaRef,
   onDraftChange,
   onPickFolder,
@@ -67,9 +63,6 @@ export function ChatInputForm({
 
   return (
     <div className="chat-page__input-area">
-      <ChatRelationshipContext relationship={relationship} />
-      <ChatResponseGuidance relationship={relationship} />
-
       <form
         className="chat-page__input-form"
         onSubmit={(event) => {

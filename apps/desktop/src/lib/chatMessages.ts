@@ -7,6 +7,12 @@ import {
   findPreviousIncomingUserContent,
   findPreviousIncomingUserRequestKey,
 } from "./chatMessageMatching";
+import {
+  applyAssistantEntryPatch,
+  applyRuntimeMessagePatch,
+  clearRuntimeTransientState,
+  createAssistantEntry,
+} from "./chatMessageMutations";
 
 export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage[]): ChatEntry[] {
   const merged = [...current];
@@ -20,15 +26,16 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
     const exactMatchIndex =
       incomingMessageId == null ? -1 : merged.findIndex((entry) => entry.id === incomingMessageId);
     if (exactMatchIndex >= 0 && incomingMessageId != null) {
-      merged[exactMatchIndex] = reconcileRuntimeMessage({
-        ...merged[exactMatchIndex],
-        id: incomingMessageId,
-        role: message.role,
-        content: message.content,
-        requestKey: message.request_key ?? merged[exactMatchIndex].requestKey,
-        reasoningSessionId: incomingReasoningSessionId ?? merged[exactMatchIndex].reasoningSessionId,
-        reasoningState: incomingReasoningState ?? merged[exactMatchIndex].reasoningState,
-      });
+      merged[exactMatchIndex] = clearRuntimeTransientState(
+        applyRuntimeMessagePatch(merged[exactMatchIndex], {
+          id: incomingMessageId,
+          role: message.role,
+          content: message.content,
+          requestKey: message.request_key ?? undefined,
+          reasoningSessionId: incomingReasoningSessionId,
+          reasoningState: incomingReasoningState,
+        }),
+      );
       matchedIndexes.add(exactMatchIndex);
       return;
     }
@@ -42,15 +49,16 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
     if (sessionMatchIndex >= 0) {
       const currentEntry = merged[sessionMatchIndex];
       const keepStreamingId = currentEntry.state === "streaming" || currentEntry.state === "failed";
-      merged[sessionMatchIndex] = reconcileRuntimeMessage({
-        ...currentEntry,
-        id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
-        role: message.role,
-        content: message.content,
-        requestKey: message.request_key ?? currentEntry.requestKey,
-        reasoningSessionId: incomingReasoningSessionId ?? currentEntry.reasoningSessionId,
-        reasoningState: incomingReasoningState ?? currentEntry.reasoningState,
-      });
+      merged[sessionMatchIndex] = clearRuntimeTransientState(
+        applyRuntimeMessagePatch(currentEntry, {
+          id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
+          role: message.role,
+          content: message.content,
+          requestKey: message.request_key ?? undefined,
+          reasoningSessionId: incomingReasoningSessionId,
+          reasoningState: incomingReasoningState,
+        }),
+      );
       matchedIndexes.add(sessionMatchIndex);
       return;
     }
@@ -62,13 +70,14 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
       message.content,
     );
     if (localUserMatchIndex >= 0) {
-      merged[localUserMatchIndex] = reconcileRuntimeMessage({
-        ...merged[localUserMatchIndex],
-        id: incomingMessageId ?? merged[localUserMatchIndex].id,
-        role: message.role,
-        content: message.content,
-        requestKey: message.request_key ?? merged[localUserMatchIndex].requestKey,
-      });
+      merged[localUserMatchIndex] = clearRuntimeTransientState(
+        applyRuntimeMessagePatch(merged[localUserMatchIndex], {
+          id: incomingMessageId ?? merged[localUserMatchIndex].id,
+          role: message.role,
+          content: message.content,
+          requestKey: message.request_key ?? undefined,
+        }),
+      );
       matchedIndexes.add(localUserMatchIndex);
       return;
     }
@@ -80,15 +89,16 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
         entry.content === message.content,
     );
     if (fallbackMatchIndex >= 0) {
-      merged[fallbackMatchIndex] = reconcileRuntimeMessage({
-        ...merged[fallbackMatchIndex],
-        id: incomingMessageId ?? merged[fallbackMatchIndex].id,
-        role: message.role,
-        content: message.content,
-        requestKey: message.request_key ?? merged[fallbackMatchIndex].requestKey,
-        reasoningSessionId: incomingReasoningSessionId ?? merged[fallbackMatchIndex].reasoningSessionId,
-        reasoningState: incomingReasoningState ?? merged[fallbackMatchIndex].reasoningState,
-      });
+      merged[fallbackMatchIndex] = clearRuntimeTransientState(
+        applyRuntimeMessagePatch(merged[fallbackMatchIndex], {
+          id: incomingMessageId ?? merged[fallbackMatchIndex].id,
+          role: message.role,
+          content: message.content,
+          requestKey: message.request_key ?? undefined,
+          reasoningSessionId: incomingReasoningSessionId,
+          reasoningState: incomingReasoningState,
+        }),
+      );
       matchedIndexes.add(fallbackMatchIndex);
       return;
     }
@@ -105,55 +115,41 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
     if (inFlightMatchIndex >= 0) {
       const currentEntry = merged[inFlightMatchIndex];
       const keepStreamingId = currentEntry.state === "streaming" || currentEntry.state === "failed";
-      merged[inFlightMatchIndex] = reconcileRuntimeMessage({
-        ...currentEntry,
-        id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
-        role: message.role,
-        content: message.content,
-        requestKey: message.request_key ?? currentEntry.requestKey,
-        reasoningSessionId: incomingReasoningSessionId ?? currentEntry.reasoningSessionId,
-        reasoningState: incomingReasoningState ?? currentEntry.reasoningState,
-      });
+      merged[inFlightMatchIndex] = clearRuntimeTransientState(
+        applyRuntimeMessagePatch(currentEntry, {
+          id: keepStreamingId ? currentEntry.id : incomingMessageId ?? currentEntry.id,
+          role: message.role,
+          content: message.content,
+          requestKey: message.request_key ?? undefined,
+          reasoningSessionId: incomingReasoningSessionId,
+          reasoningState: incomingReasoningState,
+        }),
+      );
       matchedIndexes.add(inFlightMatchIndex);
       return;
     }
 
-    merged.push({
-      id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
-      role: message.role,
-      content: message.content,
-      requestKey: message.request_key ?? undefined,
-      reasoningSessionId: incomingReasoningSessionId,
-      reasoningState: incomingReasoningState,
-    });
+    merged.push(
+      applyRuntimeMessagePatch(
+        {
+          id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
+          role: message.role,
+          content: message.content,
+        },
+        {
+          id: incomingMessageId ?? `${message.role}-${merged.length}-${message.content}`,
+          role: message.role,
+          content: message.content,
+          requestKey: message.request_key ?? undefined,
+          reasoningSessionId: incomingReasoningSessionId,
+          reasoningState: incomingReasoningState,
+        },
+      ),
+    );
     matchedIndexes.add(merged.length - 1);
   });
 
   return merged;
-}
-
-function reconcileRuntimeMessage(entry: ChatEntry): ChatEntry {
-  if (entry.role === "user") {
-    if (entry.state !== "failed" && entry.errorMessage == null) {
-      return entry;
-    }
-
-    return {
-      ...entry,
-      state: undefined,
-      errorMessage: undefined,
-    };
-  }
-
-  if (entry.state !== "streaming" && entry.state !== "failed" && entry.errorMessage == null) {
-    return entry;
-  }
-
-  return {
-    ...entry,
-    state: undefined,
-    errorMessage: undefined,
-  };
 }
 
 function resolveIncomingReasoningSessionId(message: ChatHistoryMessage): string | undefined {
@@ -195,27 +191,23 @@ export function upsertAssistantMessage(
   if (existing) {
     return current.map((message) =>
       message.id === assistantMessageId
-        ? {
-            ...message,
-            content: content || message.content,
+        ? applyAssistantEntryPatch(message, {
+            content,
             state,
-            requestKey: requestKey ?? message.requestKey,
-            requestMessage: requestMessage ?? message.requestMessage,
-            knowledgeReferences: knowledgeReferences ?? message.knowledgeReferences,
-            reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
-            reasoningState: reasoningState ?? message.reasoningState,
+            requestKey,
+            requestMessage,
+            knowledgeReferences,
+            reasoningSessionId,
+            reasoningState,
             streamSequence: maxStreamSequence(message.streamSequence, sequence),
-          }
+          })
         : message,
     );
   }
 
   return [
     ...current,
-    {
-      id: assistantMessageId,
-      role: "assistant",
-      content,
+    createAssistantEntry(assistantMessageId, content, {
       state,
       requestKey,
       requestMessage,
@@ -223,7 +215,7 @@ export function upsertAssistantMessage(
       reasoningSessionId,
       reasoningState,
       streamSequence: sequence,
-    },
+    }),
   ];
 }
 
@@ -257,15 +249,14 @@ export function appendAssistantDelta(
   }
   return current.map((message) =>
     message.id === assistantMessageId
-      ? {
-          ...message,
+      ? applyAssistantEntryPatch(message, {
           content: mergeAssistantStreamContent(message.content, delta, message.streamSequence, sequence),
           state: "streaming",
-          requestKey: requestKey ?? message.requestKey,
-          reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
-          reasoningState: reasoningState ?? message.reasoningState,
+          requestKey,
+          reasoningSessionId,
+          reasoningState,
           streamSequence: maxStreamSequence(message.streamSequence, sequence),
-        }
+        })
       : message,
   );
 }
@@ -326,16 +317,15 @@ export function finalizeAssistantMessage(
     // Preserve other fields (requestMessage, etc).
     return current.map((message) =>
       message.id === assistantMessageId
-        ? {
-            ...message,
-            content: content || message.content,
+        ? applyAssistantEntryPatch(message, {
+            content,
             state: undefined,
-            requestKey: requestKey ?? message.requestKey,
-            knowledgeReferences: knowledgeReferences ?? message.knowledgeReferences,
-            reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
-            reasoningState: reasoningState ?? message.reasoningState,
+            requestKey,
+            knowledgeReferences,
+            reasoningSessionId,
+            reasoningState,
             streamSequence: maxStreamSequence(message.streamSequence, sequence),
-          }
+          })
         : message,
     );
   }
@@ -385,15 +375,14 @@ export function markAssistantMessageFailed(
 
   return current.map((message) =>
     message.id === assistantMessageId
-        ? {
-          ...message,
+      ? applyAssistantEntryPatch(message, {
           state: "failed",
-          errorMessage: errorMessage ?? message.errorMessage,
-          requestKey: requestKey ?? message.requestKey,
-          reasoningSessionId: reasoningSessionId ?? message.reasoningSessionId,
-          reasoningState: reasoningState ?? message.reasoningState,
+          errorMessage,
+          requestKey,
+          reasoningSessionId,
+          reasoningState,
           streamSequence: maxStreamSequence(message.streamSequence, sequence),
-        }
+        })
       : message,
   );
 }

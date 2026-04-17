@@ -1,11 +1,11 @@
-import { memo, useMemo } from "react";
+import { memo, useState } from "react";
 import type { RelationshipSummary } from "../../lib/api";
 import { MarkdownMessage } from "../MarkdownMessage";
 import { Button } from "../ui";
-import { getAssistantStatus, getUserFailedStatus } from "./chatMessagePresentation";
+import { getChatMessageDisplayState } from "./chatMessagePresentation";
 import type { ChatEntry } from "./chatTypes";
+import { ChatKnowledgeContext } from "./ChatKnowledgeContext";
 import { ChatMemoryContext } from "./ChatMemoryContext";
-import { ChatMessageResponseReference } from "./ChatMessageResponseReference";
 
 type ChatMessagesProps = {
   assistantName: string;
@@ -22,7 +22,6 @@ type ChatMessagesProps = {
 export const ChatMessages = memo(function ChatMessages({
   assistantName,
   messages,
-  relationship,
   isSending,
   showMemoryContext,
   onToggleMemoryContext,
@@ -30,13 +29,19 @@ export const ChatMessages = memo(function ChatMessages({
   onRetry,
   onDraftChange,
 }: ChatMessagesProps) {
-  const latestAssistantMessageId = useMemo(
-    () =>
-      [...messages]
-        .reverse()
-        .find((message) => message.role === "assistant" && message.state !== "failed")?.id,
-    [messages],
-  );
+  const [showKnowledgeContext, setShowKnowledgeContext] = useState<Set<string>>(new Set());
+
+  function toggleKnowledgeContext(messageId: string) {
+    setShowKnowledgeContext((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }
 
   if (messages.length === 0) {
     return (
@@ -69,20 +74,24 @@ export const ChatMessages = memo(function ChatMessages({
   return (
     <>
       {messages.map((message) => (
-        <article
-          key={message.id}
-          className={`chat-message chat-message--${message.role} ${message.state === "failed" ? "chat-message--failed" : ""}`}
-        >
-          <div className="chat-message__bubble">
-            {message.role === "assistant" ? (
-              <>
-                {message.content ? (
+        (() => {
+          const display = getChatMessageDisplayState(message, assistantName);
+
+          return (
+            <article
+              key={message.id}
+              className={`chat-message chat-message--${message.role} ${message.state === "failed" ? "chat-message--failed" : ""}`}
+            >
+              <div className="chat-message__bubble">
+                {display.bodyMode === "markdown" ? (
                   <div className="chat-message__markdown">
                     <MarkdownMessage
                       content={message.state === "streaming" ? `${message.content}▍` : message.content}
                     />
                   </div>
-                ) : message.state === "streaming" ? (
+                ) : null}
+
+                {display.bodyMode === "streaming-placeholder" ? (
                   <div className="chat-message__streaming-placeholder" aria-live="polite">
                     <div className="chat-message__dots" aria-hidden="true">
                       <span />
@@ -93,100 +102,67 @@ export const ChatMessages = memo(function ChatMessages({
                   </div>
                 ) : null}
 
-                {(() => {
-                  const assistantStatus = getAssistantStatus(message, assistantName);
-                  if (!assistantStatus) {
-                    return null;
-                  }
+                {display.bodyMode === "plain-text" ? (
+                  <p className="chat-message__content">{message.content}</p>
+                ) : null}
 
-                  return (
-                    <div
-                      className={`chat-message__status chat-message__status--${assistantStatus.tone}`}
-                      aria-live="polite"
-                    >
-                      <span className="chat-message__status-dot" aria-hidden="true" />
-                      <span>{assistantStatus.text}</span>
-                    </div>
-                  );
-                })()}
-              </>
-            ) : (
-              <p className="chat-message__content">{message.content}</p>
-            )}
+                {display.status ? (
+                  <div
+                    className={`chat-message__status chat-message__status--${display.status.tone}`}
+                    aria-live="polite"
+                  >
+                    <span className="chat-message__status-dot" aria-hidden="true" />
+                    <span>{display.status.text}</span>
+                  </div>
+                ) : null}
 
-            {message.role === "assistant" && message.id === latestAssistantMessageId ? (
-              <ChatMessageResponseReference relationship={relationship} />
-            ) : null}
-
-            {message.role === "assistant" &&
-            message.knowledgeReferences &&
-            message.knowledgeReferences.length > 0 ? (
-              <div className="chat-message__knowledge-references" aria-label="知识来源">
-                <span className="chat-message__knowledge-title">知识来源</span>
-                <ul className="chat-message__knowledge-list">
-                  {message.knowledgeReferences.map((reference, index) => (
-                    <li
-                      key={`${message.id}-knowledge-reference-${index}`}
-                      className="chat-message__knowledge-item"
-                    >
-                      <div className="chat-message__knowledge-head">
-                        <span className="chat-message__knowledge-source">{reference.source}</span>
-                        {typeof reference.similarity === "number" ? (
-                          <span className="chat-message__knowledge-score">
-                            相似度 {reference.similarity.toFixed(2)}
-                          </span>
-                        ) : null}
-                      </div>
-                      <span className="chat-message__knowledge-excerpt">{reference.excerpt}</span>
-                    </li>
-                  ))}
-                </ul>
+                {display.showKnowledgeContext ? (
+              <ChatKnowledgeContext
+                references={message.knowledgeReferences ?? []}
+                isExpanded={showKnowledgeContext.has(message.id)}
+                onToggle={() => toggleKnowledgeContext(message.id)}
+              />
+                ) : null}
               </div>
-            ) : null}
-          </div>
 
-          {message.role === "assistant" &&
-          message.relatedMemories &&
-          message.relatedMemories.length > 0 ? (
-            <ChatMemoryContext
-              memories={message.relatedMemories}
-              isExpanded={showMemoryContext.has(message.id)}
-              onToggle={() => onToggleMemoryContext(message.id)}
-            />
-          ) : null}
+              {display.showMemoryContext ? (
+                <ChatMemoryContext
+                  memories={message.relatedMemories ?? []}
+                  isExpanded={showMemoryContext.has(message.id)}
+                  onToggle={() => onToggleMemoryContext(message.id)}
+                />
+              ) : null}
 
-          {message.role === "assistant" && message.state === "failed" && message.requestMessage ? (
-            <div className="chat-message__actions">
-              <Button
-                className="chat-page__action-btn"
-                variant="secondary"
-                onClick={() => onResume?.(message)}
-                type="button"
-                disabled={isSending}
-              >
-                接着说完
-              </Button>
-            </div>
-          ) : null}
+              {display.showResumeAction ? (
+                <div className="chat-message__actions">
+                  <Button
+                    className="chat-page__action-btn"
+                    variant="secondary"
+                    onClick={() => onResume?.(message)}
+                    type="button"
+                    disabled={isSending}
+                  >
+                    接着说完
+                  </Button>
+                </div>
+              ) : null}
 
-          {message.role === "user" && message.state === "failed" ? (
-            <div className="chat-message__actions">
-              <div className="chat-message__status chat-message__status--failed" aria-live="polite">
-                <span className="chat-message__status-dot" aria-hidden="true" />
-                <span>{getUserFailedStatus(message, assistantName).text}</span>
-              </div>
-              <Button
-                className="chat-page__action-btn"
-                variant="secondary"
-                onClick={() => onRetry?.(message)}
-                type="button"
-                disabled={isSending}
-              >
-                重新发送
-              </Button>
-            </div>
-          ) : null}
-        </article>
+              {display.showRetryAction ? (
+                <div className="chat-message__actions">
+                  <Button
+                    className="chat-page__action-btn"
+                    variant="secondary"
+                    onClick={() => onRetry?.(message)}
+                    type="button"
+                    disabled={isSending}
+                  >
+                    重新发送
+                  </Button>
+                </div>
+              ) : null}
+            </article>
+          );
+        })()
       ))}
 
       {isSending && !messages.some((message) => message.role === "assistant" && message.state === "streaming") ? (

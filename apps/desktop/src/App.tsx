@@ -3,9 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatEntry, ChatSendOptions } from "./components/ChatPanel";
 import { AboutDialog } from "./components/app/AboutDialog";
 import { AppMainContent } from "./components/app/AppMainContent";
+import { applyChatRealtimeEvent } from "./components/app/chatRealtimeUpdates";
 import { AppSidebar } from "./components/app/AppSidebar";
 import type { PendingChatRequest } from "./components/app/chatRequestKey";
 import { syncMessagesFromRuntime } from "./components/app/chatRuntimeMessages";
+import { applyRuntimeRealtimeEvent, getRuntimeRealtimePayload } from "./components/app/runtimeRealtimeUpdates";
 import { useAppChrome } from "./components/app/useAppChrome";
 import { useChatAttachments } from "./components/app/useChatAttachments";
 import { useChatComposer } from "./components/app/useChatComposer";
@@ -29,12 +31,6 @@ import {
 } from "./lib/api";
 import { subscribeAppRealtime } from "./lib/realtime";
 import { startCapabilityWorker } from "./lib/capabilities/worker";
-import {
-  appendAssistantDelta,
-  finalizeAssistantMessage,
-  markAssistantMessageFailed,
-  upsertAssistantMessage,
-} from "./lib/chatMessages";
 import {
   buildFolderPermissionPlan,
   loadImportedProjectRegistry,
@@ -190,86 +186,34 @@ export default function App() {
         return;
       }
 
-      if (event.type === "chat_started") {
+      if (
+        event.type === "chat_started" ||
+        event.type === "chat_delta" ||
+        event.type === "chat_completed" ||
+        event.type === "chat_failed"
+      ) {
         const pendingRequest = pendingRequestMessageRef.current;
-        setMessages((current) =>
-          upsertAssistantMessage(
-            current,
-            event.payload.assistant_message_id,
-            "",
-            "streaming",
-            pendingRequest?.message,
-            event.payload.sequence,
-            undefined,
-            event.payload.reasoning_session_id,
-            event.payload.reasoning_state,
-            event.payload.request_key ?? pendingRequest?.requestKey,
-          )
-        );
-        pendingRequestMessageRef.current = null;
-        setError("");
-        return;
-      }
-
-      if (event.type === "chat_delta") {
         setMessages((current) => {
-          const updated = appendAssistantDelta(
-            current,
-            event.payload.assistant_message_id,
-            event.payload.delta,
-            event.payload.sequence,
-            event.payload.reasoning_session_id,
-            event.payload.reasoning_state,
-            event.payload.request_key,
-          );
-          return updated;
+          const nextChatUpdate = applyChatRealtimeEvent(current, event, pendingRequest);
+          return nextChatUpdate?.messages ?? current;
         });
-        setError("");
+        if (event.type === "chat_started") {
+          pendingRequestMessageRef.current = null;
+        }
+        setError(event.type === "chat_failed" ? event.payload.error : "");
         return;
       }
 
-      if (event.type === "chat_completed") {
-        setMessages((current) => {
-          const updated = finalizeAssistantMessage(
-            current,
-            event.payload.assistant_message_id,
-            event.payload.content,
-            event.payload.sequence,
-            event.payload.knowledge_references,
-            event.payload.reasoning_session_id,
-            event.payload.reasoning_state,
-            event.payload.request_key,
-          );
-          return updated;
-        });
-        setError("");
-        return;
-      }
-
-      if (event.type === "chat_failed") {
-        setMessages((current) =>
-          markAssistantMessageFailed(
-            current,
-            event.payload.assistant_message_id,
-            event.payload.sequence,
-            event.payload.reasoning_session_id,
-            event.payload.reasoning_state,
-            event.payload.error,
-            event.payload.request_key,
-          )
-        );
-        setError(event.payload.error);
-        return;
-      }
-
-      const runtimePayload =
-        event.type === "snapshot" ? event.payload.runtime : event.type === "runtime_updated" ? event.payload : null;
+      const runtimePayload = getRuntimeRealtimePayload(event);
       if (!runtimePayload) {
         return;
       }
 
       setState(runtimePayload.state);
-      setMessages((current) => syncMessagesFromRuntime(current, runtimePayload.messages));
+      setMessages((current) => {
+        const nextRuntimeUpdate = applyRuntimeRealtimeEvent(current, event);
+        return nextRuntimeUpdate?.messages ?? current;
+      });
       setGoals(runtimePayload.goals);
       setWorld(runtimePayload.world);
       if (runtimePayload.mac_console_status !== undefined) {

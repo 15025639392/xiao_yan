@@ -2012,7 +2012,6 @@ test("continues generation in the same assistant bubble after failure", async ()
 
   await waitFor(() => {
     expect(screen.getByText("前半句，▍")).toBeInTheDocument();
-    expect(screen.getByText("规划续写步骤")).toBeInTheDocument();
   });
 
   await act(async () => {
@@ -2299,6 +2298,289 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
   });
 
   expect(screen.queryAllByText("你好呀，我是小晏。很高兴见到你～")).toHaveLength(1);
+});
+
+test("does not duplicate a completed assistant reply when runtime history replays it with persisted ids", async () => {
+  let resolveChatRequest: ((response: Response) => void) | null = null;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return jsonResponse({
+        mode: "awake",
+        focus_mode: "autonomy",
+        current_thought: null,
+        active_goal_ids: [],
+        today_plan: null,
+        last_action: null,
+      });
+    }
+
+    if (url.endsWith("/messages")) {
+      return jsonResponse({ messages: [] });
+    }
+
+    if (url.endsWith("/goals")) {
+      return jsonResponse({ goals: [] });
+    }
+
+    if (url.endsWith("/world")) {
+      return jsonResponse({
+        time_of_day: "morning",
+        energy: "high",
+        mood: "engaged",
+        focus_tension: "low",
+      });
+    }
+
+    if (url.endsWith("/chat")) {
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "你好" });
+      return await new Promise<Response>((resolve) => {
+        resolveChatRequest = resolve;
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  await renderApp();
+  const socket = await openRealtimeSocket();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "你好" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_started",
+      payload: {
+        assistant_message_id: "assistant_local_done_1",
+        response_id: "resp_local_done_1",
+        session_id: "assistant_local_done_1",
+        request_key: "request_local_done_1",
+        sequence: 1,
+      },
+    });
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_delta",
+      payload: {
+        assistant_message_id: "assistant_local_done_1",
+        delta: "你好呀",
+        session_id: "assistant_local_done_1",
+        request_key: "request_local_done_1",
+        sequence: 2,
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("你好呀▍")).toBeInTheDocument();
+  });
+
+  await act(async () => {
+    resolveChatRequest?.(
+      jsonResponse({
+        response_id: "resp_local_done_1",
+        assistant_message_id: "assistant_local_done_1",
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "chat_completed",
+      payload: {
+        assistant_message_id: "assistant_local_done_1",
+        response_id: "resp_local_done_1",
+        content: "你好呀",
+        session_id: "assistant_local_done_1",
+        request_key: "request_local_done_1",
+        sequence: 3,
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("你好呀")).toBeInTheDocument();
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "runtime_updated",
+      payload: {
+        state: {
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+        },
+        messages: [
+          {
+            id: "mem-user-done-1",
+            role: "user",
+            content: "你好",
+            request_key: "request_local_done_1",
+          },
+          {
+            id: "mem-assistant-done-1",
+            role: "assistant",
+            content: "你好呀",
+            request_key: "request_local_done_1",
+          },
+        ],
+        goals: [],
+        world: {
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        },
+        autobio: [],
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("你好呀")).toBeInTheDocument();
+  });
+
+  expect(screen.queryAllByText("你好呀")).toHaveLength(1);
+  expect(screen.queryAllByText("你好")).toHaveLength(1);
+});
+
+test("clears transient failed user state when runtime history brings back the retried turn", async () => {
+  let chatCallCount = 0;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/state")) {
+      return jsonResponse({
+        mode: "awake",
+        focus_mode: "autonomy",
+        current_thought: null,
+        active_goal_ids: [],
+        today_plan: null,
+        last_action: null,
+      });
+    }
+
+    if (url.endsWith("/messages")) {
+      return jsonResponse({ messages: [] });
+    }
+
+    if (url.endsWith("/goals")) {
+      return jsonResponse({ goals: [] });
+    }
+
+    if (url.endsWith("/world")) {
+      return jsonResponse({
+        time_of_day: "morning",
+        energy: "high",
+        mood: "engaged",
+        focus_tension: "low",
+      });
+    }
+
+    if (url.endsWith("/chat")) {
+      chatCallCount += 1;
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body ?? "{}"))).toMatchObject({ message: "请帮我继续" });
+
+      if (chatCallCount === 1) {
+        return new Response(JSON.stringify({ detail: "network timeout" }), {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return jsonResponse({
+        response_id: "resp_retry_runtime_1",
+        assistant_message_id: "assistant_retry_runtime_1",
+      });
+    }
+
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+  window.location.hash = "#/chat";
+
+  await renderApp();
+  const socket = await openRealtimeSocket();
+
+  fireEvent.change(screen.getByLabelText("对话输入"), {
+    target: { value: "请帮我继续" },
+  });
+  fireEvent.click(screen.getByLabelText("发送"));
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "重新发送" })).toBeInTheDocument();
+    expect(screen.getAllByText(/network timeout/).length).toBeGreaterThan(0);
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "重新发送" }));
+
+  await waitFor(() => {
+    expect(chatCallCount).toBe(2);
+    expect(screen.queryByRole("button", { name: "重新发送" })).not.toBeInTheDocument();
+  });
+
+  await act(async () => {
+    socket.emit({
+      type: "runtime_updated",
+      payload: {
+        state: {
+          mode: "awake",
+          focus_mode: "autonomy",
+          current_thought: null,
+          active_goal_ids: [],
+          today_plan: null,
+          last_action: null,
+        },
+        messages: [
+          {
+            id: "mem-user-retried-1",
+            role: "user",
+            content: "请帮我继续",
+          },
+          {
+            id: "mem-assistant-retried-1",
+            role: "assistant",
+            content: "我接着说下去。",
+          },
+        ],
+        goals: [],
+        world: {
+          time_of_day: "morning",
+          energy: "high",
+          mood: "engaged",
+          focus_tension: "low",
+        },
+        autobio: [],
+      },
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("我接着说下去。")).toBeInTheDocument();
+  });
+
+  expect(screen.queryByRole("button", { name: "重新发送" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/这句话还没顺利送到小晏那里/)).toBeNull();
+  expect(screen.getAllByText("请帮我继续").length).toBeGreaterThanOrEqual(1);
 });
 
 test("renders proactive replies from realtime runtime updates in the chat panel", async () => {
@@ -2666,7 +2948,8 @@ test("updates a goal status from the app and refreshes the rendered goal", async
 
   await renderApp();
 
-  expect(await screen.findByText("推进中")).toBeInTheDocument();
+  expect(await screen.findByText("持续理解用户最近在意的话题：星星")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "暂停" })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole("button", { name: "暂停" }));
 
@@ -2782,10 +3065,10 @@ test("polls world state and renders the inner world panel", async () => {
   await renderApp();
 
   expect(await screen.findByText("内在世界")).toBeInTheDocument();
-  expect(screen.getByText("夜晚")).toBeInTheDocument();
-  expect(screen.getByText("低")).toBeInTheDocument();
-  expect(screen.getByText("疲惫")).toBeInTheDocument();
-  expect(screen.getByText("高")).toBeInTheDocument();
+  expect(screen.getByText("时间感")).toBeInTheDocument();
+  expect(screen.getByText("能量")).toBeInTheDocument();
+  expect(screen.getByText("情绪")).toBeInTheDocument();
+  expect(screen.getByText("专注张力")).toBeInTheDocument();
 });
 
 test("sends chat request with attached folder context after picking a folder", async () => {

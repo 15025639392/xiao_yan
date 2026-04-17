@@ -155,7 +155,6 @@ export function ChatPanel({
         attachedFolders={attachedFolders}
         attachedFiles={attachedFiles}
         attachedImages={attachedImages}
-        relationship={relationship}
         textareaRef={textareaRef}
         onDraftChange={onDraftChange}
         onPickFolder={onPickFolder}

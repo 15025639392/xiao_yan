@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 
 const { markdownRenderSpy } = vi.hoisted(() => ({
@@ -13,19 +13,19 @@ vi.mock("../MarkdownMessage", () => ({
 }));
 
 import { ChatMessages } from "./ChatMessages";
+import { getChatMessageDisplayState } from "./chatMessagePresentation";
 
 beforeEach(() => {
   markdownRenderSpy.mockClear();
 });
 
-test("shows response reference only on the latest assistant message", () => {
-  const { container } = render(
+test("does not render relationship reference inside assistant messages", () => {
+  render(
     <ChatMessages
       assistantName="小晏"
       messages={[
         { id: "user-1", role: "user", content: "你好" },
         { id: "assistant-1", role: "assistant", content: "我在听。" },
-        { id: "assistant-2", role: "assistant", content: "我更想先把真实判断告诉你。" },
       ]}
       relationship={{
         available: true,
@@ -40,12 +40,7 @@ test("shows response reference only on the latest assistant message", () => {
     />,
   );
 
-  expect(screen.getAllByText("本次回应参考")).toHaveLength(1);
-
-  const assistantMessages = container.querySelectorAll(".chat-message--assistant");
-  expect(assistantMessages).toHaveLength(2);
-  expect(within(assistantMessages[0] as HTMLElement).queryByText("本次回应参考")).toBeNull();
-  expect(within(assistantMessages[1] as HTMLElement).getByText("本次回应参考")).toBeInTheDocument();
+  expect(screen.queryByText("本次回应参考")).toBeNull();
 });
 
 test("shows retry action for failed user message", () => {
@@ -143,13 +138,17 @@ test("renders knowledge references for assistant messages", () => {
     />,
   );
 
+  expect(screen.getByRole("button", { name: "回复来源 (1)" })).toBeInTheDocument();
+  expect(screen.queryByText("知识来源")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "回复来源 (1)" }));
   expect(screen.getByText("知识来源")).toBeInTheDocument();
   expect(screen.getByText("wing_xiaoyan/knowledge")).toBeInTheDocument();
   expect(screen.getByText("相似度 0.88")).toBeInTheDocument();
   expect(screen.getByText("你喜欢结构化输出。")).toBeInTheDocument();
 });
 
-test("renders natural streaming status for assistant reasoning", () => {
+test("keeps streaming reasoning copy out of the way once assistant text is visible", () => {
   render(
     <ChatMessages
       assistantName="小晏"
@@ -158,6 +157,41 @@ test("renders natural streaming status for assistant reasoning", () => {
           id: "assistant-1",
           role: "assistant",
           content: "我先继续推理。",
+          state: "streaming",
+          reasoningSessionId: "reasoning_1",
+          reasoningState: {
+            session_id: "reasoning_1",
+            phase: "exploring",
+            step_index: 3,
+            summary: "先收敛约束，再确认可行路径。",
+            updated_at: "2026-04-16T10:00:00+00:00",
+          },
+        },
+      ]}
+      relationship={null}
+      isSending={false}
+      showMemoryContext={new Set()}
+      onToggleMemoryContext={() => {}}
+      onDraftChange={() => {}}
+    />,
+  );
+
+  expect(screen.queryByText("先收敛约束，再确认可行路径。")).toBeNull();
+  expect(screen.getByText("我先继续推理。▍")).toBeInTheDocument();
+  expect(screen.queryByText("持续推理")).toBeNull();
+  expect(screen.queryByText("步骤 3")).toBeNull();
+  expect(screen.queryByText("阶段 exploring")).toBeNull();
+});
+
+test("renders natural streaming status while waiting for assistant text", () => {
+  render(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "",
           state: "streaming",
           reasoningSessionId: "reasoning_1",
           reasoningState: {
@@ -227,4 +261,73 @@ test("shows resume copy for failed assistant message", () => {
   expect(screen.getByText("小晏刚才停下来了：连接暂时断开了")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "接着说完" }));
   expect(onResume).toHaveBeenCalledTimes(1);
+});
+
+test("derives assistant display state from message fields in one place", () => {
+  expect(
+    getChatMessageDisplayState(
+      {
+        id: "assistant-streaming",
+        role: "assistant",
+        content: "",
+        state: "streaming",
+        reasoningState: {
+          session_id: "reasoning_1",
+          phase: "exploring",
+          step_index: 1,
+          summary: "我先把线索理顺。",
+          updated_at: "2026-04-18T00:00:00Z",
+        },
+        knowledgeReferences: [
+          {
+            source: "wing_xiaoyan/knowledge",
+            wing: "wing_xiaoyan",
+            room: "knowledge",
+            similarity: 0.9,
+            excerpt: "记住用户喜欢结构化回答。",
+          },
+        ],
+        relatedMemories: [
+          {
+            id: "memory-1",
+            kind: "conversation",
+            content: "用户偏好先给结论。",
+            strength: "medium",
+            starred: false,
+            created_at: "2026-04-17T00:00:00Z",
+          },
+        ],
+      },
+      "小晏",
+    ),
+  ).toMatchObject({
+    bodyMode: "streaming-placeholder",
+    status: { text: "我先把线索理顺。", tone: "muted" },
+    showKnowledgeContext: true,
+    showMemoryContext: true,
+    showResumeAction: false,
+    showRetryAction: false,
+  });
+});
+
+test("derives failed user display state without assistant-only affordances", () => {
+  expect(
+    getChatMessageDisplayState(
+      {
+        id: "user-failed",
+        role: "user",
+        content: "帮我记一下",
+        state: "failed",
+        errorMessage: "network timeout",
+      },
+      "小晏",
+    ),
+  ).toMatchObject({
+    bodyMode: "plain-text",
+    status: { text: "这句话还没顺利送到小晏那里：network timeout", tone: "failed" },
+    showKnowledgeContext: false,
+    showMemoryContext: false,
+    showResumeAction: false,
+    showRetryAction: true,
+  });
 });

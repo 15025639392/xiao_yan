@@ -134,6 +134,47 @@
   border-top: 1px dashed var(--border-subtle);
 }
 
+.chat-message__knowledge-context {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-2);
+}
+
+.chat-message__knowledge-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.chat-message__knowledge-toggle:hover {
+  color: var(--text-primary);
+}
+
+.chat-message__knowledge-icon {
+  font-size: 0.875rem;
+}
+
+.chat-message__knowledge-label {
+  font-size: 0.8125rem;
+}
+
+.chat-message__knowledge-chevron {
+  margin-left: auto;
+  font-size: 0.75rem;
+  transition: transform var(--transition-fast);
+}
+
+.chat-message__knowledge-chevron--expanded {
+  transform: rotate(180deg);
+}
+
 .chat-message__knowledge-title {
   display: block;
   color: var(--text-tertiary);

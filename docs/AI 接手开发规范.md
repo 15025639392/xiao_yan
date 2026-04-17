@@ -258,6 +258,31 @@ AI 默认不应提交以下实现，除非已明确验证成本可接受：
 - 能复用一次查询结果时，不重复查询。
 - 能增量更新时，不全量重建。
 - 能在边界处做一次数据转换时，不在链路中间重复转换。
+
+## 六、桌面聊天消息字段准入约束
+
+适用范围：
+
+- `apps/desktop/src/components/chat/chatTypes.ts`
+- `apps/desktop/src/lib/chatMessages.ts`
+- `apps/desktop/src/components/chat/ChatMessages.tsx`
+- `apps/desktop/src/components/app/chatRealtimeUpdates.ts`
+- `apps/desktop/src/components/app/runtimeRealtimeUpdates.ts`
+
+默认约束：
+
+- `ChatEntry` 只应用来承载“当前聊天区里一条可阅读、可恢复、可对齐的消息”，不应演变成通用事件容器。
+- 新字段只有在直接服务消息阅读连续性、恢复连续性或本地/运行时对齐时，才允许进入 `ChatEntry`。
+- 任何 transport/debug/telemetry/tool trace/capability fallback/UI 局部状态，默认不允许进入 `ChatEntry`。
+- 任何新字段一旦进入 `ChatEntry`，必须同时明确：
+  - 它属于 message core、lifecycle、linkage、recovery、enrichments 中哪一类。
+  - 它是否需要进入消息补丁层、runtime 同步层、显示决策层。
+  - 它是否允许直接显示在聊天主视觉；如果允许，必须先定义默认显示、折叠显示还是完全不显示。
+
+执行规则：
+
+- 修改桌面聊天主链前，先阅读 [docs/chat-entry-field-admission.md](./chat-entry-field-admission.md)。
+- 如果一个字段更像“系统记录自己做了什么”，而不是“帮助用户连续感受小晏正在说什么”，就不要放进 `ChatEntry`。
 - 能分页、限量、截断时，不默认返回整批数据。
 - 前端优先缩小状态影响范围，后端优先缩短热路径调用链。
 

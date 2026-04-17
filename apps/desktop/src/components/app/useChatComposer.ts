@@ -5,6 +5,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { ChatEntry, ChatSendOptions } from "../ChatPanel";
 import type { ChatAttachment, ChatRequestBody } from "../../lib/api";
 import { chat, resumeChat } from "../../lib/api";
+import { hasRecoverableAssistantReply } from "../chat/chatTypes";
 import { loadChatToolboxSelectedSkills } from "../../lib/chatToolboxPreferences";
 import { createChatRequestKey } from "./chatRequestKey";
 import type { PendingChatRequest } from "./chatRequestKey";
@@ -214,10 +215,10 @@ export function useChatComposer({
 
   const handleResume = useCallback(
     async (message: ChatEntry) => {
-      const requestMessage = message.requestMessage?.trim();
-      if (!requestMessage) {
+      if (!hasRecoverableAssistantReply(message)) {
         return;
       }
+      const requestMessage = message.requestMessage.trim();
 
       setError("");
       setIsSending(true);

@@ -1,10 +1,27 @@
-import type { ChatEntry } from "./chatTypes";
+import {
+  hasKnowledgeReferences,
+  hasRecoverableAssistantReply,
+  hasRelatedMemories,
+  hasRetryableUserSend,
+  isAssistantChatEntry,
+  type ChatEntry,
+} from "./chatTypes";
 
 type MessageStatusTone = "muted" | "failed";
+export type ChatMessageBodyMode = "markdown" | "streaming-placeholder" | "plain-text" | "none";
 
 export type MessageStatus = {
   text: string;
   tone: MessageStatusTone;
+};
+
+export type ChatMessageDisplayState = {
+  bodyMode: ChatMessageBodyMode;
+  status: MessageStatus | null;
+  showKnowledgeContext: boolean;
+  showMemoryContext: boolean;
+  showResumeAction: boolean;
+  showRetryAction: boolean;
 };
 
 const REASONING_PHASE_LABELS: Record<string, string> = {
@@ -57,5 +74,41 @@ export function getUserFailedStatus(message: ChatEntry, assistantName: string): 
       ? `这句话还没顺利送到${assistantName}那里：${message.errorMessage.trim()}`
       : `这句话还没顺利送到${assistantName}那里。`,
     tone: "failed",
+  };
+}
+
+export function getChatMessageDisplayState(
+  message: ChatEntry,
+  assistantName: string,
+): ChatMessageDisplayState {
+  const isAssistant = isAssistantChatEntry(message);
+  const hasAssistantContent = isAssistant && Boolean(message.content);
+  const assistantStatus = isAssistant ? getAssistantStatus(message, assistantName) : null;
+  const shouldShowAssistantStatus =
+    assistantStatus != null &&
+    (message.state === "failed" || (message.state === "streaming" && !hasAssistantContent));
+
+  if (isAssistant) {
+    return {
+      bodyMode: hasAssistantContent
+        ? "markdown"
+        : message.state === "streaming"
+          ? "streaming-placeholder"
+          : "none",
+      status: shouldShowAssistantStatus ? assistantStatus : null,
+      showKnowledgeContext: hasKnowledgeReferences(message),
+      showMemoryContext: hasRelatedMemories(message),
+      showResumeAction: hasRecoverableAssistantReply(message),
+      showRetryAction: false,
+    };
+  }
+
+  return {
+    bodyMode: "plain-text",
+    status: message.state === "failed" ? getUserFailedStatus(message, assistantName) : null,
+    showKnowledgeContext: false,
+    showMemoryContext: false,
+    showResumeAction: false,
+    showRetryAction: hasRetryableUserSend(message),
   };
 }
