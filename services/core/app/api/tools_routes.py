@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.api.file_tool_helpers import build_file_tools, default_files_base_path, file_policy_args
 from app.capabilities.models import CapabilityDispatchRequest, RiskLevel
 from app.capabilities.runtime import dispatch_and_wait, has_recent_capability_executor
+from app.runtime_ext.runtime_config import get_runtime_config
 from app.tools.runner import CommandRunner
 from app.tools.models import ToolExecutionResult
 from app.tools.sandbox import CommandSandbox, SandboxViolation, ToolSafetyLevel

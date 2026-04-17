@@ -7,6 +7,7 @@ def extract_output_text(data: dict) -> str:
     if data.get("output_text"):
         return data["output_text"]
 
+    fragments: list[str] = []
     for item in data.get("output", []):
         if item.get("type") != "message":
             continue
@@ -17,7 +18,10 @@ def extract_output_text(data: dict) -> str:
 
             text = content.get("text")
             if text:
-                return text
+                fragments.append(text)
+
+    if fragments:
+        return "".join(fragments)
 
     raise ValueError("response payload did not contain output text")
 

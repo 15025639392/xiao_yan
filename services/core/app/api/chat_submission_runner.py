@@ -90,6 +90,21 @@ def build_resume_instruction(partial_content: str) -> str:
     )
 
 
+def resolve_completed_output_text(
+    *,
+    current_output_text: str,
+    completed_output_text: str,
+    initial_output_text: str,
+) -> str:
+    if not completed_output_text:
+        return current_output_text
+    if initial_output_text:
+        return merge_chat_stream_content(initial_output_text, completed_output_text)
+    if completed_output_text != current_output_text:
+        return completed_output_text
+    return current_output_text
+
+
 def run_chat_submission(
     *,
     request: Request,
@@ -155,8 +170,11 @@ def run_chat_submission(
             if event_type == "response_completed":
                 response_id = event.get("response_id") or response_id
                 completed_output_text = event.get("output_text") or ""
-                if completed_output_text and completed_output_text not in output_text:
-                    output_text = completed_output_text
+                output_text = resolve_completed_output_text(
+                    current_output_text=output_text,
+                    completed_output_text=completed_output_text,
+                    initial_output_text=initial_output_text,
+                )
                 continue
 
             if event_type == "response_failed":
@@ -289,6 +307,7 @@ def run_chat_submission_with_tools(
             initial_output_text=initial_output_text,
             suppress_started_event=started,
             knowledge_references=knowledge_references,
+            request_key=request_key,
             reasoning_session_id=reasoning_session_id,
             reasoning_state=reasoning_state,
         )

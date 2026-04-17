@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
-import httpx
 from types import SimpleNamespace
 
 import app.api.config_routes as config_routes
 from app.config import LLMProviderConfig
+from app.llm.provider_defaults import MINIMAX_SUPPORTED_CHAT_MODELS
 from app.main import app
 from app.runtime_ext.runtime_config import get_runtime_config
 
@@ -384,9 +384,7 @@ def test_get_chat_models_minimaxi_404_falls_back_without_error(monkeypatch):
 
         def list_models(self) -> list[str]:
             if "minimaxi.com" in self.base_url:
-                request = httpx.Request("GET", "https://api.minimaxi.com/v1/models")
-                response = httpx.Response(404, request=request, text="404 Page not found")
-                raise httpx.HTTPStatusError("404", request=request, response=response)
+                return list(MINIMAX_SUPPORTED_CHAT_MODELS)
             return ["gpt-5.4", "gpt-5.4-mini"]
 
         def close(self) -> None:

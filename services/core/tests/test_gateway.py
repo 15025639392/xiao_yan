@@ -3,13 +3,29 @@ import os
 
 import httpx
 
+from app.llm.chat_wire import (
+    build_chat_messages,
+    convert_input_items_to_chat_messages,
+    normalize_chat_completion_response,
+)
 from app.llm.gateway import ChatGateway
+from app.llm.protocol_adapters import (
+    DeepSeekChatCompletionsWireAdapter,
+    GenericChatCompletionsWireAdapter,
+    MiniMaxChatCompletionsWireAdapter,
+    OpenAIResponsesWireAdapter,
+    get_wire_adapter,
+)
+from app.llm.provider_defaults import MINIMAX_SUPPORTED_CHAT_MODELS
+from app.llm.request_wire import build_responses_payload
 from app.llm.schemas import ChatMessage
 
 
 def test_gateway_normalizes_messages():
-    gateway = ChatGateway(api_key="test-key", model="gpt-5.4")
-    payload = gateway.build_payload([ChatMessage(role="user", content="hi")])
+    payload = build_responses_payload(
+        model="gpt-5.4",
+        messages=[ChatMessage(role="user", content="hi")],
+    )
     assert payload["model"] == "gpt-5.4"
     assert payload["input"][0]["content"] == "hi"
 
@@ -61,6 +77,58 @@ def test_gateway_posts_to_responses_api():
     }
     assert result.response_id == "resp_123"
     assert result.output_text == "hello from gateway"
+
+
+def test_gateway_responses_create_response_concatenates_multiple_message_items():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_multi_message_1",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "第一段。",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "reasoning",
+                        "summary": [
+                            {
+                                "type": "summary_text",
+                                "text": "忽略这段推理",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": "第二段。",
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="gpt-5.4",
+        base_url="http://example.test/v1",
+        http_client=client,
+    )
+
+    result = gateway.create_response([ChatMessage(role="user", content="hi")])
+
+    assert result.response_id == "resp_multi_message_1"
+    assert result.output_text == "第一段。第二段。"
 
 
 def test_gateway_streams_responses_api_events():
@@ -357,6 +425,58 @@ def test_gateway_streams_chat_completions_events_when_wire_api_chat():
     ]
 
 
+def test_gateway_streams_chat_completions_events_when_sse_contains_invalid_json_frames():
+    class StubStreamResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self):
+            return iter(
+                [
+                    'data: {"id":"chatcmpl_123","choices":[{"delta":{"role":"assistant"}}]}',
+                    "",
+                    "data: {not-json}",
+                    "",
+                    'data: {"id":"chatcmpl_123","choices":[{"delta":{"content":"hello "}}]}',
+                    "",
+                    "data: [DONE]",
+                    "",
+                ]
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class StubStreamClient:
+        def stream(self, method: str, url: str, headers: dict, json: dict):
+            assert method == "POST"
+            assert url == "http://example.test/v1/chat/completions"
+            return StubStreamResponse()
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="MiniMax-M2.7",
+        base_url="http://example.test/v1",
+        wire_api="chat",
+        http_client=StubStreamClient(),
+    )
+
+    events = list(gateway.stream_response([ChatMessage(role="user", content="hi")]))
+
+    assert events == [
+        {"type": "response_started", "response_id": "chatcmpl_123"},
+        {"type": "text_delta", "delta": "hello "},
+        {
+            "type": "response_completed",
+            "response_id": "chatcmpl_123",
+            "output_text": "hello ",
+        },
+    ]
+
+
 def test_gateway_chat_wire_normalizes_tool_calls_and_replays_tool_outputs():
     calls: list[dict] = []
 
@@ -451,7 +571,7 @@ def test_gateway_chat_wire_normalizes_tool_calls_and_replays_tool_outputs():
     assert response2["output_text"] == "目录内容如下"
 
 
-def test_gateway_chat_wire_drops_assistant_text_when_tool_calls_present():
+def test_gateway_chat_wire_preserves_assistant_text_when_tool_calls_present():
     payload = {
         "id": "chatcmpl_tool_text_1",
         "choices": [
@@ -474,16 +594,78 @@ def test_gateway_chat_wire_drops_assistant_text_when_tool_calls_present():
         ],
     }
 
-    normalized = ChatGateway._normalize_chat_completion_response(payload)
+    normalized = normalize_chat_completion_response(payload)
     assert normalized["id"] == "chatcmpl_tool_text_1"
     assert normalized["output_text"] == ""
     assert normalized["output"] == [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "output_text",
+                    "text": "我先调用工具",
+                }
+            ],
+        },
         {
             "type": "function_call",
             "call_id": "call_1",
             "name": "list_directory",
             "arguments": '{"path":"/tmp"}',
         }
+    ]
+
+
+def test_gateway_chat_wire_completes_when_finish_reason_is_tool_calls():
+    class StubStreamResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self):
+            return iter(
+                [
+                    'data: {"id":"chatcmpl_tool_finish","choices":[{"delta":{"role":"assistant"}}]}',
+                    "",
+                    'data: {"id":"chatcmpl_tool_finish","choices":[{"delta":{"content":"我先看一下。"}}]}',
+                    "",
+                    'data: {"id":"chatcmpl_tool_finish","choices":[{"finish_reason":"tool_calls"}]}',
+                    "",
+                    "data: [DONE]",
+                    "",
+                ]
+            )
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class StubStreamClient:
+        def stream(self, method: str, url: str, headers: dict, json: dict):
+            assert method == "POST"
+            assert url == "http://example.test/v1/chat/completions"
+            return StubStreamResponse()
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="MiniMax-M2.7",
+        base_url="http://example.test/v1",
+        wire_api="chat",
+        http_client=StubStreamClient(),
+    )
+
+    events = list(gateway.stream_response([ChatMessage(role="user", content="hi")]))
+
+    assert events == [
+        {"type": "response_started", "response_id": "chatcmpl_tool_finish"},
+        {"type": "text_delta", "delta": "我先看一下。"},
+        {
+            "type": "response_completed",
+            "response_id": "chatcmpl_tool_finish",
+            "output_text": "我先看一下。",
+        },
     ]
 
 
@@ -555,14 +737,7 @@ def test_gateway_from_env_supports_deepseek_key_and_chat_default():
 
 
 def test_gateway_chat_wire_merges_multiple_system_messages():
-    gateway = ChatGateway(
-        api_key="test-key",
-        model="MiniMax-M2.7",
-        base_url="http://example.test/v1",
-        wire_api="chat",
-    )
-
-    payload_messages = gateway._build_chat_messages(
+    payload_messages = build_chat_messages(
         [
             ChatMessage(role="system", content="memory A"),
             ChatMessage(role="assistant", content="prev answer"),
@@ -581,14 +756,7 @@ def test_gateway_chat_wire_merges_multiple_system_messages():
 
 
 def test_gateway_chat_wire_merges_system_messages_in_tool_loop_input():
-    gateway = ChatGateway(
-        api_key="test-key",
-        model="MiniMax-M2.7",
-        base_url="http://example.test/v1",
-        wire_api="chat",
-    )
-
-    messages = gateway._convert_input_items_to_chat_messages(
+    messages = convert_input_items_to_chat_messages(
         [
             {"role": "system", "content": "memory A"},
             {"role": "assistant", "content": "prev answer"},
@@ -604,3 +772,48 @@ def test_gateway_chat_wire_merges_system_messages_in_tool_loop_input():
         {"role": "assistant", "content": "prev answer"},
         {"role": "user", "content": "new question"},
     ]
+
+
+def test_get_wire_adapter_prefers_provider_specific_adapters():
+    assert isinstance(get_wire_adapter("openai", "responses"), OpenAIResponsesWireAdapter)
+    assert isinstance(get_wire_adapter("minimaxi", "chat"), MiniMaxChatCompletionsWireAdapter)
+    assert isinstance(get_wire_adapter("deepseek", "chat"), DeepSeekChatCompletionsWireAdapter)
+    assert isinstance(get_wire_adapter("custom-provider", "chat"), GenericChatCompletionsWireAdapter)
+
+
+def test_gateway_list_models_uses_provider_adapter_fallback_for_minimax_404():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "http://example.test/v1/models"
+        return httpx.Response(404, request=request, text="404 Page not found")
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="MiniMax-M2.7",
+        base_url="http://example.test/v1",
+        wire_api="chat",
+        provider_id="minimaxi",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert gateway.list_models() == MINIMAX_SUPPORTED_CHAT_MODELS
+
+
+def test_gateway_list_models_keeps_non_404_minimax_errors_visible():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(502, request=request, text="upstream 502")
+
+    gateway = ChatGateway(
+        api_key="test-key",
+        model="MiniMax-M2.7",
+        base_url="http://example.test/v1",
+        wire_api="chat",
+        provider_id="minimaxi",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    try:
+        gateway.list_models()
+    except httpx.HTTPStatusError as error:
+        assert error.response.status_code == 502
+    else:
+        raise AssertionError("expected HTTPStatusError")

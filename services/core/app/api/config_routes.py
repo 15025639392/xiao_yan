@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
@@ -23,17 +21,6 @@ from app.runtime_ext.data_backup import (
     is_testing_data_mode_enabled,
 )
 from app.runtime_ext.runtime_config import get_runtime_config
-
-MINIMAX_FALLBACK_MODELS = [
-    "MiniMax-M2.7",
-    "MiniMax-M2.7-highspeed",
-    "MiniMax-M2.5",
-    "MiniMax-M2.5-highspeed",
-    "MiniMax-M2.1",
-    "MiniMax-M2.1-highspeed",
-    "MiniMax-M2",
-]
-
 
 class ConfigUpdateRequest(BaseModel):
     chat_context_limit: int | None = Field(default=None, ge=1, le=20, description="聊天上下文轮次基线（1-20）")
@@ -494,14 +481,7 @@ def build_config_router() -> APIRouter:
                     gateway.close()
             except Exception as exception:  # noqa: BLE001
                 fetched_models = []
-                if (
-                    provider.provider_id == "minimaxi"
-                    and isinstance(exception, httpx.HTTPStatusError)
-                    and exception.response.status_code == 404
-                ):
-                    fetched_models = list(MINIMAX_FALLBACK_MODELS)
-                else:
-                    error_message = str(exception)
+                error_message = str(exception)
 
             for model in fetched_models:
                 normalized = model.strip()

@@ -110,6 +110,25 @@ class CompletionWinsStubGateway(StubGateway):
         }
 
 
+class CompletionSubstringWinsStubGateway(StubGateway):
+    def stream_response(self, messages, instructions=None):
+        self.last_messages = list(messages)
+        self.last_instructions = instructions
+        yield {
+            "type": "response_started",
+            "response_id": "resp_completion_substring_wins",
+        }
+        yield {
+            "type": "text_delta",
+            "delta": "你好呀，我是小晏。很高兴见到你～今天想聊点什么？今天想聊点什么？",
+        }
+        yield {
+            "type": "response_completed",
+            "response_id": "resp_completion_substring_wins",
+            "output_text": "你好呀，我是小晏。很高兴见到你～今天想聊点什么？",
+        }
+
+
 class ToolCallingStubGateway(StubGateway):
     def __init__(self, expected_read_path: str) -> None:
         super().__init__()
@@ -769,6 +788,38 @@ def test_post_chat_uses_response_completed_output_text_as_final_content():
         app.dependency_overrides.clear()
 
 
+def test_post_chat_prefers_response_completed_output_text_even_when_it_is_substring_of_streamed_content():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = CompletionSubstringWinsStubGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "你好"})
+        assert response.status_code == 200
+        assert mempalace_adapter.record_calls == [
+            ("你好", "你好呀，我是小晏。很高兴见到你～今天想聊点什么？", response.json()["assistant_message_id"])
+        ]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_chat_streams_reply_over_realtime_socket():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
@@ -1172,6 +1223,74 @@ def test_post_chat_resume_falls_back_to_plain_stream_when_tools_request_is_rejec
         app.dependency_overrides.clear()
 
 
+def test_post_chat_resume_tool_fallback_preserves_request_key_and_reasoning_state():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = ToolFallbackResumeStubGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+    runtime_config = get_runtime_config()
+    original_enabled = runtime_config.chat_continuous_reasoning_enabled
+
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="chat",
+            role="assistant",
+            content="这是上一轮推理结果",
+            session_id="assistant_resume_reasoning_fallback",
+            reasoning_session_id="reasoning_resume_fallback_1",
+            reasoning_state={
+                "session_id": "reasoning_resume_fallback_1",
+                "phase": "exploring",
+                "step_index": 2,
+                "summary": "已经推进到第2步",
+                "updated_at": "2026-04-16T10:00:00+00:00",
+            },
+        )
+    )
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+    runtime_config.chat_continuous_reasoning_enabled = True
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/chat/resume",
+            json={
+                "message": "请继续",
+                "assistant_message_id": "assistant_resume_reasoning_fallback",
+                "partial_content": "前半句，",
+                "request_key": "resume_request_key_1",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["response_id"] == "resp_resume_fallback"
+        assert payload["assistant_message_id"] == "assistant_resume_reasoning_fallback"
+        assert payload["request_key"] == "resume_request_key_1"
+        assert payload["reasoning_session_id"] == "reasoning_resume_fallback_1"
+        assert payload["reasoning_state"]["step_index"] == 3
+        assert payload["reasoning_state"]["phase"] == "exploring"
+        assert gateway.create_call_count == 1
+        assert gateway.stream_call_count == 1
+        assert mempalace_adapter.record_reasoning_calls[-1][0] == "resume_request_key_1"
+        assert mempalace_adapter.record_reasoning_calls[-1][1] == "reasoning_resume_fallback_1"
+    finally:
+        runtime_config.chat_continuous_reasoning_enabled = original_enabled
+        app.dependency_overrides.clear()
+
+
 def test_post_chat_returns_reasoning_session_state_when_enabled():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
@@ -1457,6 +1576,36 @@ def test_post_chat_falls_back_to_plain_stream_when_tools_enter_recursive_loop():
         assert mempalace_adapter.record_calls == [
             ("hello", "我先基于当前上下文直接回答。", response.json()["assistant_message_id"])
         ]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_tool_fallback_preserves_request_key_in_response():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = RecursiveToolLoopGateway()
+    mempalace_adapter = StubMemPalaceAdapter()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "hello", "request_key": "request_tool_fallback"})
+        assert response.status_code == 200
+        assert response.json()["request_key"] == "request_tool_fallback"
     finally:
         app.dependency_overrides.clear()
 
