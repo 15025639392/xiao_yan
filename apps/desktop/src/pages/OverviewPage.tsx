@@ -71,7 +71,7 @@ export function OverviewPanel({
 
       <section className="inspector-grid inspector-grid--balanced">
         <div className="inspector-grid__col">
-          <Panel icon="↗" title="继续深入" subtitle="复杂治理能力保留为次级入口">
+          <Panel icon="↗" title="辅助入口" subtitle="记忆与人格设置保留为次级入口">
             <div style={{ display: "grid", gap: "var(--space-3)" }}>
               <button type="button" className="app-sidebar__action-btn" onClick={() => onNavigate("memory")}>
                 打开记忆库

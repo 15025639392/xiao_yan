@@ -67,11 +67,10 @@ const initialState: BeingState = {
   active_goal_ids: [],
   today_plan: null,
   last_action: null,
-  orchestrator_session: null,
 };
 
 export default function App() {
-  const [route, setRoute] = useState<AppRoute>(() => resolveRoute(window.location.hash));
+  const [route, setRoute] = useState<AppRoute>(() => resolveRoute(normalizeLegacyHash(window.location.hash)));
   const [state, setState] = useState<BeingState>(initialState);
   const [world, setWorld] = useState<InnerWorldState | null>(null);
   const [macConsoleStatus, setMacConsoleStatus] = useState<MacConsoleBootstrapStatus | null>(null);
@@ -292,12 +291,14 @@ export default function App() {
 
   useEffect(() => {
     const syncRoute = () => {
-      const nextRoute = resolveRoute(window.location.hash);
-      setRoute(nextRoute);
-
-      if (window.location.hash === "#/history") {
-        window.location.hash = routeToHash("overview");
+      const normalizedHash = normalizeLegacyHash(window.location.hash);
+      if (normalizedHash !== window.location.hash) {
+        window.location.hash = normalizedHash;
+        return;
       }
+
+      const nextRoute = resolveRoute(normalizedHash);
+      setRoute(nextRoute);
     };
 
     if (!window.location.hash) {
@@ -787,7 +788,7 @@ export default function App() {
             </button>
           </div>
           <p className="app-sidebar__section-hint">
-            记忆、人格配置和高自治能力保留为次级入口，避免默认导航承载治理后台。
+            记忆与人格设置保留为次级入口，默认路径继续聚焦陪伴、对话与当下状态。
           </p>
         </div>
 
@@ -999,6 +1000,13 @@ function resolveRoute(hash: string): AppRoute {
   return "overview";
 }
 
+function normalizeLegacyHash(hash: string): string {
+  if (hash === "#/history" || hash === "#/orchestrator") {
+    return routeToHash("overview");
+  }
+  return hash;
+}
+
 function routeToHash(route: AppRoute): string {
   if (route === "chat") return "#/chat";
   if (route === "persona") return "#/persona";
@@ -1026,7 +1034,10 @@ function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {
   if (focusMode === "autonomy") {
     return "常规自主";
   }
-  return "休眠";
+  if (focusMode === "sleeping") {
+    return "休眠";
+  }
+  return "专注中";
 }
 
 function syncMessagesFromRuntime(current: ChatEntry[], incoming: Parameters<typeof mergeMessages>[1]): ChatEntry[] {

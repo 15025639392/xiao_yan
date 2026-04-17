@@ -283,12 +283,11 @@ export type GoalAdmissionConfigRollbackResponse = GoalAdmissionRuntimeConfig & {
 
 export type BeingState = {
   mode: "awake" | "sleeping";
-  focus_mode: "sleeping" | "morning_plan" | "autonomy" | "orchestrator";
+  focus_mode: "sleeping" | "morning_plan" | "autonomy";
   current_thought: string | null;
   active_goal_ids: string[];
   today_plan?: TodayPlan | null;
   last_action?: ToolExecutionResult | null;
-  orchestrator_session?: OrchestratorSession | null;
 };
 
 export type MacConsoleBootstrapStatus = {

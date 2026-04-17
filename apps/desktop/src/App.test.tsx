@@ -213,6 +213,18 @@ test("redirects legacy history route to overview and keeps memory as secondary e
   expect(screen.getByRole("button", { name: "记忆库" })).toBeInTheDocument();
 });
 
+test("redirects legacy orchestrator route to overview", async () => {
+  vi.stubGlobal("fetch", createAppShellFetchMock());
+  window.location.hash = "#/orchestrator";
+
+  await renderApp();
+
+  await waitFor(() => {
+    expect(window.location.hash).toBe("#/");
+  });
+  expect(screen.getByRole("button", { name: "总览" })).toBeInTheDocument();
+});
+
 test("renders capability hub when route is capabilities", async () => {
   const fetchMock = createAppShellFetchMock([
     (url) => {
@@ -1004,7 +1016,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          orchestrator_session: null,
         }),
         {
           status: 200,
@@ -1055,38 +1066,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
       );
     }
 
-    if (url.endsWith("/orchestrator/sessions")) {
-      return new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/orchestrator/scheduler")) {
-      return new Response(
-        JSON.stringify({
-          max_parallel_sessions: 2,
-          running_sessions: 0,
-          available_slots: 2,
-          queued_sessions: 0,
-          active_session_id: null,
-          running_session_ids: [],
-          queued_session_ids: [],
-          verification_rollup: {
-            total_sessions: 0,
-            passed_sessions: 0,
-            failed_sessions: 0,
-            pending_sessions: 0,
-          },
-          policy_note: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
     throw new Error(`unexpected request: ${url}`);
   });
 
@@ -1112,7 +1091,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          orchestrator_session: null,
         },
         messages: [],
         goals: [],
@@ -1146,7 +1124,6 @@ test("keeps just-sent local user message when a transient runtime update has emp
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          orchestrator_session: null,
         }),
         {
           status: 200,
@@ -1221,7 +1198,6 @@ test("keeps just-sent local user message when a transient runtime update has emp
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          orchestrator_session: null,
         },
         messages: [],
         goals: [],
@@ -1271,7 +1247,6 @@ test("keeps just-completed local assistant reply when a transient runtime update
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          orchestrator_session: null,
         }),
         {
           status: 200,
@@ -1373,7 +1348,6 @@ test("keeps just-completed local assistant reply when a transient runtime update
           active_goal_ids: [],
           today_plan: null,
           last_action: null,
-          orchestrator_session: null,
         },
         messages: [],
         goals: [],
@@ -1440,7 +1414,6 @@ test("restores imported project registry to core folder permissions on app start
           focus_mode: "autonomy",
           current_thought: null,
           active_goal_ids: [],
-          orchestrator_session: null,
         }),
         {
           status: 200,
@@ -1470,38 +1443,6 @@ test("restores imported project registry to core folder permissions on app start
           energy: "high",
           mood: "engaged",
           focus_tension: "low",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (url.endsWith("/orchestrator/sessions")) {
-      return new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/orchestrator/scheduler")) {
-      return new Response(
-        JSON.stringify({
-          max_parallel_sessions: 2,
-          running_sessions: 0,
-          available_slots: 2,
-          queued_sessions: 0,
-          active_session_id: null,
-          running_session_ids: [],
-          queued_session_ids: [],
-          verification_rollup: {
-            total_sessions: 0,
-            passed_sessions: 0,
-            failed_sessions: 0,
-            pending_sessions: 0,
-          },
-          policy_note: "最多并行 2 个项目会话",
         }),
         {
           status: 200,
