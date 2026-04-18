@@ -7,6 +7,9 @@ import { getGoalRelationshipHints } from "./relationshipGoalHints";
 
 type GoalItemProps = {
   goal: Goal;
+  isFocusedGoal?: boolean;
+  showParallelStatus?: boolean;
+  focusGoalTitle?: string | null;
   onAbandonClick: (goalId: string, goalTitle: string) => void;
   onCompleteClick: (goalId: string, goalTitle: string) => void;
   onUpdateGoalStatus: (goalId: string, status: Goal["status"]) => void;
@@ -18,6 +21,9 @@ type GoalItemProps = {
 
 export function GoalItem({
   goal,
+  isFocusedGoal = false,
+  showParallelStatus = false,
+  focusGoalTitle,
   onAbandonClick,
   onCompleteClick,
   onUpdateGoalStatus,
@@ -31,19 +37,35 @@ export function GoalItem({
   const relationshipHints = getGoalRelationshipHints(goal, relationship);
 
   return (
-    <li className="goal-card">
+    <li className={`goal-card ${isFocusedGoal ? "goal-card--focused" : ""}`}>
       <div className="goal-card__top">
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="goal-card__title" title={goal.title}>
             {goal.title}
           </p>
           <div className="goal-card__meta">
+            {isFocusedGoal ? <span className="goal-card__meta-item goal-card__meta-item--focus">当前焦点</span> : null}
+            {showParallelStatus ? <span className="goal-card__meta-item goal-card__meta-item--parallel">并行目标</span> : null}
             {goal.chain_id ? <span className="goal-card__meta-item">链 {goal.chain_id}</span> : null}
             <span className="goal-card__meta-item">G{goal.generation ?? 0}</span>
           </div>
         </div>
         <StatusBadge tone={goal.status}>{renderGoalStatus(goal.status)}</StatusBadge>
       </div>
+
+      {isFocusedGoal ? (
+        <section className="goal-card__focus-note goal-card__focus-note--focused" aria-label="焦点说明">
+          小晏现在主要就在推进这条。
+        </section>
+      ) : null}
+
+      {showParallelStatus ? (
+        <section className="goal-card__focus-note" aria-label="焦点说明">
+          {focusGoalTitle
+            ? `这条也在推进，但小晏现在先在处理「${focusGoalTitle}」。`
+            : "这条也在推进，但小晏现在先在处理别的主线。"}
+        </section>
+      ) : null}
 
       <section className={`goal-card__source goal-card__source--${sourceMeta.tone}`} aria-label="目标来历">
         <div className="goal-card__source-head">

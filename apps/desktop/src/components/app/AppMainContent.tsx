@@ -4,6 +4,7 @@ import { PersonaPanel } from "../PersonaPanel";
 import { ToolPanel } from "../ToolPanel";
 import type {
   BeingState,
+  FocusContext,
   Goal,
   InnerWorldState,
   MacConsoleBootstrapStatus,
@@ -21,6 +22,9 @@ type AppMainContentProps = {
   attachedImages: string[];
   draft: string;
   focusGoalTitle: string | null;
+  focusContext: FocusContext | null;
+  focusTransitionHint: string | null;
+  focusContextSummary: string | null;
   goals: Goal[];
   isAwake: boolean;
   isSending: boolean;
@@ -56,6 +60,9 @@ export function AppMainContent({
   attachedImages,
   draft,
   focusGoalTitle,
+  focusContext,
+  focusTransitionHint,
+  focusContextSummary,
   goals,
   isAwake,
   isSending,
@@ -89,6 +96,9 @@ export function AppMainContent({
         assistantName={assistantName}
         draft={draft}
         focusGoalTitle={focusGoalTitle}
+        focusContext={focusContext}
+        focusTransitionHint={focusTransitionHint}
+        focusContextSummary={focusContextSummary}
         focusModeLabel={renderFocusModeLabel(state.focus_mode)}
         isSending={isSending}
         messages={messages}
@@ -140,6 +150,9 @@ export function AppMainContent({
   return (
     <OverviewPanel
       focusGoalTitle={focusGoalTitle}
+      focusContext={focusContext}
+      focusTransitionHint={focusTransitionHint}
+      focusContextSummary={focusContextSummary}
       goals={goals}
       latestActionLabel={state.last_action ? `${state.last_action.command} -> ${state.last_action.output}` : null}
       mode={state.mode}

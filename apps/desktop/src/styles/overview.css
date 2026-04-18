@@ -46,6 +46,19 @@
   letter-spacing: 0.05em;
 }
 
+.overview-card__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+.overview-card__label-row .overview-card__label {
+  margin-bottom: 0;
+}
+
 .overview-card__value {
   margin: 0;
   font-size: 1.5rem;
@@ -58,6 +71,10 @@
   color: var(--text-secondary);
   font-size: 0.875rem;
   line-height: 1.6;
+}
+
+.overview-card__body--accent {
+  color: var(--text-primary);
 }
 
 /* === Inspector Grid === */
@@ -88,6 +105,49 @@
 /* === Mission Board === */
 .mission-board {
   flex-shrink: 0;
+}
+
+.goals-summary-focus {
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(59, 130, 246, 0.06), rgba(59, 130, 246, 0.015)),
+    var(--bg-surface-elevated);
+}
+
+.goals-summary-focus__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.goals-summary-focus__title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.goals-summary-focus__title {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.goals-summary-focus__subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.goals-summary-focus__body {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 /* === Metric Cards === */
@@ -565,6 +625,11 @@
   transition: all var(--transition-fast);
 }
 
+.goal-card--focused {
+  border-color: rgba(59, 130, 246, 0.34);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12);
+}
+
 .goal-card:hover {
   border-color: var(--border-default);
   box-shadow: var(--shadow-sm);
@@ -600,6 +665,33 @@
   padding: var(--space-1) var(--space-2);
   background: var(--bg-surface);
   border-radius: var(--radius-sm);
+}
+
+.goal-card__meta-item--focus {
+  background: rgba(59, 130, 246, 0.12);
+  color: rgb(96, 165, 250);
+}
+
+.goal-card__meta-item--parallel {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-secondary);
+}
+
+.goal-card__focus-note {
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: var(--radius-md);
+  background: rgba(148, 163, 184, 0.05);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.goal-card__focus-note--focused {
+  border-color: rgba(59, 130, 246, 0.24);
+  background: rgba(59, 130, 246, 0.06);
+  color: var(--text-primary);
 }
 
 .goal-card__source {

@@ -31,6 +31,9 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     request_key: str | None = None
+    user_timezone: str | None = None
+    user_local_time: str | None = None
+    user_time_of_day: Literal["morning", "afternoon", "evening", "night"] | None = None
     attachments: list[ChatAttachment] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     mcp_servers: list[str] = Field(default_factory=list)
@@ -43,6 +46,9 @@ class ChatResumeRequest(BaseModel):
     partial_content: str
     request_key: str | None = None
     reasoning_session_id: str | None = None
+    user_timezone: str | None = None
+    user_local_time: str | None = None
+    user_time_of_day: Literal["morning", "afternoon", "evening", "night"] | None = None
 
 
 class ChatResult(BaseModel):

@@ -118,6 +118,9 @@ def test_post_wake_builds_morning_plan_before_acting_on_focus_goal():
         assert chain_goal.title in thought
         assert body["today_plan"]["goal_id"] == chain_goal.id
         assert body["today_plan"]["goal_title"] == chain_goal.title
+        assert body["focus_context"]["goal_title"] == chain_goal.title
+        assert "一直接着往下推进" in body["focus_context"]["source_label"]
+        assert "今天这条还剩 2 步没做完" in body["focus_context"]["reason_label"]
         assert [step["content"] for step in body["today_plan"]["steps"]] == [
             f"回看“{chain_goal.title}”停在了哪里",
             "决定是继续推进还是先收束",

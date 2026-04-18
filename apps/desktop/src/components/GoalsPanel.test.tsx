@@ -457,9 +457,9 @@ test("updates goal guidance from realtime memory events", async () => {
     available: true,
   });
 
-  let listener: ((event: any) => void) | null = null;
+  const listeners: Array<(event: any) => void> = [];
   subscribeAppRealtime.mockImplementation((callback) => {
-    listener = callback;
+    listeners.push(callback);
     return () => {};
   });
 
@@ -482,31 +482,33 @@ test("updates goal guidance from realtime memory events", async () => {
   });
 
   await act(async () => {
-    listener?.({
-      type: "memory_updated",
-      payload: {
-        summary: {
-          total_estimated: 16,
-          by_kind: {},
-          recent_count: 3,
-          strong_memories: 2,
+    listeners.forEach((listener) =>
+      listener({
+        type: "memory_updated",
+        payload: {
+          summary: {
+            total_estimated: 16,
+            by_kind: {},
+            recent_count: 3,
+            strong_memories: 2,
+            relationship: {
+              available: true,
+              boundaries: ["不要催我，给我一点空间"],
+              commitments: ["答应你先说明不确定性再建议下一步"],
+              preferences: ["更喜欢先对齐判断再行动"],
+            },
+            available: true,
+          },
           relationship: {
             available: true,
             boundaries: ["不要催我，给我一点空间"],
             commitments: ["答应你先说明不确定性再建议下一步"],
             preferences: ["更喜欢先对齐判断再行动"],
           },
-          available: true,
+          timeline: [],
         },
-        relationship: {
-          available: true,
-          boundaries: ["不要催我，给我一点空间"],
-          commitments: ["答应你先说明不确定性再建议下一步"],
-          preferences: ["更喜欢先对齐判断再行动"],
-        },
-        timeline: [],
-      },
-    });
+      }),
+    );
   });
 
   await waitFor(() => {
@@ -1061,9 +1063,9 @@ test("renders candidate pool with deferred and blocked admission candidates", as
 });
 
 test("updates candidate pool from realtime runtime snapshot", async () => {
-  let listener: ((event: any) => void) | null = null;
+  const listeners: Array<(event: any) => void> = [];
   subscribeAppRealtime.mockImplementation((callback) => {
-    listener = callback;
+    listeners.push(callback);
     return () => {};
   });
 
@@ -1086,113 +1088,115 @@ test("updates candidate pool from realtime runtime snapshot", async () => {
   });
 
   await act(async () => {
-    listener?.({
-      type: "snapshot",
-      payload: {
-        runtime: {
-          state: {
-            mode: "awake",
-            focus_mode: "autonomy",
-            current_thought: null,
-            active_goal_ids: [],
-            today_plan: null,
-            last_action: null,
+    listeners.forEach((listener) =>
+      listener({
+        type: "snapshot",
+        payload: {
+          runtime: {
+            state: {
+              mode: "awake",
+              focus_mode: "autonomy",
+              current_thought: null,
+              active_goal_ids: [],
+              today_plan: null,
+              last_action: null,
+            },
+            messages: [],
+            goals: [],
+            world: null,
+            autobio: [],
+            goal_admission_stats: {
+              mode: "enforce",
+              today: {
+                admit: 2,
+                defer: 1,
+                drop: 1,
+                wip_blocked: 0,
+              },
+              admitted_stability_24h: {
+                stable: 1,
+                re_deferred: 1,
+                dropped: 0,
+              },
+              admitted_stability_24h_rate: 0.5,
+              admitted_stability_alert: {
+                level: "warning",
+                warning_rate: 0.6,
+                danger_rate: 0.35,
+              },
+              deferred_queue_size: 1,
+              wip_limit: 2,
+              thresholds: {
+                user_topic: { min_score: 0.68, defer_score: 0.45 },
+                chain_next: { min_score: 0.62, defer_score: 0.45 },
+              },
+            },
+            goal_admission_candidates: {
+              deferred: [
+                {
+                  candidate: {
+                    title: "持续理解用户最近在意的话题：嗯",
+                    source_type: "user_topic",
+                    source_content: "嗯",
+                    retry_count: 1,
+                  },
+                  next_retry_at: "2026-04-07T08:05:00+00:00",
+                  last_reason: "user_score",
+                },
+              ],
+              recent: [
+                {
+                  candidate: {
+                    title: "继续推进：催用户现在就做决定",
+                    source_type: "user_topic",
+                    source_content: "我应该催用户现在就选，不再给他自己想的空间",
+                    retry_count: 0,
+                  },
+                  decision: "drop",
+                  reason: "relationship_boundary:你别催我，我希望先自己想一想再决定",
+                  score: 0,
+                  created_at: "2026-04-07T08:01:00+00:00",
+                  retry_at: null,
+                },
+              ],
+              admitted: [
+                {
+                  candidate: {
+                    title: "继续推进：提醒用户明天复盘",
+                    source_type: "user_topic",
+                    source_content: "提醒用户明天复盘",
+                    retry_count: 1,
+                  },
+                  decision: "admit",
+                  reason: "user_score",
+                  score: 1,
+                  created_at: "2026-04-07T08:06:00+00:00",
+                  retry_at: null,
+                  stability: "stable",
+                },
+              ],
+            },
           },
-          messages: [],
-          goals: [],
-          world: null,
-          autobio: [],
-          goal_admission_stats: {
-            mode: "enforce",
-            today: {
-              admit: 2,
-              defer: 1,
-              drop: 1,
-              wip_blocked: 0,
+          memory: {
+            total_estimated: 0,
+            by_kind: {},
+            recent_count: 0,
+            strong_memories: 0,
+            relationship: {
+              available: false,
+              boundaries: [],
+              commitments: [],
+              preferences: [],
             },
-            admitted_stability_24h: {
-              stable: 1,
-              re_deferred: 1,
-              dropped: 0,
-            },
-            admitted_stability_24h_rate: 0.5,
-            admitted_stability_alert: {
-              level: "warning",
-              warning_rate: 0.6,
-              danger_rate: 0.35,
-            },
-            deferred_queue_size: 1,
-            wip_limit: 2,
-            thresholds: {
-              user_topic: { min_score: 0.68, defer_score: 0.45 },
-              chain_next: { min_score: 0.62, defer_score: 0.45 },
-            },
+            available: true,
           },
-          goal_admission_candidates: {
-            deferred: [
-              {
-                candidate: {
-                  title: "持续理解用户最近在意的话题：嗯",
-                  source_type: "user_topic",
-                  source_content: "嗯",
-                  retry_count: 1,
-                },
-                next_retry_at: "2026-04-07T08:05:00+00:00",
-                last_reason: "user_score",
-              },
-            ],
-            recent: [
-              {
-                candidate: {
-                  title: "继续推进：催用户现在就做决定",
-                  source_type: "user_topic",
-                  source_content: "我应该催用户现在就选，不再给他自己想的空间",
-                  retry_count: 0,
-                },
-                decision: "drop",
-                reason: "relationship_boundary:你别催我，我希望先自己想一想再决定",
-                score: 0,
-                created_at: "2026-04-07T08:01:00+00:00",
-                retry_at: null,
-              },
-            ],
-            admitted: [
-              {
-                candidate: {
-                  title: "继续推进：提醒用户明天复盘",
-                  source_type: "user_topic",
-                  source_content: "提醒用户明天复盘",
-                  retry_count: 1,
-                },
-                decision: "admit",
-                reason: "user_score",
-                score: 1,
-                created_at: "2026-04-07T08:06:00+00:00",
-                retry_at: null,
-                stability: "stable",
-              },
-            ],
+          persona: {
+            profile: {},
+            emotion: {},
           },
         },
-        memory: {
-          total_estimated: 0,
-          by_kind: {},
-          recent_count: 0,
-          strong_memories: 0,
-          relationship: {
-            available: false,
-            boundaries: [],
-            commitments: [],
-            preferences: [],
-          },
-          available: true,
-        },
-        persona: {
-          profile: {},
-          emotion: {},
-        },
-      },
-    });
+      }),
+    );
   });
 
   await waitFor(() => {

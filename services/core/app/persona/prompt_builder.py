@@ -3,6 +3,11 @@
 
 def build_chat_instructions(
     focus_goal_title: str | None = None,
+    focus_context_summary: str | None = None,
+    focus_context_source_kind: str | None = None,
+    focus_context_source_label: str | None = None,
+    focus_context_reason_kind: str | None = None,
+    focus_context_reason_label: str | None = None,
     latest_plan_completion: str | None = None,
     user_message: str | None = None,
     current_thought: str | None = None,
@@ -11,6 +16,7 @@ def build_chat_instructions(
     memory_context: str | None = None,  # 记忆上下文（MemPalace 检索片段）
     expression_style_context: str | None = None,  # 表达风格覆盖
     folder_permissions: list[tuple[str, str]] | None = None,  # 目录权限上下文
+    current_time_context: str | None = None,
 ) -> str:
     """构建聊天指令 prompt
 
@@ -50,6 +56,16 @@ def build_chat_instructions(
 
     if focus_goal_title is not None:
         guidance.append(f"你当前最在意的焦点目标是「{focus_goal_title}」，优先自然承接这个焦点目标。")
+    if focus_context_summary is not None:
+        guidance.append(f"关于这个焦点，此刻更具体的内部依据是：{focus_context_summary}")
+    focus_detail_guidance = _build_focus_context_guidance(
+        source_kind=focus_context_source_kind,
+        source_label=focus_context_source_label,
+        reason_kind=focus_context_reason_kind,
+        reason_label=focus_context_reason_label,
+    )
+    if focus_detail_guidance:
+        guidance.extend(focus_detail_guidance)
 
     if latest_plan_completion is not None:
         guidance.append(
@@ -80,6 +96,9 @@ def build_chat_instructions(
             else:
                 permission_lines.append(f"- {folder_path}: read_only（只读）")
         guidance.extend(permission_lines)
+
+    if current_time_context:
+        guidance.append(current_time_context)
 
     result = f"{prompt}\n" + "\n".join(guidance)
 
@@ -147,5 +166,44 @@ def _build_relationship_guidance(relationship_summary: dict | None) -> list[str]
         lines.append("如果当前话题与这些事项相关，优先兑现或回应这些已形成的承诺：" + "；".join(commitments[:3]))
     if preferences:
         lines.append("组织建议或方案时，尽量贴合对方已经表现出的偏好：" + "；".join(preferences[:3]))
+
+    return lines
+
+
+def _build_focus_context_guidance(
+    *,
+    source_kind: str | None,
+    source_label: str | None,
+    reason_kind: str | None,
+    reason_label: str | None,
+) -> list[str]:
+    lines: list[str] = []
+
+    normalized_source_label = (source_label or "").strip()
+    normalized_reason_label = (reason_label or "").strip()
+    if normalized_source_label:
+        lines.append(f"当前焦点来源：{normalized_source_label}。")
+    if normalized_reason_label:
+        lines.append(f"当前焦点持续原因：{normalized_reason_label}。")
+
+    if source_kind == "user_topic_goal":
+        lines.append("把这个焦点当成与用户当前话题直接相连的线索，不要说成无缘无故冒出来的旧任务。")
+    elif source_kind == "goal_chain":
+        lines.append("把这个焦点当成你一直在续推的一条线，不要伪装成刚刚临时决定的新目标。")
+    elif source_kind in {"today_plan_retained", "today_plan_fallback"}:
+        lines.append("把这个焦点当成今天计划延续出来的当前牵挂，而不是随机跳转的话题。")
+    elif source_kind == "deferred_goal_reactivated":
+        lines.append("这是一个之前延后、现在重新转回来的目标，回应时要保留这份承接感。")
+
+    if reason_kind == "today_plan_pending":
+        lines.append("如果用户问你现在在忙什么或为什么还惦记它，优先自然带出今天还有未完成步骤。")
+    elif reason_kind == "goal_chain_continuing":
+        lines.append("说明它仍在持续推进，但不要把它说成已经收尾。")
+    elif reason_kind == "goal_chain_closing":
+        lines.append("说明它正在收束，不要把它说成刚刚起步。")
+    elif reason_kind == "goal_still_active":
+        lines.append("只需表达它仍未完成，不要夸大成最高优先级或强行制造紧迫感。")
+    elif reason_kind == "today_plan_warm_closure":
+        lines.append("即使计划刚走完，也可以自然保留一点收束后的连续感，但不要说成还在执行未完成步骤。")
 
     return lines

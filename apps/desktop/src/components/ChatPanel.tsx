@@ -1,4 +1,4 @@
-import type { Goal, TodayPlan } from "../lib/api";
+import type { FocusContext, Goal, TodayPlan } from "../lib/api";
 import { ChatConfigPanel } from "./chat/ChatConfigPanel";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInputForm } from "./chat/ChatInputForm";
@@ -12,6 +12,9 @@ type ChatPanelProps = {
   assistantName?: string;
   draft: string;
   focusGoalTitle?: string | null;
+  focusContext?: FocusContext | null;
+  focusTransitionHint?: string | null;
+  focusContextSummary?: string | null;
   focusModeLabel: string;
   messages: ChatEntry[];
   attachedFolders?: string[];
@@ -38,6 +41,9 @@ export function ChatPanel({
   assistantName = "小晏",
   draft,
   focusGoalTitle,
+  focusContext,
+  focusTransitionHint,
+  focusContextSummary,
   messages,
   attachedFolders = [],
   attachedFiles = [],
@@ -102,6 +108,9 @@ export function ChatPanel({
     <section className="chat-page">
       <ChatHeader
         focusGoalTitle={focusGoalTitle}
+        focusContext={focusContext}
+        focusTransitionHint={focusTransitionHint}
+        focusContextSummary={focusContextSummary}
         todayPlan={todayPlan}
         activeGoals={activeGoals}
         onCompleteGoal={onCompleteGoal}

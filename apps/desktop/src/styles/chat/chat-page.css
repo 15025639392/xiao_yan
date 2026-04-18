@@ -23,6 +23,13 @@
   gap: var(--space-1);
 }
 
+.chat-page__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .chat-page__title {
   margin: 0;
   font-size: 1rem;
@@ -33,6 +40,10 @@
 .chat-page__subtitle {
   font-size: 0.75rem;
   color: var(--text-tertiary);
+}
+
+.chat-page__subtitle--accent {
+  color: var(--text-secondary);
 }
 
 .chat-page__header-actions {

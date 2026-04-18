@@ -7,6 +7,7 @@ import type { ChatAttachment, ChatRequestBody } from "../../lib/api";
 import { chat, resumeChat } from "../../lib/api";
 import { hasRecoverableAssistantReply } from "../chat/chatTypes";
 import { loadChatToolboxSelectedSkills } from "../../lib/chatToolboxPreferences";
+import { buildLocalChatTimeContext } from "./chatLocalTime";
 import { createChatRequestKey } from "./chatRequestKey";
 import type { PendingChatRequest } from "./chatRequestKey";
 
@@ -42,7 +43,7 @@ function buildChatRequestBody(
   options?: ChatSendOptions;
   },
 ): ChatRequestBody {
-  const body: ChatRequestBody = { message };
+  const body: ChatRequestBody = { message, ...buildLocalChatTimeContext() };
   const attachments: ChatAttachment[] = [
     ...attachedFolders.map((path) => ({ type: "folder" as const, path })),
     ...attachedFiles.map((path) => ({ type: "file" as const, path })),
@@ -249,6 +250,7 @@ export function useChatComposer({
           partial_content: message.content,
           request_key: message.requestKey,
           reasoning_session_id: message.reasoningSessionId,
+          ...buildLocalChatTimeContext(),
         });
       } catch (err) {
         const detail = err instanceof Error ? err.message : "续写失败";

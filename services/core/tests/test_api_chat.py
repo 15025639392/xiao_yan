@@ -1845,8 +1845,101 @@ def test_post_chat_includes_relevant_legacy_world_memory_as_system_context():
         response = client.post("/chat", json={"message": "你刚刚经历了什么"})
         assert response.status_code == 200
         assert gateway.last_instructions is not None
+        assert "【历史经历与长期记忆】" in gateway.last_instructions
+        assert "不代表当前用户本地时间" in gateway.last_instructions
         assert "夜里很安静，我有点困，但还惦记着整理今天的对话记忆" in gateway.last_instructions
         assert gateway.last_messages[-1].content == "你刚刚经历了什么"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_chat_instructions_prioritize_user_local_time_over_background_timeline():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter(
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/world (相似度 0.92) 夜里很安静，我有点困，但还惦记着整理今天的对话记忆。"
+    )
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/chat",
+            json={
+                "message": "你现在在吗",
+                "user_timezone": "Asia/Shanghai",
+                "user_local_time": "2026-04-18 12:30",
+                "user_time_of_day": "afternoon",
+            },
+        )
+        assert response.status_code == 200
+        assert gateway.last_instructions is not None
+        assert "用户本地时间为 2026-04-18 12:30" in gateway.last_instructions
+        assert "时区为 Asia/Shanghai" in gateway.last_instructions
+        assert "当前属于下午" in gateway.last_instructions
+        assert "不要根据历史记忆、后台状态或模型习惯自行猜测" in gateway.last_instructions
+        assert "【历史经历与长期记忆】" in gateway.last_instructions
+        assert "夜里很安静，我有点困" in gateway.last_instructions
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_resume_chat_keeps_user_local_time_context():
+    memory_repository = InMemoryMemoryRepository()
+    gateway = StubGateway()
+    mempalace_adapter = StubMemPalaceAdapter(
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/world (相似度 0.92) 夜里很安静，我有点困，但还惦记着整理今天的对话记忆。"
+    )
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_mempalace_adapter():
+        return mempalace_adapter
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/chat/resume",
+            json={
+                "message": "继续说",
+                "assistant_message_id": "assistant_1",
+                "partial_content": "我先说到这里",
+                "user_timezone": "Asia/Shanghai",
+                "user_local_time": "2026-04-18 12:30",
+                "user_time_of_day": "afternoon",
+            },
+        )
+        assert response.status_code == 200
+        assert gateway.last_instructions is not None
+        assert "用户本地时间为 2026-04-18 12:30" in gateway.last_instructions
+        assert "当前属于下午" in gateway.last_instructions
+        assert "【历史经历与长期记忆】" in gateway.last_instructions
     finally:
         app.dependency_overrides.clear()
 

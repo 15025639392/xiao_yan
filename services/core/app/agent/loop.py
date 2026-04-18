@@ -44,6 +44,7 @@ from app.planning.morning_plan import MorningPlanPlanner
 from app.runtime import StateStore
 from app.tools.runner import CommandRunner
 from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
+from app.utils.local_time import get_local_now
 from app.world.service import WorldStateService
 
 
@@ -75,7 +76,7 @@ class AutonomyLoop:
         self.state_store = state_store
         self.memory_repository = memory_repository
         self.goal_repository = goal_repository or InMemoryGoalRepository()
-        self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
+        self.now_provider = now_provider or get_local_now
         self.world_state_service = world_state_service or WorldStateService()
         self.command_runner = command_runner or CommandRunner(
             CommandSandbox.with_defaults(max_level=ToolSafetyLevel.SAFE)

@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.domain.models import BeingState
+from app.focus.context import build_focus_context
 from app.goals.admission import GoalAdmissionService
 from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage
@@ -19,8 +20,20 @@ from app.world.service import WorldStateService
 RUNTIME_CHAT_MESSAGES_LIMIT = 80
 
 
-def build_public_state_payload(state: BeingState) -> dict[str, Any]:
-    return state.model_dump(mode="json")
+def build_public_state_payload(
+    state: BeingState,
+    goal_repository: GoalRepository | None = None,
+) -> dict[str, Any]:
+    payload = state.model_dump(mode="json")
+    if goal_repository is None:
+        return payload
+
+    focus_context = build_focus_context(
+        state=state,
+        goal_repository=goal_repository,
+    )
+    payload["focus_context"] = None if focus_context is None else focus_context.to_payload()
+    return payload
 
 
 def _compose_world_state(
@@ -150,7 +163,7 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
     runtime_config = get_runtime_config()
     mac_console_status = getattr(target_app.state, "mac_console_bootstrap_status", None)
     return {
-        "state": build_public_state_payload(state_store.get()),
+        "state": build_public_state_payload(state_store.get(), goal_repository),
         "messages": messages,
         "goals": [goal.model_dump(mode="json") for goal in goal_repository.list_goals()],
         "goal_admission_stats": (

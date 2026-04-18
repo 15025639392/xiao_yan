@@ -12,6 +12,7 @@ from app.api.deps import (
     get_world_state_service,
 )
 from app.domain.models import FocusMode, WakeMode
+from app.focus.selection import select_focus_goal
 from app.goals.models import Goal
 from app.goals.repository import GoalRepository
 from app.memory.repository import MemoryRepository
@@ -44,21 +45,6 @@ def build_world_router() -> APIRouter:
         )
         return world_state.model_dump()
 
-    def _select_wake_goal(goal_repository: GoalRepository, recent_autobio: str | None) -> Goal | None:
-        active_goals = goal_repository.list_active_goals()
-        if not active_goals:
-            return None
-        if recent_autobio is None:
-            return active_goals[0]
-        chained_goals = [goal for goal in active_goals if goal.chain_id is not None]
-        if not chained_goals:
-            return active_goals[0]
-        return sorted(
-            chained_goals,
-            key=lambda goal: (goal.generation, goal.updated_at, goal.created_at),
-            reverse=True,
-        )[0]
-
     @router.post("/lifecycle/wake")
     def wake(
         state_store: StateStore = Depends(get_state_store),
@@ -69,7 +55,10 @@ def build_world_router() -> APIRouter:
     ) -> dict:
         current_state = state_store.get()
         recent_autobio = find_recent_autobio(memory_repository)
-        selected_goal = _select_wake_goal(goal_repository, recent_autobio)
+        selected_goal = select_focus_goal(
+            goal_repository.list_active_goals(),
+            recent_autobio=recent_autobio,
+        )
         waking_state = wake_up(recent_autobio=recent_autobio).model_copy(
             update={
                 "last_proactive_source": current_state.last_proactive_source,
@@ -95,10 +84,13 @@ def build_world_router() -> APIRouter:
                 }
             )
 
-        return build_public_state_payload(state_store.set(waking_state))
+        return build_public_state_payload(state_store.set(waking_state), goal_repository)
 
     @router.post("/lifecycle/sleep")
-    def sleep(state_store: StateStore = Depends(get_state_store)) -> dict:
+    def sleep(
+        state_store: StateStore = Depends(get_state_store),
+        goal_repository: GoalRepository = Depends(get_goal_repository),
+    ) -> dict:
         current_state = state_store.get()
         sleeping_state = current_state.model_copy(
             update={
@@ -110,6 +102,6 @@ def build_world_router() -> APIRouter:
                 "last_action": None,
             }
         )
-        return build_public_state_payload(state_store.set(sleeping_state))
+        return build_public_state_payload(state_store.set(sleeping_state), goal_repository)
 
     return router

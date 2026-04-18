@@ -2,10 +2,15 @@ import { GoalsSummaryPanel } from "../components/GoalsSummaryPanel";
 import { StatusPanel } from "../components/StatusPanel";
 import { Panel } from "../components/ui/Panel";
 import { WorldPanel } from "../components/WorldPanel";
-import type { BeingState, Goal, InnerWorldState, MacConsoleBootstrapStatus } from "../lib/api";
+import type { BeingState, FocusContext, Goal, InnerWorldState, MacConsoleBootstrapStatus } from "../lib/api";
+import { getFocusContextBadge, getFocusContextLines } from "../lib/focusContextPresentation";
+import { StatusBadge } from "../components/ui/StatusBadge";
 
 export function OverviewPanel({
   focusGoalTitle,
+  focusContext,
+  focusTransitionHint,
+  focusContextSummary,
   goals,
   latestActionLabel,
   mode,
@@ -16,6 +21,9 @@ export function OverviewPanel({
   onNavigate,
 }: {
   focusGoalTitle: string | null;
+  focusContext: FocusContext | null;
+  focusTransitionHint: string | null;
+  focusContextSummary: string | null;
   goals: Goal[];
   latestActionLabel: string | null;
   mode: BeingState["mode"];
@@ -26,14 +34,25 @@ export function OverviewPanel({
   onNavigate: (route: "memory" | "persona") => void;
 }) {
   const isAwake = mode === "awake";
+  const focusContextLines = getFocusContextLines(focusContext, focusContextSummary);
+  const focusStatusBadge = getFocusContextBadge(focusContext);
 
   return (
     <div className="overview-page">
       <section className="overview-stage">
         <div className="overview-grid">
           <article className="overview-card overview-card--primary">
-            <p className="overview-card__label">当前焦点</p>
+            <div className="overview-card__label-row">
+              <p className="overview-card__label">当前焦点</p>
+              {focusStatusBadge ? <StatusBadge tone={focusStatusBadge.tone}>{focusStatusBadge.label}</StatusBadge> : null}
+            </div>
             <p className="overview-card__value">{focusGoalTitle ?? "暂未锁定"}</p>
+            {focusContextLines.map((line) => (
+              <p key={line} className="overview-card__body">
+                {line}
+              </p>
+            ))}
+            {focusTransitionHint ? <p className="overview-card__body overview-card__body--accent">{focusTransitionHint}</p> : null}
             <p className="overview-card__body">{state.current_thought ?? "现在没有新的显性想法。"}</p>
           </article>
 
@@ -59,6 +78,7 @@ export function OverviewPanel({
           <StatusPanel
             error={""}
             focusGoalTitle={focusGoalTitle}
+            focusContext={focusContext}
             state={state}
             macConsoleStatus={macConsoleStatus}
             variant="compact"
@@ -85,7 +105,13 @@ export function OverviewPanel({
       </section>
 
       <section className="mission-board">
-        <GoalsSummaryPanel goals={goals} onUpdateGoalStatus={onUpdateGoalStatus} />
+        <GoalsSummaryPanel
+          goals={goals}
+          focusGoalId={state.active_goal_ids[0] ?? state.today_plan?.goal_id ?? null}
+          focusGoalTitle={focusGoalTitle}
+          focusContext={focusContext}
+          onUpdateGoalStatus={onUpdateGoalStatus}
+        />
       </section>
     </div>
   );

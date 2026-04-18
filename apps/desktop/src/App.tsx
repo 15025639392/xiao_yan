@@ -3,19 +3,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatEntry, ChatSendOptions } from "./components/ChatPanel";
 import { AboutDialog } from "./components/app/AboutDialog";
 import { AppMainContent } from "./components/app/AppMainContent";
-import { applyChatRealtimeEvent } from "./components/app/chatRealtimeUpdates";
 import { AppSidebar } from "./components/app/AppSidebar";
 import type { PendingChatRequest } from "./components/app/chatRequestKey";
-import {
-  hasVisibleAssistantContent,
-  shouldSettleSendingAfterChatEvent,
-} from "./components/app/chatSendingState";
-import { syncMessagesFromRuntime } from "./components/app/chatRuntimeMessages";
-import { applyRuntimeRealtimeEvent, getRuntimeRealtimePayload } from "./components/app/runtimeRealtimeUpdates";
+import { useAppRuntimeSync } from "./components/app/useAppRuntimeSync";
 import { useAppChrome } from "./components/app/useAppChrome";
+import { useAppStateMutations } from "./components/app/useAppStateMutations";
 import { useChatAttachments } from "./components/app/useChatAttachments";
 import { useChatComposer } from "./components/app/useChatComposer";
+import { useChatRouteMessages } from "./components/app/useChatRouteMessages";
 import { useDesktopPet } from "./components/app/useDesktopPet";
+import { useFocusPresentation } from "./components/app/useFocusPresentation";
 import type {
   BeingState,
   Goal,
@@ -23,17 +20,7 @@ import type {
   MacConsoleBootstrapStatus,
   PersonaProfile,
 } from "./lib/api";
-import {
-  fetchGoals,
-  fetchMessages,
-  fetchState,
-  fetchWorld,
-  sleep,
-  upsertChatFolderPermission,
-  updateGoalStatus,
-  wake,
-} from "./lib/api";
-import { subscribeAppRealtime } from "./lib/realtime";
+import { upsertChatFolderPermission } from "./lib/api";
 import { startCapabilityWorker } from "./lib/capabilities/worker";
 import {
   buildFolderPermissionPlan,
@@ -125,9 +112,43 @@ export default function App() {
     onPersonaChange: setPersona,
     persona,
   });
-  const focusGoalTitle = resolveFocusGoalTitle(state, goals);
+  const {
+    focusContext,
+    focusGoalTitle,
+    focusContextSummary,
+    focusTransitionHint,
+    updateFocusTransitionHint,
+  } = useFocusPresentation(state, goals);
   const assistantName = persona?.name?.trim() || "小晏";
   const assistantIdentity = persona?.identity?.trim() || "AI Agent Desktop";
+
+  useAppRuntimeSync({
+    messagesRef,
+    pendingRequestMessageRef,
+    setError,
+    setGoals,
+    setIsSending,
+    setMacConsoleStatus,
+    setMessages,
+    setPersona,
+    setState,
+    setWorld,
+    updateFocusTransitionHint,
+  });
+  useChatRouteMessages({ route, setMessages });
+  const {
+    handleWake,
+    handleSleep,
+    handleUpdateGoalStatus,
+    handlePersonaUpdated,
+  } = useAppStateMutations({
+    setError,
+    setGoals,
+    setMessages,
+    setState,
+    setWorld,
+    updateFocusTransitionHint,
+  });
 
   useEffect(() => {
     const registry = importedProjectRegistryRef.current;
@@ -149,135 +170,6 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function syncRuntime() {
-      try {
-        const initialRoute = resolveRoute(window.location.hash);
-        const [nextState, nextGoals, nextWorld] = await Promise.all([
-          fetchState(),
-          fetchGoals(),
-          fetchWorld(),
-        ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setState(nextState);
-        setGoals(nextGoals.goals);
-        setWorld(nextWorld);
-        if (initialRoute === "chat") {
-          void fetchMessages()
-            .then((nextMessages) => {
-              if (!cancelled) {
-                setMessages((current) => syncMessagesFromRuntime(current, nextMessages.messages));
-              }
-            })
-            .catch(() => {
-              // Messages remain lazy-loaded when chat opens.
-            });
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "同步失败");
-        }
-      }
-    }
-
-    void syncRuntime();
-    const unsubscribe = subscribeAppRealtime((event) => {
-      if (cancelled) {
-        return;
-      }
-
-      if (
-        event.type === "chat_started" ||
-        event.type === "chat_delta" ||
-        event.type === "chat_completed" ||
-        event.type === "chat_failed"
-      ) {
-        const pendingRequest = pendingRequestMessageRef.current;
-        const nextChatUpdate = applyChatRealtimeEvent(messagesRef.current, event, pendingRequest);
-        const nextMessages = nextChatUpdate?.messages ?? messagesRef.current;
-        messagesRef.current = nextMessages;
-        setMessages(nextMessages);
-        if (event.type === "chat_started") {
-          pendingRequestMessageRef.current = null;
-        }
-        if (shouldSettleSendingAfterChatEvent(event) || hasVisibleAssistantContent(nextMessages)) {
-          setIsSending(false);
-        }
-        setError(event.type === "chat_failed" ? event.payload.error : "");
-        return;
-      }
-
-      const runtimePayload = getRuntimeRealtimePayload(event);
-      if (!runtimePayload) {
-        return;
-      }
-
-      setState(runtimePayload.state);
-      const nextRuntimeUpdate = applyRuntimeRealtimeEvent(messagesRef.current, event);
-      const nextMessages = nextRuntimeUpdate?.messages ?? messagesRef.current;
-      messagesRef.current = nextMessages;
-      setMessages(nextMessages);
-      if (hasVisibleAssistantContent(nextMessages)) {
-        setIsSending(false);
-      }
-      setGoals(runtimePayload.goals);
-      setWorld(runtimePayload.world);
-      if (runtimePayload.mac_console_status !== undefined) {
-        setMacConsoleStatus(runtimePayload.mac_console_status ?? null);
-      }
-      setError("");
-    });
-
-    const unsubscribePersona = subscribeAppRealtime((event) => {
-      if (cancelled) {
-        return;
-      }
-
-      const personaPayload =
-        event.type === "snapshot" ? event.payload.persona : event.type === "persona_updated" ? event.payload : null;
-      if (!personaPayload) {
-        return;
-      }
-
-      setPersona(personaPayload.profile);
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-      unsubscribePersona();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (route !== "chat") {
-      return;
-    }
-
-    let cancelled = false;
-    void fetchMessages()
-      .then((nextMessages) => {
-        if (!cancelled) {
-          setMessages((current) => syncMessagesFromRuntime(current, nextMessages.messages));
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          console.error("加载聊天消息失败:", err);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [route]);
-
   // Desktop capability worker: pull pending capability requests from core and execute locally.
   useEffect(() => {
     const stop = startCapabilityWorker();
@@ -285,58 +177,6 @@ export default function App() {
       stop();
     };
   }, []);
-
-  async function handleWake() {
-    try {
-      setError("");
-      setState(await wake());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "唤醒失败");
-    }
-  }
-
-  async function handleSleep() {
-    try {
-      setError("");
-      setState(await sleep());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "休眠失败");
-    }
-  }
-
-  async function handleUpdateGoalStatus(goalId: string, status: Goal["status"]) {
-    try {
-      setError("");
-      const updatedGoal = await updateGoalStatus(goalId, status);
-      const refreshedState = await fetchState();
-
-      setGoals((current) =>
-        current.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal))
-      );
-      setState(refreshedState);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "目标状态更新失败");
-    }
-  }
-
-  async function handlePersonaUpdated() {
-    try {
-      const [nextState, nextMessages, nextGoals, nextWorld] = await Promise.all([
-        fetchState(),
-        fetchMessages(),
-        fetchGoals(),
-        fetchWorld(),
-      ]);
-
-      setState(nextState);
-      setMessages(syncMessagesFromRuntime([], nextMessages.messages));
-      setGoals(nextGoals.goals);
-      setWorld(nextWorld);
-      setError("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "同步失败");
-    }
-  }
 
   const isAwake = state.mode === "awake";
 
@@ -373,6 +213,9 @@ export default function App() {
           attachedImages={attachedImages}
           draft={draft}
           focusGoalTitle={focusGoalTitle}
+          focusContext={focusContext}
+          focusTransitionHint={focusTransitionHint}
+          focusContextSummary={focusContextSummary}
           goals={goals}
           isAwake={isAwake}
           isSending={isSending}
@@ -419,18 +262,6 @@ async function restoreImportedProjectsToCore(registry: ReturnType<typeof loadImp
   for (const permission of permissionPlan) {
     await upsertChatFolderPermission(permission.path, permission.access_level);
   }
-}
-
-
-function resolveFocusGoalTitle(state: BeingState, goals: Goal[]): string | null {
-  if (state.active_goal_ids.length > 0) {
-    const currentGoal = goals.find((goal) => goal.id === state.active_goal_ids[0]);
-    if (currentGoal) {
-      return currentGoal.title;
-    }
-  }
-
-  return state.today_plan?.goal_title ?? null;
 }
 
 function renderFocusModeLabel(focusMode: BeingState["focus_mode"]): string {

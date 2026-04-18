@@ -18,7 +18,27 @@ export function normalizeMarkdownContent(content: string): string {
     return `${STRUCTURED_CONTENT_FENCE}text\n${trimmed}\n${STRUCTURED_CONTENT_FENCE}`;
   }
 
+  if (trimmed.includes("\n")) {
+    return normalizePlainTextBlocks(content);
+  }
+
   return content;
+}
+
+function normalizePlainTextBlocks(content: string): string {
+  const normalized = content.replace(/\r\n/g, "\n");
+  const blocks = normalized.split(/\n{2,}/);
+
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n");
+      if (lines.length <= 1) {
+        return block;
+      }
+
+      return lines.join("  \n");
+    })
+    .join("\n\n");
 }
 
 function hasExplicitMarkdown(content: string): boolean {

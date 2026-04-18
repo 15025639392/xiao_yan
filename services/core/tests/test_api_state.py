@@ -2,7 +2,9 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_mempalace_adapter
 from app.domain.models import BeingState, FocusMode, WakeMode
-from app.main import app, get_memory_repository, get_state_store
+from app.goals.models import Goal
+from app.goals.repository import InMemoryGoalRepository
+from app.main import app, get_goal_repository, get_memory_repository, get_state_store
 from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore
 
@@ -42,6 +44,40 @@ def test_get_state_omits_removed_legacy_fields():
         assert response.status_code == 200
         assert body["focus_mode"] == "autonomy"
         assert "self_programming_job" not in body
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_state_includes_focus_context_when_goal_is_active():
+    goal_repository = InMemoryGoalRepository()
+    goal = goal_repository.save_goal(Goal(id="goal-1", title="整理今天的对话记忆", source="你现在在忙什么"))
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            focus_mode=FocusMode.AUTONOMY,
+            active_goal_ids=[goal.id],
+        )
+    )
+
+    def override_state_store():
+        return state_store
+
+    def override_goal_repository():
+        return goal_repository
+
+    app.dependency_overrides[get_state_store] = override_state_store
+    app.dependency_overrides[get_goal_repository] = override_goal_repository
+
+    try:
+        client = TestClient(app)
+        response = client.get("/state")
+        body = response.json()
+
+        assert response.status_code == 200
+        assert body["focus_context"]["goal_title"] == "整理今天的对话记忆"
+        assert body["focus_context"]["source_kind"] == "retained_goal"
+        assert body["focus_context"]["reason_kind"] == "goal_still_active"
+        assert "还没完成" in body["focus_context"]["reason_label"]
     finally:
         app.dependency_overrides.clear()
 

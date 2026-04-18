@@ -74,6 +74,48 @@
   cursor: not-allowed;
 }
 
+/* 焦点状态卡片 */
+.focus-status-card {
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-surface-elevated) 86%, var(--accent-color) 14%);
+}
+
+.focus-status-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.focus-status-card__title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.focus-status-card__title {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.focus-status-card__subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.focus-status-card__body {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
 /* 身体环境状态卡片 */
 .environment-status-card {
   margin-top: var(--space-5);

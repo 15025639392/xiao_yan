@@ -13,6 +13,11 @@ logger = getLogger(__name__)
 
 RECENT_CONTEXT_WEIGHT = 0.7
 LONG_TERM_CONTEXT_WEIGHT = 0.3
+HISTORICAL_MEMORY_CONTEXT_PREFIX = (
+    "【历史经历与长期记忆】\n"
+    "以下内容是过去积累下来的经历、内在状态或长期记忆线索，只用于连续性参考，"
+    "不代表当前用户本地时间，也不应直接作为当前问候语或当前时间段判断依据。"
+)
 
 
 class ChatMemoryBackend(Protocol):
@@ -102,6 +107,9 @@ class ChatMemoryRuntime:
                 memory_context = f"{memory_context}\n{approved_knowledge_context}"
             else:
                 memory_context = approved_knowledge_context
+
+        if memory_context:
+            memory_context = f"{HISTORICAL_MEMORY_CONTEXT_PREFIX}\n{memory_context}"
 
         return chat_messages, memory_context, search_failed, retrieval_attempted
 

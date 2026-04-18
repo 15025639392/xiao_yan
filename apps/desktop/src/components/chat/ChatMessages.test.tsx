@@ -228,12 +228,13 @@ test("keeps streaming reasoning copy out of the way once assistant text is visib
 
   expect(screen.queryByText("先收敛约束，再确认可行路径。")).toBeNull();
   expect(screen.getByText("我先继续推理。▍")).toBeInTheDocument();
+  expect(screen.getByText("小晏还在继续说")).toBeInTheDocument();
   expect(screen.queryByText("持续推理")).toBeNull();
   expect(screen.queryByText("步骤 3")).toBeNull();
   expect(screen.queryByText("阶段 exploring")).toBeNull();
 });
 
-test("renders natural streaming status while waiting for assistant text", () => {
+test("does not render reasoning summary while waiting for assistant text", () => {
   render(
     <ChatMessages
       assistantName="小晏"
@@ -261,7 +262,8 @@ test("renders natural streaming status while waiting for assistant text", () => 
     />,
   );
 
-  expect(screen.getByText("先收敛约束，再确认可行路径。")).toBeInTheDocument();
+  expect(screen.getByText("小晏正在整理这句话。")).toBeInTheDocument();
+  expect(screen.queryByText("先收敛约束，再确认可行路径。")).toBeNull();
   expect(screen.queryByText("持续推理")).toBeNull();
   expect(screen.queryByText("步骤 3")).toBeNull();
   expect(screen.queryByText("阶段 exploring")).toBeNull();
@@ -397,9 +399,37 @@ test("derives assistant display state from message fields in one place", () => {
     ),
   ).toMatchObject({
     bodyMode: "streaming-placeholder",
-    status: { text: "我先把线索理顺。", tone: "muted" },
+    status: null,
     showKnowledgeContext: true,
     showMemoryContext: true,
+    showResumeAction: false,
+    showRetryAction: false,
+  });
+});
+
+test("derives visible streaming status without exposing reasoning summary", () => {
+  expect(
+    getChatMessageDisplayState(
+      {
+        id: "assistant-streaming-visible",
+        role: "assistant",
+        content: "我先给你一个能落地的版本。",
+        state: "streaming",
+        reasoningState: {
+          session_id: "reasoning_1",
+          phase: "exploring",
+          step_index: 2,
+          summary: "我先把线索理顺。",
+          updated_at: "2026-04-18T00:00:00Z",
+        },
+      },
+      "小晏",
+    ),
+  ).toMatchObject({
+    bodyMode: "markdown",
+    status: { text: "小晏还在继续说", tone: "muted" },
+    showKnowledgeContext: false,
+    showMemoryContext: false,
     showResumeAction: false,
     showRetryAction: false,
   });

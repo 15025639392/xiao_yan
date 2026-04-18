@@ -266,6 +266,15 @@ export type OrchestratorSchedulerSnapshot = {
   policy_note?: string | null;
 };
 
+export type FocusContext = {
+  goal_title: string;
+  source_kind: string;
+  source_label: string;
+  reason_kind: string;
+  reason_label: string;
+  prompt_summary: string;
+};
+
 export type BeingState = {
   mode: "awake" | "sleeping";
   focus_mode: "sleeping" | "morning_plan" | "autonomy";
@@ -273,6 +282,7 @@ export type BeingState = {
   active_goal_ids: string[];
   today_plan?: TodayPlan | null;
   last_action?: ToolExecutionResult | null;
+  focus_context?: FocusContext | null;
 };
 
 export type MacConsoleBootstrapStatus = {
@@ -327,6 +337,9 @@ export type ChatReasoningState = {
 export type ChatRequestBody = {
   message: string;
   request_key?: string;
+  user_timezone?: string;
+  user_local_time?: string;
+  user_time_of_day?: "morning" | "afternoon" | "evening" | "night";
   attachments?: ChatAttachment[];
   mcp_servers?: string[];
   skills?: string[];
@@ -361,6 +374,9 @@ export type ChatResumeRequest = {
   partial_content: string;
   request_key?: string;
   reasoning_session_id?: string;
+  user_timezone?: string;
+  user_local_time?: string;
+  user_time_of_day?: "morning" | "afternoon" | "evening" | "night";
 };
 
 export type ChatHistoryMessage = {

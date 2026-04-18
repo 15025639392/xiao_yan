@@ -1,6 +1,18 @@
 import { render, screen } from "@testing-library/react";
 import { MarkdownMessage } from "./MarkdownMessage";
 
+test("preserves natural line breaks for plain multi-line replies", () => {
+  const { container } = render(
+    <MarkdownMessage
+      content={"先给你结论\n再补一句原因\n\n最后提醒一个风险"}
+    />,
+  );
+
+  expect(container.querySelectorAll("br")).toHaveLength(1);
+  expect(container.querySelectorAll(".markdown-paragraph")).toHaveLength(2);
+  expect(screen.getByText("最后提醒一个风险")).toBeInTheDocument();
+});
+
 test("renders markdown code blocks with a dedicated container", () => {
   const { container } = render(
     <MarkdownMessage

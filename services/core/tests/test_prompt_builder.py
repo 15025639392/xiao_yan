@@ -22,6 +22,30 @@ def test_chat_instructions_include_focus_goal_and_completion_guidance():
     assert "不要生硬复述系统提示" in instructions
 
 
+def test_chat_instructions_include_structured_focus_context_guidance():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "你是持续存在的人格体，而不是一次性问答助手。\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        focus_goal_title="继续推进：整理今天的对话记忆",
+        focus_context_summary="当前焦点来自她一直接着往下推进的这条线，之所以还在推进，是因为这条线已经推到第3步了，现在主要是在收尾。",
+        focus_context_source_kind="goal_chain",
+        focus_context_source_label="她一直接着往下推进的这条线",
+        focus_context_reason_kind="goal_chain_closing",
+        focus_context_reason_label="这条线已经推到第3步了，现在主要是在收尾",
+        user_message="你现在在忙什么",
+        persona_system_prompt=persona_prompt,
+    )
+
+    assert "当前焦点来源：她一直接着往下推进的这条线。" in instructions
+    assert "当前焦点持续原因：这条线已经推到第3步了，现在主要是在收尾。" in instructions
+    assert "不要伪装成刚刚临时决定的新目标" in instructions
+    assert "说明它正在收束，不要把它说成刚刚起步" in instructions
+
+
 def test_chat_instructions_prioritize_internal_state_for_status_questions():
     persona_prompt = (
         "你是 Aira。\n"
@@ -147,6 +171,26 @@ def test_chat_instructions_include_current_thought_continuity_guidance():
     assert "你此刻脑海里还有一个没收束的念头" in instructions
     assert "我还在琢磨今天那条对话线索" in instructions
     assert "先自然承接这个念头" in instructions
+
+
+def test_chat_instructions_include_explicit_current_time_context():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        user_message="你现在在吗",
+        persona_system_prompt=persona_prompt,
+        current_time_context=(
+            "当前对话时间基准：用户本地时间为 2026-04-18 12:30，时区为 Asia/Shanghai，"
+            "当前属于下午。涉及“现在”、问候语和时间段判断时，一律以这个时间基准为准。"
+        ),
+    )
+
+    assert "当前对话时间基准" in instructions
+    assert "Asia/Shanghai" in instructions
+    assert "一律以这个时间基准为准" in instructions
 
 
 def test_chat_instructions_include_understand_then_support_hard_constraints():

@@ -40,6 +40,14 @@ test("renders her plan for today when a morning plan exists", () => {
     <StatusPanel
       error=""
       focusGoalTitle="整理今天的对话记忆"
+      focusContext={{
+        goal_title: "整理今天的对话记忆",
+        source_kind: "user_topic_goal",
+        source_label: "刚接住你这轮话题的事",
+        reason_kind: "today_plan_pending",
+        reason_label: "今天这条还剩 2 步没做完",
+        prompt_summary: "当前焦点来自刚接住你这轮话题的事，之所以还在推进，是因为今天这条还剩 2 步没做完。",
+      }}
       state={{
         mode: "awake",
         focus_mode: "morning_plan",
@@ -60,7 +68,11 @@ test("renders her plan for today when a morning plan exists", () => {
 
   expect(screen.getAllByText("今日计划").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("当前日程与运行状态")).toBeInTheDocument();
-  expect(screen.getByText("整理今天的对话记忆")).toBeInTheDocument();
+  expect(screen.getByText("当前焦点")).toBeInTheDocument();
+  expect(screen.getAllByText("整理今天的对话记忆").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText("用户触发")).toBeInTheDocument();
+  expect(screen.getByText("会先盯着这件事，因为这是刚接住你这轮话题的事。")).toBeInTheDocument();
+  expect(screen.getByText("现在还在继续推进，因为今天这条还剩 2 步没做完。")).toBeInTheDocument();
   expect(screen.getAllByText("待处理")).toHaveLength(2);
   expect(screen.getByText("把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
   expect(screen.getByText("开始动手推进")).toBeInTheDocument();
@@ -157,6 +169,15 @@ test("compact variant keeps today plan visible and skips secondary insight fetch
   render(
     <StatusPanel
       error=""
+      focusGoalTitle="收敛默认首页"
+      focusContext={{
+        goal_title: "收敛默认首页",
+        source_kind: "goal_chain",
+        source_label: "她一直接着往下推进的这条线",
+        reason_kind: "goal_chain_continuing",
+        reason_label: "这条线已经推到第2步了，还会继续往下走",
+        prompt_summary: "当前焦点来自她一直接着往下推进的这条线，之所以还在推进，是因为这条线已经推到第2步了，还会继续往下走。",
+      }}
       variant="compact"
       state={{
         mode: "awake",
@@ -173,7 +194,10 @@ test("compact variant keeps today plan visible and skips secondary insight fetch
     />
   );
 
-  expect(screen.getByText("收敛默认首页")).toBeInTheDocument();
+  expect(screen.getByText("当前焦点")).toBeInTheDocument();
+  expect(screen.getAllByText("收敛默认首页").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText("续推中")).toBeInTheDocument();
+  expect(screen.getByText("会先盯着这件事，因为这是她一直接着往下推进的这条线。")).toBeInTheDocument();
   expect(fetchEmotionState).not.toHaveBeenCalled();
   expect(fetchMemorySummary).not.toHaveBeenCalled();
   expect(subscribeAppRealtime).not.toHaveBeenCalled();

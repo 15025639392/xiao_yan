@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import re
 
 from app.domain.models import BeingState
+from app.focus.context import build_focus_context
 from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatMessage
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
@@ -11,6 +12,7 @@ from app.memory.observability import KnowledgeObservabilityTracker
 from app.persona.expression_mapper import ExpressionStyleMapper
 from app.persona.prompt_builder import build_chat_instructions
 from app.persona.service import PersonaService
+from app.utils.local_time import format_local_time_context
 
 LONG_TERM_REFERENCE_LINE_PATTERN = re.compile(
     r"^-\s+(?P<source>\S+)(?:\s+\(相似度\s+(?P<similarity>[0-9]+(?:\.[0-9]+)?)\))?\s*(?P<excerpt>.*)$"
@@ -20,6 +22,11 @@ LONG_TERM_REFERENCE_LINE_PATTERN = re.compile(
 @dataclass(slots=True)
 class PreparedChatContext:
     focus_goal_title: str | None
+    focus_context_summary: str | None
+    focus_context_source_kind: str | None
+    focus_context_source_label: str | None
+    focus_context_reason_kind: str | None
+    focus_context_reason_label: str | None
     chat_messages: list[ChatMessage]
     memory_context: str
     retrieval_failed: bool
@@ -37,7 +44,10 @@ def prepare_chat_context(
     state: BeingState,
     user_message: str,
 ) -> PreparedChatContext:
-    focus_goal = None if not state.active_goal_ids else goal_repository.get_goal(state.active_goal_ids[0])
+    focus_context = build_focus_context(
+        state=state,
+        goal_repository=goal_repository,
+    )
     persona_service.infer_chat_emotion(user_message)
     persona_system_prompt = persona_service.build_system_prompt()
 
@@ -51,7 +61,12 @@ def prepare_chat_context(
         context_limit=context_limit,
     )
     return PreparedChatContext(
-        focus_goal_title=None if focus_goal is None else focus_goal.title,
+        focus_goal_title=None if focus_context is None else focus_context.goal_title,
+        focus_context_summary=None if focus_context is None else focus_context.render_for_prompt(),
+        focus_context_source_kind=None if focus_context is None else focus_context.source_kind,
+        focus_context_source_label=None if focus_context is None else focus_context.source_label,
+        focus_context_reason_kind=None if focus_context is None else focus_context.reason_kind,
+        focus_context_reason_label=None if focus_context is None else focus_context.reason_label,
         chat_messages=chat_messages,
         memory_context=memory_context,
         retrieval_failed=retrieval_failed,
@@ -67,9 +82,17 @@ def build_base_chat_instructions(
     prepared: PreparedChatContext,
     state: BeingState,
     user_message: str,
+    user_timezone: str | None = None,
+    user_local_time: str | None = None,
+    user_time_of_day: str | None = None,
 ) -> str:
     return build_chat_instructions(
         focus_goal_title=prepared.focus_goal_title,
+        focus_context_summary=prepared.focus_context_summary,
+        focus_context_source_kind=prepared.focus_context_source_kind,
+        focus_context_source_label=prepared.focus_context_source_label,
+        focus_context_reason_kind=prepared.focus_context_reason_kind,
+        focus_context_reason_label=prepared.focus_context_reason_label,
         latest_plan_completion=None,
         user_message=user_message,
         current_thought=state.current_thought,
@@ -78,6 +101,11 @@ def build_base_chat_instructions(
         memory_context=prepared.memory_context or None,
         expression_style_context=prepared.expression_style_context,
         folder_permissions=folder_permissions,
+        current_time_context=format_local_time_context(
+            user_timezone=user_timezone,
+            user_local_time=user_local_time,
+            user_time_of_day=user_time_of_day,
+        ),
     )
 
 

@@ -6,6 +6,8 @@ import type { GoalColumn } from "./goalsUtils";
 type GoalBoardProps = {
   columns: GoalColumn[];
   collapsedColumns: Set<string>;
+  focusGoalId?: string | null;
+  focusGoalTitle?: string | null;
   onToggleColumn: (columnId: string) => void;
   onAbandonClick: (goalId: string, goalTitle: string) => void;
   onCompleteClick: (goalId: string, goalTitle: string) => void;
@@ -19,6 +21,8 @@ type GoalBoardProps = {
 export function GoalBoard({
   columns,
   collapsedColumns,
+  focusGoalId,
+  focusGoalTitle,
   onToggleColumn,
   onAbandonClick,
   onCompleteClick,
@@ -66,6 +70,9 @@ export function GoalBoard({
                           <GoalItem
                             key={goal.id}
                             goal={goal}
+                            isFocusedGoal={goal.id === focusGoalId}
+                            showParallelStatus={Boolean(focusGoalId) && goal.status === "active" && goal.id !== focusGoalId}
+                            focusGoalTitle={focusGoalTitle}
                             onAbandonClick={onAbandonClick}
                             onCompleteClick={onCompleteClick}
                             onUpdateGoalStatus={onUpdateGoalStatus}
@@ -116,6 +123,9 @@ export function GoalBoard({
                       <GoalItem
                         key={goal.id}
                         goal={goal}
+                        isFocusedGoal={goal.id === focusGoalId}
+                        showParallelStatus={Boolean(focusGoalId) && goal.status === "active" && goal.id !== focusGoalId}
+                        focusGoalTitle={focusGoalTitle}
                         onAbandonClick={onAbandonClick}
                         onCompleteClick={onCompleteClick}
                         onUpdateGoalStatus={onUpdateGoalStatus}

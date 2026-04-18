@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import type { BeingState, EmotionState, MacConsoleBootstrapStatus, RelationshipSummary } from "../lib/api";
+import type { BeingState, EmotionState, FocusContext, MacConsoleBootstrapStatus, RelationshipSummary } from "../lib/api";
 import { fetchEmotionState, fetchMemorySummary } from "../lib/api";
+import { getFocusContextBadge, getFocusContextLines } from "../lib/focusContextPresentation";
 import { formatRelativeTimeZh } from "../lib/utils/time";
 import { subscribeAppRealtime } from "../lib/realtime";
 import { MemoryRelationshipSummary } from "./memory/MemoryRelationshipSummary";
@@ -15,6 +16,7 @@ type StatusPanelProps = {
   macConsoleStatus?: MacConsoleBootstrapStatus | null;
   error: string;
   focusGoalTitle?: string | null;
+  focusContext?: FocusContext | null;
   variant?: "full" | "compact";
 };
 
@@ -22,6 +24,8 @@ export function StatusPanel({
   state,
   macConsoleStatus,
   error,
+  focusGoalTitle,
+  focusContext,
   variant = "full",
 }: StatusPanelProps) {
   const planCompleted =
@@ -73,9 +77,28 @@ export function StatusPanel({
   const checkedAtLabel = macConsoleStatus?.checked_at
     ? formatRelativeTimeZh(macConsoleStatus.checked_at, { spacing: "spaced", dateFallback: "short" })
     : "";
+  const focusContextLines = getFocusContextLines(focusContext, state.focus_context?.prompt_summary);
+  const focusStatusBadge = getFocusContextBadge(focusContext);
 
   return (
     <Panel icon="📋" title="今日计划" subtitle="当前日程与运行状态" actions={headerBadge}>
+      {focusGoalTitle ? (
+        <section className="focus-status-card">
+          <header className="focus-status-card__header">
+            <div className="focus-status-card__title-wrap">
+              <h4 className="focus-status-card__title">当前焦点</h4>
+              <p className="focus-status-card__subtitle">{focusGoalTitle}</p>
+            </div>
+            {focusStatusBadge ? <StatusBadge tone={focusStatusBadge.tone}>{focusStatusBadge.label}</StatusBadge> : null}
+          </header>
+          {focusContextLines.map((line) => (
+            <p key={line} className="focus-status-card__body">
+              {line}
+            </p>
+          ))}
+        </section>
+      ) : null}
+
       {macConsoleStatus ? (
         <section className="environment-status-card">
           <header className="environment-status-card__header">

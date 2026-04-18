@@ -24,14 +24,6 @@ export type ChatMessageDisplayState = {
   showRetryAction: boolean;
 };
 
-const REASONING_PHASE_LABELS: Record<string, string> = {
-  exploring: "我还在把线索慢慢理顺",
-  planning: "我先把接下来的说法整理一下",
-  evaluating: "我在对比几个更稳妥的判断",
-  finalizing: "我快说完了，正在收一下尾",
-  completed: "我已经把这段想清楚了",
-};
-
 export function getAssistantStatus(message: ChatEntry, assistantName: string): MessageStatus | null {
   if (message.state === "failed") {
     return {
@@ -44,23 +36,9 @@ export function getAssistantStatus(message: ChatEntry, assistantName: string): M
     };
   }
 
-  if (message.state === "streaming") {
-    if (message.reasoningState?.summary) {
-      return {
-        text: message.reasoningState.summary,
-        tone: "muted",
-      };
-    }
-
-    if (message.reasoningState?.phase) {
-      return {
-        text: REASONING_PHASE_LABELS[message.reasoningState.phase] ?? `${assistantName}还在继续想这件事`,
-        tone: "muted",
-      };
-    }
-
+  if (message.state === "streaming" && message.content.trim()) {
     return {
-      text: message.content ? `${assistantName}还在继续说。` : `${assistantName}正在整理这句话。`,
+      text: `${assistantName}还在继续说`,
       tone: "muted",
     };
   }
@@ -83,11 +61,7 @@ export function getChatMessageDisplayState(
 ): ChatMessageDisplayState {
   const isAssistant = isAssistantChatEntry(message);
   const hasAssistantContent = isAssistant && Boolean(message.content);
-  const hasReasoningStatus = Boolean(message.reasoningState?.summary || message.reasoningState?.phase);
   const assistantStatus = isAssistant ? getAssistantStatus(message, assistantName) : null;
-  const shouldShowAssistantStatus =
-    assistantStatus != null &&
-    (message.state === "failed" || (message.state === "streaming" && (!hasAssistantContent ? hasReasoningStatus : false)));
 
   if (isAssistant) {
     return {
@@ -96,7 +70,7 @@ export function getChatMessageDisplayState(
         : message.state === "streaming"
           ? "streaming-placeholder"
           : "none",
-      status: shouldShowAssistantStatus ? assistantStatus : null,
+      status: assistantStatus,
       showKnowledgeContext: hasKnowledgeReferences(message),
       showMemoryContext: hasRelatedMemories(message),
       showResumeAction: hasRecoverableAssistantReply(message),

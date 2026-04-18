@@ -13,6 +13,7 @@ from app.api.deps import (
     get_state_store,
 )
 from app.domain.models import FocusMode, WakeMode
+from app.focus.selection import select_focus_goal
 from app.goals.admission import GoalAdmissionService
 from app.goals.models import Goal
 from app.goals.models import GoalStatus, GoalStatusUpdate
@@ -73,8 +74,11 @@ def build_runtime_router() -> APIRouter:
             await hub.disconnect(websocket)
 
     @router.get("/state")
-    def get_state(state_store: StateStore = Depends(get_state_store)) -> dict:
-        return build_public_state_payload(state_store.get())
+    def get_state(
+        state_store: StateStore = Depends(get_state_store),
+        goal_repository: GoalRepository = Depends(get_goal_repository),
+    ) -> dict:
+        return build_public_state_payload(state_store.get(), goal_repository)
 
     @router.get("/memory/backends")
     def get_memory_backends(
@@ -187,9 +191,9 @@ def build_runtime_router() -> APIRouter:
         state = state_store.get()
         if request.status in {GoalStatus.PAUSED, GoalStatus.ABANDONED} and goal_id in state.active_goal_ids:
             remaining_goal_ids = [item for item in state.active_goal_ids if item != goal_id]
-            next_focus_goal = next(
-                (item for item in goal_repository.list_active_goals() if item.id in remaining_goal_ids),
-                None,
+            next_focus_goal = select_focus_goal(
+                goal_repository.list_active_goals(),
+                preferred_goal_ids=remaining_goal_ids,
             )
             state_store.set(
                 state.model_copy(

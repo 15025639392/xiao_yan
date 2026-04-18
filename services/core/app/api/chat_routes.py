@@ -185,6 +185,9 @@ def build_chat_router() -> APIRouter:
             prepared=prepared_context,
             state=state,
             user_message=request_body.message,
+            user_timezone=request_body.user_timezone,
+            user_local_time=request_body.user_local_time,
+            user_time_of_day=request_body.user_time_of_day,
         )
         instructions = append_attachment_context(
             instructions,
@@ -296,6 +299,9 @@ def build_chat_router() -> APIRouter:
             prepared=prepared_context,
             state=state,
             user_message=request_body.message,
+            user_timezone=request_body.user_timezone,
+            user_local_time=request_body.user_local_time,
+            user_time_of_day=request_body.user_time_of_day,
         )
         resume_reasoning_session_id = (
             reasoning.resolve_resume_reasoning_session_id(request_body, memory_repository=memory_repository)
