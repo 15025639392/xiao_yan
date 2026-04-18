@@ -15,7 +15,7 @@ from app.domain.models import BeingState, FocusMode, WakeMode
 from app.goals.models import Goal
 from app.goals.repository import InMemoryGoalRepository
 from app.llm.schemas import ChatMessage
-from app.llm.gateway import GatewayResponse
+from app.llm.schemas import ChatResult
 from app.main import (
     app,
     get_chat_gateway,
@@ -36,10 +36,10 @@ class StubGateway:
         self.last_messages: list[ChatMessage] = []
         self.last_instructions: str | None = None
 
-    def create_response(self, messages, instructions=None) -> GatewayResponse:
+    def create_response(self, messages, instructions=None) -> ChatResult:
         self.last_messages = list(messages)
         self.last_instructions = instructions
-        return GatewayResponse(
+        return ChatResult(
             response_id="resp_test",
             output_text=f"echo:{messages[-1].content}",
         )

@@ -90,33 +90,10 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
     goal_repository: GoalRepository = target_app.state.goal_repository
     goal_admission_service: GoalAdmissionService | None = getattr(target_app.state, "goal_admission_service", None)
     chat_memory_runtime = getattr(target_app.state, "chat_memory_runtime", None)
-    mempalace_adapter = getattr(target_app.state, "mempalace_adapter", None)
     messages: list[dict[str, Any]]
     if chat_memory_runtime is not None and hasattr(chat_memory_runtime, "list_recent_messages"):
         try:
             recent_chat_messages = chat_memory_runtime.list_recent_messages(
-                limit=RUNTIME_CHAT_MESSAGES_LIMIT,
-                offset=0,
-            )
-        except Exception:  # noqa: BLE001
-            recent_chat_messages = []
-        messages = [
-            ChatHistoryMessage(
-                id=str(event.get("id") or ""),
-                role=str(event.get("role") or "assistant"),
-                content=str(event.get("content") or ""),
-                created_at=event.get("created_at"),
-                session_id=event.get("session_id"),
-                request_key=event.get("request_key"),
-                reasoning_session_id=event.get("reasoning_session_id"),
-                reasoning_state=(event.get("reasoning_state") if isinstance(event.get("reasoning_state"), dict) else None),
-            ).model_dump()
-            for event in reversed(recent_chat_messages)
-            if isinstance(event, dict)
-        ]
-    elif mempalace_adapter is not None and hasattr(mempalace_adapter, "list_recent_chat_messages"):
-        try:
-            recent_chat_messages = mempalace_adapter.list_recent_chat_messages(
                 limit=RUNTIME_CHAT_MESSAGES_LIMIT,
                 offset=0,
             )

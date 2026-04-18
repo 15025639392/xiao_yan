@@ -406,12 +406,6 @@ def get_chat_model() -> str:
     return legacy_model or "gpt-5.4"
 
 
-def get_mempalace_enabled() -> bool:
-    # Chat memory has fully switched to MemPalace.
-    # Keep the helper for compatibility with existing callers.
-    return True
-
-
 def get_mempalace_palace_path() -> str:
     load_local_env()
     service_root = Path(__file__).resolve().parents[1]

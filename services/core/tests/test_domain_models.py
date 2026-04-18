@@ -15,3 +15,9 @@ def test_focus_mode_supports_autonomy():
     state = BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY)
 
     assert state.focus_mode == FocusMode.AUTONOMY
+
+
+def test_legacy_orchestrator_focus_mode_normalizes_to_autonomy():
+    state = BeingState.model_validate({"mode": "awake", "focus_mode": "orchestrator"})
+
+    assert state.focus_mode == FocusMode.AUTONOMY

@@ -213,7 +213,6 @@ def import_data_backup_archive(backup_path: str) -> list[str]:
 
 def _resolve_data_entries() -> list[_DataEntry]:
     state_path = get_state_storage_path().expanduser()
-    service_root = get_service_root()
     return [
         _DataEntry("state", state_path),
         _DataEntry("goals", get_goal_storage_path().expanduser()),
@@ -221,7 +220,6 @@ def _resolve_data_entries() -> list[_DataEntry]:
         _DataEntry("persona", get_persona_storage_path().expanduser()),
         _DataEntry("goal_admission", get_goal_admission_storage_path().expanduser()),
         _DataEntry("capability_queue", get_capability_queue_storage_path().expanduser()),
-        _DataEntry("legacy_memory_jsonl", service_root / ".data" / "memory.jsonl"),
         _DataEntry("mempalace_palace", Path(get_mempalace_palace_path()).expanduser()),
     ]
 

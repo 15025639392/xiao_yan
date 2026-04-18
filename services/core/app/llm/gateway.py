@@ -125,7 +125,3 @@ class ChatGateway:
 
     def close(self) -> None:
         self._http_client.close()
-
-
-GatewayResponse = ChatResult
-from app.llm.enhanced_gateway import EnhancedChatGateway

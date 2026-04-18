@@ -2,7 +2,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Callable
 
-from app.domain.models import BeingState, OrchestratorSession, TodayPlan
+from app.domain.models import BeingState, TodayPlan
 from app.memory.repository import MemoryRepository
 from app.utils.file_utils import read_json_file, write_json_file
 from app.usecases.lifecycle import go_to_sleep, wake_up
@@ -27,16 +27,9 @@ class StateStore:
         if today_plan is not None and not isinstance(today_plan, TodayPlan):
             today_plan = TodayPlan.model_validate(today_plan)
 
-        orchestrator_session = state.orchestrator_session
-        if orchestrator_session is not None and not isinstance(
-            orchestrator_session, OrchestratorSession
-        ):
-            orchestrator_session = OrchestratorSession.model_validate(orchestrator_session)
-
         return state.model_copy(
             update={
                 "today_plan": today_plan,
-                "orchestrator_session": orchestrator_session,
             },
             deep=True,
         )

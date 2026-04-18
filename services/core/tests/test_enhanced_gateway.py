@@ -6,7 +6,8 @@
 import pytest
 from unittest.mock import Mock, MagicMock
 
-from app.llm.gateway import EnhancedChatGateway, ChatGateway
+from app.llm.enhanced_gateway import EnhancedChatGateway
+from app.llm.gateway import ChatGateway
 from app.llm.schemas import ChatMessage, ChatResult
 
 from app.memory.service import MemoryService

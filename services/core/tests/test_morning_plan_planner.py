@@ -1,5 +1,5 @@
 from app.goals.models import Goal
-from app.llm.gateway import GatewayResponse
+from app.llm.schemas import ChatResult
 from app.planning.morning_plan import LLMMorningPlanDraftGenerator, MorningPlanPlanner
 
 
@@ -19,10 +19,10 @@ class StubGateway:
         self.last_messages = None
         self.last_instructions = None
 
-    def create_response(self, messages, instructions=None) -> GatewayResponse:
+    def create_response(self, messages, instructions=None) -> ChatResult:
         self.last_messages = list(messages)
         self.last_instructions = instructions
-        return GatewayResponse(response_id="resp_plan", output_text=self.output_text)
+        return ChatResult(response_id="resp_plan", output_text=self.output_text)
 
 
 def test_planner_builds_action_step_for_actionable_goal():

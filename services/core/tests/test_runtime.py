@@ -106,3 +106,16 @@ def test_state_store_uses_persisted_state_as_initial_value(tmp_path: Path):
     assert reloaded.get().mode == WakeMode.AWAKE
     assert reloaded.get().focus_mode == FocusMode.AUTONOMY
     assert reloaded.get().current_thought == "我还惦记着今天的整理。"
+
+
+def test_state_store_ignores_removed_legacy_orchestrator_session_field(tmp_path: Path):
+    storage_path = tmp_path / "state.json"
+    storage_path.write_text(
+        '{"mode":"awake","focus_mode":"autonomy","orchestrator_session":{"session_id":"legacy","goal":"old","project_path":"/tmp","project_name":"legacy"}}',
+        encoding="utf-8",
+    )
+
+    reloaded = StateStore(storage_path=storage_path)
+
+    assert reloaded.get().mode == WakeMode.AWAKE
+    assert reloaded.get().focus_mode == FocusMode.AUTONOMY
