@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { BeingState, EmotionState, FocusContext, MacConsoleBootstrapStatus, RelationshipSummary } from "../lib/api";
 import { fetchEmotionState, fetchMemorySummary } from "../lib/api";
+import { getFocusEffortLines, getFocusEffortTitle } from "../lib/focusEffortPresentation";
 import { getFocusContextBadge, getFocusContextLines } from "../lib/focusContextPresentation";
 import { formatRelativeTimeZh } from "../lib/utils/time";
 import { subscribeAppRealtime } from "../lib/realtime";
@@ -79,6 +80,8 @@ export function StatusPanel({
     : "";
   const focusContextLines = getFocusContextLines(focusContext, state.focus_context?.prompt_summary);
   const focusStatusBadge = getFocusContextBadge(focusContext);
+  const focusEffortTitle = getFocusEffortTitle(state.focus_effort);
+  const focusEffortLines = getFocusEffortLines(state.focus_effort);
 
   return (
     <Panel icon="📋" title="今日计划" subtitle="当前日程与运行状态" actions={headerBadge}>
@@ -92,6 +95,22 @@ export function StatusPanel({
             {focusStatusBadge ? <StatusBadge tone={focusStatusBadge.tone}>{focusStatusBadge.label}</StatusBadge> : null}
           </header>
           {focusContextLines.map((line) => (
+            <p key={line} className="focus-status-card__body">
+              {line}
+            </p>
+          ))}
+        </section>
+      ) : null}
+
+      {state.focus_effort ? (
+        <section className="focus-status-card">
+          <header className="focus-status-card__header">
+            <div className="focus-status-card__title-wrap">
+              <h4 className="focus-status-card__title">{focusEffortTitle ?? "刚刚围绕焦点做了这件事"}</h4>
+              <p className="focus-status-card__subtitle">{state.focus_effort.goal_title}</p>
+            </div>
+          </header>
+          {focusEffortLines.map((line) => (
             <p key={line} className="focus-status-card__body">
               {line}
             </p>

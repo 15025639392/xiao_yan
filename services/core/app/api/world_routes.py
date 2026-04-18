@@ -99,6 +99,7 @@ def build_world_router() -> APIRouter:
                 "current_thought": None,
                 "active_goal_ids": [],
                 "today_plan": None,
+                "focus_effort": None,
                 "last_action": None,
             }
         )

@@ -53,6 +53,16 @@ test("renders her plan for today when a morning plan exists", () => {
         focus_mode: "morning_plan",
         current_thought: "今天先把轮廓理一下。",
         active_goal_ids: ["goal-1"],
+        focus_effort: {
+          goal_id: "goal-1",
+          goal_title: "整理今天的对话记忆",
+          why_now: "今天计划已经排到这一步，需要先把当前小步走完。",
+          action_kind: "plan_step",
+          did_what: "推进了计划步骤：把「整理今天的对话记忆」的轮廓理一下",
+          effect: "今天计划已完成 1/2 步。",
+          next_hint: "接下来会继续走下一步。",
+          created_at: "2026-04-18T06:30:00.000Z",
+        },
         last_action: null,
         today_plan: {
           goal_id: "goal-1",
@@ -73,6 +83,10 @@ test("renders her plan for today when a morning plan exists", () => {
   expect(screen.getByText("用户触发")).toBeInTheDocument();
   expect(screen.getByText("会先盯着这件事，因为这是刚接住你这轮话题的事。")).toBeInTheDocument();
   expect(screen.getByText("现在还在继续推进，因为今天这条还剩 2 步没做完。")).toBeInTheDocument();
+  expect(screen.getByText("刚刚推进了一步")).toBeInTheDocument();
+  expect(screen.getByText("为什么现在做: 今天计划已经排到这一步，需要先把当前小步走完。")).toBeInTheDocument();
+  expect(screen.getByText("刚刚做了什么: 推进了计划步骤：把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
+  expect(screen.getByText("产生了什么变化: 今天计划已完成 1/2 步。")).toBeInTheDocument();
   expect(screen.getAllByText("待处理")).toHaveLength(2);
   expect(screen.getByText("把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
   expect(screen.getByText("开始动手推进")).toBeInTheDocument();
@@ -89,6 +103,16 @@ test("renders completed state when today's plan is finished", () => {
         focus_mode: "autonomy",
         current_thought: "今天的计划先收住了。",
         active_goal_ids: ["goal-1"],
+        focus_effort: {
+          goal_id: "goal-1",
+          goal_title: "整理今天的对话记忆",
+          why_now: "今天计划里的动作已经完成，需要先看结果。",
+          action_kind: "command",
+          did_what: "执行了命令 `pwd`。",
+          effect: "拿到了结果：/Users/ldy/Desktop/map/ai",
+          next_hint: "接下来会根据这次执行结果决定下一步。",
+          created_at: "2026-04-18T06:30:00.000Z",
+        },
         last_action: {
           command: "pwd",
           output: "/Users/ldy/Desktop/map/ai",
@@ -107,6 +131,7 @@ test("renders completed state when today's plan is finished", () => {
 
   expect(screen.getByText("当前日程与运行状态")).toBeInTheDocument();
   expect(screen.getAllByText("已完成").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("刚刚为焦点执行了动作")).toBeInTheDocument();
   expect(screen.getByText("把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
   expect(screen.getByText("开始动手推进")).toBeInTheDocument();
 });

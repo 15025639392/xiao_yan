@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
+from app.focus.models import FocusEffort
 from app.tools.models import ToolExecutionResult
 
 
@@ -262,6 +263,7 @@ class BeingState(BaseModel):
     current_thought: str | None = None
     active_goal_ids: list[str] = Field(default_factory=list)
     today_plan: TodayPlan | None = None
+    focus_effort: FocusEffort | None = None
     last_action: ToolExecutionResult | None = None
     orchestrator_session: OrchestratorSession | None = None
     last_proactive_source: str | None = None

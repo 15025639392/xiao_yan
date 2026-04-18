@@ -4,6 +4,7 @@ from logging import Logger
 from typing import Any
 
 from app.api.chat_reasoning import ChatReasoningController
+from app.focus.effort import chat_reply_effort
 from app.llm.schemas import ChatMessage, ChatReasoningState, ChatSubmissionResult
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
 from app.memory.extractor import MemoryExtractor
@@ -167,7 +168,23 @@ def finalize_chat_submission(
 
     latest_state = state_store.get()
     next_thought = build_post_chat_thought(user_message, output_text)
-    state_store.set(latest_state.model_copy(update={"current_thought": next_thought}))
+    focus_goal_id = (
+        latest_state.active_goal_ids[0]
+        if latest_state.active_goal_ids
+        else latest_state.today_plan.goal_id if latest_state.today_plan is not None else None
+    )
+    focus_goal_title = (
+        latest_state.today_plan.goal_title
+        if latest_state.today_plan is not None
+        else ("当前焦点" if latest_state.active_goal_ids else None)
+    )
+    updates: dict[str, object] = {"current_thought": next_thought}
+    if focus_goal_title is not None:
+        updates["focus_effort"] = chat_reply_effort(
+            goal_id=focus_goal_id,
+            goal_title=focus_goal_title,
+        )
+    state_store.set(latest_state.model_copy(update=updates))
 
     if finalized_reasoning_state is None:
         return submission

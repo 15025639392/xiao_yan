@@ -275,6 +275,17 @@ export type FocusContext = {
   prompt_summary: string;
 };
 
+export type FocusEffort = {
+  goal_id?: string | null;
+  goal_title: string;
+  why_now: string;
+  action_kind: string;
+  did_what: string;
+  effect?: string | null;
+  next_hint?: string | null;
+  created_at: string;
+};
+
 export type BeingState = {
   mode: "awake" | "sleeping";
   focus_mode: "sleeping" | "morning_plan" | "autonomy";
@@ -283,6 +294,7 @@ export type BeingState = {
   today_plan?: TodayPlan | null;
   last_action?: ToolExecutionResult | null;
   focus_context?: FocusContext | null;
+  focus_effort?: FocusEffort | null;
 };
 
 export type MacConsoleBootstrapStatus = {

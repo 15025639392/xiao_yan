@@ -73,6 +73,8 @@ def test_post_goal_status_updates_goal():
         assert body["status"] == "paused"
         assert repository.get_goal(goal.id).status == GoalStatus.PAUSED
         assert state_store.get().active_goal_ids == []
+        assert state_store.get().focus_effort is not None
+        assert state_store.get().focus_effort.action_kind == "manual_pause"
     finally:
         app.dependency_overrides.clear()
 
@@ -100,6 +102,8 @@ def test_post_completed_goal_keeps_focus_until_autonomy_acknowledges_it():
         assert body["status"] == "completed"
         assert repository.get_goal(goal.id).status == GoalStatus.COMPLETED
         assert state_store.get().active_goal_ids == [goal.id]
+        assert state_store.get().focus_effort is not None
+        assert state_store.get().focus_effort.action_kind == "manual_complete"
     finally:
         app.dependency_overrides.clear()
 
@@ -156,6 +160,8 @@ def test_post_reactivated_goal_triggers_persona_engaged_emotion():
         response = client.post(f"/goals/{goal.id}/status", json={"status": "active"})
         assert response.status_code == 200
         assert persona_service.get_profile().emotion.primary_emotion == EmotionType.ENGAGED
+        assert state_store.get().focus_effort is not None
+        assert state_store.get().focus_effort.action_kind == "manual_focus_switch"
     finally:
         app.dependency_overrides.clear()
 
@@ -203,6 +209,62 @@ def test_pausing_plan_goal_switches_focus_to_next_active_goal_and_rebuilds_plan(
         assert current_state.today_plan is not None
         assert current_state.today_plan.goal_id == second_goal.id
         assert current_state.today_plan.goal_title == second_goal.title
+        assert current_state.focus_effort is not None
+        assert current_state.focus_effort.action_kind == "manual_pause"
+        assert current_state.focus_effort.effect is not None
+        assert second_goal.title in current_state.focus_effort.effect
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_abandoning_plan_goal_switches_focus_to_next_active_goal_and_sets_abandon_effort():
+    repository = InMemoryGoalRepository()
+    first_goal = repository.save_goal(
+        Goal(title="放下当前这条线", created_at=datetime(2026, 4, 5, tzinfo=timezone.utc))
+    )
+    second_goal = repository.save_goal(
+        Goal(
+            title="继续跟进新的主线",
+            created_at=datetime(2026, 4, 5, 0, 1, tzinfo=timezone.utc),
+        )
+    )
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            focus_mode=FocusMode.MORNING_PLAN,
+            active_goal_ids=[first_goal.id, second_goal.id],
+            today_plan={
+                "goal_id": first_goal.id,
+                "goal_title": first_goal.title,
+                "steps": [{"content": f"把“{first_goal.title}”先收一下", "status": "pending"}],
+            },
+        )
+    )
+
+    def override_goal_repository():
+        return repository
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_goal_repository] = override_goal_repository
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.post(f"/goals/{first_goal.id}/status", json={"status": "abandoned"})
+        assert response.status_code == 200
+        current_state = state_store.get()
+        assert current_state.active_goal_ids == [second_goal.id]
+        assert current_state.focus_mode == FocusMode.MORNING_PLAN
+        assert current_state.today_plan is not None
+        assert current_state.today_plan.goal_id == second_goal.id
+        assert current_state.today_plan.goal_title == second_goal.title
+        assert current_state.focus_effort is not None
+        assert current_state.focus_effort.action_kind == "manual_abandon"
+        assert current_state.focus_effort.goal_id == second_goal.id
+        assert current_state.focus_effort.effect is not None
+        assert second_goal.title in current_state.focus_effort.effect
     finally:
         app.dependency_overrides.clear()
 
@@ -291,6 +353,9 @@ def test_resuming_goal_makes_it_current_focus_and_rebuilds_plan():
         assert current_state.today_plan is not None
         assert current_state.today_plan.goal_id == second_goal.id
         assert [step.status for step in current_state.today_plan.steps] == ["pending", "pending"]
+        assert current_state.focus_effort is not None
+        assert current_state.focus_effort.action_kind == "manual_focus_switch"
+        assert current_state.focus_effort.goal_id == second_goal.id
     finally:
         app.dependency_overrides.clear()
 

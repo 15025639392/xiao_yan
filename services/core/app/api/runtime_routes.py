@@ -13,6 +13,12 @@ from app.api.deps import (
     get_state_store,
 )
 from app.domain.models import FocusMode, WakeMode
+from app.focus.effort import (
+    manual_abandon_effort,
+    manual_complete_effort,
+    manual_focus_switch_effort,
+    manual_pause_effort,
+)
 from app.focus.selection import select_focus_goal
 from app.goals.admission import GoalAdmissionService
 from app.goals.models import Goal
@@ -195,10 +201,24 @@ def build_runtime_router() -> APIRouter:
                 goal_repository.list_active_goals(),
                 preferred_goal_ids=remaining_goal_ids,
             )
+            focus_effort = (
+                manual_pause_effort(
+                    goal_title=goal.title,
+                    next_goal_id=None if next_focus_goal is None else next_focus_goal.id,
+                    next_goal_title=None if next_focus_goal is None else next_focus_goal.title,
+                )
+                if request.status == GoalStatus.PAUSED
+                else manual_abandon_effort(
+                    goal_title=goal.title,
+                    next_goal_id=None if next_focus_goal is None else next_focus_goal.id,
+                    next_goal_title=None if next_focus_goal is None else next_focus_goal.title,
+                )
+            )
             state_store.set(
                 state.model_copy(
                     update={
                         "active_goal_ids": remaining_goal_ids,
+                        "focus_effort": focus_effort,
                         **(
                             _rebuild_today_plan_for_goal(next_focus_goal, planner, draft_generator=draft_generator)
                             if next_focus_goal is not None and state.mode == WakeMode.AWAKE
@@ -214,12 +234,27 @@ def build_runtime_router() -> APIRouter:
                     }
                 )
             )
+        elif request.status == GoalStatus.COMPLETED and goal_id in state.active_goal_ids:
+            state_store.set(
+                state.model_copy(
+                    update={
+                        "focus_effort": manual_complete_effort(
+                            goal_id=goal.id,
+                            goal_title=goal.title,
+                        ),
+                    }
+                )
+            )
         elif request.status == GoalStatus.ACTIVE and goal_id not in state.active_goal_ids:
             next_active_goal_ids = [goal_id, *[item for item in state.active_goal_ids if item != goal_id]]
             state_store.set(
                 state.model_copy(
                     update={
                         "active_goal_ids": next_active_goal_ids,
+                        "focus_effort": manual_focus_switch_effort(
+                            goal_id=goal.id,
+                            goal_title=goal.title,
+                        ),
                         **(
                             _rebuild_today_plan_for_goal(goal, planner, draft_generator=draft_generator)
                             if state.mode == WakeMode.AWAKE

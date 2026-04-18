@@ -99,6 +99,7 @@ export function AppMainContent({
         focusContext={focusContext}
         focusTransitionHint={focusTransitionHint}
         focusContextSummary={focusContextSummary}
+        focusEffort={state.focus_effort}
         focusModeLabel={renderFocusModeLabel(state.focus_mode)}
         isSending={isSending}
         messages={messages}

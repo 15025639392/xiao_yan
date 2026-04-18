@@ -1,4 +1,5 @@
-import type { FocusContext, Goal, TodayPlan } from "../../lib/api";
+import type { FocusContext, FocusEffort, Goal, TodayPlan } from "../../lib/api";
+import { getFocusEffortTitle } from "../../lib/focusEffortPresentation";
 import { getFocusContextBadge, getFocusContextLines } from "../../lib/focusContextPresentation";
 import { Button, StatusBadge } from "../ui";
 
@@ -7,6 +8,7 @@ type ChatHeaderProps = {
   focusContext?: FocusContext | null;
   focusTransitionHint?: string | null;
   focusContextSummary?: string | null;
+  focusEffort?: FocusEffort | null;
   todayPlan?: TodayPlan | null;
   activeGoals?: Goal[];
   onCompleteGoal?: (goalId: string) => Promise<void>;
@@ -18,6 +20,7 @@ export function ChatHeader({
   focusContext,
   focusTransitionHint,
   focusContextSummary,
+  focusEffort,
   todayPlan,
   activeGoals,
   onCompleteGoal,
@@ -25,6 +28,7 @@ export function ChatHeader({
 }: ChatHeaderProps) {
   const focusContextLines = getFocusContextLines(focusContext, focusContextSummary);
   const focusStatusBadge = getFocusContextBadge(focusContext);
+  const focusEffortTitle = getFocusEffortTitle(focusEffort);
 
   return (
     <header className="chat-page__header">
@@ -39,6 +43,11 @@ export function ChatHeader({
           </span>
         ))}
         {focusTransitionHint ? <span className="chat-page__subtitle chat-page__subtitle--accent">{focusTransitionHint}</span> : null}
+        {focusEffortTitle && focusEffort ? (
+          <span className="chat-page__subtitle">
+            {focusEffortTitle}: {focusEffort.did_what}
+          </span>
+        ) : null}
         {todayPlan ? (
           <span className="chat-page__subtitle">
             今日计划: {todayPlan.steps.filter((step) => step.status === "completed").length}/{todayPlan.steps.length} 完成
