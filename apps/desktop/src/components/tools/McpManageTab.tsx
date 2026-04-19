@@ -231,8 +231,8 @@ export function McpManageTab() {
       <div className="tool-config-card">
         <div className="tool-config-card__header">
           <div>
-            <h4>MCP 管理</h4>
-            <p>统一维护 chat 可用的 MCP Server 清单和全局启用状态。</p>
+            <h4>MCP 接入</h4>
+            <p>维护对话可用的 MCP Server 清单和默认启用状态。</p>
           </div>
           <label className="tool-config-switch" htmlFor="toolbox-mcp-enabled">
             <span>启用 MCP</span>

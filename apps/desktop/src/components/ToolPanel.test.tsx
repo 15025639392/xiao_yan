@@ -62,8 +62,9 @@ test("renders files as the only default tool tab", async () => {
   expect(screen.queryByRole("tab", { name: "⚡ 执行" })).not.toBeInTheDocument();
   expect(screen.queryByRole("tab", { name: "📋 工具" })).not.toBeInTheDocument();
   expect(screen.queryByRole("tab", { name: "🧠 能力" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "工具目录" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "运行状态" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "能力详情" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "能力目录" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "状态概览" })).toBeInTheDocument();
   expect(fetchTools).not.toHaveBeenCalled();
 });
 
@@ -72,7 +73,7 @@ test("loads status lazily when opening the secondary status view", async () => {
 
   expect(fetchToolsStatus).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "运行状态" }));
+  fireEvent.click(screen.getByRole("button", { name: "状态概览" }));
 
   await waitFor(() => {
     expect(fetchToolsStatus).toHaveBeenCalledTimes(1);

@@ -5,9 +5,6 @@ import { syncMessagesFromRuntime } from "./chatRuntimeMessages";
 export type RuntimeRealtimeUpdateResult = {
   state: AppRuntimeRealtimePayload["state"];
   messages: ChatEntry[];
-  goals: AppRuntimeRealtimePayload["goals"];
-  world: AppRuntimeRealtimePayload["world"];
-  macConsoleStatus: AppRuntimeRealtimePayload["mac_console_status"] | undefined;
   error: string;
 };
 
@@ -37,9 +34,6 @@ export function applyRuntimeRealtimeEvent(
   return {
     state: payload.state,
     messages: syncMessagesFromRuntime(currentMessages, payload.messages),
-    goals: payload.goals,
-    world: payload.world,
-    macConsoleStatus: payload.mac_console_status,
     error: "",
   };
 }

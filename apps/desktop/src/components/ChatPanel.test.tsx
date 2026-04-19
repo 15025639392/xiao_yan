@@ -35,13 +35,11 @@ test("renders the chat page with header and messages", () => {
     <ChatPanel
       draft=""
       focusGoalTitle="整理今天的对话记忆"
-      focusModeLabel="晨间计划"
       isSending={false}
       messages={[
         { id: "1", role: "user", content: "你好" },
         { id: "2", role: "assistant", content: "我在。" },
       ]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
@@ -57,109 +55,37 @@ test("renders the chat page with header and messages", () => {
 });
 
 test("does not render relationship context panels above the chat input", async () => {
-  fetchMemorySummary.mockResolvedValue({
-    total_estimated: 12,
-    by_kind: {},
-    recent_count: 2,
-    strong_memories: 1,
-    relationship: {
-      available: true,
-      boundaries: ["先直接说判断，不用绕弯"],
-      commitments: ["答应你先说风险再给建议"],
-      preferences: ["喜欢先听理由再做决定"],
-    },
-    available: true,
-  });
-
   render(
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
   );
 
-  await waitFor(() => {
-    expect(fetchMemorySummary).toHaveBeenCalled();
-  });
   expect(screen.queryByText("当前相处语境")).toBeNull();
   expect(screen.queryByText("本次回应原则")).toBeNull();
 });
 
-test("does not expose relationship context panels after realtime memory updates", async () => {
-  fetchMemorySummary.mockResolvedValue({
-    total_estimated: 0,
-    by_kind: {},
-    recent_count: 0,
-    strong_memories: 0,
-    relationship: {
-      available: false,
-      boundaries: [],
-      commitments: [],
-      preferences: [],
-    },
-    available: true,
-  });
-
-  let listener: ((event: any) => void) | null = null;
-  subscribeAppRealtime.mockImplementation((callback) => {
-    listener = callback;
-    return () => {};
-  });
-
+test("does not subscribe chat page to removed relationship context updates", async () => {
   render(
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
   );
 
   await waitFor(() => {
-    expect(subscribeAppRealtime).toHaveBeenCalled();
+    expect(screen.getByText("自由对话")).toBeInTheDocument();
   });
-
-  await act(async () => {
-    listener?.({
-      type: "memory_updated",
-      payload: {
-        summary: {
-          total_estimated: 20,
-          by_kind: {},
-          recent_count: 3,
-          strong_memories: 2,
-          relationship: {
-            available: true,
-            boundaries: ["如果我判断错了，希望你直接纠正我"],
-            commitments: ["答应你复杂问题不装懂，会先说明不确定性"],
-            preferences: ["更喜欢一起推演方案"],
-          },
-          available: true,
-        },
-        relationship: {
-          available: true,
-          boundaries: ["如果我判断错了，希望你直接纠正我"],
-          commitments: ["答应你复杂问题不装懂，会先说明不确定性"],
-          preferences: ["更喜欢一起推演方案"],
-        },
-        timeline: [],
-      },
-    });
-  });
-
-  await waitFor(() => {
-    expect(subscribeAppRealtime).toHaveBeenCalled();
-  });
+  expect(subscribeAppRealtime).not.toHaveBeenCalled();
   expect(screen.queryByText("当前相处语境")).toBeNull();
   expect(screen.queryByText("本次回应原则")).toBeNull();
 });
@@ -171,10 +97,8 @@ test("disables send while sending or when the draft is empty", () => {
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="休眠"
       isSending={false}
       messages={[]}
-      modeLabel="休眠中"
       onDraftChange={vi.fn()}
       onSend={onSend}
     />,
@@ -186,10 +110,8 @@ test("disables send while sending or when the draft is empty", () => {
     <ChatPanel
       draft="你好"
       focusGoalTitle={null}
-      focusModeLabel="休眠"
       isSending={true}
       messages={[]}
-      modeLabel="休眠中"
       onDraftChange={vi.fn()}
       onSend={onSend}
     />,
@@ -206,10 +128,8 @@ test("forwards input changes and send events", () => {
     <ChatPanel
       draft="你好吗"
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={onDraftChange}
       onSend={onSend}
     />,
@@ -270,10 +190,8 @@ test("sends selected MCP server ids with onSend", async () => {
     <ChatPanel
       draft="帮我读取项目结构"
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={onSend}
     />,
@@ -301,10 +219,8 @@ test("sends message on Enter key press", () => {
     <ChatPanel
       draft="你好"
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={onSend}
     />,
@@ -323,10 +239,8 @@ test("does not send on Shift+Enter", () => {
     <ChatPanel
       draft="你好"
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={onSend}
     />,
@@ -343,10 +257,8 @@ test("renders loading state when sending", () => {
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={true}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
@@ -356,30 +268,20 @@ test("renders loading state when sending", () => {
   expect(screen.getByLabelText("发送")).toBeDisabled();
 });
 
-test("renders today's plan progress in header", () => {
+test("renders header without legacy plan progress", () => {
   render(
     <ChatPanel
       draft=""
       focusGoalTitle="整理今天的对话记忆"
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
-      todayPlan={{
-        goal_id: "goal-1",
-        goal_title: "整理今天的对话记忆",
-        steps: [
-          { content: "回顾昨日对话", status: "completed" },
-          { content: "整理关键信息", status: "pending" },
-        ],
-      }}
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
   );
 
-  // 今日计划进度显示在头部
-  expect(screen.getByText(/今日计划.*1\/2.*完成/)).toBeInTheDocument();
+  expect(screen.getByText("整理今天的对话记忆")).toBeInTheDocument();
+  expect(screen.queryByText(/今日计划|1\/2|完成/)).toBeNull();
 });
 
 test("renders quick actions in empty state", () => {
@@ -387,10 +289,8 @@ test("renders quick actions in empty state", () => {
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
@@ -408,10 +308,8 @@ test("quick action buttons populate draft", () => {
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={onDraftChange}
       onSend={vi.fn()}
     />,
@@ -433,10 +331,8 @@ test("supports adding and removing attached folders in chat input", () => {
     <ChatPanel
       draft="请帮我看目录结构"
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       attachedFolders={["/tmp/workspace/project-a"]}
       attachedFiles={["/tmp/workspace/project-a/README.md"]}
       attachedImages={["/tmp/workspace/project-a/screenshot.png"]}
@@ -509,30 +405,6 @@ test("updates chat model inside config modal", async () => {
       );
     }
 
-    if (url.endsWith("/config/data-environment") && method === "GET") {
-      return new Response(
-        JSON.stringify({
-          testing_mode: false,
-          mempalace_palace_path: "/tmp/palace",
-          mempalace_wing: "wing_xiaoyan",
-          mempalace_room: "chat_exchange",
-          default_backup_directory: "/tmp/backups",
-          switch_backup_path: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (url.endsWith("/chat/folder-permissions") && method === "GET") {
-      return new Response(JSON.stringify({ permissions: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     throw new Error(`unexpected request: ${url} [${method}]`);
   });
 
@@ -542,16 +414,14 @@ test("updates chat model inside config modal", async () => {
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 对话设置" }));
 
   const modelSelect = await screen.findByLabelText("聊天模型");
   fireEvent.change(modelSelect, { target: { value: "gpt-5.4-mini" } });
@@ -609,30 +479,6 @@ test("renders config modal above its overlay", async () => {
       );
     }
 
-    if (url.endsWith("/config/data-environment") && method === "GET") {
-      return new Response(
-        JSON.stringify({
-          testing_mode: false,
-          mempalace_palace_path: "/tmp/palace",
-          mempalace_wing: "wing_xiaoyan",
-          mempalace_room: "chat_exchange",
-          default_backup_directory: "/tmp/backups",
-          switch_backup_path: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (url.endsWith("/chat/folder-permissions") && method === "GET") {
-      return new Response(JSON.stringify({ permissions: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     throw new Error(`unexpected request: ${url} [${method}]`);
   });
 
@@ -642,16 +488,14 @@ test("renders config modal above its overlay", async () => {
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 对话设置" }));
 
   const dialog = await screen.findByRole("dialog");
   expect(dialog.className).toContain("z-[1001]");
@@ -721,30 +565,6 @@ test("updates continuous reasoning switch inside config modal", async () => {
       );
     }
 
-    if (url.endsWith("/config/data-environment") && method === "GET") {
-      return new Response(
-        JSON.stringify({
-          testing_mode: false,
-          mempalace_palace_path: "/tmp/palace",
-          mempalace_wing: "wing_xiaoyan",
-          mempalace_room: "chat_exchange",
-          default_backup_directory: "/tmp/backups",
-          switch_backup_path: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (url.endsWith("/chat/folder-permissions") && method === "GET") {
-      return new Response(JSON.stringify({ permissions: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     throw new Error(`unexpected request: ${url} [${method}]`);
   });
 
@@ -754,16 +574,14 @@ test("updates continuous reasoning switch inside config modal", async () => {
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 对话设置" }));
   const toggle = await screen.findByLabelText("启用持续推理");
   fireEvent.click(toggle);
 
@@ -835,30 +653,6 @@ test("shows MCP section as read-only inside config modal", async () => {
       );
     }
 
-    if (url.endsWith("/config/data-environment") && method === "GET") {
-      return new Response(
-        JSON.stringify({
-          testing_mode: false,
-          mempalace_palace_path: "/tmp/palace",
-          mempalace_wing: "wing_xiaoyan",
-          mempalace_room: "chat_exchange",
-          default_backup_directory: "/tmp/backups",
-          switch_backup_path: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (url.endsWith("/chat/folder-permissions") && method === "GET") {
-      return new Response(JSON.stringify({ permissions: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     throw new Error(`unexpected request: ${url} [${method}]`);
   });
 
@@ -868,22 +662,22 @@ test("shows MCP section as read-only inside config modal", async () => {
     <ChatPanel
       draft=""
       focusGoalTitle={null}
-      focusModeLabel="常规自主"
       isSending={false}
       messages={[]}
-      modeLabel="运行中"
       onDraftChange={vi.fn()}
       onSend={vi.fn()}
     />,
   );
 
-  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
-  await screen.findByText("MCP 管理入口已迁移到工具箱，此处仅展示当前状态与配置快照。");
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 对话设置" }));
+  await screen.findByText("这里仅显示当前连接状态；详细接入与维护入口已收拢到“外部能力”页面。");
 
   expect(screen.queryByRole("button", { name: "新增 MCP Server" })).not.toBeInTheDocument();
   expect(screen.queryByLabelText("MCP Server ID")).not.toBeInTheDocument();
   expect(screen.getByText("filesystem")).toBeInTheDocument();
-  expect(screen.getByText(/如需新增、编辑、删除或启停，请前往“工具箱/)).toBeInTheDocument();
+  expect(screen.getByText("默认启用")).toBeInTheDocument();
+  expect(screen.queryByText(/timeout:/)).toBeNull();
+  expect(screen.getByText(/如需新增、编辑、删除或启停，请前往“外部能力/)).toBeInTheDocument();
   expect(
     fetchMock.mock.calls.some(
       ([input, init]) => String(input).endsWith("/config") && (init?.method ?? "GET") === "PUT",

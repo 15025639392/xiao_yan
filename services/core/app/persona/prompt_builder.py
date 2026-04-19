@@ -21,7 +21,7 @@ def build_chat_instructions(
     """构建聊天指令 prompt
 
     Args:
-        focus_goal_title: 当前焦点目标标题
+        focus_goal_title: 当前焦点标题
         latest_plan_completion: 最近完成的计划
         user_message: 用户消息
         persona_system_prompt: 人格系统 prompt（来自 PersonaService）
@@ -55,7 +55,7 @@ def build_chat_instructions(
         )
 
     if focus_goal_title is not None:
-        guidance.append(f"你当前最在意的焦点目标是「{focus_goal_title}」，优先自然承接这个焦点目标。")
+        guidance.append(f"你当前最在意的焦点是「{focus_goal_title}」，优先自然承接这条当前牵挂。")
     if focus_context_summary is not None:
         guidance.append(f"关于这个焦点，此刻更具体的内部依据是：{focus_context_summary}")
     focus_detail_guidance = _build_focus_context_guidance(
@@ -75,7 +75,7 @@ def build_chat_instructions(
     if _is_status_question(user_message):
         guidance.append(
             "如果用户在问你当前状态、最近在忙什么、今天过得怎样或你现在在想什么，"
-            "先回答你此刻最在意的目标、今天的计划或刚完成的事，再补充相关记忆。"
+            "先回答你此刻最挂心的焦点、刚做完的事或心里还没放下的线索，再补充相关记忆。"
         )
 
     if _is_emotional_message(user_message):
@@ -190,20 +190,16 @@ def _build_focus_context_guidance(
         lines.append("把这个焦点当成与用户当前话题直接相连的线索，不要说成无缘无故冒出来的旧任务。")
     elif source_kind == "goal_chain":
         lines.append("把这个焦点当成你一直在续推的一条线，不要伪装成刚刚临时决定的新目标。")
-    elif source_kind in {"today_plan_retained", "today_plan_fallback"}:
-        lines.append("把这个焦点当成今天计划延续出来的当前牵挂，而不是随机跳转的话题。")
+    elif source_kind in {"goal_backed_attention", "goal_backed_user_attention", "goal_backed_chain_attention"}:
+        lines.append("把这个焦点理解为你此刻挂着的一条推进线，而不是把目标名词本身直接复读给用户。")
     elif source_kind == "deferred_goal_reactivated":
         lines.append("这是一个之前延后、现在重新转回来的目标，回应时要保留这份承接感。")
 
-    if reason_kind == "today_plan_pending":
-        lines.append("如果用户问你现在在忙什么或为什么还惦记它，优先自然带出今天还有未完成步骤。")
-    elif reason_kind == "goal_chain_continuing":
+    if reason_kind == "goal_chain_continuing":
         lines.append("说明它仍在持续推进，但不要把它说成已经收尾。")
     elif reason_kind == "goal_chain_closing":
         lines.append("说明它正在收束，不要把它说成刚刚起步。")
     elif reason_kind == "goal_still_active":
         lines.append("只需表达它仍未完成，不要夸大成最高优先级或强行制造紧迫感。")
-    elif reason_kind == "today_plan_warm_closure":
-        lines.append("即使计划刚走完，也可以自然保留一点收束后的连续感，但不要说成还在执行未完成步骤。")
 
     return lines

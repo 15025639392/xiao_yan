@@ -14,15 +14,12 @@ from app.config import (
     get_mempalace_room,
     get_mempalace_wing,
 )
-from app.goals.admission import GoalAdmissionService
-from app.goals.repository import GoalRepository
 from app.llm.gateway import ChatGateway
 from app.memory.chat_memory_runtime import ChatMemoryBackend, ChatMemoryRuntime
 from app.memory.repository import MemoryRepository
 from app.memory.service import MemoryService
 from app.memory.mempalace_adapter import MemPalaceAdapter
 from app.persona.service import InMemoryPersonaRepository, PersonaService
-from app.planning.morning_plan import MorningPlanDraftGenerator, MorningPlanPlanner
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import ensure_runtime_initialized
 from app.runtime_ext.runtime_config import get_runtime_config
@@ -122,17 +119,6 @@ def get_state_store(request: Request) -> StateStore:
     ensure_runtime_initialized(request.app)
     return request.app.state.state_store
 
-
-def get_goal_repository(request: Request) -> GoalRepository:
-    ensure_runtime_initialized(request.app)
-    return request.app.state.goal_repository
-
-
-def get_goal_admission_service(request: Request) -> GoalAdmissionService:
-    ensure_runtime_initialized(request.app)
-    return request.app.state.goal_admission_service
-
-
 def get_world_repository(request: Request) -> WorldRepository:
     ensure_runtime_initialized(request.app)
     return request.app.state.world_repository
@@ -140,27 +126,3 @@ def get_world_repository(request: Request) -> WorldRepository:
 
 def get_world_state_service() -> WorldStateService:
     return WorldStateService()
-
-
-def get_morning_plan_planner() -> MorningPlanPlanner:
-    return MorningPlanPlanner()
-
-
-def get_morning_plan_draft_generator() -> Generator[MorningPlanDraftGenerator | None, None, None]:
-    from app.config import is_morning_plan_llm_enabled
-    from app.planning.morning_plan import LLMMorningPlanDraftGenerator
-
-    if not is_morning_plan_llm_enabled():
-        yield None
-        return
-
-    try:
-        gateway = ChatGateway.from_env()
-    except RuntimeError:
-        yield None
-        return
-
-    try:
-        yield LLMMorningPlanDraftGenerator(gateway)
-    finally:
-        gateway.close()

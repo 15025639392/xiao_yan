@@ -1,11 +1,6 @@
-from datetime import datetime, timezone
-
 from fastapi.testclient import TestClient
 
 from app.domain.models import BeingState, FocusMode, WakeMode
-from app.goals.admission import GoalAdmissionService, GoalAdmissionStore, GoalCandidate, GoalCandidateSource
-from app.goals.models import Goal, GoalStatus
-from app.goals.repository import InMemoryGoalRepository
 from app.main import app
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
@@ -18,7 +13,6 @@ from app.world.repository import InMemoryWorldRepository
 
 def _install_runtime_for_realtime_test():
     memory_repository = InMemoryMemoryRepository()
-    goal_repository = InMemoryGoalRepository()
     world_repository = InMemoryWorldRepository()
     persona_repository = InMemoryPersonaRepository()
     persona_service = PersonaService(repository=persona_repository)
@@ -30,31 +24,17 @@ def _install_runtime_for_realtime_test():
         BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY),
         memory_repository=memory_repository,
     )
-    goal_admission_service = GoalAdmissionService(
-        store=GoalAdmissionStore.in_memory(),
-        mode="enforce",
-    )
-
     app.state.memory_repository = memory_repository
-    app.state.goal_repository = goal_repository
     app.state.world_repository = world_repository
     app.state.persona_service = persona_service
     app.state.memory_service = memory_service
     app.state.state_store = state_store
-    app.state.goal_admission_service = goal_admission_service
 
-    return state_store, memory_repository, goal_repository, world_repository, persona_service, goal_admission_service
+    return state_store, memory_repository, world_repository, persona_service
 
 
 def test_realtime_socket_sends_initial_snapshot():
-    state_store, memory_repository, goal_repository, world_repository, persona_service, goal_admission_service = _install_runtime_for_realtime_test()
-    goal_repository.save_goal(
-        Goal(
-            title="整理今天的记忆",
-            status=GoalStatus.ACTIVE,
-            source="整理今天的记忆",
-        )
-    )
+    state_store, memory_repository, world_repository, persona_service = _install_runtime_for_realtime_test()
     world_repository.save_world_state(
         WorldState(
             time_of_day="night",
@@ -73,18 +53,6 @@ def test_realtime_socket_sends_initial_snapshot():
             source_context="value_signal:boundary",
         )
     )
-    goal_admission_service.evaluate_candidate(
-        GoalCandidate(
-            source_type=GoalCandidateSource.USER_TOPIC,
-            title="持续理解用户最近在意的话题：嗯",
-            source_content="嗯",
-        ),
-        now=datetime(2026, 4, 7, 8, 0, tzinfo=timezone.utc),
-        active_goals=[],
-        all_goals=[],
-        recent_events=[MemoryEvent(kind="chat", role="user", content="嗯")],
-    )
-
     client = TestClient(app)
     with client.websocket_connect("/ws/app") as websocket:
         message = websocket.receive_json()
@@ -92,22 +60,19 @@ def test_realtime_socket_sends_initial_snapshot():
     assert message["type"] == "snapshot"
     assert message["payload"]["runtime"]["state"]["mode"] == "awake"
     assert message["payload"]["runtime"]["messages"][0]["content"] == "你好"
-    assert message["payload"]["runtime"]["goals"][0]["title"] == "整理今天的记忆"
     assert message["payload"]["runtime"]["autobio"][0] == "我刚整理过记忆。"
     assert "mac_console_status" in message["payload"]["runtime"]
     assert any(
         item["content"] == "我刚整理过记忆。"
         for item in message["payload"]["memory"]["timeline"]
     )
-    assert message["payload"]["runtime"]["goal_admission_stats"]["mode"] == "enforce"
-    assert message["payload"]["runtime"]["goal_admission_candidates"]["deferred"][0]["candidate"]["title"] == "持续理解用户最近在意的话题：嗯"
     assert message["payload"]["memory"]["relationship"]["available"] is True
     assert any("别催我" in item for item in message["payload"]["memory"]["relationship"]["boundaries"])
     assert message["payload"]["persona"]["profile"]["name"] == persona_service.profile.name
 
 
 def test_realtime_snapshot_includes_reasoning_fields_in_runtime_messages():
-    _, memory_repository, _, _, _, _ = _install_runtime_for_realtime_test()
+    _, memory_repository, _, _ = _install_runtime_for_realtime_test()
     memory_repository.save_event(MemoryEvent(kind="chat", role="user", content="先看个思路"))
     memory_repository.save_event(
         MemoryEvent(
@@ -141,7 +106,7 @@ def test_realtime_snapshot_includes_reasoning_fields_in_runtime_messages():
 
 
 def test_realtime_snapshot_includes_request_key_in_runtime_messages():
-    _, memory_repository, _, _, _, _ = _install_runtime_for_realtime_test()
+    _, memory_repository, _, _ = _install_runtime_for_realtime_test()
     memory_repository.save_event(MemoryEvent(kind="chat", role="user", content="先看个思路", request_key="request_1"))
     memory_repository.save_event(
         MemoryEvent(
@@ -172,7 +137,7 @@ def test_realtime_snapshot_includes_request_key_in_runtime_messages():
 
 
 def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
-    state_store, memory_repository, goal_repository, world_repository, persona_service, goal_admission_service = _install_runtime_for_realtime_test()
+    state_store, memory_repository, world_repository, persona_service = _install_runtime_for_realtime_test()
     world_repository.save_world_state(
         WorldState(
             time_of_day="morning",
@@ -189,31 +154,11 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
         state_store.set(
             BeingState(
                 mode=WakeMode.AWAKE,
-                focus_mode=FocusMode.MORNING_PLAN,
+                focus_mode=FocusMode.AUTONOMY,
                 current_thought="我想继续推进今天的事。",
-                active_goal_ids=[],
             )
         )
         runtime_event = websocket.receive_json()
-
-        goal_admission_service.evaluate_candidate(
-            GoalCandidate(
-                source_type=GoalCandidateSource.USER_TOPIC,
-                title="继续推进：催用户现在就做决定",
-                source_content="我应该催用户现在就选，不再给他自己想的空间",
-            ),
-            now=datetime(2026, 4, 7, 8, 1, tzinfo=timezone.utc),
-            active_goals=[],
-            all_goals=[],
-            recent_events=[
-                MemoryEvent(
-                    kind="fact",
-                    content="用户边界：你别催我，我希望先自己想一想再决定",
-                    source_context="value_signal:boundary",
-                )
-            ],
-        )
-        runtime_event_after_admission = websocket.receive_json()
 
         memory_repository.save_event(MemoryEvent(kind="chat", role="user", content="新的记忆"))
         runtime_event_after_memory = websocket.receive_json()
@@ -233,12 +178,8 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
         persona_event = websocket.receive_json()
 
     assert runtime_event["type"] == "runtime_updated"
-    assert runtime_event["payload"]["state"]["focus_mode"] == "morning_plan"
+    assert runtime_event["payload"]["state"]["focus_mode"] == "autonomy"
     assert "mac_console_status" in runtime_event["payload"]
-    assert runtime_event_after_admission["type"] == "runtime_updated"
-    assert runtime_event_after_admission["payload"]["goal_admission_candidates"]["recent"][0]["reason"].startswith(
-        "relationship_boundary:"
-    )
     assert runtime_event_after_memory["type"] == "runtime_updated"
     assert runtime_event_after_memory["payload"]["messages"][0]["content"] == "新的记忆"
     assert memory_event["type"] == "memory_updated"
@@ -250,6 +191,28 @@ def test_realtime_socket_pushes_runtime_memory_and_persona_updates():
     )
     assert persona_event["type"] == "persona_updated"
     assert persona_event["payload"]["profile"]["personality"]["openness"] == 81
+
+
+def test_realtime_snapshot_memory_timeline_includes_focus_subject_events():
+    _, memory_repository, _, _ = _install_runtime_for_realtime_test()
+    memory_repository.save_event(
+        MemoryEvent(
+            kind="episodic",
+            content="当前牵挂转到“你刚才说最近提不起劲”：这句话虽然还没整理成目标，但我心里还挂着。",
+            source_context="focus_subject",
+            visibility="user",
+        )
+    )
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws/app") as websocket:
+        snapshot = websocket.receive_json()
+
+    assert snapshot["type"] == "snapshot"
+    assert any(
+        item["content"] == "当前牵挂转到“你刚才说最近提不起劲”：这句话虽然还没整理成目标，但我心里还挂着。"
+        for item in snapshot["payload"]["memory"]["timeline"]
+    )
 
 
 def test_realtime_socket_pushes_chat_stream_events():

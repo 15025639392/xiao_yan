@@ -195,16 +195,6 @@ def get_chat_provider() -> str:
 def get_service_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
-
-def get_goal_storage_path() -> Path:
-    load_local_env()
-    configured = os.getenv("GOAL_STORAGE_PATH")
-    if configured:
-        return Path(configured).expanduser()
-
-    return get_service_root() / ".data" / "goals.json"
-
-
 def get_world_storage_path() -> Path:
     load_local_env()
     configured = os.getenv("WORLD_STORAGE_PATH")
@@ -230,15 +220,6 @@ def get_persona_storage_path() -> Path:
         return Path(configured).expanduser()
 
     return get_service_root() / ".data" / "persona.json"
-
-
-def get_goal_admission_storage_path() -> Path:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_STORAGE_PATH")
-    if configured:
-        return Path(configured).expanduser()
-    return get_service_root() / ".data" / "goal_admission.json"
-
 
 def get_capability_queue_storage_path() -> Path:
     load_local_env()
@@ -270,91 +251,6 @@ def _read_positive_int_env(name: str, default: int, *, minimum: int) -> int:
     except ValueError:
         return default
     return max(minimum, value)
-
-
-def get_goal_admission_mode() -> str:
-    load_local_env()
-    mode = os.getenv("GOAL_ADMISSION_MODE", "shadow").strip().lower()
-    if mode in {"off", "shadow", "enforce"}:
-        return mode
-    return "shadow"
-
-
-def get_goal_admission_min_score() -> float:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_MIN_SCORE", "").strip()
-    if configured:
-        try:
-            value = float(configured)
-            return max(0.0, min(1.0, value))
-        except ValueError:
-            pass
-    return 0.68
-
-
-def get_goal_admission_defer_score() -> float:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_DEFER_SCORE", "").strip()
-    if configured:
-        try:
-            value = float(configured)
-            return max(0.0, min(1.0, value))
-        except ValueError:
-            pass
-    return 0.45
-
-
-def get_goal_admission_chain_min_score() -> float:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_CHAIN_MIN_SCORE", "").strip()
-    if configured:
-        try:
-            value = float(configured)
-            return max(0.0, min(1.0, value))
-        except ValueError:
-            pass
-    return 0.62
-
-
-def get_goal_admission_chain_defer_score() -> float:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_CHAIN_DEFER_SCORE", "").strip()
-    if configured:
-        try:
-            value = float(configured)
-            return max(0.0, min(1.0, value))
-        except ValueError:
-            pass
-    return 0.45
-
-
-def get_goal_wip_limit() -> int:
-    load_local_env()
-    configured = os.getenv("GOAL_WIP_LIMIT", "").strip()
-    if configured:
-        try:
-            value = int(configured)
-            return max(1, min(10, value))
-        except ValueError:
-            pass
-    return 2
-
-def get_goal_admission_max_retries() -> int:
-    load_local_env()
-    configured = os.getenv("GOAL_ADMISSION_MAX_RETRIES", "").strip()
-    if configured:
-        try:
-            value = int(configured)
-            return max(1, min(20, value))
-        except ValueError:
-            pass
-    return 6
-
-
-def is_morning_plan_llm_enabled() -> bool:
-    load_local_env()
-    return os.getenv("MORNING_PLAN_LLM_ENABLED", "").lower() in {"1", "true", "yes", "on"}
-
 
 def get_chat_context_limit() -> int:
     """获取聊天记忆预算基线（会映射为近期对话预算与长期检索命中数）。"""

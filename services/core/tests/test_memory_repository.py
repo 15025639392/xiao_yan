@@ -189,7 +189,7 @@ def test_mempalace_repository_persists_namespace_and_visibility_metadata():
 
     event = MemoryEvent(
         kind="semantic",
-        content="用户偏好晨间计划结构化输出",
+        content="用户偏好把当前牵挂整理成清晰结构",
         knowledge_type="preference",
         knowledge_tags=["preference", "user-profile"],
         source_ref="conversation://2026-04-12/session-1",

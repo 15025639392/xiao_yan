@@ -1,48 +1,5 @@
 import { get, post, put } from "./apiClient";
 
-export type GoalAdmissionRuntimeConfig = {
-  stability_warning_rate: number;
-  stability_danger_rate: number;
-};
-
-export type GoalAdmissionConfigHistoryEntry = {
-  revision: number;
-  source: "bootstrap" | "api_update" | "rollback" | string;
-  stability_warning_rate: number;
-  stability_danger_rate: number;
-  created_at: string;
-  rolled_back_from_revision?: number | null;
-};
-
-export type GoalAdmissionConfigHistoryResponse = {
-  items: GoalAdmissionConfigHistoryEntry[];
-};
-
-export type GoalAdmissionConfigRollbackResponse = GoalAdmissionRuntimeConfig & {
-  revision: number;
-  rolled_back_from_revision: number;
-};
-
-export function fetchGoalAdmissionConfig(): Promise<GoalAdmissionRuntimeConfig> {
-  return get<GoalAdmissionRuntimeConfig>("/config/goal-admission");
-}
-
-export function updateGoalAdmissionConfig(
-  patch: Partial<GoalAdmissionRuntimeConfig>,
-): Promise<GoalAdmissionRuntimeConfig> {
-  return put<GoalAdmissionRuntimeConfig>("/config/goal-admission", patch);
-}
-
-export function fetchGoalAdmissionConfigHistory(
-  limit = 10,
-): Promise<GoalAdmissionConfigHistoryResponse> {
-  return get<GoalAdmissionConfigHistoryResponse>(`/config/goal-admission/history?limit=${limit}`);
-}
-
-export function rollbackGoalAdmissionConfig(): Promise<GoalAdmissionConfigRollbackResponse> {
-  return post<GoalAdmissionConfigRollbackResponse>("/config/goal-admission/rollback");
-}
-
 export type AppConfig = {
   chat_context_limit: number;
   chat_provider: string;

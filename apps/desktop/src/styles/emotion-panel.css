@@ -48,32 +48,6 @@
   border: 1px solid var(--border-default);
 }
 
-/* 目标卡片增强样式 */
-
-.goal-card__decompose-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 200ms ease;
-}
-
-.goal-card__decompose-btn:hover {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-}
-
-.goal-card__decompose-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* 焦点状态卡片 */
 .focus-status-card {
   margin-top: var(--space-5);

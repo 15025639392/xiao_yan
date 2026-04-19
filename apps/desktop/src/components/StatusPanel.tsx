@@ -7,7 +7,6 @@ import { formatRelativeTimeZh } from "../lib/utils/time";
 import { subscribeAppRealtime } from "../lib/realtime";
 import { MemoryRelationshipSummary } from "./memory/MemoryRelationshipSummary";
 import { EmotionPanel } from "./status/EmotionPanel";
-import { TodayPlanSection } from "./status/TodayPlanSection";
 import { Panel } from "./ui/Panel";
 import { StatusBadge } from "./ui/StatusBadge";
 import { InlineAlert } from "./ui/InlineAlert";
@@ -29,8 +28,6 @@ export function StatusPanel({
   focusContext,
   variant = "full",
 }: StatusPanelProps) {
-  const planCompleted =
-    state.today_plan?.steps.length && state.today_plan.steps.every((step) => step.status === "completed");
   const isCompact = variant === "compact";
   const [emotionState, setEmotionState] = useState<EmotionState | null>(null);
   const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
@@ -63,12 +60,6 @@ export function StatusPanel({
     return () => unsubscribe();
   }, [isCompact]);
 
-  const headerBadge = state.today_plan ? (
-    <StatusBadge tone={planCompleted ? "completed" : "active"}>
-      {planCompleted ? "已完成" : "进行中"}
-    </StatusBadge>
-  ) : null;
-
   const environmentTone = !macConsoleStatus
     ? "paused"
     : macConsoleStatus.healthy
@@ -82,9 +73,10 @@ export function StatusPanel({
   const focusStatusBadge = getFocusContextBadge(focusContext);
   const focusEffortTitle = getFocusEffortTitle(state.focus_effort);
   const focusEffortLines = getFocusEffortLines(state.focus_effort);
+  const focusSubjectWhyNow = state.focus_subject?.why_now?.trim() ?? "";
 
   return (
-    <Panel icon="📋" title="今日计划" subtitle="当前日程与运行状态" actions={headerBadge}>
+    <Panel icon="📋" title="眼下状态" subtitle="当前牵挂与生活状态">
       {focusGoalTitle ? (
         <section className="focus-status-card">
           <header className="focus-status-card__header">
@@ -94,11 +86,14 @@ export function StatusPanel({
             </div>
             {focusStatusBadge ? <StatusBadge tone={focusStatusBadge.tone}>{focusStatusBadge.label}</StatusBadge> : null}
           </header>
-          {focusContextLines.map((line) => (
-            <p key={line} className="focus-status-card__body">
-              {line}
-            </p>
-          ))}
+          {focusSubjectWhyNow ? <p className="focus-status-card__body">{focusSubjectWhyNow}</p> : null}
+          {!focusSubjectWhyNow
+            ? focusContextLines.map((line) => (
+                <p key={line} className="focus-status-card__body">
+                  {line}
+                </p>
+              ))
+            : null}
         </section>
       ) : null}
 
@@ -123,7 +118,7 @@ export function StatusPanel({
           <header className="environment-status-card__header">
             <div className="environment-status-card__title-wrap">
               <h4 className="environment-status-card__title">身体环境（mac 控制台）</h4>
-              <p className="environment-status-card__subtitle">系统会在启动时自动自检并尝试补齐。</p>
+              <p className="environment-status-card__subtitle">启动时会先做一次自检，缺失项也会尽量自动补齐。</p>
             </div>
             <StatusBadge tone={environmentTone}>{environmentLabel}</StatusBadge>
           </header>
@@ -144,9 +139,6 @@ export function StatusPanel({
           </dl>
         </section>
       ) : null}
-
-      {state.today_plan ? <TodayPlanSection plan={state.today_plan} planCompleted={Boolean(planCompleted)} /> : null}
-
       {!isCompact && emotionState ? (
         <EmotionPanel
           emotionState={emotionState}

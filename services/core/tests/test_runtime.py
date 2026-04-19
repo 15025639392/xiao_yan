@@ -67,21 +67,15 @@ def test_state_store_persists_state_to_disk(tmp_path: Path):
         store.get().model_copy(
             update={
                 "mode": WakeMode.AWAKE,
-                "focus_mode": FocusMode.MORNING_PLAN,
+                "focus_mode": FocusMode.AUTONOMY,
                 "current_thought": "今天先把轮廓理一下。",
-                "active_goal_ids": ["goal-1"],
-                "today_plan": {
-                    "goal_id": "goal-1",
-                    "goal_title": "整理今天的对话记忆",
-                    "steps": [{"content": "把“整理今天的对话记忆”的轮廓理一下", "status": "pending"}],
-                },
             }
         )
     )
 
     reloaded = StateStore(storage_path=storage_path)
 
-    assert updated.focus_mode == FocusMode.MORNING_PLAN
+    assert updated.focus_mode == FocusMode.AUTONOMY
     assert reloaded.get() == updated
 
 

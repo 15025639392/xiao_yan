@@ -11,6 +11,7 @@ import { getSuccessRateBadgeStyle } from "./tools/toolUtils";
 import { ToolsBrowseTab } from "./tools/ToolsBrowseTab";
 import { McpManageTab } from "./tools/McpManageTab";
 import { SkillsManageTab } from "./tools/SkillsManageTab";
+import { CapabilitiesPage } from "../pages/CapabilitiesPage";
 
 type ToolPanelProps = {
   initialTab?: ToolTabType;
@@ -19,11 +20,12 @@ type ToolPanelProps = {
 const TOOL_COLLECTION_TABS: ToolTabType[] = ["tools"];
 
 const SECONDARY_TAB_ACTIONS: Array<{ tab: ToolTabType; label: string }> = [
-  { tab: "tools", label: "工具目录" },
-  { tab: "history", label: "执行历史" },
-  { tab: "status", label: "运行状态" },
-  { tab: "mcp", label: "MCP 管理" },
-  { tab: "skills", label: "Skills 管理" },
+  { tab: "capabilities", label: "能力详情" },
+  { tab: "tools", label: "能力目录" },
+  { tab: "history", label: "调用记录" },
+  { tab: "status", label: "状态概览" },
+  { tab: "mcp", label: "MCP 接入" },
+  { tab: "skills", label: "技能选择" },
 ];
 
 export function ToolPanel({ initialTab = "files" }: ToolPanelProps) {
@@ -60,8 +62,8 @@ export function ToolPanel({ initialTab = "files" }: ToolPanelProps) {
         <div className="panel__title-group" style={{ marginBottom: 0 }}>
           <div className="panel__icon">🛠️</div>
           <div>
-            <h2 className="panel__title">工具箱</h2>
-            <p className="panel__subtitle">文件操作 · 工具目录 · MCP/Skills · 工具状态</p>
+            <h2 className="panel__title">外部能力</h2>
+            <p className="panel__subtitle">文件、接入能力与运行状态都收在这里按需查看。</p>
           </div>
         </div>
 
@@ -86,7 +88,7 @@ export function ToolPanel({ initialTab = "files" }: ToolPanelProps) {
       <ToolTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div className="tool-panel__secondary">
-        <div className="tool-panel__secondary-label">更多工具</div>
+        <div className="tool-panel__secondary-label">延伸查看</div>
         <div className="tool-panel__secondary-actions">
           {SECONDARY_TAB_ACTIONS.map(({ tab, label }) => (
             <Button
@@ -104,6 +106,7 @@ export function ToolPanel({ initialTab = "files" }: ToolPanelProps) {
       </div>
 
       <div className="tool-panel__body">
+        {activeTab === "capabilities" ? <CapabilitiesPage /> : null}
         {activeTab === "tools" ? <ToolsBrowseTab tools={tools} /> : null}
         {activeTab === "mcp" ? <McpManageTab /> : null}
         {activeTab === "skills" ? <SkillsManageTab /> : null}

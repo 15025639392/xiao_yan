@@ -5,7 +5,6 @@ import re
 
 from app.domain.models import BeingState
 from app.focus.context import build_focus_context
-from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatMessage
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
 from app.memory.observability import KnowledgeObservabilityTracker
@@ -39,15 +38,11 @@ def prepare_chat_context(
     *,
     chat_memory_runtime: ChatMemoryRuntime,
     context_limit: int,
-    goal_repository: GoalRepository,
     persona_service: PersonaService,
     state: BeingState,
     user_message: str,
 ) -> PreparedChatContext:
-    focus_context = build_focus_context(
-        state=state,
-        goal_repository=goal_repository,
-    )
+    focus_context = build_focus_context(state=state)
     persona_service.infer_chat_emotion(user_message)
     persona_system_prompt = persona_service.build_system_prompt()
 

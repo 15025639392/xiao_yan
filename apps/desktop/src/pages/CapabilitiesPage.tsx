@@ -69,7 +69,7 @@ export function CapabilitiesPage() {
       });
       setLastUpdatedAt(new Date());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "加载能力中枢失败");
+      setError(err instanceof Error ? err.message : "加载外部能力详情失败");
     } finally {
       if (isRefresh) {
         setRefreshing(false);
@@ -97,8 +97,8 @@ export function CapabilitiesPage() {
     <div className="capability-hub-page">
       <header className="capability-hub-header">
         <div>
-          <h2 className="capability-hub-title">能力中枢</h2>
-          <p className="capability-hub-subtitle">统一查看能力清单、学习进度、审批状态与审计历史。</p>
+          <h2 className="capability-hub-title">外部能力详情</h2>
+          <p className="capability-hub-subtitle">集中查看能力清单、审批状态与最近运行记录。</p>
         </div>
         <div className="capability-hub-actions">
           {lastUpdatedAt ? (
@@ -116,15 +116,15 @@ export function CapabilitiesPage() {
         </div>
       </header>
 
-      {error ? <div className="tool-error">能力中枢加载失败：{error}</div> : null}
-      {decisionError ? <div className="tool-error">审批操作失败：{decisionError}</div> : null}
+      {error ? <div className="tool-error">外部能力详情加载失败：{error}</div> : null}
+      {decisionError ? <div className="tool-error">确认操作失败：{decisionError}</div> : null}
 
-      <section className="capability-hub-metrics" aria-label="能力队列状态">
+      <section className="capability-hub-metrics" aria-label="外部能力运行概览">
         <MetricCard label="排队中" value={queue?.pending ?? 0} />
-        <MetricCard label="待审批" value={queue?.pending_approval ?? 0} />
+        <MetricCard label="待确认" value={queue?.pending_approval ?? 0} />
         <MetricCard label="执行中" value={queue?.in_progress ?? 0} />
         <MetricCard label="已完成" value={queue?.completed ?? 0} />
-        <MetricCard label="死信" value={queue?.dead_letter ?? 0} tone="danger" />
+        <MetricCard label="异常中断" value={queue?.dead_letter ?? 0} tone="danger" />
       </section>
 
       <section className="capability-hub-grid">
@@ -132,7 +132,7 @@ export function CapabilitiesPage() {
           className="capability-hub-panel"
           icon="🧩"
           title="能力清单"
-          subtitle="core 定义能力契约，desktop 作为执行绑定"
+          subtitle="这里列出当前接入的外部能力与默认边界"
           actions={<span className="capability-hub-count">{snapshot.descriptors.length} 项</span>}
         >
           {loading && snapshot.descriptors.length === 0 ? (
@@ -144,19 +144,19 @@ export function CapabilitiesPage() {
               {snapshot.descriptors.map((descriptor) => (
                 <li key={descriptor.name} className="capability-hub-item">
                   <div className="capability-hub-item__head">
-                    <code>{descriptor.name}</code>
+                    <strong>{presentCapabilityName(descriptor.name)}</strong>
                     <div className="capability-hub-item__badges">
                       <StatusBadge tone={riskTone(descriptor.default_risk_level)}>
                         {riskLabel(descriptor.default_risk_level)}
                       </StatusBadge>
                       <StatusBadge tone={descriptor.default_requires_approval ? "cap-pending" : "completed"}>
-                        {descriptor.default_requires_approval ? "需审批" : "免审批"}
+                        {descriptor.default_requires_approval ? "需确认" : "免确认"}
                       </StatusBadge>
                     </div>
                   </div>
                   <p className="capability-hub-item__desc">{descriptor.description}</p>
                   <p className="capability-hub-item__bind">
-                    绑定: <span>{descriptor.current_binding}</span>
+                    接入方式: <span>{descriptor.current_binding}</span>
                   </p>
                 </li>
               ))}
@@ -168,7 +168,7 @@ export function CapabilitiesPage() {
           className="capability-hub-panel"
           icon="🧠"
           title="正在学习的能力"
-          subtitle="待执行、执行中、待审批请求"
+          subtitle="这里只保留还没走完的能力推进"
           actions={<span className="capability-hub-count">{learningJobs.length} 条</span>}
         >
           {loading && learningJobs.length === 0 ? (
@@ -180,12 +180,11 @@ export function CapabilitiesPage() {
               {learningJobs.map((job) => (
                 <li key={job.request_id} className="capability-hub-item">
                   <div className="capability-hub-item__head">
-                    <code>{job.capability}</code>
+                    <strong>{presentCapabilityName(job.capability)}</strong>
                     <StatusBadge tone={jobTone(job.status)}>{jobStatusLabel(job.status)}</StatusBadge>
                   </div>
                   <div className="capability-hub-item__meta">
-                    <span>请求: {job.request_id.slice(0, 8)}</span>
-                    <span>尝试: {job.attempt}/{job.max_attempts}</span>
+                    <span>{renderAttemptLabel(job.attempt, job.max_attempts)}</span>
                     <StatusBadge tone={approvalTone(job.approval_status)}>
                       {approvalStatusLabel(job.approval_status)}
                     </StatusBadge>
@@ -199,25 +198,24 @@ export function CapabilitiesPage() {
         <Panel
           className="capability-hub-panel"
           icon="🚦"
-          title="待审批"
-          subtitle="需人工确认的能力请求"
+          title="等待确认"
+          subtitle="这些能力请求还需要你点头"
           actions={<span className="capability-hub-count">{snapshot.pendingApprovals.length} 条</span>}
         >
           {loading && snapshot.pendingApprovals.length === 0 ? (
             <div className="capability-hub-empty">加载中...</div>
           ) : snapshot.pendingApprovals.length === 0 ? (
-            <div className="capability-hub-empty">当前无待审批请求</div>
+            <div className="capability-hub-empty">当前没有等待确认的请求</div>
           ) : (
             <ul className="capability-hub-list capability-hub-list--dense">
               {snapshot.pendingApprovals.map((item) => (
                 <li key={item.request.request_id} className="capability-hub-item">
                   <div className="capability-hub-item__head">
-                    <code>{item.request.capability}</code>
-                    <StatusBadge tone="cap-pending">待审批</StatusBadge>
+                    <strong>{presentCapabilityName(item.request.capability)}</strong>
+                    <StatusBadge tone="cap-pending">待确认</StatusBadge>
                   </div>
                   <div className="capability-hub-item__meta">
-                    <span>请求: {item.request.request_id.slice(0, 8)}</span>
-                    <span>排队: {formatDateTime(item.queued_at)}</span>
+                    <span>{formatQueuedAtLabel(item.queued_at)}</span>
                   </div>
                   {item.request.context?.reason ? (
                     <p className="capability-hub-item__desc">{item.request.context.reason}</p>
@@ -230,7 +228,7 @@ export function CapabilitiesPage() {
                       disabled={decisionLoadingId === item.request.request_id}
                       onClick={() => void handleApprove(item.request.request_id)}
                     >
-                      {decisionLoadingId === item.request.request_id ? "处理中..." : "批准"}
+                      {decisionLoadingId === item.request.request_id ? "处理中..." : "允许这次"}
                     </Button>
                     <Button
                       type="button"
@@ -251,26 +249,26 @@ export function CapabilitiesPage() {
         <Panel
           className="capability-hub-panel"
           icon="📜"
-          title="审批历史"
-          subtitle="最近审批决定与原因"
+          title="确认记录"
+          subtitle="最近的确认决定与原因"
           actions={<span className="capability-hub-count">{snapshot.approvalHistory.length} 条</span>}
         >
           {loading && snapshot.approvalHistory.length === 0 ? (
             <div className="capability-hub-empty">加载中...</div>
           ) : snapshot.approvalHistory.length === 0 ? (
-            <div className="capability-hub-empty">暂无审批历史</div>
+            <div className="capability-hub-empty">暂无确认记录</div>
           ) : (
             <ul className="capability-hub-list capability-hub-list--dense">
               {snapshot.approvalHistory.map((item) => (
                 <li key={`${item.request_id}-${item.decided_at}`} className="capability-hub-item">
                   <div className="capability-hub-item__head">
-                    <code>{item.capability}</code>
+                    <strong>{presentCapabilityName(item.capability)}</strong>
                     <StatusBadge tone={item.action === "approved" ? "cap-approved" : "cap-rejected"}>
-                      {item.action === "approved" ? "已批准" : "已拒绝"}
+                      {item.action === "approved" ? "已确认" : "已拒绝"}
                     </StatusBadge>
                   </div>
                   <div className="capability-hub-item__meta">
-                    <span>审批人: {item.approver}</span>
+                    <span>确认人: {item.approver}</span>
                     <span>{formatDateTime(item.decided_at)}</span>
                   </div>
                   {item.reason ? <p className="capability-hub-item__desc">{item.reason}</p> : null}
@@ -297,7 +295,7 @@ export function CapabilitiesPage() {
   }
 
   async function handleReject(requestId: string): Promise<void> {
-    const reasonRaw = window.prompt("请输入拒绝原因（将记录在审批历史中）：", "");
+    const reasonRaw = window.prompt("请输入拒绝原因（将记录在确认记录中）：", "");
     if (reasonRaw === null) {
       return;
     }
@@ -335,6 +333,15 @@ function riskLabel(risk: "safe" | "restricted" | "dangerous"): string {
   return "高危";
 }
 
+function presentCapabilityName(name: CapabilityDescriptor["name"]): string {
+  if (name === "fs.read") return "读取文件";
+  if (name === "fs.write") return "写入文件";
+  if (name === "fs.list") return "查看文件列表";
+  if (name === "fs.search") return "搜索文件内容";
+  if (name === "shell.run") return "执行命令";
+  return name;
+}
+
 function riskTone(risk: "safe" | "restricted" | "dangerous"): string {
   if (risk === "safe") return "cap-safe";
   if (risk === "restricted") return "cap-restricted";
@@ -361,10 +368,21 @@ function approvalTone(status: "not_required" | "pending" | "approved" | "rejecte
 }
 
 function approvalStatusLabel(status: "not_required" | "pending" | "approved" | "rejected"): string {
-  if (status === "approved") return "已批准";
+  if (status === "approved") return "已确认";
   if (status === "rejected") return "已拒绝";
-  if (status === "pending") return "待审批";
-  return "免审批";
+  if (status === "pending") return "待确认";
+  return "免确认";
+}
+
+function renderAttemptLabel(attempt: number, maxAttempts: number): string {
+  if (maxAttempts <= 1) {
+    return "当前推进中";
+  }
+  return `第 ${attempt} 次尝试，共 ${maxAttempts} 次机会`;
+}
+
+function formatQueuedAtLabel(iso: string): string {
+  return `进入等待于 ${formatDateTime(iso)}`;
 }
 
 function formatDateTime(iso: string): string {

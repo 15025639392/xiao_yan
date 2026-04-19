@@ -1,41 +1,25 @@
-import { useCallback, useRef, useState } from "react";
+import { useRef } from "react";
 
-import type { BeingState, Goal } from "../../lib/api";
-import { deriveFocusTransitionHint, shouldRefreshFocusTransitionHint } from "./focusTransition";
+import type { BeingState } from "../../lib/api";
 
-export function useFocusPresentation(state: BeingState, goals: Goal[]) {
-  const [focusTransitionHint, setFocusTransitionHint] = useState<string | null>(null);
+export function useFocusPresentation(state: BeingState) {
   const stateRef = useRef<BeingState>(state);
   stateRef.current = state;
 
   const focusContext = state.focus_context ?? null;
-  const focusGoalTitle = resolveFocusGoalTitle(state, goals);
-  const focusContextSummary = focusContext?.prompt_summary ?? null;
-
-  const updateFocusTransitionHint = useCallback((nextState: BeingState) => {
-    setFocusTransitionHint((current) =>
-      shouldRefreshFocusTransitionHint(stateRef.current, nextState)
-        ? deriveFocusTransitionHint(stateRef.current, nextState)
-        : current,
-    );
-  }, []);
+  const focusGoalTitle = resolveFocusGoalTitle(state);
 
   return {
     focusContext,
     focusGoalTitle,
-    focusContextSummary,
-    focusTransitionHint,
-    updateFocusTransitionHint,
   };
 }
 
-function resolveFocusGoalTitle(state: BeingState, goals: Goal[]): string | null {
-  if (state.active_goal_ids.length > 0) {
-    const currentGoal = goals.find((goal) => goal.id === state.active_goal_ids[0]);
-    if (currentGoal) {
-      return currentGoal.title;
-    }
+function resolveFocusGoalTitle(state: BeingState): string | null {
+  const focusSubjectTitle = state.focus_subject?.title?.trim();
+  if (focusSubjectTitle) {
+    return focusSubjectTitle;
   }
 
-  return state.today_plan?.goal_title ?? null;
+  return null;
 }

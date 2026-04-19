@@ -11,8 +11,6 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from app.config import (
     get_capability_queue_storage_path,
-    get_goal_admission_storage_path,
-    get_goal_storage_path,
     get_mempalace_palace_path,
     get_mempalace_room,
     get_mempalace_wing,
@@ -26,11 +24,9 @@ TESTING_MODE_ENV = "XIAOYAN_TESTING_DATA_MODE"
 PREVIOUS_ENV_SNAPSHOT_ENV = "XIAOYAN_TESTING_DATA_PREVIOUS_ENV"
 
 DATA_OVERRIDE_ENV_KEYS = (
-    "GOAL_STORAGE_PATH",
     "WORLD_STORAGE_PATH",
     "STATE_STORAGE_PATH",
     "PERSONA_STORAGE_PATH",
-    "GOAL_ADMISSION_STORAGE_PATH",
     "CAPABILITY_QUEUE_STORAGE_PATH",
     "MEMPALACE_PALACE_PATH",
     "MEMPALACE_ROOM",
@@ -215,10 +211,8 @@ def _resolve_data_entries() -> list[_DataEntry]:
     state_path = get_state_storage_path().expanduser()
     return [
         _DataEntry("state", state_path),
-        _DataEntry("goals", get_goal_storage_path().expanduser()),
         _DataEntry("world", get_world_storage_path().expanduser()),
         _DataEntry("persona", get_persona_storage_path().expanduser()),
-        _DataEntry("goal_admission", get_goal_admission_storage_path().expanduser()),
         _DataEntry("capability_queue", get_capability_queue_storage_path().expanduser()),
         _DataEntry("mempalace_palace", Path(get_mempalace_palace_path()).expanduser()),
     ]
@@ -256,11 +250,9 @@ def _enable_testing_data_mode() -> None:
     testing_room = f"{base_room}_testing" if not base_room.endswith("_testing") else base_room
 
     overrides = {
-        "GOAL_STORAGE_PATH": str(testing_root / "goals.json"),
         "WORLD_STORAGE_PATH": str(testing_root / "world.json"),
         "STATE_STORAGE_PATH": str(testing_root / "state.json"),
         "PERSONA_STORAGE_PATH": str(testing_root / "persona.json"),
-        "GOAL_ADMISSION_STORAGE_PATH": str(testing_root / "goal_admission.json"),
         "CAPABILITY_QUEUE_STORAGE_PATH": str(testing_root / "capability_queue.json"),
         "MEMPALACE_PALACE_PATH": str(testing_root / "mempalace" / "palace"),
         "MEMPALACE_ROOM": testing_room,

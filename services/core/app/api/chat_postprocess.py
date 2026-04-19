@@ -168,16 +168,10 @@ def finalize_chat_submission(
 
     latest_state = state_store.get()
     next_thought = build_post_chat_thought(user_message, output_text)
-    focus_goal_id = (
-        latest_state.active_goal_ids[0]
-        if latest_state.active_goal_ids
-        else latest_state.today_plan.goal_id if latest_state.today_plan is not None else None
-    )
-    focus_goal_title = (
-        latest_state.today_plan.goal_title
-        if latest_state.today_plan is not None
-        else ("当前焦点" if latest_state.active_goal_ids else None)
-    )
+    focus_goal_id = latest_state.focus_subject.goal_id if latest_state.focus_subject is not None else None
+    focus_goal_title = None
+    if latest_state.focus_subject is not None and latest_state.focus_subject.title.strip():
+        focus_goal_title = latest_state.focus_subject.title
     updates: dict[str, object] = {"current_thought": next_thought}
     if focus_goal_title is not None:
         updates["focus_effort"] = chat_reply_effort(

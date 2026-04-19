@@ -1,5 +1,4 @@
 import { memo, useState } from "react";
-import type { RelationshipSummary } from "../../lib/api";
 import { MarkdownMessage } from "../MarkdownMessage";
 import { Button } from "../ui";
 import { getChatMessageDisplayState } from "./chatMessagePresentation";
@@ -10,7 +9,6 @@ import { ChatMemoryContext } from "./ChatMemoryContext";
 type ChatMessagesProps = {
   assistantName: string;
   messages: ChatEntry[];
-  relationship: RelationshipSummary | null;
   isSending: boolean;
   showMemoryContext: Set<string>;
   onToggleMemoryContext: (messageId: string) => void;
@@ -74,12 +72,14 @@ export const ChatMessages = memo(function ChatMessages({
     );
   }
 
+  const renderKeySeen = new Map<string, number>();
+
   return (
     <>
       {messages.map((message) => (
         (() => {
           const display = getChatMessageDisplayState(message, assistantName);
-          const messageKey = getChatMessageRenderKey(message);
+          const messageKey = getChatMessageRenderKey(message, renderKeySeen);
           const hasBody = display.bodyMode !== "none";
           const hasDetails = Boolean(display.status || display.showKnowledgeContext);
 
@@ -199,12 +199,12 @@ export const ChatMessages = memo(function ChatMessages({
 
 ChatMessages.displayName = "ChatMessages";
 
-function getChatMessageRenderKey(message: ChatEntry): string {
-  if (message.requestKey) {
-    return `${message.role}:${message.requestKey}`;
-  }
+function getChatMessageRenderKey(message: ChatEntry, seen: Map<string, number>): string {
+  const baseKey = message.requestKey ? `${message.role}:${message.requestKey}` : `${message.role}:${message.id}`;
+  const seenCount = seen.get(baseKey) ?? 0;
+  seen.set(baseKey, seenCount + 1);
 
-  return `${message.role}:${message.id}`;
+  return seenCount === 0 ? baseKey : `${baseKey}:${seenCount}`;
 }
 
 function findLatestUserIndex(messages: ChatEntry[]): number {

@@ -39,7 +39,7 @@ export function useAppChrome(): UseAppChromeResult {
     };
 
     if (!window.location.hash) {
-      window.location.hash = routeToHash("overview");
+      window.location.hash = routeToHash("chat");
     } else {
       syncRoute();
     }

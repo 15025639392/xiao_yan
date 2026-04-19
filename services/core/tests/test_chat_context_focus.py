@@ -1,7 +1,5 @@
 from app.api.chat_context import build_base_chat_instructions, prepare_chat_context
-from app.domain.models import BeingState, FocusMode, TodayPlan, TodayPlanStep, WakeMode
-from app.goals.models import Goal, GoalAdmissionMeta
-from app.goals.repository import InMemoryGoalRepository
+from app.domain.models import BeingState, FocusMode, WakeMode
 from app.llm.schemas import ChatMessage
 from app.persona.models import PersonaProfile
 from app.persona.service import InMemoryPersonaRepository, PersonaService
@@ -13,39 +11,21 @@ class StubChatMemoryRuntime:
 
 
 def test_prepare_chat_context_includes_focus_context_summary():
-    goal_repository = InMemoryGoalRepository()
-    goal = goal_repository.save_goal(
-        Goal(
-            id="goal-1",
-            title="整理今天的对话记忆",
-            source="你现在在忙什么",
-            admission=GoalAdmissionMeta(
-                score=0.82,
-                recommended_decision="admit",
-                applied_decision="admit",
-                reason="user_score",
-            ),
-        )
-    )
     persona_service = PersonaService(repository=InMemoryPersonaRepository())
     state = BeingState(
         mode=WakeMode.AWAKE,
-        focus_mode=FocusMode.MORNING_PLAN,
-        active_goal_ids=[goal.id],
-        today_plan=TodayPlan(
-            goal_id=goal.id,
-            goal_title=goal.title,
-            steps=[
-                TodayPlanStep(content="回看昨天的对话"),
-                TodayPlanStep(content="整理关键线索"),
-            ],
-        ),
+        focus_mode=FocusMode.AUTONOMY,
+        focus_subject={
+            "kind": "goal_backed_attention",
+            "title": "整理今天的对话记忆",
+            "why_now": "这条线还挂在眼前，因为今天这条还剩 2 步没做完。",
+            "goal_id": "goal-1",
+        },
     )
 
     prepared = prepare_chat_context(
         chat_memory_runtime=StubChatMemoryRuntime(),
         context_limit=6,
-        goal_repository=goal_repository,
         persona_service=persona_service,
         state=state,
         user_message="你现在在忙什么",
@@ -53,11 +33,11 @@ def test_prepare_chat_context_includes_focus_context_summary():
 
     assert prepared.focus_goal_title == "整理今天的对话记忆"
     assert prepared.focus_context_summary is not None
-    assert prepared.focus_context_source_kind == "user_topic_goal"
-    assert prepared.focus_context_source_label == "刚接住你这轮话题的事"
-    assert prepared.focus_context_reason_kind == "today_plan_pending"
-    assert prepared.focus_context_reason_label == "今天这条还剩 2 步没做完"
-    assert "刚接住你这轮话题的事" in prepared.focus_context_summary
+    assert prepared.focus_context_source_kind == "goal_backed_attention"
+    assert prepared.focus_context_source_label == "一条挂在手上、但不等于目标本身的推进线索"
+    assert prepared.focus_context_reason_kind == "focus_subject_reason"
+    assert "今天这条还剩 2 步没做完" in prepared.focus_context_reason_label
+    assert "一条挂在手上、但不等于目标本身的推进线索" in prepared.focus_context_summary
     assert "今天这条还剩 2 步没做完" in prepared.focus_context_summary
 
 
@@ -67,10 +47,10 @@ def test_build_base_chat_instructions_exposes_focus_context_summary():
         (),
         {
             "focus_goal_title": "整理今天的对话记忆",
-            "focus_context_summary": "当前焦点来自刚接住你这轮话题的事，之所以还在推进，是因为今天这条还剩 2 步没做完。",
-            "focus_context_source_kind": "user_topic_goal",
-            "focus_context_source_label": "刚接住你这轮话题的事",
-            "focus_context_reason_kind": "today_plan_pending",
+            "focus_context_summary": "当前焦点来自一条挂在手上、但不等于目标本身的推进线索，之所以还挂在眼前，是因为今天这条还剩 2 步没做完。",
+            "focus_context_source_kind": "goal_backed_attention",
+            "focus_context_source_label": "一条挂在手上、但不等于目标本身的推进线索",
+            "focus_context_reason_kind": "focus_subject_reason",
             "focus_context_reason_label": "今天这条还剩 2 步没做完",
             "persona_system_prompt": (
                 "你是 Aira。\n"
@@ -90,10 +70,36 @@ def test_build_base_chat_instructions_exposes_focus_context_summary():
         user_message="你现在在忙什么",
     )
 
-    assert "你当前最在意的焦点目标是「整理今天的对话记忆」" in instructions
+    assert "你当前最在意的焦点是「整理今天的对话记忆」" in instructions
     assert "关于这个焦点，此刻更具体的内部依据是" in instructions
-    assert "当前焦点来源：刚接住你这轮话题的事。" in instructions
+    assert "当前焦点来源：一条挂在手上、但不等于目标本身的推进线索。" in instructions
     assert "当前焦点持续原因：今天这条还剩 2 步没做完。" in instructions
-    assert "把这个焦点当成与用户当前话题直接相连的线索" in instructions
-    assert "刚接住你这轮话题的事" in instructions
+    assert "把这个焦点理解为你此刻挂着的一条推进线" in instructions
+    assert "一条挂在手上、但不等于目标本身的推进线索" in instructions
     assert "今天这条还剩 2 步没做完" in instructions
+
+
+def test_prepare_chat_context_uses_focus_subject_before_goal_focus():
+    persona_service = PersonaService(repository=InMemoryPersonaRepository())
+    state = BeingState(
+        mode=WakeMode.AWAKE,
+        focus_subject={
+            "kind": "lingering",
+            "title": "你刚才说最近提不起劲",
+            "why_now": "这句话虽然还没整理成目标，但我心里还挂着。",
+            "source_ref": "我最近挺累的，感觉做什么都提不起劲",
+        },
+    )
+
+    prepared = prepare_chat_context(
+        chat_memory_runtime=StubChatMemoryRuntime(),
+        context_limit=6,
+        persona_service=persona_service,
+        state=state,
+        user_message="你现在在忙什么",
+    )
+
+    assert prepared.focus_goal_title == "你刚才说最近提不起劲"
+    assert prepared.focus_context_source_kind == "lingering_focus"
+    assert prepared.focus_context_reason_kind == "lingering_attention"
+    assert "我心里还挂着" in (prepared.focus_context_summary or "")

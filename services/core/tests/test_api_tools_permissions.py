@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-import app.api.tools_routes as tools_routes
+import app.api.tool_capability_bridge as tool_capability_bridge
 from app.main import app
 from app.runtime_ext.runtime_config import get_runtime_config
 
@@ -80,7 +80,7 @@ def test_tools_file_dispatch_uses_runtime_file_policy(monkeypatch):
         captured["payload"] = payload
         return None
 
-    monkeypatch.setattr(tools_routes, "dispatch_and_wait", fake_dispatch_and_wait)
+    monkeypatch.setattr(tool_capability_bridge, "dispatch_and_wait", fake_dispatch_and_wait)
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -6,18 +6,12 @@ def test_default_being_state_is_sleeping():
     assert state.mode == WakeMode.SLEEPING
     assert state.focus_mode == FocusMode.SLEEPING
     assert state.current_thought is None
-    assert state.active_goal_ids == []
-    assert state.today_plan is None
+    assert state.focus_subject is None
+    assert state.focus_effort is None
     assert state.last_action is None
 
 
 def test_focus_mode_supports_autonomy():
     state = BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY)
-
-    assert state.focus_mode == FocusMode.AUTONOMY
-
-
-def test_legacy_orchestrator_focus_mode_normalizes_to_autonomy():
-    state = BeingState.model_validate({"mode": "awake", "focus_mode": "orchestrator"})
 
     assert state.focus_mode == FocusMode.AUTONOMY

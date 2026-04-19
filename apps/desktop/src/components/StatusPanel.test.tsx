@@ -35,7 +35,7 @@ beforeEach(() => {
   subscribeAppRealtime.mockReturnValue(() => {});
 });
 
-test("renders her plan for today when a morning plan exists", () => {
+test("renders focus status when a focus-backed state exists", () => {
   render(
     <StatusPanel
       error=""
@@ -44,15 +44,20 @@ test("renders her plan for today when a morning plan exists", () => {
         goal_title: "整理今天的对话记忆",
         source_kind: "user_topic_goal",
         source_label: "刚接住你这轮话题的事",
-        reason_kind: "today_plan_pending",
+        reason_kind: "focus_subject_reason",
         reason_label: "今天这条还剩 2 步没做完",
         prompt_summary: "当前焦点来自刚接住你这轮话题的事，之所以还在推进，是因为今天这条还剩 2 步没做完。",
       }}
       state={{
         mode: "awake",
-        focus_mode: "morning_plan",
+        focus_mode: "autonomy",
         current_thought: "今天先把轮廓理一下。",
-        active_goal_ids: ["goal-1"],
+        focus_subject: {
+          kind: "goal",
+          title: "整理今天的对话记忆",
+          why_now: "我刚把这件事正式接成了当前要持续推进的主线。",
+          goal_id: "goal-1",
+        },
         focus_effort: {
           goal_id: "goal-1",
           goal_title: "整理今天的对话记忆",
@@ -64,36 +69,24 @@ test("renders her plan for today when a morning plan exists", () => {
           created_at: "2026-04-18T06:30:00.000Z",
         },
         last_action: null,
-        today_plan: {
-          goal_id: "goal-1",
-          goal_title: "整理今天的对话记忆",
-          steps: [
-            { content: "把「整理今天的对话记忆」的轮廓理一下", status: "pending" },
-            { content: "开始动手推进", status: "pending" },
-          ],
-        },
       }}
     />
   );
 
-  expect(screen.getAllByText("今日计划").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("当前日程与运行状态")).toBeInTheDocument();
+  expect(screen.getByText("眼下状态")).toBeInTheDocument();
+  expect(screen.getByText("当前牵挂与生活状态")).toBeInTheDocument();
   expect(screen.getByText("当前焦点")).toBeInTheDocument();
   expect(screen.getAllByText("整理今天的对话记忆").length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText("用户触发")).toBeInTheDocument();
-  expect(screen.getByText("会先盯着这件事，因为这是刚接住你这轮话题的事。")).toBeInTheDocument();
-  expect(screen.getByText("现在还在继续推进，因为今天这条还剩 2 步没做完。")).toBeInTheDocument();
+  expect(screen.getByText("我刚把这件事正式接成了当前要持续推进的主线。")).toBeInTheDocument();
   expect(screen.getByText("刚刚推进了一步")).toBeInTheDocument();
   expect(screen.getByText("为什么现在做: 今天计划已经排到这一步，需要先把当前小步走完。")).toBeInTheDocument();
   expect(screen.getByText("刚刚做了什么: 推进了计划步骤：把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
   expect(screen.getByText("产生了什么变化: 今天计划已完成 1/2 步。")).toBeInTheDocument();
-  expect(screen.getAllByText("待处理")).toHaveLength(2);
-  expect(screen.getByText("把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
-  expect(screen.getByText("开始动手推进")).toBeInTheDocument();
 });
 
 
-test("renders completed state when today's plan is finished", () => {
+test("renders completed focus effort state", () => {
   render(
     <StatusPanel
       error=""
@@ -101,12 +94,11 @@ test("renders completed state when today's plan is finished", () => {
       state={{
         mode: "awake",
         focus_mode: "autonomy",
-        current_thought: "今天的计划先收住了。",
-        active_goal_ids: ["goal-1"],
+        current_thought: "这条线先收住了。",
         focus_effort: {
           goal_id: "goal-1",
           goal_title: "整理今天的对话记忆",
-          why_now: "今天计划里的动作已经完成，需要先看结果。",
+          why_now: "刚刚这条线上的动作已经完成，需要先看结果。",
           action_kind: "command",
           did_what: "执行了命令 `pwd`。",
           effect: "拿到了结果：/Users/ldy/Desktop/map/ai",
@@ -117,23 +109,44 @@ test("renders completed state when today's plan is finished", () => {
           command: "pwd",
           output: "/Users/ldy/Desktop/map/ai",
         },
-        today_plan: {
-          goal_id: "goal-1",
-          goal_title: "整理今天的对话记忆",
-          steps: [
-            { content: "把「整理今天的对话记忆」的轮廓理一下", status: "completed" },
-            { content: "开始动手推进", status: "completed" },
-          ],
-        },
       }}
     />
   );
 
-  expect(screen.getByText("当前日程与运行状态")).toBeInTheDocument();
-  expect(screen.getAllByText("已完成").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("当前牵挂与生活状态")).toBeInTheDocument();
   expect(screen.getByText("刚刚为焦点执行了动作")).toBeInTheDocument();
-  expect(screen.getByText("把「整理今天的对话记忆」的轮廓理一下")).toBeInTheDocument();
-  expect(screen.getByText("开始动手推进")).toBeInTheDocument();
+});
+
+
+test("renders lingering focus subject as a direct concern line", () => {
+  render(
+    <StatusPanel
+      error=""
+      focusGoalTitle="你刚才说最近提不起劲"
+      focusContext={{
+        goal_title: "你刚才说最近提不起劲",
+        source_kind: "lingering_focus",
+        source_label: "刚发生过、但心里还没完全放下的事",
+        reason_kind: "lingering_attention",
+        reason_label: "这句话虽然还没整理成目标，但我心里还挂着。",
+        prompt_summary: "当前焦点来自刚发生过、但心里还没完全放下的事，之所以还在推进，是因为这句话虽然还没整理成目标，但我心里还挂着。",
+      }}
+      state={{
+        mode: "awake",
+        focus_mode: "autonomy",
+        current_thought: "我还在想着你刚才那句话。",
+        focus_subject: {
+          kind: "lingering",
+          title: "你刚才说最近提不起劲",
+          why_now: "这句话虽然还没整理成目标，但我心里还挂着。",
+        },
+        last_action: null,
+      }}
+    />
+  );
+
+  expect(screen.getByText("余波未落")).toBeInTheDocument();
+  expect(screen.getByText("这句话虽然还没整理成目标，但我心里还挂着。")).toBeInTheDocument();
 });
 
 
@@ -172,9 +185,7 @@ test("renders relationship state when relationship summary is available", async 
         mode: "awake",
         focus_mode: "autonomy",
         current_thought: "我在整理今天的关系上下文。",
-        active_goal_ids: [],
         last_action: null,
-        today_plan: null,
       }}
     />
   );
@@ -190,7 +201,7 @@ test("renders relationship state when relationship summary is available", async 
   expect(screen.getByText("更喜欢先讨论再执行")).toBeInTheDocument();
 });
 
-test("compact variant keeps today plan visible and skips secondary insight fetches", () => {
+test("compact variant keeps focus summary visible and skips secondary insight fetches", () => {
   render(
     <StatusPanel
       error=""
@@ -206,23 +217,17 @@ test("compact variant keeps today plan visible and skips secondary insight fetch
       variant="compact"
       state={{
         mode: "awake",
-        focus_mode: "morning_plan",
+        focus_mode: "autonomy",
         current_thought: "先保留主链路。",
-        active_goal_ids: ["goal-1"],
         last_action: null,
-        today_plan: {
-          goal_id: "goal-1",
-          goal_title: "收敛默认首页",
-          steps: [{ content: "删掉重型默认挂载", status: "pending" }],
-        },
       }}
     />
   );
 
   expect(screen.getByText("当前焦点")).toBeInTheDocument();
-  expect(screen.getAllByText("收敛默认首页").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText("收敛默认首页")).toBeInTheDocument();
   expect(screen.getByText("续推中")).toBeInTheDocument();
-  expect(screen.getByText("会先盯着这件事，因为这是她一直接着往下推进的这条线。")).toBeInTheDocument();
+  expect(screen.getByText("眼下状态")).toBeInTheDocument();
   expect(fetchEmotionState).not.toHaveBeenCalled();
   expect(fetchMemorySummary).not.toHaveBeenCalled();
   expect(subscribeAppRealtime).not.toHaveBeenCalled();
@@ -256,9 +261,7 @@ test("updates relationship state from realtime memory events", async () => {
         mode: "awake",
         focus_mode: "autonomy",
         current_thought: "我在留意关系有没有新的变化。",
-        active_goal_ids: [],
         last_action: null,
-        today_plan: null,
       }}
     />
   );

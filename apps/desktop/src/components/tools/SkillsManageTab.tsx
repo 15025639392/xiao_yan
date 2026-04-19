@@ -89,8 +89,8 @@ export function SkillsManageTab() {
       <div className="tool-config-card">
         <div className="tool-config-card__header">
           <div>
-            <h4>Skills 管理</h4>
-            <p>统一管理会随 `/chat` 请求附带的技能工作流清单。</p>
+            <h4>技能选择</h4>
+            <p>选择会随 `/chat` 请求一起带上的技能工作流。</p>
           </div>
           <span className="tool-config-card__badge">已选择 {selectedSkillNames.length}</span>
         </div>

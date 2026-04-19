@@ -1,34 +1,16 @@
 import { useEffect, useState } from "react";
 import type {
   AppConfig,
-  ChatFolderPermission,
   ChatModelProviderItem,
-  DataEnvironmentStatus,
-  FolderAccessLevel,
 } from "../../lib/api";
-import { isTauriRuntime, pickDirectory, pickFiles } from "../../lib/tauri";
-import { Button, Checkbox, ConfigModal, Input, RangeSettingField, Select } from "../ui";
+import { Button, Checkbox, ConfigModal, RangeSettingField, Select } from "../ui";
 
 type ChatConfigPanelProps = {
   config: AppConfig;
   isUpdating: boolean;
   error: string;
-  folderPermissions: ChatFolderPermission[];
-  isUpdatingFolderPermissions: boolean;
-  folderPermissionsError: string;
   chatModelProviders: ChatModelProviderItem[];
   chatModelsError: string;
-  dataEnvironment: DataEnvironmentStatus | null;
-  isUpdatingDataEnvironment: boolean;
-  isCreatingDataBackup: boolean;
-  isImportingDataBackup: boolean;
-  dataEnvironmentError: string;
-  dataOperationMessage: string;
-  onAddOrUpdateFolderPermission: (path: string, accessLevel: FolderAccessLevel) => Promise<void>;
-  onRemoveFolderPermission: (path: string) => Promise<void>;
-  onToggleTestingMode: (testingMode: boolean) => Promise<void>;
-  onCreateDataBackup: (backupPath?: string) => Promise<void>;
-  onImportDataBackup: (backupPath: string) => Promise<void>;
   onUpdate: (config: Partial<AppConfig>) => Promise<void>;
   onClose: () => void;
 };
@@ -49,36 +31,17 @@ export function ChatConfigPanel({
   config,
   isUpdating,
   error,
-  folderPermissions,
-  isUpdatingFolderPermissions,
-  folderPermissionsError,
   chatModelProviders,
   chatModelsError,
-  dataEnvironment,
-  isUpdatingDataEnvironment,
-  isCreatingDataBackup,
-  isImportingDataBackup,
-  dataEnvironmentError,
-  dataOperationMessage,
-  onAddOrUpdateFolderPermission,
-  onRemoveFolderPermission,
-  onToggleTestingMode,
-  onCreateDataBackup,
-  onImportDataBackup,
   onUpdate,
   onClose,
 }: ChatConfigPanelProps) {
   const [providerDraft, setProviderDraft] = useState(config.chat_provider);
   const [modelDraft, setModelDraft] = useState(config.chat_model);
   const [modelError, setModelError] = useState("");
-  const [backupPathDraft, setBackupPathDraft] = useState("");
-  const [pathPickerError, setPathPickerError] = useState("");
   const hasFetchedProviders = chatModelProviders.length > 0;
   const selectedProvider = chatModelProviders.find((provider) => provider.provider_id === providerDraft);
   const modelOptions = selectedProvider?.models ?? [];
-  const dataActionRunning = isUpdatingDataEnvironment || isCreatingDataBackup || isImportingDataBackup;
-  const testingModeEnabled = dataEnvironment?.testing_mode ?? false;
-  const canUseNativePickers = isTauriRuntime();
   const mcpEnabled = Boolean(config.chat_mcp_enabled);
   const mcpServers = Array.isArray(config.chat_mcp_servers) ? config.chat_mcp_servers : [];
 
@@ -103,19 +66,9 @@ export function ChatConfigPanel({
     }
   }, [modelDraft, modelOptions, selectedProvider]);
 
-  useEffect(() => {
-    if (!dataEnvironment?.default_backup_directory) {
-      return;
-    }
-    if (backupPathDraft.trim()) {
-      return;
-    }
-    setBackupPathDraft(dataEnvironment.default_backup_directory);
-  }, [backupPathDraft, dataEnvironment?.default_backup_directory]);
-
   return (
     <ConfigModal
-      title="配置"
+      title="对话设置"
       onClose={onClose}
       error={error}
     >
@@ -262,13 +215,13 @@ export function ChatConfigPanel({
       <div className="config-panel__section">
         <div className="config-panel__section-header">
           <span className="config-panel__section-icon">🧩</span>
-          <label className="config-panel__label">MCP 工具</label>
+          <label className="config-panel__label">扩展能力接入</label>
         </div>
         <p className="config-panel__description">
-          MCP 管理入口已迁移到工具箱，此处仅展示当前状态与配置快照。
+          这里仅显示当前连接状态；详细接入与维护入口已收拢到“外部能力”页面。
         </p>
         <div className="config-panel__mcp-hint">
-          当前状态：{mcpEnabled ? "已启用" : "未启用"}。如需新增、编辑、删除或启停，请前往“工具箱 {"->"} MCP”。
+          当前状态：{mcpEnabled ? "已启用" : "未启用"}。如需新增、编辑、删除或启停，请前往“外部能力 {"->"} MCP 接入”。
         </div>
         {mcpServers.length === 0 ? (
           <div className="config-panel__mcp-hint">当前没有配置 MCP Server。</div>
@@ -278,16 +231,7 @@ export function ChatConfigPanel({
               <div key={server.server_id} className="config-panel__mcp-item">
                 <div className="config-panel__mcp-item-main">
                   <strong>{server.server_id}</strong>
-                  <span>
-                    {server.command} {server.args.join(" ")}
-                  </span>
-                  <span className="config-panel__mcp-meta">
-                    timeout: {server.timeout_seconds}s
-                    {server.cwd ? ` · cwd: ${server.cwd}` : ""}
-                  </span>
-                </div>
-                <div className="config-panel__mcp-item-actions">
-                  <span className="config-panel__item-action">默认状态：{server.enabled ? "启用" : "停用"}</span>
+                  <span className="config-panel__mcp-meta">{server.enabled ? "默认启用" : "默认停用"}</span>
                 </div>
               </div>
             ))}
@@ -295,148 +239,6 @@ export function ChatConfigPanel({
         )}
       </div>
 
-      <div className="config-panel__section">
-        <div className="config-panel__section-header">
-          <span className="config-panel__section-icon">🧪</span>
-          <label className="config-panel__label">测试隔离与备份</label>
-        </div>
-        <p className="config-panel__description">
-          开启后会先自动备份，再切到隔离的数据环境，测试不会污染当前记忆/聊天数据。
-        </p>
-        <div className="config-panel__filesystem-compact">
-          <div className="config-panel__fs-path">
-            {dataEnvironment?.mempalace_palace_path ?? "未加载数据环境路径"}
-          </div>
-          <div className="config-panel__fs-footer">
-            <div className={`config-panel__fs-status ${testingModeEnabled ? "config-panel__fs-status--active" : ""}`}>
-              <span className="config-panel__fs-status-dot" />
-              {testingModeEnabled ? "当前为测试隔离环境" : "当前为默认数据环境"}
-            </div>
-            <div className="config-panel__fs-actions">
-              <Button
-                type="button"
-                variant="default"
-                className="config-panel__fs-btn config-panel__fs-btn--primary"
-                disabled={dataActionRunning}
-                onClick={() => {
-                  void onToggleTestingMode(!testingModeEnabled);
-                }}
-              >
-                {testingModeEnabled ? "退出测试隔离" : "进入测试隔离（自动备份）"}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="config-panel__backup-box">
-          <label className="config-panel__label" htmlFor="chat-config-backup-path">
-            备份目录或备份文件路径
-          </label>
-          <Input
-            id="chat-config-backup-path"
-            aria-label="备份路径"
-            className="config-panel__backup-input"
-            value={backupPathDraft}
-            onChange={(event) => setBackupPathDraft(event.target.value)}
-            placeholder={dataEnvironment?.default_backup_directory ?? "例如 /tmp/xiaoyan-backups"}
-            disabled={dataActionRunning}
-          />
-          <div className="config-panel__backup-picker-actions">
-            <Button
-              type="button"
-              variant="secondary"
-              className="config-panel__fs-btn"
-              disabled={dataActionRunning || !canUseNativePickers}
-              onClick={() => {
-                void (async () => {
-                  setPathPickerError("");
-                  try {
-                    const selected = await pickDirectory();
-                    if (selected) {
-                      setBackupPathDraft(selected);
-                    }
-                  } catch (error) {
-                    setPathPickerError(error instanceof Error ? error.message : "选择目录失败");
-                  }
-                })();
-              }}
-            >
-              选目录（备份）
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              className="config-panel__fs-btn"
-              disabled={dataActionRunning || !canUseNativePickers}
-              onClick={() => {
-                void (async () => {
-                  setPathPickerError("");
-                  try {
-                    const selected = await pickFiles({
-                      title: "选择要导入的备份文件",
-                      filters: [{ name: "Backup", extensions: ["zip"] }],
-                      multiple: false,
-                    });
-                    if (selected[0]) {
-                      setBackupPathDraft(selected[0]);
-                    }
-                  } catch (error) {
-                    setPathPickerError(error instanceof Error ? error.message : "选择备份文件失败");
-                  }
-                })();
-              }}
-            >
-              选 zip（导入）
-            </Button>
-          </div>
-          {!canUseNativePickers ? (
-            <div className="config-panel__backup-hint">当前不是 Tauri 宿主，请手动输入路径。</div>
-          ) : null}
-          <div className="config-panel__backup-actions">
-            <Button
-              type="button"
-              variant="secondary"
-              className="config-panel__fs-btn"
-              disabled={dataActionRunning}
-              onClick={() => {
-                void onCreateDataBackup(backupPathDraft);
-              }}
-            >
-              {isCreatingDataBackup ? "备份中..." : "立即备份"}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              className="config-panel__fs-btn config-panel__fs-btn--danger"
-              disabled={dataActionRunning}
-              onClick={() => {
-                void onImportDataBackup(backupPathDraft);
-              }}
-            >
-              {isImportingDataBackup ? "导入中..." : "导入备份（先自动备份）"}
-            </Button>
-          </div>
-        </div>
-
-        {dataOperationMessage ? (
-          <div className="config-panel__success-box">
-            <span className="config-panel__success-icon">✓</span>
-            <span>{dataOperationMessage}</span>
-          </div>
-        ) : null}
-        {dataEnvironmentError ? (
-          <div className="config-panel__error-box">
-            <span className="config-panel__error-icon">⚠</span>
-            <span>{dataEnvironmentError}</span>
-          </div>
-        ) : null}
-        {pathPickerError ? (
-          <div className="config-panel__error-box">
-            <span className="config-panel__error-icon">⚠</span>
-            <span>{pathPickerError}</span>
-          </div>
-        ) : null}
-      </div>
     </ConfigModal>
   );
 }

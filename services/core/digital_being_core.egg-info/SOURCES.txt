@@ -36,13 +36,6 @@ app/chat/context_builder.py
 app/chat/emotion_handler.py
 app/chat/persona_injector.py
 app/domain/models.py
-app/goals/__init__.py
-app/goals/admission.py
-app/goals/decomposer.py
-app/goals/executor.py
-app/goals/models.py
-app/goals/repository.py
-app/goals/scheduler.py
 app/llm/enhanced_gateway.py
 app/llm/gateway.py
 app/llm/gateway_events.py
@@ -76,8 +69,6 @@ app/persona/prompt_builder.py
 app/persona/service.py
 app/persona/templates.py
 app/persona/validator.py
-app/planning/morning_plan.py
-app/planning/morning_plan_parser.py
 app/runtime_ext/__init__.py
 app/runtime_ext/bootstrap.py
 app/runtime_ext/data_backup.py
@@ -110,7 +101,6 @@ tests/test_api_capabilities_queue.py
 tests/test_api_chat.py
 tests/test_api_config.py
 tests/test_api_cors.py
-tests/test_api_goals.py
 tests/test_api_knowledge.py
 tests/test_api_lifecycle.py
 tests/test_api_memory.py
@@ -120,7 +110,6 @@ tests/test_api_tools_execute_capability_bridge.py
 tests/test_api_tools_permissions.py
 tests/test_api_world.py
 tests/test_autonomy.py
-tests/test_autonomy_loop.py
 tests/test_capability_queue_persistence.py
 tests/test_chat_memory_runtime.py
 tests/test_chat_system.py
@@ -130,9 +119,6 @@ tests/test_enhanced_gateway.py
 tests/test_expression_consistency.py
 tests/test_expression_style.py
 tests/test_gateway.py
-tests/test_goal_admission.py
-tests/test_goal_management.py
-tests/test_goal_repository.py
 tests/test_health.py
 tests/test_integration_wake.py
 tests/test_lifecycle.py
@@ -145,7 +131,6 @@ tests/test_memory_repository.py
 tests/test_memory_service_recent_limits.py
 tests/test_memory_system.py
 tests/test_mempalace_adapter.py
-tests/test_morning_plan_planner.py
 tests/test_persona.py
 tests/test_persona_templates.py
 tests/test_prompt_builder.py

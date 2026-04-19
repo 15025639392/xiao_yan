@@ -101,29 +101,6 @@ function createAppShellFetchMock(handlers: FetchHandler[] = []) {
         focus_tension: "low",
       });
     }
-    if (url.endsWith("/goals")) {
-      return jsonResponse({ goals: [] });
-    }
-    if (url.endsWith("/goals/admission/stats")) {
-      return jsonResponse({
-        mode: "off",
-        today: { admit: 0, defer: 0, drop: 0, wip_blocked: 0 },
-        admitted_stability_24h: { stable: 0, re_deferred: 0, dropped: 0 },
-        admitted_stability_24h_rate: null,
-        deferred_queue_size: 0,
-        wip_limit: 3,
-        thresholds: {
-          user_topic: { min_score: 0.6, defer_score: 0.4 },
-          chain_next: { min_score: 0.6, defer_score: 0.4 },
-        },
-      });
-    }
-    if (url.endsWith("/goals/admission/candidates")) {
-      return jsonResponse({ deferred: [], recent: [] });
-    }
-    if (url.includes("/config/goal-admission/history")) {
-      return jsonResponse({ items: [] });
-    }
     if (url.endsWith("/messages")) {
       return jsonResponse({ messages: [] });
     }
@@ -163,29 +140,32 @@ function createAppShellFetchMock(handlers: FetchHandler[] = []) {
     return jsonResponse({
       mode: "sleeping",
       current_thought: null,
-      active_goal_ids: [],
     });
   });
 }
 
-test("renders wake and sleep controls", async () => {
+test("renders chat-first shell without wake and sleep controls", async () => {
   vi.stubGlobal("fetch", createAppShellFetchMock());
 
   const { container } = await renderApp();
   const mainNav = screen.getByRole("navigation", { name: "主导航" });
-  expect(screen.getByRole("button", { name: "唤醒" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "休眠" })).toBeInTheDocument();
+  const sidebar = container.querySelector(".app-sidebar");
+  expect(sidebar).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "唤醒" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "休眠" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "对话" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "总览" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "总览" })).not.toBeInTheDocument();
   expect(within(mainNav).queryByRole("button", { name: "记忆" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "记忆库" })).toBeInTheDocument();
+  expect(within(sidebar as HTMLElement).queryByRole("button", { name: "回看记忆" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "能力中枢" })).not.toBeInTheDocument();
   expect(screen.getByText("小晏")).toBeInTheDocument();
-  expect(screen.getByText("目标看板")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "自由对话" })).toBeInTheDocument();
   expect(container.querySelector(".app-layout")).toBeTruthy();
   expect(container.querySelector(".app-sidebar")).toBeTruthy();
-  expect(container.querySelector(".overview-stage")).toBeTruthy();
-  expect(container.querySelector(".inspector-grid")).toBeTruthy();
+  expect(window.location.hash).toBe("#/chat");
+
+  fireEvent.click(screen.getByRole("button", { name: /小晏/ }));
+  expect(within(sidebar as HTMLElement).getByRole("button", { name: /回看记忆/ })).toBeInTheDocument();
 });
 
 test("keeps memory reachable as an optional entry instead of a primary nav item", async () => {
@@ -193,7 +173,8 @@ test("keeps memory reachable as an optional entry instead of a primary nav item"
 
   await renderApp();
 
-  fireEvent.click(screen.getByRole("button", { name: "记忆库" }));
+  fireEvent.click(screen.getByRole("button", { name: /小晏/ }));
+  fireEvent.click(screen.getByRole("button", { name: /回看记忆/ }));
 
   await waitFor(() => {
     expect(screen.getByRole("heading", { name: "记忆库" })).toBeInTheDocument();
@@ -201,84 +182,42 @@ test("keeps memory reachable as an optional entry instead of a primary nav item"
   });
 });
 
-test("redirects legacy history route to overview and keeps memory as secondary entry", async () => {
+test("redirects legacy history route to chat and keeps memory as secondary entry", async () => {
   vi.stubGlobal("fetch", createAppShellFetchMock());
   window.location.hash = "#/history";
 
   await renderApp();
 
   await waitFor(() => {
-    expect(window.location.hash).toBe("#/");
+    expect(window.location.hash).toBe("#/chat");
   });
-  expect(screen.getByRole("button", { name: "记忆库" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /小晏/ }));
+  expect(screen.getByRole("button", { name: /回看记忆/ })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "自由对话" })).toBeInTheDocument();
 });
 
-test("redirects legacy orchestrator route to overview", async () => {
+test("redirects legacy orchestrator route to chat", async () => {
   vi.stubGlobal("fetch", createAppShellFetchMock());
   window.location.hash = "#/orchestrator";
 
   await renderApp();
 
   await waitFor(() => {
-    expect(window.location.hash).toBe("#/");
+    expect(window.location.hash).toBe("#/chat");
   });
-  expect(screen.getByRole("button", { name: "总览" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "自由对话" })).toBeInTheDocument();
 });
 
-test("renders capability hub when route is capabilities", async () => {
-  const fetchMock = createAppShellFetchMock([
-    (url) => {
-      if (url.endsWith("/capabilities/contract")) {
-        return jsonResponse({
-          version: "v0",
-          descriptors: [
-            {
-              name: "fs.read",
-              default_risk_level: "safe",
-              default_requires_approval: false,
-              description: "Read text content from an allowed path.",
-              current_binding: "chat file tool",
-            },
-          ],
-        });
-      }
-      if (url.endsWith("/capabilities/queue/status")) {
-        return jsonResponse({
-          pending: 1,
-          pending_approval: 0,
-          in_progress: 1,
-          completed: 12,
-          dead_letter: 0,
-        });
-      }
-      if (url.includes("/capabilities/jobs")) {
-        return jsonResponse({ items: [], next_cursor: null });
-      }
-      if (url.includes("/capabilities/approvals/pending")) {
-        return jsonResponse({ items: [] });
-      }
-      if (url.includes("/capabilities/approvals/history")) {
-        return jsonResponse({ items: [] });
-      }
-      if (url.endsWith("/state")) {
-        return jsonResponse({
-          mode: "awake",
-          current_thought: null,
-          active_goal_ids: [],
-        });
-      }
-      return null;
-    },
-  ]);
-
-  vi.stubGlobal("fetch", fetchMock);
+test("redirects legacy capabilities route to tools", async () => {
+  vi.stubGlobal("fetch", createAppShellFetchMock());
   window.location.hash = "#/capabilities";
 
   await renderApp();
 
   await waitFor(() => {
-    expect(screen.getByRole("heading", { name: "能力中枢" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#/tools");
   });
+  expect(screen.getByRole("heading", { name: "外部能力" })).toBeInTheDocument();
 });
 
 test("streams assistant reply over realtime chat events", async () => {
@@ -291,7 +230,6 @@ test("streams assistant reply over realtime chat events", async () => {
         JSON.stringify({
           mode: "sleeping",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -302,13 +240,6 @@ test("streams assistant reply over realtime chat events", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -358,8 +289,6 @@ test("streams assistant reply over realtime chat events", async () => {
     expect(screen.getByText("hello xiao yan")).toBeInTheDocument();
   });
 
-  expect(screen.getAllByText("小晏正在整理这句话。").length).toBeGreaterThan(0);
-
   await act(async () => {
     socket.emit({
       type: "chat_started",
@@ -381,7 +310,7 @@ test("streams assistant reply over realtime chat events", async () => {
   });
 
   await waitFor(() => {
-    expect(screen.getByText("hello▍")).toBeInTheDocument();
+    expect(document.body).toHaveTextContent("hello▍");
   });
 
   await act(async () => {
@@ -395,7 +324,7 @@ test("streams assistant reply over realtime chat events", async () => {
   });
 
   await waitFor(() => {
-    expect(screen.getByText("hello human▍")).toBeInTheDocument();
+    expect(document.body).toHaveTextContent("hello human▍");
   });
 
   await act(async () => {
@@ -440,8 +369,6 @@ test("shows immediate waiting feedback for a follow-up message before the next r
         mode: "awake",
         focus_mode: "autonomy",
         current_thought: null,
-        active_goal_ids: [],
-        today_plan: null,
         last_action: null,
       });
     }
@@ -453,10 +380,6 @@ test("shows immediate waiting feedback for a follow-up message before the next r
           { id: "mem-assistant-1", role: "assistant", content: "上一句我听到了。" },
         ],
       });
-    }
-
-    if (url.endsWith("/goals")) {
-      return jsonResponse({ goals: [] });
     }
 
     if (url.endsWith("/world")) {
@@ -521,7 +444,6 @@ test("supports retrying a failed user message send", async () => {
         JSON.stringify({
           mode: "awake",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -532,13 +454,6 @@ test("supports retrying a failed user message send", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -629,7 +544,6 @@ test("sends selected mcp_servers in chat request body", async () => {
         JSON.stringify({
           mode: "awake",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -640,13 +554,6 @@ test("sends selected mcp_servers in chat request body", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -755,7 +662,6 @@ test("sends reasoning payload when bootstrap config enables continuous reasoning
         JSON.stringify({
           mode: "awake",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -766,13 +672,6 @@ test("sends reasoning payload when bootstrap config enables continuous reasoning
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -860,16 +759,11 @@ test("reuses latest reasoning session id for the next normal chat turn", async (
       return jsonResponse({
         mode: "awake",
         current_thought: null,
-        active_goal_ids: [],
       });
     }
 
     if (url.endsWith("/messages")) {
       return jsonResponse({ messages: [] });
-    }
-
-    if (url.endsWith("/goals")) {
-      return jsonResponse({ goals: [] });
     }
 
     if (url.endsWith("/world")) {
@@ -1004,7 +898,6 @@ test("sends toolbox-selected skills in chat request body", async () => {
         JSON.stringify({
           mode: "awake",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -1015,13 +908,6 @@ test("sends toolbox-selected skills in chat request body", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1093,7 +979,6 @@ test("does not duplicate text when chat delta payloads are cumulative snapshots"
         JSON.stringify({
           mode: "awake",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -1104,13 +989,6 @@ test("does not duplicate text when chat delta payloads are cumulative snapshots"
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1247,8 +1125,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         }),
         {
@@ -1276,13 +1152,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
           headers: { "Content-Type": "application/json" },
         },
       );
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
     if (url.endsWith("/world")) {
@@ -1322,8 +1191,6 @@ test("clears chat list when runtime snapshot returns empty messages", async () =
           mode: "sleeping",
           focus_mode: "sleeping",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         },
         messages: [],
@@ -1355,8 +1222,6 @@ test("keeps just-sent local user message when a transient runtime update has emp
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         }),
         {
@@ -1368,13 +1233,6 @@ test("keeps just-sent local user message when a transient runtime update has emp
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1429,8 +1287,6 @@ test("keeps just-sent local user message when a transient runtime update has emp
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         },
         messages: [],
@@ -1478,8 +1334,6 @@ test("does not append a late placeholder when runtime assistant content arrives 
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         }),
         {
@@ -1491,13 +1345,6 @@ test("does not append a late placeholder when runtime assistant content arrives 
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1549,8 +1396,6 @@ test("does not append a late placeholder when runtime assistant content arrives 
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         },
         messages: [
@@ -1619,8 +1464,6 @@ test("keeps just-completed local assistant reply when a transient runtime update
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         }),
         {
@@ -1632,13 +1475,6 @@ test("keeps just-completed local assistant reply when a transient runtime update
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1720,8 +1556,6 @@ test("keeps just-completed local assistant reply when a transient runtime update
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         },
         messages: [],
@@ -1788,7 +1622,6 @@ test("restores imported project registry to core folder permissions on app start
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -1799,13 +1632,6 @@ test("restores imported project registry to core folder permissions on app start
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -1909,7 +1735,6 @@ test("does not duplicate text when chat delta payloads overlap with previous suf
         JSON.stringify({
           mode: "awake",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -1920,13 +1745,6 @@ test("does not duplicate text when chat delta payloads overlap with previous suf
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2040,7 +1858,6 @@ test("continues generation in the same assistant bubble after failure", async ()
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -2051,13 +1868,6 @@ test("continues generation in the same assistant bubble after failure", async ()
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2197,7 +2007,7 @@ test("continues generation in the same assistant bubble after failure", async ()
   await renderApp();
   const socket = await openRealtimeSocket();
 
-  fireEvent.click(screen.getByRole("button", { name: "⚙️ 配置" }));
+  fireEvent.click(screen.getByRole("button", { name: "⚙️ 对话设置" }));
   fireEvent.click(await screen.findByLabelText("启用持续推理"));
   fireEvent.click(screen.getByLabelText("关闭"));
 
@@ -2360,8 +2170,6 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         }),
         {
@@ -2373,13 +2181,6 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -2459,8 +2260,6 @@ test("merges runtime-updated final assistant content into the in-flight bubble w
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         },
         messages: [
@@ -2536,18 +2335,12 @@ test("does not duplicate a completed assistant reply when runtime history replay
         mode: "awake",
         focus_mode: "autonomy",
         current_thought: null,
-        active_goal_ids: [],
-        today_plan: null,
         last_action: null,
       });
     }
 
     if (url.endsWith("/messages")) {
       return jsonResponse({ messages: [] });
-    }
-
-    if (url.endsWith("/goals")) {
-      return jsonResponse({ goals: [] });
     }
 
     if (url.endsWith("/world")) {
@@ -2648,8 +2441,6 @@ test("does not duplicate a completed assistant reply when runtime history replay
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         },
         messages: [
@@ -2696,18 +2487,12 @@ test("clears transient failed user state when runtime history brings back the re
         mode: "awake",
         focus_mode: "autonomy",
         current_thought: null,
-        active_goal_ids: [],
-        today_plan: null,
         last_action: null,
       });
     }
 
     if (url.endsWith("/messages")) {
       return jsonResponse({ messages: [] });
-    }
-
-    if (url.endsWith("/goals")) {
-      return jsonResponse({ goals: [] });
     }
 
     if (url.endsWith("/world")) {
@@ -2772,8 +2557,6 @@ test("clears transient failed user state when runtime history brings back the re
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         },
         messages: [
@@ -2818,7 +2601,6 @@ test("renders proactive replies from realtime runtime updates in the chat panel"
         JSON.stringify({
           mode: "awake",
           current_thought: "我醒了。",
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -2834,20 +2616,6 @@ test("renders proactive replies from realtime runtime updates in the chat panel"
       });
     }
 
-    if (url.endsWith("/goals")) {
-      return new Response(
-        JSON.stringify({
-          goals: [
-            { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
     if (url.endsWith("/world")) {
       return new Response(
         JSON.stringify({
@@ -2861,7 +2629,6 @@ test("renders proactive replies from realtime runtime updates in the chat panel"
     }
 
     return new Response(
-      JSON.stringify({ mode: "sleeping", current_thought: null, active_goal_ids: [] }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   });
@@ -2887,8 +2654,6 @@ test("renders proactive replies from realtime runtime updates in the chat panel"
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: "我刚刚又想到你提到的星星了。",
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         },
         messages: [
@@ -2923,8 +2688,6 @@ test("syncs assistant name across app chrome when persona updates arrive", async
           mode: "awake",
           focus_mode: "autonomy",
           current_thought: null,
-          active_goal_ids: [],
-          today_plan: null,
           last_action: null,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -2933,13 +2696,6 @@ test("syncs assistant name across app chrome when persona updates arrive", async
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -3037,155 +2793,7 @@ test("syncs assistant name across app chrome when persona updates arrive", async
   });
 });
 
-test("updates a goal status from the app and refreshes the rendered goal", async () => {
-  let stateCallCount = 0;
-  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-
-    if (url.endsWith("/state")) {
-      stateCallCount += 1;
-      return new Response(
-        JSON.stringify({
-          mode: "awake",
-          focus_mode: stateCallCount === 1 ? "morning_plan" : "autonomy",
-          current_thought:
-            stateCallCount === 1 ? "正在想用户刚刚说的话。" : "我先把这个目标放下了。",
-          active_goal_ids: stateCallCount === 1 ? ["goal-1"] : [],
-          today_plan:
-            stateCallCount === 1
-              ? {
-                  goal_id: "goal-1",
-                  goal_title: "持续理解用户最近在意的话题：星星",
-                  steps: [
-                    {
-                      content: "把「持续理解用户最近在意的话题：星星」的轮廓理一下",
-                      status: "pending",
-                    },
-                  ],
-                }
-              : null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/messages")) {
-      return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(
-        JSON.stringify({
-          goals: [
-            { id: "goal-1", title: "持续理解用户最近在意的话题：星星", status: "active" },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/world")) {
-      return new Response(
-        JSON.stringify({
-          time_of_day: "afternoon",
-          energy: "high",
-          mood: "engaged",
-          focus_tension: "high",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/persona/emotion")) {
-      return new Response(
-        JSON.stringify({
-          primary_emotion: "engaged",
-          primary_intensity: "mild",
-          secondary_emotion: null,
-          secondary_intensity: "none",
-          mood_valence: 1,
-          arousal: 1,
-          is_calm: false,
-          active_entry_count: 0,
-          active_entries: [],
-          last_updated: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/memory/summary")) {
-      return new Response(
-        JSON.stringify({
-          total_estimated: 0,
-          by_kind: {},
-          recent_count: 0,
-          strong_memories: 0,
-          relationship: {
-            available: false,
-            boundaries: [],
-            commitments: [],
-            preferences: [],
-          },
-          available: true,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (url.endsWith("/goals/goal-1/status")) {
-      expect(init?.method).toBe("POST");
-      expect(init?.body).toBe(JSON.stringify({ status: "paused" }));
-      return new Response(
-        JSON.stringify({
-          id: "goal-1",
-          title: "持续理解用户最近在意的话题：星星",
-          status: "paused",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    throw new Error(`unexpected request: ${url}`);
-  });
-
-  vi.stubGlobal("fetch", fetchMock);
-
-  await renderApp();
-
-  expect(await screen.findByText("持续理解用户最近在意的话题：星星")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "暂停" })).toBeInTheDocument();
-
-  fireEvent.click(screen.getByRole("button", { name: "暂停" }));
-
-  await waitFor(() => {
-    expect(screen.getByText("已暂停")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "恢复" })).toBeInTheDocument();
-  });
-});
-
-test("polls world state and renders the inner world panel", async () => {
+test("defaults to chat without loading removed overview world data", async () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
 
@@ -3194,7 +2802,6 @@ test("polls world state and renders the inner world panel", async () => {
         JSON.stringify({
           mode: "awake",
           current_thought: "我有点困，但还惦记着今天的整理。",
-          active_goal_ids: ["goal-1"],
         }),
         {
           status: 200,
@@ -3208,20 +2815,6 @@ test("polls world state and renders the inner world panel", async () => {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(
-        JSON.stringify({
-          goals: [
-            { id: "goal-1", title: "整理今天的对话记忆", status: "active" },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
     }
 
     if (url.endsWith("/world")) {
@@ -3290,11 +2883,11 @@ test("polls world state and renders the inner world panel", async () => {
 
   await renderApp();
 
-  expect(await screen.findByText("内在世界")).toBeInTheDocument();
-  expect(screen.getByText("时间感")).toBeInTheDocument();
-  expect(screen.getByText("能量")).toBeInTheDocument();
-  expect(screen.getByText("情绪")).toBeInTheDocument();
-  expect(screen.getByText("专注张力")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "自由对话" })).toBeInTheDocument();
+  expect(
+    fetchMock.mock.calls.some(([input]) => String(input).endsWith("/world")),
+  ).toBe(false);
+  expect(screen.queryByText(/此刻感受:/)).not.toBeInTheDocument();
 });
 
 test("sends chat request with attached folder context after picking a folder", async () => {
@@ -3310,7 +2903,6 @@ test("sends chat request with attached folder context after picking a folder", a
         JSON.stringify({
           mode: "awake",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -3321,13 +2913,6 @@ test("sends chat request with attached folder context after picking a folder", a
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -3418,7 +3003,6 @@ test("sends chat request with attached files and images", async () => {
         JSON.stringify({
           mode: "awake",
           current_thought: null,
-          active_goal_ids: [],
         }),
         {
           status: 200,
@@ -3429,13 +3013,6 @@ test("sends chat request with attached files and images", async () => {
 
     if (url.endsWith("/messages")) {
       return new Response(JSON.stringify({ messages: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (url.endsWith("/goals")) {
-      return new Response(JSON.stringify({ goals: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });

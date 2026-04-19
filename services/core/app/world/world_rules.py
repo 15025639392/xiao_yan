@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from app.domain.models import BeingState, WakeMode
-from app.goals.models import Goal, GoalStatus
 from app.world.models import WorldState
 
 
@@ -26,34 +25,26 @@ def energy_for(time_of_day_value: str, state: BeingState) -> str:
     return "low"
 
 
-def mood_for(state: BeingState, goals: list[Goal], energy: str, focus_stage: str) -> str:
+def mood_for(state: BeingState, energy: str, focus_stage: str) -> str:
     if state.mode != WakeMode.AWAKE:
         return "tired"
 
-    statuses = {goal.status for goal in goals}
-    if GoalStatus.COMPLETED in statuses:
-        return "calm"
     if focus_stage == "consolidate":
         return "calm"
     if energy == "low":
         return "tired"
-    if GoalStatus.ACTIVE in statuses:
+    if focus_stage in {"start", "deepen"}:
         return "engaged"
     return "calm"
 
 
-def focus_tension_for(state: BeingState, goals: list[Goal], focus_stage: str) -> str:
+def focus_tension_for(state: BeingState, focus_stage: str) -> str:
     if state.mode != WakeMode.AWAKE:
         return "low"
 
-    statuses = {goal.status for goal in goals}
     if focus_stage == "consolidate":
         return "medium"
-    if GoalStatus.ACTIVE in statuses:
-        return "high"
-    if GoalStatus.COMPLETED in statuses or GoalStatus.ABANDONED in statuses:
-        return "low"
-    if state.active_goal_ids:
+    if state.focus_subject is not None:
         return "medium"
     return "low"
 
@@ -72,17 +63,10 @@ def event_lead(world_state: WorldState) -> str:
     return "我在感受这一刻的变化，"
 
 
-def focus_stage_for(goals: list[Goal]) -> tuple[str, int | None]:
-    if not goals:
+def focus_stage_for(state: BeingState) -> tuple[str, int | None]:
+    if state.focus_subject is None:
         return "none", None
-
-    current_goal = goals[0]
-    step = current_goal.generation + 1
-    if current_goal.generation >= 2:
-        return "consolidate", step
-    if current_goal.generation == 1:
-        return "deepen", step
-    return "start", step
+    return "start", 1
 
 
 __all__ = [

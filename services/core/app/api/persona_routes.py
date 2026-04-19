@@ -4,9 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from pydantic.aliases import AliasChoices
 
-from app.api.deps import get_goal_repository, get_memory_repository, get_persona_service, get_state_store
+from app.api.deps import get_memory_repository, get_persona_service, get_state_store
 from app.domain.models import BeingState, FocusMode, WakeMode
-from app.goals.repository import GoalRepository
 from app.memory.repository import MemoryRepository
 from app.persona.models import (
     ExpressionHabit,
@@ -148,25 +147,16 @@ def build_persona_router() -> APIRouter:
     def initialize_persona(
         state_store: StateStore = Depends(get_state_store),
         memory_repository: MemoryRepository = Depends(get_memory_repository),
-        goal_repository: GoalRepository = Depends(get_goal_repository),
         persona_service: PersonaService = Depends(get_persona_service),
     ) -> dict:
         memory_count = memory_repository.clear_all()
-        goal_count = goal_repository.clear_all()
         profile = persona_service.reset_to_default()
-        initial_state = BeingState(
-            mode=WakeMode.SLEEPING,
-            focus_mode=FocusMode.SLEEPING,
-            current_thought=None,
-            active_goal_ids=[],
-            today_plan=None,
-            last_action=None,
-        )
+        initial_state = BeingState(mode=WakeMode.SLEEPING)
         state_store.set(initial_state)
         return {
             "success": True,
             "message": "数字人已初始化",
-            "cleared": {"memories": memory_count, "goals": goal_count},
+            "cleared": {"memories": memory_count},
             "profile": profile.model_dump(),
         }
 

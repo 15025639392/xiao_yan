@@ -52,12 +52,8 @@ describe("useAppRuntimeSync", () => {
         mode: "awake",
         focus_mode: "autonomy",
         current_thought: null,
-        active_goal_ids: [],
-        today_plan: null,
         last_action: null,
       },
-      goals: [{ id: "goal-1", title: "整理今天的对话记忆", status: "active" }],
-      world: null,
       messages: [{ id: "assistant-1", role: "assistant", content: "我在。" }],
     });
     subscribeAppRealtime.mockReturnValue(() => {});
@@ -65,8 +61,6 @@ describe("useAppRuntimeSync", () => {
     const messagesRef = { current: [] as any[] };
     const pendingRequestMessageRef = { current: null };
     const setState = vi.fn();
-    const setGoals = vi.fn();
-    const setWorld = vi.fn();
     const setMessages = vi.fn();
 
     renderHook(() =>
@@ -74,14 +68,10 @@ describe("useAppRuntimeSync", () => {
         messagesRef,
         pendingRequestMessageRef,
         setError: vi.fn(),
-        setGoals,
         setIsSending: vi.fn(),
-        setMacConsoleStatus: vi.fn(),
         setMessages,
         setPersona: vi.fn(),
         setState,
-        setWorld,
-        updateFocusTransitionHint: vi.fn(),
       }),
     );
 
@@ -90,8 +80,6 @@ describe("useAppRuntimeSync", () => {
       expect(setState).toHaveBeenCalled();
     });
 
-    expect(setGoals).toHaveBeenCalledWith([{ id: "goal-1", title: "整理今天的对话记忆", status: "active" }]);
-    expect(setWorld).toHaveBeenCalledWith(null);
     expect(setMessages).toHaveBeenCalledWith([{ id: "assistant-1", role: "assistant", content: "我在。" }]);
     expect(messagesRef.current).toEqual([{ id: "assistant-1", role: "assistant", content: "我在。" }]);
   });
@@ -102,12 +90,8 @@ describe("useAppRuntimeSync", () => {
         mode: "sleeping",
         focus_mode: "sleeping",
         current_thought: null,
-        active_goal_ids: [],
-        today_plan: null,
         last_action: null,
       },
-      goals: [],
-      world: null,
       messages: null,
     });
 
@@ -128,14 +112,9 @@ describe("useAppRuntimeSync", () => {
         mode: "awake",
         focus_mode: "autonomy",
         current_thought: null,
-        active_goal_ids: [],
-        today_plan: null,
         last_action: null,
       },
       messages: [{ id: "assistant-2", role: "assistant", content: "继续中" }],
-      goals: [{ id: "goal-2", title: "收住今天这条线", status: "active" }],
-      world: null,
-      macConsoleStatus: null,
       shouldSettleSending: true,
       error: "",
     });
@@ -151,24 +130,18 @@ describe("useAppRuntimeSync", () => {
     const setMessages = vi.fn();
     const setIsSending = vi.fn();
     const setState = vi.fn();
-    const setGoals = vi.fn();
     const setPersona = vi.fn();
     const setError = vi.fn();
-    const updateFocusTransitionHint = vi.fn();
 
     renderHook(() =>
       useAppRuntimeSync({
         messagesRef,
         pendingRequestMessageRef,
         setError,
-        setGoals,
         setIsSending,
-        setMacConsoleStatus: vi.fn(),
         setMessages,
         setPersona,
         setState,
-        setWorld: vi.fn(),
-        updateFocusTransitionHint,
       }),
     );
 
@@ -185,9 +158,7 @@ describe("useAppRuntimeSync", () => {
     expect(pendingRequestMessageRef.current).toBeNull();
 
     listeners[0]({ type: "runtime_updated", payload: {} });
-    expect(updateFocusTransitionHint).toHaveBeenCalled();
     expect(setState).toHaveBeenCalled();
-    expect(setGoals).toHaveBeenCalledWith([{ id: "goal-2", title: "收住今天这条线", status: "active" }]);
 
     listeners[1]({ type: "persona_updated", payload: {} });
     expect(setPersona).toHaveBeenCalledWith({

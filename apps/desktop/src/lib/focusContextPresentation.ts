@@ -30,14 +30,14 @@ export function getFocusTransitionHint(
   if (nextFocusContext.source_kind === "user_topic_goal") {
     return `焦点刚切到「${nextFocusContext.goal_title}」，因为它直接接住了你刚才这轮话题。`;
   }
+  if (nextFocusContext.source_kind === "user_topic_focus") {
+    return `焦点先落在「${nextFocusContext.goal_title}」，因为你刚才这轮话题还在牵动她。`;
+  }
   if (nextFocusContext.source_kind === "goal_chain") {
     return `焦点转回「${nextFocusContext.goal_title}」，因为这条线还在续推。`;
   }
-  if (
-    nextFocusContext.source_kind === "today_plan_retained" ||
-    nextFocusContext.source_kind === "today_plan_fallback"
-  ) {
-    return `焦点转到「${nextFocusContext.goal_title}」，因为今天的计划还在把这条线往前带。`;
+  if (nextFocusContext.source_kind === "lingering_focus") {
+    return `焦点还停在「${nextFocusContext.goal_title}」，因为这件事虽然没在执行，但她心里还没放下。`;
   }
   if (nextFocusContext.source_kind === "deferred_goal_reactivated") {
     return `焦点回到「${nextFocusContext.goal_title}」，因为这件事从延后状态重新转回来了。`;
@@ -46,10 +46,9 @@ export function getFocusTransitionHint(
   return `焦点切到「${nextFocusContext.goal_title}」，因为它现在仍是最在前面的活跃线索。`;
 }
 
-export function getFocusContextLines(focusContext?: FocusContext | null, fallbackSummary?: string | null): string[] {
+export function getFocusContextLines(focusContext?: FocusContext | null): string[] {
   if (!focusContext) {
-    const summary = fallbackSummary?.trim();
-    return summary ? [summary] : [];
+    return [];
   }
 
   const summary = focusContext.prompt_summary.trim();
@@ -76,11 +75,14 @@ export function getFocusContextBadge(focusContext?: FocusContext | null): FocusC
   if (sourceKind === "user_topic_goal") {
     return { label: "用户触发", tone: "active" };
   }
+  if (sourceKind === "user_topic_focus") {
+    return { label: "话题牵动", tone: "active" };
+  }
   if (sourceKind === "goal_chain") {
     return { label: "续推中", tone: "completed" };
   }
-  if (sourceKind === "today_plan_retained" || sourceKind === "today_plan_fallback") {
-    return { label: "计划延续", tone: "paused" };
+  if (sourceKind === "lingering_focus") {
+    return { label: "余波未落", tone: "paused" };
   }
   if (sourceKind === "deferred_goal_reactivated") {
     return { label: "重新转回", tone: "abandoned" };

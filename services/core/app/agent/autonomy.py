@@ -20,13 +20,17 @@ class GoalFocusSummary(BaseModel):
 
 def choose_next_action(
     state: BeingState,
-    pending_goals: list[str],
+    has_goal_backed_focus: bool,
     focus_summary: GoalFocusSummary | None,
     recent_events: list[str],
     cooldown_ready: bool,
     now: datetime,
 ) -> NextAction:
-    if pending_goals:
+    if state.focus_subject is not None:
+        if focus_summary is not None and focus_summary.stage == "consolidate" and cooldown_ready:
+            return NextAction(kind="consolidate", reason="当前牵挂进入收束阶段")
+        return NextAction(kind="act", reason="当前仍有明确牵挂挂在眼前")
+    if has_goal_backed_focus:
         if focus_summary is not None and focus_summary.stage == "consolidate" and cooldown_ready:
             return NextAction(kind="consolidate", reason="目标链进入收束阶段")
         return NextAction(kind="act", reason="存在未完成目标")

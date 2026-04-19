@@ -12,14 +12,11 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.domain.models import BeingState, FocusMode, WakeMode
-from app.goals.models import Goal
-from app.goals.repository import InMemoryGoalRepository
 from app.llm.schemas import ChatMessage
 from app.llm.schemas import ChatResult
 from app.main import (
     app,
     get_chat_gateway,
-    get_goal_repository,
     get_mempalace_adapter,
     get_memory_repository,
     get_state_store,
@@ -1691,7 +1688,6 @@ def test_post_chat_does_not_duplicate_memory_rows_when_service_uses_same_reposit
 
 def test_post_chat_includes_recent_memory_in_gateway_messages():
     memory_repository = InMemoryMemoryRepository()
-    goal_repository = InMemoryGoalRepository()
     state_store = StateStore(BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY))
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(
@@ -1710,9 +1706,6 @@ def test_post_chat_includes_recent_memory_in_gateway_messages():
     def override_memory_repository():
         return memory_repository
 
-    def override_goal_repository():
-        return goal_repository
-
     def override_state_store():
         return state_store
 
@@ -1721,7 +1714,6 @@ def test_post_chat_includes_recent_memory_in_gateway_messages():
 
     app.dependency_overrides[get_chat_gateway] = override_gateway
     app.dependency_overrides[get_memory_repository] = override_memory_repository
-    app.dependency_overrides[get_goal_repository] = override_goal_repository
     app.dependency_overrides[get_state_store] = override_state_store
     app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
 
@@ -2015,15 +2007,12 @@ def test_post_chat_includes_relevant_autobio_memory_as_system_context():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_includes_current_focus_goal_as_system_context():
+def test_post_chat_does_not_auto_include_active_goal_as_focus_context():
     memory_repository = InMemoryMemoryRepository()
-    goal_repository = InMemoryGoalRepository()
-    goal = goal_repository.save_goal(Goal(id="goal-1", title="整理今天的对话记忆"))
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
             focus_mode=FocusMode.AUTONOMY,
-            active_goal_ids=[goal.id],
         )
     )
     gateway = StubGateway()
@@ -2037,15 +2026,11 @@ def test_post_chat_includes_current_focus_goal_as_system_context():
     def override_memory_repository():
         return memory_repository
 
-    def override_goal_repository():
-        return goal_repository
-
     def override_state_store():
         return state_store
 
     app.dependency_overrides[get_chat_gateway] = override_gateway
     app.dependency_overrides[get_memory_repository] = override_memory_repository
-    app.dependency_overrides[get_goal_repository] = override_goal_repository
     app.dependency_overrides[get_state_store] = override_state_store
 
     try:
@@ -2053,18 +2038,18 @@ def test_post_chat_includes_current_focus_goal_as_system_context():
         response = client.post("/chat", json={"message": "你现在在忙什么"})
         assert response.status_code == 200
         assert gateway.last_instructions is not None
-        assert "你当前最在意的焦点目标是「整理今天的对话记忆」" in gateway.last_instructions
+        assert "整理今天的对话记忆" not in gateway.last_instructions
     finally:
         app.dependency_overrides.clear()
 
 
-def test_post_chat_includes_latest_today_plan_completion_as_system_context():
+def test_post_chat_includes_recent_autobio_completion_context():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(
         search_context_text=(
             "【长期记忆检索】\n- wing_xiaoyan/autobio (相似度 0.88) "
-            "我把今天的计划“整理今天的对话记忆”完整走完了，感觉这一轮心里更有数了。"
+            "我把“整理今天的对话记忆”这条线完整走完了，感觉这一轮心里更有数了。"
         )
     )
 
@@ -2089,20 +2074,17 @@ def test_post_chat_includes_latest_today_plan_completion_as_system_context():
         response = client.post("/chat", json={"message": "你今天过得怎么样"})
         assert response.status_code == 200
         assert gateway.last_instructions is not None
-        assert "我把今天的计划“整理今天的对话记忆”完整走完了，感觉这一轮心里更有数了" in gateway.last_instructions
+        assert "我把“整理今天的对话记忆”这条线完整走完了，感觉这一轮心里更有数了" in gateway.last_instructions
     finally:
         app.dependency_overrides.clear()
 
 
-def test_post_chat_instructions_tell_persona_to_prioritize_current_focus_goal():
+def test_post_chat_instructions_do_not_prioritize_active_goal_without_focus_subject():
     memory_repository = InMemoryMemoryRepository()
-    goal_repository = InMemoryGoalRepository()
-    goal = goal_repository.save_goal(Goal(id="goal-1", title="整理今天的对话记忆"))
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
             focus_mode=FocusMode.AUTONOMY,
-            active_goal_ids=[goal.id],
         )
     )
     gateway = StubGateway()
@@ -2116,15 +2098,11 @@ def test_post_chat_instructions_tell_persona_to_prioritize_current_focus_goal():
     def override_memory_repository():
         return memory_repository
 
-    def override_goal_repository():
-        return goal_repository
-
     def override_state_store():
         return state_store
 
     app.dependency_overrides[get_chat_gateway] = override_gateway
     app.dependency_overrides[get_memory_repository] = override_memory_repository
-    app.dependency_overrides[get_goal_repository] = override_goal_repository
     app.dependency_overrides[get_state_store] = override_state_store
 
     try:
@@ -2133,9 +2111,9 @@ def test_post_chat_instructions_tell_persona_to_prioritize_current_focus_goal():
         assert response.status_code == 200
         assert gateway.last_instructions is not None
         assert "持续存在的人格体" in gateway.last_instructions
-        assert "整理今天的对话记忆" in gateway.last_instructions
-        assert "优先自然承接这个焦点目标" in gateway.last_instructions
-        assert "先回答你此刻最在意的目标、今天的计划或刚完成的事" in gateway.last_instructions
+        assert "整理今天的对话记忆" not in gateway.last_instructions
+        assert "优先自然承接这条当前牵挂" not in gateway.last_instructions
+        assert "先回答你此刻最挂心的焦点、刚做完的事或心里还没放下的线索" in gateway.last_instructions
     finally:
         app.dependency_overrides.clear()
 
@@ -2406,13 +2384,13 @@ def test_chat_still_returns_200_when_mempalace_record_raises():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_instructions_include_today_plan_completion_closure():
+def test_post_chat_instructions_include_recent_completion_closure():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(
         search_context_text=(
             "【长期记忆检索】\n- wing_xiaoyan/autobio (相似度 0.88) "
-            "我把今天的计划“整理今天的对话记忆”完整走完了，感觉这一轮心里更有数了。"
+            "我把“整理今天的对话记忆”这条线完整走完了，感觉这一轮心里更有数了。"
         )
     )
 
@@ -2425,9 +2403,6 @@ def test_post_chat_instructions_include_today_plan_completion_closure():
     def override_memory_repository():
         return memory_repository
 
-    def override_goal_repository():
-        return InMemoryGoalRepository()
-
     def override_state_store():
         return StateStore(BeingState(mode=WakeMode.AWAKE, focus_mode=FocusMode.AUTONOMY))
 
@@ -2436,7 +2411,6 @@ def test_post_chat_instructions_include_today_plan_completion_closure():
 
     app.dependency_overrides[get_chat_gateway] = override_gateway
     app.dependency_overrides[get_memory_repository] = override_memory_repository
-    app.dependency_overrides[get_goal_repository] = override_goal_repository
     app.dependency_overrides[get_state_store] = override_state_store
     app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
 

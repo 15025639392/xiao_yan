@@ -2,7 +2,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Callable
 
-from app.domain.models import BeingState, TodayPlan
+from app.domain.models import BeingState
 from app.memory.repository import MemoryRepository
 from app.utils.file_utils import read_json_file, write_json_file
 from app.usecases.lifecycle import go_to_sleep, wake_up
@@ -23,16 +23,7 @@ class StateStore:
         self._state = self._load_state(initial_state)
 
     def _normalize_state(self, state: BeingState) -> BeingState:
-        today_plan = state.today_plan
-        if today_plan is not None and not isinstance(today_plan, TodayPlan):
-            today_plan = TodayPlan.model_validate(today_plan)
-
-        return state.model_copy(
-            update={
-                "today_plan": today_plan,
-            },
-            deep=True,
-        )
+        return BeingState.model_validate(state.model_dump(mode="python"))
 
     def get(self) -> BeingState:
         with self._lock:

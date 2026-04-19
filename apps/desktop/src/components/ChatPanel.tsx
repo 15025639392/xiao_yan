@@ -1,4 +1,4 @@
-import type { FocusContext, FocusEffort, Goal, TodayPlan } from "../lib/api";
+import type { FocusContext, FocusEffort, FocusSubject } from "../lib/api";
 import { ChatConfigPanel } from "./chat/ChatConfigPanel";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInputForm } from "./chat/ChatInputForm";
@@ -13,18 +13,13 @@ type ChatPanelProps = {
   draft: string;
   focusGoalTitle?: string | null;
   focusContext?: FocusContext | null;
-  focusTransitionHint?: string | null;
-  focusContextSummary?: string | null;
+  focusSubject?: FocusSubject | null;
   focusEffort?: FocusEffort | null;
-  focusModeLabel: string;
   messages: ChatEntry[];
   attachedFolders?: string[];
   attachedFiles?: string[];
   attachedImages?: string[];
   isSending: boolean;
-  todayPlan?: TodayPlan | null;
-  activeGoals?: Goal[];
-  modeLabel: string;
   onDraftChange: (value: string) => void;
   onSend: (options?: ChatSendOptions) => void;
   onPickFolder?: () => void;
@@ -35,7 +30,6 @@ type ChatPanelProps = {
   onRemoveAttachedImage?: (path: string) => void;
   onResume?: (message: ChatEntry) => void;
   onRetry?: (message: ChatEntry) => void;
-  onCompleteGoal?: (goalId: string) => Promise<void>;
 };
 
 export function ChatPanel({
@@ -43,16 +37,13 @@ export function ChatPanel({
   draft,
   focusGoalTitle,
   focusContext,
-  focusTransitionHint,
-  focusContextSummary,
+  focusSubject,
   focusEffort,
   messages,
   attachedFolders = [],
   attachedFiles = [],
   attachedImages = [],
   isSending,
-  todayPlan,
-  activeGoals,
   onDraftChange,
   onSend,
   onPickFolder,
@@ -63,13 +54,11 @@ export function ChatPanel({
   onRemoveAttachedImage,
   onResume,
   onRetry,
-  onCompleteGoal,
 }: ChatPanelProps) {
   const {
     textareaRef,
     messagesEndRef,
     messagesContainerRef,
-    relationship,
     showMemoryContext,
     showConfigPanel,
     config,
@@ -80,20 +69,11 @@ export function ChatPanel({
     folderPermissionsError,
     chatModelProviders,
     chatModelsError,
-    dataEnvironment,
-    isUpdatingDataEnvironment,
-    isCreatingDataBackup,
-    isImportingDataBackup,
-    dataEnvironmentError,
-    dataOperationMessage,
     toggleMemoryContext,
     toggleConfigPanel,
     closeConfigPanel,
     handleAddOrUpdateFolderPermission,
     handleRemoveFolderPermission,
-    handleToggleTestingMode,
-    handleCreateDataBackup,
-    handleImportDataBackup,
     handleKeyDown,
     handleSubmit,
     handleUpdateConfig,
@@ -111,12 +91,8 @@ export function ChatPanel({
       <ChatHeader
         focusGoalTitle={focusGoalTitle}
         focusContext={focusContext}
-        focusTransitionHint={focusTransitionHint}
-        focusContextSummary={focusContextSummary}
+        focusSubject={focusSubject}
         focusEffort={focusEffort}
-        todayPlan={todayPlan}
-        activeGoals={activeGoals}
-        onCompleteGoal={onCompleteGoal}
         onToggleConfig={toggleConfigPanel}
       />
 
@@ -125,22 +101,8 @@ export function ChatPanel({
           config={config}
           isUpdating={isUpdatingConfig}
           error={configError}
-          folderPermissions={folderPermissions}
-          isUpdatingFolderPermissions={isUpdatingFolderPermissions}
-          folderPermissionsError={folderPermissionsError}
           chatModelProviders={chatModelProviders}
           chatModelsError={chatModelsError}
-          dataEnvironment={dataEnvironment}
-          isUpdatingDataEnvironment={isUpdatingDataEnvironment}
-          isCreatingDataBackup={isCreatingDataBackup}
-          isImportingDataBackup={isImportingDataBackup}
-          dataEnvironmentError={dataEnvironmentError}
-          dataOperationMessage={dataOperationMessage}
-          onAddOrUpdateFolderPermission={handleAddOrUpdateFolderPermission}
-          onRemoveFolderPermission={handleRemoveFolderPermission}
-          onToggleTestingMode={handleToggleTestingMode}
-          onCreateDataBackup={handleCreateDataBackup}
-          onImportDataBackup={handleImportDataBackup}
           onUpdate={handleUpdateConfig}
           onClose={closeConfigPanel}
         />
@@ -150,7 +112,6 @@ export function ChatPanel({
         <ChatMessages
           assistantName={assistantName}
           messages={messages}
-          relationship={relationship}
           isSending={isSending}
           showMemoryContext={showMemoryContext}
           onToggleMemoryContext={toggleMemoryContext}

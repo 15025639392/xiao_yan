@@ -11,11 +11,16 @@ test("renders focus context summary under the current focus title", () => {
         goal_title: "整理今天的对话记忆",
         source_kind: "user_topic_goal",
         source_label: "刚接住你这轮话题的事",
-        reason_kind: "today_plan_pending",
+        reason_kind: "focus_subject_reason",
         reason_label: "今天这条还剩 2 步没做完",
         prompt_summary: "当前焦点来自刚接住你这轮话题的事，之所以还在推进，是因为今天这条还剩 2 步没做完。",
       }}
-      focusTransitionHint="焦点刚切到「整理今天的对话记忆」，因为它直接接住了你刚才这轮话题。"
+      focusSubject={{
+        kind: "goal",
+        title: "整理今天的对话记忆",
+        why_now: "我刚把这件事正式接成了当前要持续推进的主线。",
+        goal_id: "goal-1",
+      }}
       focusEffort={{
         goal_id: "goal-1",
         goal_title: "整理今天的对话记忆",
@@ -32,8 +37,6 @@ test("renders focus context summary under the current focus title", () => {
 
   expect(screen.getByText("整理今天的对话记忆")).toBeInTheDocument();
   expect(screen.getByText("用户触发")).toBeInTheDocument();
-  expect(screen.getByText("会先盯着这件事，因为这是刚接住你这轮话题的事。")).toBeInTheDocument();
-  expect(screen.getByText("现在还在继续推进，因为今天这条还剩 2 步没做完。")).toBeInTheDocument();
-  expect(screen.getByText("焦点刚切到「整理今天的对话记忆」，因为它直接接住了你刚才这轮话题。")).toBeInTheDocument();
+  expect(screen.getByText("我刚把这件事正式接成了当前要持续推进的主线。")).toBeInTheDocument();
   expect(screen.getByText("刚刚围绕它回应了你: 先顺着当前焦点把这轮回复接住并说出来了。")).toBeInTheDocument();
 });

@@ -68,12 +68,9 @@ app.include_router(build_tools_router())
 # re-export the *same* dependency callables used by routers so dependency overrides keep working.
 from app.api.deps import (  # noqa: E402
     get_chat_gateway,
-    get_goal_admission_service,
-    get_goal_repository,
     get_memory_repository,
     get_memory_service,
     get_mempalace_adapter,
-    get_morning_plan_draft_generator,
     get_persona_service,
     get_state_store,
     get_world_repository,

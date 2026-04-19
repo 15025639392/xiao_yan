@@ -47,6 +47,11 @@
 - **架构服务生命流**：队列、worker、模型、存储都只是支撑器官，不能替代数字人的主体性。
 
 详细的评审检查表见 `docs/architecture-principles.md`。
+项目当前阶段的测试策略见 `docs/testing-strategy.md`。
+如果要在每轮改动收尾时直接套用模板，见 `docs/test-checklist-template.md`。
+如果想用更省 token 的协作方式推进当前项目，见 `docs/low-token-collaboration.md`。
+如果想直接复制低 token 请求示例，见 `docs/low-token-request-examples.md`。
+如果只想看最短开工入口，见 `docs/daily-shortcuts.md`。
 
 ## 系统架构
 

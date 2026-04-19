@@ -10,13 +10,7 @@ import {
   handleRuntimeRealtimeEvent,
 } from "./appRuntimeSyncHandlers";
 import { loadInitialRuntimeData } from "./runtimeSync";
-import type {
-  BeingState,
-  Goal,
-  InnerWorldState,
-  MacConsoleBootstrapStatus,
-  PersonaProfile,
-} from "../../lib/api";
+import type { BeingState, PersonaProfile } from "../../lib/api";
 import { subscribeAppRealtime } from "../../lib/realtime";
 import { resolveRoute } from "../../lib/appRoutes";
 
@@ -24,28 +18,20 @@ type UseAppRuntimeSyncParams = {
   messagesRef: MutableRefObject<ChatEntry[]>;
   pendingRequestMessageRef: MutableRefObject<PendingChatRequest | null>;
   setError: Dispatch<SetStateAction<string>>;
-  setGoals: Dispatch<SetStateAction<Goal[]>>;
   setIsSending: Dispatch<SetStateAction<boolean>>;
-  setMacConsoleStatus: Dispatch<SetStateAction<MacConsoleBootstrapStatus | null>>;
   setMessages: Dispatch<SetStateAction<ChatEntry[]>>;
   setPersona: Dispatch<SetStateAction<PersonaProfile | null>>;
   setState: Dispatch<SetStateAction<BeingState>>;
-  setWorld: Dispatch<SetStateAction<InnerWorldState | null>>;
-  updateFocusTransitionHint: (nextState: BeingState) => void;
 };
 
 export function useAppRuntimeSync({
   messagesRef,
   pendingRequestMessageRef,
   setError,
-  setGoals,
   setIsSending,
-  setMacConsoleStatus,
   setMessages,
   setPersona,
   setState,
-  setWorld,
-  updateFocusTransitionHint,
 }: UseAppRuntimeSyncParams) {
   useEffect(() => {
     let cancelled = false;
@@ -60,10 +46,8 @@ export function useAppRuntimeSync({
         }
 
         applyInitialRuntimeData(initialRuntime, messagesRef, {
-          setGoals,
           setMessages,
           setState,
-          setWorld,
         });
       } catch (err) {
         if (!cancelled) {
@@ -94,14 +78,10 @@ export function useAppRuntimeSync({
         messagesRef,
         {
           setError,
-          setGoals,
           setIsSending,
-          setMacConsoleStatus,
           setMessages,
           setState,
-          setWorld,
         },
-        updateFocusTransitionHint,
       );
     });
 
@@ -122,13 +102,9 @@ export function useAppRuntimeSync({
     messagesRef,
     pendingRequestMessageRef,
     setError,
-    setGoals,
     setIsSending,
-    setMacConsoleStatus,
     setMessages,
     setPersona,
     setState,
-    setWorld,
-    updateFocusTransitionHint,
   ]);
 }

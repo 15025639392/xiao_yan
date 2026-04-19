@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any, cast
@@ -19,11 +19,33 @@ from app.capabilities.models import (
     CapabilityRequest,
     CapabilityResult,
 )
-from app.utils.file_utils import read_json_file, write_json_file
+from app.capabilities.heartbeat_registry import CapabilityExecutorHeartbeatRegistry
+from app.capabilities.queue_persistence import (
+    CapabilityQueuePersistence,
+    deserialize_record,
+    now_utc,
+    serialize_record,
+)
+from app.capabilities.queue_mutations import (
+    approve_record,
+    bump_attempt,
+    complete_success,
+    mark_dead_letter,
+    reject_record,
+    requeue_dead_letter,
+    reset_for_retry,
+)
+from app.capabilities.queue_views import (
+    append_approval_event,
+    build_job_snapshot,
+    compute_status_counts,
+    filter_approval_events,
+    list_job_snapshots,
+    list_pending_approval_snapshots,
+)
 
 DEFAULT_MAX_ATTEMPTS = 3
 MAX_ATTEMPTS_HARD_LIMIT = 20
-CAPABILITY_QUEUE_PERSIST_VERSION = "v1"
 
 _RETRYABLE_ERROR_CODES: set[str] = {
     "execution_error",
@@ -35,22 +57,12 @@ _RETRYABLE_ERROR_CODES: set[str] = {
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return now_utc()
 
 
 
 def _iso(dt: datetime) -> str:
     return dt.isoformat()
-
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except Exception:
-        return None
 
 
 
@@ -79,70 +91,48 @@ class CapabilityQueueStore:
 
     def __init__(self, *, storage_path: Path | None = None) -> None:
         self._lock = Lock()
-        self._storage_path = storage_path
+        self._persistence = CapabilityQueuePersistence(storage_path=storage_path)
         self._order: list[str] = []
         self._records: dict[str, _CapabilityRecord] = {}
         self._idempotency_index: dict[str, str] = {}
         self._approval_events: list[dict[str, Any]] = []
         self._descriptor_by_name = {d.name: d for d in CAPABILITY_DESCRIPTORS}
-        self._executor_heartbeats: dict[str, datetime] = {}
+        self._heartbeat_registry = CapabilityExecutorHeartbeatRegistry()
         self._load_from_disk()
 
     def _serialize_record(self, record: _CapabilityRecord) -> dict[str, Any]:
-        return {
-            "request": record.request.model_dump(mode="json"),
-            "status": record.status.value,
-            "queued_at": _iso(record.queued_at),
-            "lease_expires_at": _iso(record.lease_expires_at) if record.lease_expires_at else None,
-            "completed_at": _iso(record.completed_at) if record.completed_at else None,
-            "result": record.result.model_dump(mode="json") if record.result else None,
-            "dead_lettered": bool(record.dead_lettered),
-            "last_error_code": record.last_error_code,
-            "last_error_message": record.last_error_message,
-        }
+        return serialize_record(
+            request=record.request,
+            status=record.status,
+            queued_at=record.queued_at,
+            lease_expires_at=record.lease_expires_at,
+            completed_at=record.completed_at,
+            result=record.result,
+            dead_lettered=record.dead_lettered,
+            last_error_code=record.last_error_code,
+            last_error_message=record.last_error_message,
+        )
 
     def _deserialize_record(self, payload: dict[str, Any]) -> _CapabilityRecord | None:
-        try:
-            request = CapabilityRequest.model_validate(payload.get("request", {}))
-            status = CapabilityJobStatus(payload.get("status", CapabilityJobStatus.PENDING.value))
-            queued_at = _parse_iso(payload.get("queued_at")) or _now()
-            lease_expires_at = _parse_iso(payload.get("lease_expires_at"))
-            completed_at = _parse_iso(payload.get("completed_at"))
-            raw_result = payload.get("result")
-            result = CapabilityResult.model_validate(raw_result) if isinstance(raw_result, dict) else None
-            dead_lettered = bool(payload.get("dead_lettered", False))
-            last_error_code = payload.get("last_error_code")
-            last_error_message = payload.get("last_error_message")
-            return _CapabilityRecord(
-                request=request,
-                status=status,
-                queued_at=queued_at,
-                lease_expires_at=lease_expires_at,
-                completed_at=completed_at,
-                result=result,
-                dead_lettered=dead_lettered,
-                last_error_code=last_error_code if isinstance(last_error_code, str) else None,
-                last_error_message=last_error_message if isinstance(last_error_message, str) else None,
-            )
-        except Exception:
+        loaded = deserialize_record(payload)
+        if loaded is None:
             return None
+        return _CapabilityRecord(
+            request=cast(CapabilityRequest, loaded["request"]),
+            status=cast(CapabilityJobStatus, loaded["status"]),
+            queued_at=cast(datetime, loaded["queued_at"]),
+            lease_expires_at=cast(datetime | None, loaded["lease_expires_at"]),
+            completed_at=cast(datetime | None, loaded["completed_at"]),
+            result=cast(CapabilityResult | None, loaded["result"]),
+            dead_lettered=bool(loaded["dead_lettered"]),
+            last_error_code=cast(str | None, loaded["last_error_code"]),
+            last_error_message=cast(str | None, loaded["last_error_message"]),
+        )
 
     def _load_from_disk(self) -> None:
-        if self._storage_path is None or not self._storage_path.exists():
-            return
-        try:
-            payload = read_json_file(self._storage_path)
-        except Exception:
-            return
-        if not isinstance(payload, dict):
-            return
-
-        records_payload = payload.get("records")
-        if not isinstance(records_payload, dict):
-            return
-
+        state = self._persistence.load()
         loaded_records: dict[str, _CapabilityRecord] = {}
-        for request_id, raw_record in records_payload.items():
+        for request_id, raw_record in state.records.items():
             if not isinstance(request_id, str) or not isinstance(raw_record, dict):
                 continue
             record = self._deserialize_record(raw_record)
@@ -150,12 +140,11 @@ class CapabilityQueueStore:
                 continue
             loaded_records[request_id] = record
 
-        order = payload.get("order")
         loaded_order: list[str] = []
-        if isinstance(order, list):
+        if state.order:
             seen: set[str] = set()
-            for item in order:
-                if isinstance(item, str) and item in loaded_records and item not in seen:
+            for item in state.order:
+                if item in loaded_records and item not in seen:
                     loaded_order.append(item)
                     seen.add(item)
             for request_id in loaded_records:
@@ -167,42 +156,21 @@ class CapabilityQueueStore:
         self._records = loaded_records
         self._order = loaded_order
         self._idempotency_index = {}
-        raw_events = payload.get("approval_events")
-        self._approval_events = []
-        if isinstance(raw_events, list):
-            for event in raw_events:
-                if isinstance(event, dict):
-                    self._approval_events.append(dict(event))
+        self._approval_events = [dict(event) for event in state.approval_events]
         for request_id, record in self._records.items():
             key = _normalize_idempotency_key(record.request.idempotency_key)
             if key:
                 self._idempotency_index[key] = request_id
 
     def _persist_locked(self) -> None:
-        if self._storage_path is None:
-            return
-        payload = {
-            "version": CAPABILITY_QUEUE_PERSIST_VERSION,
-            "saved_at": _iso(_now()),
-            "order": list(self._order),
-            "records": {
+        self._persistence.persist(
+            order=self._order,
+            records={
                 request_id: self._serialize_record(record)
                 for request_id, record in self._records.items()
             },
-            "idempotency_index": dict(self._idempotency_index),
-            "approval_events": [dict(event) for event in self._approval_events],
-        }
-        try:
-            write_json_file(
-                self._storage_path,
-                payload,
-                ensure_ascii=False,
-                indent=2,
-                create_parent=True,
-            )
-        except Exception:
-            # persistence failure should not crash runtime capability flows
-            return
+            approval_events=self._approval_events,
+        )
 
     def reset(self) -> None:
         with self._lock:
@@ -210,7 +178,7 @@ class CapabilityQueueStore:
             self._records.clear()
             self._idempotency_index.clear()
             self._approval_events.clear()
-            self._executor_heartbeats.clear()
+            self._heartbeat_registry.clear()
             self._persist_locked()
 
     def dispatch(self, payload: CapabilityDispatchRequest) -> _CapabilityRecord:
@@ -272,24 +240,11 @@ class CapabilityQueueStore:
         error_code: str,
         error_message: str,
     ) -> None:
-        finished = _now()
-        record.status = CapabilityJobStatus.COMPLETED
-        record.lease_expires_at = None
-        record.completed_at = finished
-        record.dead_lettered = True
-        record.last_error_code = error_code
-        record.last_error_message = error_message
-        record.result = CapabilityResult(
-            request_id=record.request.request_id,
-            ok=False,
+        mark_dead_letter(
+            record,
+            finished_at=_now(),
             error_code=error_code,
             error_message=error_message,
-            audit=CapabilityAudit(
-                executor="core",
-                started_at=finished.isoformat(),
-                finished_at=finished.isoformat(),
-                duration_ms=0,
-            ),
         )
 
     def _bump_attempt_locked(self, record: _CapabilityRecord) -> bool:
@@ -302,10 +257,7 @@ class CapabilityQueueStore:
                 ),
             )
             return False
-        record.request = record.request.model_copy(
-            update={"attempt": int(record.request.attempt) + 1},
-            deep=True,
-        )
+        bump_attempt(record)
         return True
 
     def claim_pending(self, executor: str, *, limit: int, lease_seconds: int = 30) -> list[CapabilityPendingItem]:
@@ -382,52 +334,21 @@ class CapabilityQueueStore:
                         error_message=message,
                     )
                 else:
-                    record.request = record.request.model_copy(
-                        update={"attempt": int(record.request.attempt) + 1},
-                        deep=True,
-                    )
-                    record.status = CapabilityJobStatus.PENDING
-                    record.lease_expires_at = None
-                    record.completed_at = None
-                    record.result = None
-                    record.dead_lettered = False
+                    reset_for_retry(record, result=result)
                 self._persist_locked()
                 return record
 
-            record.result = result
-            record.status = CapabilityJobStatus.COMPLETED
-            record.completed_at = now
-            record.lease_expires_at = None
-            record.dead_lettered = False
-            record.last_error_code = result.error_code
-            record.last_error_message = result.error_message
+            complete_success(record, result=result, completed_at=now)
             self._persist_locked()
             return record
 
     def list_pending_approvals(self, *, limit: int = 50) -> list[CapabilityJobSnapshot]:
-        requested = max(1, min(int(limit), 500))
-        snapshots: list[CapabilityJobSnapshot] = []
         with self._lock:
-            for request_id in reversed(self._order):
-                if len(snapshots) >= requested:
-                    break
-                record = self._records.get(request_id)
-                if record is None:
-                    continue
-                if record.status != CapabilityJobStatus.PENDING:
-                    continue
-                if record.request.approval_status != CapabilityApprovalStatus.PENDING:
-                    continue
-                snapshots.append(
-                    CapabilityJobSnapshot(
-                        request=record.request,
-                        status=record.status,
-                        queued_at=_iso(record.queued_at),
-                        completed_at=_iso(record.completed_at) if record.completed_at else None,
-                        result=record.result,
-                    )
-                )
-        return snapshots
+            return list_pending_approval_snapshots(
+                order=self._order,
+                records=self._records,
+                limit=limit,
+            )
 
     def _append_approval_event_locked(
         self,
@@ -438,17 +359,14 @@ class CapabilityQueueStore:
         reason: str | None,
         decided_at: str,
     ) -> None:
-        event: dict[str, Any] = {
-            "request_id": request.request_id,
-            "capability": request.capability.value,
-            "action": action.value,
-            "approver": approver,
-            "reason": reason,
-            "decided_at": decided_at,
-        }
-        self._approval_events.append(event)
-        if len(self._approval_events) > 2000:
-            self._approval_events = self._approval_events[-2000:]
+        self._approval_events = append_approval_event(
+            self._approval_events,
+            request=request,
+            action=action,
+            approver=approver,
+            reason=reason,
+            decided_at=decided_at,
+        )
 
     def list_approval_events(
         self,
@@ -459,26 +377,15 @@ class CapabilityQueueStore:
         capability: str | None = None,
         request_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        requested = max(1, min(int(limit), 500))
-        approver_filter = (approver or "").strip()
-        capability_filter = (capability or "").strip()
-        request_id_filter = (request_id or "").strip()
-
-        results: list[dict[str, Any]] = []
         with self._lock:
-            for event in reversed(self._approval_events):
-                if len(results) >= requested:
-                    break
-                if action is not None and event.get("action") != action.value:
-                    continue
-                if approver_filter and event.get("approver") != approver_filter:
-                    continue
-                if capability_filter and event.get("capability") != capability_filter:
-                    continue
-                if request_id_filter and event.get("request_id") != request_id_filter:
-                    continue
-                results.append(dict(event))
-        return results
+            return filter_approval_events(
+                self._approval_events,
+                limit=limit,
+                action=action,
+                approver=approver,
+                capability=capability,
+                request_id=request_id,
+            )
 
     def approve_request(self, request_id: str, *, approver: str | None = None) -> _CapabilityRecord | None:
         decided_by = (approver or "").strip() or "system"
@@ -493,14 +400,7 @@ class CapabilityQueueStore:
                 return None
             if record.request.approval_status != CapabilityApprovalStatus.PENDING:
                 return None
-            record.request = record.request.model_copy(
-                update={
-                    "approval_status": CapabilityApprovalStatus.APPROVED,
-                    "approved_by": decided_by,
-                    "approved_at": decided_at,
-                },
-                deep=True,
-            )
+            approve_record(record, approver=decided_by, decided_at=decided_at)
             self._append_approval_event_locked(
                 request=record.request,
                 action=CapabilityApprovalAction.APPROVED,
@@ -533,14 +433,12 @@ class CapabilityQueueStore:
             if record.request.approval_status != CapabilityApprovalStatus.PENDING:
                 return None
 
-            record.request = record.request.model_copy(
-                update={
-                    "approval_status": CapabilityApprovalStatus.REJECTED,
-                    "rejected_by": decided_by,
-                    "rejected_at": decided_at,
-                    "rejection_reason": reason_text,
-                },
-                deep=True,
+            reject_record(
+                record,
+                approver=decided_by,
+                reason=reason_text,
+                finished_at=finished,
+                decided_at=decided_at,
             )
             self._append_approval_event_locked(
                 request=record.request,
@@ -548,24 +446,6 @@ class CapabilityQueueStore:
                 approver=decided_by,
                 reason=reason_text,
                 decided_at=decided_at,
-            )
-            record.status = CapabilityJobStatus.COMPLETED
-            record.lease_expires_at = None
-            record.completed_at = finished
-            record.dead_lettered = False
-            record.last_error_code = "approval_rejected"
-            record.last_error_message = reason_text
-            record.result = CapabilityResult(
-                request_id=record.request.request_id,
-                ok=False,
-                error_code="approval_rejected",
-                error_message=reason_text,
-                audit=CapabilityAudit(
-                    executor="core",
-                    started_at=finished.isoformat(),
-                    finished_at=finished.isoformat(),
-                    duration_ms=0,
-                ),
             )
             self._persist_locked()
             return record
@@ -577,14 +457,7 @@ class CapabilityQueueStore:
                 return None
             if not record.dead_lettered:
                 return None
-            record.status = CapabilityJobStatus.PENDING
-            record.lease_expires_at = None
-            record.completed_at = None
-            record.result = None
-            record.dead_lettered = False
-            record.last_error_code = None
-            record.last_error_message = None
-            record.request = record.request.model_copy(update={"attempt": 1}, deep=True)
+            requeue_dead_letter(record)
             self._persist_locked()
             return record
 
@@ -593,39 +466,11 @@ class CapabilityQueueStore:
             record = self._records.get(request_id)
             if record is None:
                 return None
-            return CapabilityJobSnapshot(
-                request=record.request,
-                status=record.status,
-                queued_at=_iso(record.queued_at),
-                completed_at=_iso(record.completed_at) if record.completed_at else None,
-                result=record.result,
-            )
+            return build_job_snapshot(record)
 
     def status_counts(self) -> dict[str, int]:
         with self._lock:
-            pending = 0
-            pending_approval = 0
-            in_progress = 0
-            completed = 0
-            dead_letter = 0
-            for record in self._records.values():
-                if record.status == CapabilityJobStatus.PENDING:
-                    pending += 1
-                    if record.request.approval_status == CapabilityApprovalStatus.PENDING:
-                        pending_approval += 1
-                elif record.status == CapabilityJobStatus.IN_PROGRESS:
-                    in_progress += 1
-                elif record.status == CapabilityJobStatus.COMPLETED:
-                    completed += 1
-                    if record.dead_lettered:
-                        dead_letter += 1
-            return {
-                "pending": pending,
-                "pending_approval": pending_approval,
-                "in_progress": in_progress,
-                "completed": completed,
-                "dead_letter": dead_letter,
-            }
+            return compute_status_counts(self._records.values())
 
     def list_snapshots(
         self,
@@ -634,40 +479,25 @@ class CapabilityQueueStore:
         status: CapabilityJobStatus | None = None,
         dead_letter_only: bool = False,
     ) -> list[CapabilityJobSnapshot]:
-        requested = max(1, min(int(limit), 5000))
-        snapshots: list[CapabilityJobSnapshot] = []
         with self._lock:
-            for request_id in reversed(self._order):
-                if len(snapshots) >= requested:
-                    break
-                record = self._records.get(request_id)
-                if record is None:
-                    continue
-                if status is not None and record.status != status:
-                    continue
-                if dead_letter_only and not record.dead_lettered:
-                    continue
-                snapshots.append(
-                    CapabilityJobSnapshot(
-                        request=record.request,
-                        status=record.status,
-                        queued_at=_iso(record.queued_at),
-                        completed_at=_iso(record.completed_at) if record.completed_at else None,
-                        result=record.result,
-                    )
-                )
-        return snapshots
+            return list_job_snapshots(
+                order=self._order,
+                records=self._records,
+                limit=limit,
+                status=status,
+                dead_letter_only=dead_letter_only,
+            )
 
     def mark_executor_heartbeat(self, executor: str) -> str:
         now = _now()
         with self._lock:
-            self._executor_heartbeats[executor] = now
+            self._heartbeat_registry.mark(executor, now=now)
         return _iso(now)
 
     def has_recent_executor(self, executor: str, *, max_age_seconds: int = 10) -> bool:
         with self._lock:
-            heartbeat = self._executor_heartbeats.get(executor)
-        if heartbeat is None:
-            return False
-        age = (_now() - heartbeat).total_seconds()
-        return age <= max(1, max_age_seconds)
+            return self._heartbeat_registry.has_recent(
+                executor,
+                now=_now(),
+                max_age_seconds=max_age_seconds,
+            )

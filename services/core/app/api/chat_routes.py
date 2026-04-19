@@ -40,14 +40,12 @@ from app.api.chat_submission_runner import (
 from app.api.deps import (
     get_chat_gateway,
     get_chat_memory_runtime,
-    get_goal_repository,
     get_memory_repository,
     get_persona_service,
     get_state_store,
 )
 from app.api.chat_skills import ChatSkillEntry, ChatSkillListResponse, append_skill_context, discover_chat_skills
 from app.config import get_chat_knowledge_extraction_enabled
-from app.goals.repository import GoalRepository
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import (
     ChatMessage,
@@ -126,7 +124,6 @@ def build_chat_router() -> APIRouter:
         request: Request,
         gateway: ChatGateway = Depends(get_chat_gateway),
         state_store: StateStore = Depends(get_state_store),
-        goal_repository: GoalRepository = Depends(get_goal_repository),
         memory_repository: MemoryRepository = Depends(get_memory_repository),
         persona_service: PersonaService = Depends(get_persona_service),
         chat_memory_runtime: ChatMemoryRuntime = Depends(get_chat_memory_runtime),
@@ -137,7 +134,6 @@ def build_chat_router() -> APIRouter:
         prepared_context = prepare_chat_context(
             chat_memory_runtime=chat_memory_runtime,
             context_limit=config.chat_context_limit,
-            goal_repository=goal_repository,
             persona_service=persona_service,
             state=state,
             user_message=request_body.message,
@@ -268,7 +264,6 @@ def build_chat_router() -> APIRouter:
         request: Request,
         gateway: ChatGateway = Depends(get_chat_gateway),
         state_store: StateStore = Depends(get_state_store),
-        goal_repository: GoalRepository = Depends(get_goal_repository),
         memory_repository: MemoryRepository = Depends(get_memory_repository),
         persona_service: PersonaService = Depends(get_persona_service),
         chat_memory_runtime: ChatMemoryRuntime = Depends(get_chat_memory_runtime),
@@ -279,7 +274,6 @@ def build_chat_router() -> APIRouter:
         prepared_context = prepare_chat_context(
             chat_memory_runtime=chat_memory_runtime,
             context_limit=config.chat_context_limit,
-            goal_repository=goal_repository,
             persona_service=persona_service,
             state=state,
             user_message=request_body.message,

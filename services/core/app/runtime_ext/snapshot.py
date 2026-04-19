@@ -6,8 +6,6 @@ from fastapi import FastAPI
 
 from app.domain.models import BeingState
 from app.focus.context import build_focus_context
-from app.goals.admission import GoalAdmissionService
-from app.goals.repository import GoalRepository
 from app.llm.schemas import ChatHistoryMessage
 from app.memory.models import MemoryStrength
 from app.memory.repository import MemoryRepository
@@ -22,47 +20,31 @@ RUNTIME_CHAT_MESSAGES_LIMIT = 80
 
 def build_public_state_payload(
     state: BeingState,
-    goal_repository: GoalRepository | None = None,
 ) -> dict[str, Any]:
     payload = state.model_dump(mode="json")
-    if goal_repository is None:
-        return payload
-
-    focus_context = build_focus_context(
-        state=state,
-        goal_repository=goal_repository,
-    )
+    focus_context = build_focus_context(state=state)
     payload["focus_context"] = None if focus_context is None else focus_context.to_payload()
     return payload
 
 
 def _compose_world_state(
     state_store: StateStore,
-    goal_repository: GoalRepository,
     world_state_service: WorldStateService,
 ) -> WorldState:
     state = state_store.get()
-    focused_goals = [
-        goal
-        for goal_id in state.active_goal_ids
-        if (goal := goal_repository.get_goal(goal_id)) is not None
-    ]
     return world_state_service.bootstrap(
         being_state=state,
-        focused_goals=focused_goals,
     )
 
 
 def build_world_state(
     state_store: StateStore,
-    goal_repository: GoalRepository,
     memory_repository: MemoryRepository,
     world_repository: WorldRepository,
     world_state_service: WorldStateService,
 ) -> WorldState:
     world_state = _compose_world_state(
         state_store,
-        goal_repository,
         world_state_service,
     )
     return world_repository.save_world_state(world_state)
@@ -87,8 +69,6 @@ def find_recent_autobio(memory_repository: MemoryRepository) -> str | None:
 def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
     state_store: StateStore = target_app.state.state_store
     memory_repository: MemoryRepository = target_app.state.memory_repository
-    goal_repository: GoalRepository = target_app.state.goal_repository
-    goal_admission_service: GoalAdmissionService | None = getattr(target_app.state, "goal_admission_service", None)
     chat_memory_runtime = getattr(target_app.state, "chat_memory_runtime", None)
     messages: list[dict[str, Any]]
     if chat_memory_runtime is not None and hasattr(chat_memory_runtime, "list_recent_messages"):
@@ -134,26 +114,12 @@ def build_runtime_payload(target_app: FastAPI) -> dict[str, Any]:
     ]
     world_state = _compose_world_state(
         state_store,
-        goal_repository,
         WorldStateService(),
     )
-    runtime_config = get_runtime_config()
     mac_console_status = getattr(target_app.state, "mac_console_bootstrap_status", None)
     return {
-        "state": build_public_state_payload(state_store.get(), goal_repository),
+        "state": build_public_state_payload(state_store.get()),
         "messages": messages,
-        "goals": [goal.model_dump(mode="json") for goal in goal_repository.list_goals()],
-        "goal_admission_stats": (
-            None
-            if goal_admission_service is None
-            else goal_admission_service.get_stats(
-                stability_warning_rate=runtime_config.goal_admission_stability_warning_rate,
-                stability_danger_rate=runtime_config.goal_admission_stability_danger_rate,
-            )
-        ),
-        "goal_admission_candidates": (
-            None if goal_admission_service is None else goal_admission_service.get_candidate_snapshot()
-        ),
         "world": world_state.model_dump(mode="json"),
         "autobio": deduplicate_entries(autobio_entries),
         "mac_console_status": mac_console_status,

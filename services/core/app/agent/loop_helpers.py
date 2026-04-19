@@ -5,9 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.agent.autonomy import GoalFocusSummary
-from app.domain.models import FocusMode, TodayPlanStepStatus, WakeMode
-from app.goals.models import Goal, GoalStatus
-from app.goals.repository import GoalRepository
+from app.domain.models import FocusMode, WakeMode
 from app.memory.models import MemoryEvent
 
 
@@ -95,22 +93,6 @@ def build_goal_focus(
     return f"{_time_prefix(now)}{_world_tone(world_state)}我还惦记着“{goal}”，{progress}想继续把它推进。"
 
 
-def build_today_plan_step_focus(
-    goal: str,
-    step_content: str,
-    now: datetime,
-    world_state,
-) -> str:
-    return (
-        f"{_time_prefix(now)}{_world_tone(world_state)}"
-        f"我先按今天的计划，从第一步开始：{step_content}。"
-    )
-
-
-def build_today_plan_completion_memory(goal: str) -> str:
-    return f"我把今天的计划“{goal}”完整走完了，感觉这一轮心里更有数了。"
-
-
 def build_action_result_thought(goal: str, now: datetime, world_state, result) -> str:
     return (
         f"{_time_prefix(now)}{_world_tone(world_state)}"
@@ -161,14 +143,6 @@ def is_generated_goal_id(value: str | None) -> bool:
     return all(char in string.hexdigits for char in value)
 
 
-def display_goal_title(goal_id: str | None, goal: Goal | None) -> str | None:
-    if goal is not None:
-        return goal.title
-    if goal_id is None or is_generated_goal_id(goal_id):
-        return None
-    return goal_id
-
-
 def build_inner_stage_memory(world_state, goal_title: str | None = None) -> str:
     stage_label = _focus_stage_label(world_state.focus_stage)
     goal_suffix = "" if goal_title is None else f"，还在围绕“{goal_title}”"
@@ -184,99 +158,14 @@ def build_autobio_memory(inner_events: list[MemoryEvent]) -> str:
     return f"我最近像是一路从{rendered_steps}走过来，开始学着把这些变化连成自己的经历。"
 
 
-def sync_today_plan(today_plan, active_goal_ids: list[str]):
-    if today_plan is None:
-        return None
-    if today_plan.goal_id not in active_goal_ids:
-        return None
-    return today_plan
-
-
-def next_focus_mode(mode, current_focus_mode, today_plan):
+def next_focus_mode(mode, current_focus_mode):
     if mode != WakeMode.AWAKE:
         return FocusMode.SLEEPING
-    if today_plan is None:
-        return FocusMode.AUTONOMY
-    if any(step.status == TodayPlanStepStatus.PENDING for step in today_plan.steps):
-        return FocusMode.MORNING_PLAN
     return current_focus_mode if current_focus_mode == FocusMode.AUTONOMY else FocusMode.AUTONOMY
-
-
-def build_chain_progress(goal_repository: GoalRepository, goal: Goal) -> str | None:
-    summary = summarize_chain(goal_repository, goal)
-    if summary is None:
-        return None
-    return f"这条线已经走到第{summary.generation + 1}步了，"
-
-
-def build_chain_transition(goal_repository: GoalRepository, goal: Goal) -> str | None:
-    summary = summarize_chain(goal_repository, goal)
-    if summary is None:
-        return None
-    return f"这条线已经接到第{summary.generation + 1}步了，"
 
 
 def workspace_root() -> Path:
     return Path(__file__).resolve().parents[4]
-
-
-def build_goal_focus_summary(
-    goal_repository: GoalRepository,
-    goal: Goal,
-) -> GoalFocusSummary:
-    if goal.chain_id is None:
-        return GoalFocusSummary(goal_title=goal.title)
-
-    chain_goals = [item for item in goal_repository.list_goals() if item.chain_id == goal.chain_id]
-    chain_length = len(chain_goals)
-    generation = goal.generation
-    stage = _chain_stage_for(generation)
-
-    return GoalFocusSummary(
-        goal_title=goal.title,
-        chain_id=goal.chain_id,
-        chain_length=chain_length,
-        chain_generation=generation,
-        stage=stage,
-    )
-
-
-def summarize_chain(goal_repository: GoalRepository, goal: Goal):
-    if goal.chain_id is None:
-        return None
-
-    chain_goals = sort_goals_by_generation([item for item in goal_repository.list_goals() if item.chain_id == goal.chain_id])
-    if not chain_goals:
-        return None
-
-    highest_generation = max(item.generation for item in chain_goals)
-    latest_generation_goals = [item for item in chain_goals if item.generation == highest_generation]
-    return sorted(
-        latest_generation_goals,
-        key=lambda item: _goal_status_priority(item.status),
-    )[0]
-
-
-def sort_goals_by_generation(goals: list[Goal]) -> list[Goal]:
-    return sorted(goals, key=lambda goal: (goal.generation, goal.created_at))
-
-
-def _goal_status_priority(status: GoalStatus) -> int:
-    if status == GoalStatus.ACTIVE:
-        return 0
-    if status == GoalStatus.PAUSED:
-        return 1
-    if status == GoalStatus.COMPLETED:
-        return 2
-    return 3
-
-
-def _chain_stage_for(generation: int) -> str:
-    if generation >= 2:
-        return "consolidate"
-    if generation == 1:
-        return "deepen"
-    return "start"
 
 
 def _focus_stage_label(stage: str) -> str:

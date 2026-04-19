@@ -1,23 +1,9 @@
 export * from "./apiClient";
 export * from "./apiConfig";
-export * from "./apiGoals";
 export * from "./apiMemory";
 export * from "./apiPersona";
 
 import { BASE_URL, buildHttpError, get, post, put } from "./apiClient";
-
-export type TodayPlanStep = {
-  content: string;
-  status: "pending" | "completed";
-  kind?: "reflect" | "action";
-  command?: string | null;
-};
-
-export type TodayPlan = {
-  goal_id: string;
-  goal_title: string;
-  steps: TodayPlanStep[];
-};
 
 export type FocusContext = {
   goal_title: string;
@@ -39,13 +25,20 @@ export type FocusEffort = {
   created_at: string;
 };
 
+export type FocusSubject = {
+  kind: string;
+  title: string;
+  why_now: string;
+  source_ref?: string | null;
+  goal_id?: string | null;
+};
+
 export type BeingState = {
   mode: "awake" | "sleeping";
-  focus_mode: "sleeping" | "morning_plan" | "autonomy";
+  focus_mode: "sleeping" | "autonomy";
   current_thought: string | null;
-  active_goal_ids: string[];
-  today_plan?: TodayPlan | null;
   last_action?: ToolExecutionResult | null;
+  focus_subject?: FocusSubject | null;
   focus_context?: FocusContext | null;
   focus_effort?: FocusEffort | null;
 };
@@ -168,25 +161,6 @@ export type ChatMessagesPageParams = {
   offset?: number;
 };
 
-export type Goal = {
-  id: string;
-  title: string;
-  status: "active" | "paused" | "completed" | "abandoned";
-  chain_id?: string | null;
-  parent_goal_id?: string | null;
-  generation?: number;
-  source?: string | null;
-  admission?: {
-    score: number;
-    recommended_decision: "admit" | "defer" | "drop";
-    applied_decision: "admit" | "defer" | "drop";
-    reason: string;
-    deferred_retries?: number;
-  } | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
 export type InnerWorldState = {
   time_of_day: "morning" | "afternoon" | "evening" | "night";
   energy: "low" | "medium" | "high";
@@ -195,73 +169,6 @@ export type InnerWorldState = {
   focus_stage?: "none" | "start" | "deepen" | "consolidate";
   focus_step?: number | null;
   latest_event?: string | null;
-};
-
-export type GoalsResponse = {
-  goals: Goal[];
-};
-
-export type GoalAdmissionThresholds = {
-  user_topic: { min_score: number; defer_score: number };
-  chain_next: { min_score: number; defer_score: number };
-};
-
-export type GoalAdmissionStats = {
-  mode: "off" | "shadow" | "enforce";
-  today: {
-    admit: number;
-    defer: number;
-    drop: number;
-    wip_blocked: number;
-  };
-  admitted_stability_24h: {
-    stable: number;
-    re_deferred: number;
-    dropped: number;
-  };
-  admitted_stability_24h_rate: number | null;
-  admitted_stability_alert?: {
-    level: "healthy" | "warning" | "danger" | "unknown";
-    warning_rate: number;
-    danger_rate: number;
-  };
-  deferred_queue_size: number;
-  wip_limit: number;
-  thresholds: GoalAdmissionThresholds;
-};
-
-export type GoalAdmissionCandidate = {
-  // Keep "world_event" for historical snapshots only; current runtime no longer emits it.
-  source_type: "user_topic" | "world_event" | "chain_next";
-  title: string;
-  source_content?: string | null;
-  chain_id?: string | null;
-  parent_goal_id?: string | null;
-  generation?: number;
-  retry_count: number;
-  fingerprint?: string | null;
-};
-
-export type DeferredGoalAdmissionCandidate = {
-  candidate: GoalAdmissionCandidate;
-  next_retry_at: string;
-  last_reason: string;
-};
-
-export type RecentGoalAdmissionDecision = {
-  candidate: GoalAdmissionCandidate;
-  decision: "admit" | "defer" | "drop";
-  reason: string;
-  score: number;
-  created_at: string;
-  retry_at?: string | null;
-  stability?: "stable" | "re_deferred" | "dropped";
-};
-
-export type GoalAdmissionCandidateSnapshot = {
-  deferred: DeferredGoalAdmissionCandidate[];
-  recent: RecentGoalAdmissionDecision[];
-  admitted?: RecentGoalAdmissionDecision[];
 };
 
 export function wake(): Promise<BeingState> {
@@ -332,27 +239,8 @@ export function fetchMessages(params?: ChatMessagesPageParams): Promise<ChatHist
   return get<ChatHistoryResponse>(path);
 }
 
-export function fetchGoals(): Promise<GoalsResponse> {
-  return get<GoalsResponse>("/goals");
-}
-
-export function fetchGoalAdmissionStats(): Promise<GoalAdmissionStats> {
-  return get<GoalAdmissionStats>("/goals/admission/stats");
-}
-
-export function fetchGoalAdmissionCandidates(): Promise<GoalAdmissionCandidateSnapshot> {
-  return get<GoalAdmissionCandidateSnapshot>("/goals/admission/candidates");
-}
-
 export function fetchWorld(): Promise<InnerWorldState> {
   return get<InnerWorldState>("/world");
-}
-
-export function updateGoalStatus(
-  goalId: string,
-  status: Goal["status"],
-): Promise<Goal> {
-  return post<Goal>(`/goals/${goalId}/status`, { status });
 }
 
 // ══════════════════════════════════════════════

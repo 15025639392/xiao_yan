@@ -9,15 +9,6 @@ from fastapi import FastAPI
 
 from app.agent.loop import AutonomyLoop
 from app.config import (
-    get_goal_admission_chain_defer_score,
-    get_goal_admission_chain_min_score,
-    get_goal_admission_defer_score,
-    get_goal_admission_max_retries,
-    get_goal_admission_min_score,
-    get_goal_admission_mode,
-    get_goal_admission_storage_path,
-    get_goal_wip_limit,
-    get_goal_storage_path,
     get_mempalace_palace_path,
     get_mempalace_results_limit,
     get_mempalace_room,
@@ -26,9 +17,7 @@ from app.config import (
     get_state_storage_path,
     get_world_storage_path,
 )
-from app.goals.admission import GoalAdmissionService, GoalAdmissionStore
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
-from app.goals.repository import FileGoalRepository
 from app.memory.mempalace_repository import MemPalaceMemoryRepository
 from app.memory.observability import KnowledgeObservabilityTracker
 from app.memory.service import MemoryService
@@ -73,17 +62,6 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
         memory_repository=memory_repository,
         storage_path=get_state_storage_path(),
     )
-    goal_repository = FileGoalRepository(get_goal_storage_path())
-    goal_admission_service = GoalAdmissionService(
-        store=GoalAdmissionStore(get_goal_admission_storage_path()),
-        mode=get_goal_admission_mode(),
-        min_score=get_goal_admission_min_score(),
-        defer_score=get_goal_admission_defer_score(),
-        chain_min_score=get_goal_admission_chain_min_score(),
-        chain_defer_score=get_goal_admission_chain_defer_score(),
-        wip_limit=get_goal_wip_limit(),
-        max_retries=get_goal_admission_max_retries(),
-    )
     world_repository = FileWorldRepository(get_world_storage_path())
     persona_repository = FilePersonaRepository(get_persona_storage_path())
     persona_service = PersonaService(repository=persona_repository)
@@ -108,15 +86,12 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     loop = AutonomyLoop(
         state_store,
         memory_repository,
-        goal_repository,
-        goal_admission_service=goal_admission_service,
         gateway=loop_gateway,
     )
     world_state_service = WorldStateService()
 
     build_world_state(
         state_store,
-        goal_repository,
         memory_repository,
         world_repository,
         world_state_service,
@@ -131,8 +106,6 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
 
     target_app.state.state_store = state_store
     target_app.state.memory_repository = memory_repository
-    target_app.state.goal_repository = goal_repository
-    target_app.state.goal_admission_service = goal_admission_service
     target_app.state.world_repository = world_repository
     target_app.state.persona_service = persona_service
     target_app.state.memory_service = memory_service
@@ -159,8 +132,6 @@ def reload_runtime(target_app: FastAPI) -> None:
     runtime_state_attrs = [
         "state_store",
         "memory_repository",
-        "goal_repository",
-        "goal_admission_service",
         "world_repository",
         "persona_service",
         "memory_service",
@@ -189,18 +160,12 @@ def ensure_realtime_hub_initialized(target_app: FastAPI) -> None:
 
     state_store = target_app.state.state_store
     memory_repository = target_app.state.memory_repository
-    goal_repository = target_app.state.goal_repository
     persona_service = target_app.state.persona_service
-    goal_admission_service = target_app.state.goal_admission_service
 
     if hasattr(state_store, "set_on_change_callback"):
         state_store.set_on_change_callback(hub.publish_runtime)
     if hasattr(memory_repository, "set_on_change_callback"):
         memory_repository.set_on_change_callback(lambda: (hub.publish_runtime(), hub.publish_memory()))
-    if hasattr(goal_repository, "set_on_change_callback"):
-        goal_repository.set_on_change_callback(hub.publish_runtime)
-    if hasattr(goal_admission_service, "set_on_change_callback"):
-        goal_admission_service.set_on_change_callback(hub.publish_runtime)
     if hasattr(persona_service, "set_on_change_callback"):
         persona_service.set_on_change_callback(hub.publish_persona)
 

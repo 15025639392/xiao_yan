@@ -25,6 +25,31 @@
 
 推荐优先显式点名 skill，而不是只写模糊需求。这样更稳定，也更容易复现。
 
+## 低 Token 协作
+
+当前项目还在高变化阶段，默认推荐低 token 协作方式。
+
+核心原则：
+
+- 一次只打一条行为链
+- 默认限制文件和模块范围
+- 默认只跑相关测试子集
+- 非必要不触发重 skill
+- 非必要不做全仓扫描
+
+推荐请求模板：
+
+```text
+目标：<一句话目标>
+范围：<只允许看的文件、模块或链路>
+不要做：<明确排除项>
+产出：<只分析 / 直接改代码 / 只补测试 / 只出方案>
+验证：<只跑哪些测试或不跑>
+```
+
+完整规则见 [`docs/low-token-collaboration.md`](./low-token-collaboration.md)。
+如果想直接复制适合当前项目的短请求，见 [`docs/low-token-request-examples.md`](./low-token-request-examples.md)。
+
 ## 快速选择
 
 如果你不确定该用哪个，可以先按下面的顺序判断：
@@ -211,6 +236,41 @@
 3. 必要时 `xiao-yan-architecture-guardian`
 4. 编码
 5. `docs-and-tests-sync-guard`
+
+## 测试义务
+
+这些 project skill 不只是“帮助选入口”的说明文档，也对应一组默认测试义务。
+
+在当前 `xiao_yan` 阶段，不建议把测试整体拖到后期再补，而应把测试跟 skill 绑定，变成改动流程的一部分。
+
+- `xiao-yan-architecture-guardian`
+  - 改主链路、本体边界、长期状态时，至少要有一个外部行为验证点；优先补主流程行为测试，不优先补实现耦合很深的单测。
+- `core-change-entrypoint`
+  - 在编码前确认该入口链是否已有测试覆盖；如果没有，本轮至少补一个最小冒烟测试。
+- `runtime-bug-triage`
+  - 任何真实 bug 修复，默认都要补一个对应回归测试。
+- `large-file-split-advisor`
+  - 先锁外部行为，再拆内部结构；没有护栏时不要直接拆热点文件。
+- `optional-dependency-boundary-check`
+  - 涉及 `mempalace`、`chromadb`、`pypdf` 或降级逻辑时，默认需要补“缺依赖仍可启动或清晰降级”的测试。
+- `docs-and-tests-sync-guard`
+  - 收尾时必须写明实际跑过哪些测试、没跑哪些、剩余风险是什么。
+- `project-simplifier`
+  - 做减法时优先保住主链路冒烟测试，并同步删除或更新失效测试。
+
+如果想看完整的项目级测试策略，见 [`docs/testing-strategy.md`](./testing-strategy.md)。
+如果想直接复用收尾模板，见 [`docs/test-checklist-template.md`](./test-checklist-template.md)。
+
+## 低 Token 使用建议
+
+- 局部 bug：优先 `runtime-bug-triage`，不要默认加 architecture skill。
+- 局部后端改动：优先 `core-change-entrypoint`，先缩小入口和测试范围。
+- 只有目标文件已经超预算或混合职责明显时，再加 `large-file-split-advisor`。
+- 只有涉及主流程、本体、权限边界、长期状态时，才优先 `xiao-yan-architecture-guardian`。
+- 只有做项目收敛、删模块、压主链路时，才优先 `project-simplifier`。
+- 如果只是想补测试或改一个映射错误，不要先走全套 skill 链。
+- `docs-and-tests-sync-guard` 默认只看本轮改动直接相关的同步项，不默认全量扫文档。
+- `project-simplifier` 已支持轻量模式，项目初期可先收敛单路由、单页面或单模块。
 
 ## 使用建议
 

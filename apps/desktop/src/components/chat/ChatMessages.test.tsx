@@ -27,12 +27,6 @@ test("does not render relationship reference inside assistant messages", () => {
         { id: "user-1", role: "user", content: "你好" },
         { id: "assistant-1", role: "assistant", content: "我在听。" },
       ]}
-      relationship={{
-        available: true,
-        boundaries: ["先直接给真实判断"],
-        commitments: ["答应你先提示风险"],
-        preferences: ["喜欢一起推演"],
-      }}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -58,7 +52,6 @@ test("shows retry action for failed user message", () => {
           errorMessage: "网络有点不稳",
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -84,7 +77,6 @@ test("does not rerender markdown when messages props are unchanged", () => {
     <ChatMessages
       assistantName="小晏"
       messages={messages}
-      relationship={null}
       isSending={false}
       showMemoryContext={showMemoryContext}
       onToggleMemoryContext={onToggleMemoryContext}
@@ -98,7 +90,6 @@ test("does not rerender markdown when messages props are unchanged", () => {
     <ChatMessages
       assistantName="小晏"
       messages={messages}
-      relationship={null}
       isSending={false}
       showMemoryContext={showMemoryContext}
       onToggleMemoryContext={onToggleMemoryContext}
@@ -126,7 +117,6 @@ test("keeps the same assistant DOM node when only the runtime id is reconciled",
           requestMessage: "你好",
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={showMemoryContext}
       onToggleMemoryContext={onToggleMemoryContext}
@@ -148,7 +138,6 @@ test("keeps the same assistant DOM node when only the runtime id is reconciled",
           requestMessage: "你好",
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={showMemoryContext}
       onToggleMemoryContext={onToggleMemoryContext}
@@ -157,6 +146,41 @@ test("keeps the same assistant DOM node when only the runtime id is reconciled",
   );
 
   expect(screen.getByTestId("markdown-message")).toBe(firstNode);
+});
+
+test("does not emit duplicate key warnings when multiple assistant entries share one request key", () => {
+  const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  render(
+    <ChatMessages
+      assistantName="小晏"
+      messages={[
+        {
+          id: "assistant-local-1",
+          role: "assistant",
+          content: "我在，慢慢说。",
+          requestKey: "request-1",
+          requestMessage: "你好",
+        },
+        {
+          id: "assistant-runtime-1",
+          role: "assistant",
+          content: "我在，慢慢说。",
+          requestKey: "request-1",
+          requestMessage: "你好",
+        },
+      ]}
+      isSending={false}
+      showMemoryContext={new Set()}
+      onToggleMemoryContext={() => {}}
+      onDraftChange={() => {}}
+    />,
+  );
+
+  expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+    expect.stringContaining("Encountered two children with the same key"),
+  );
+  consoleErrorSpy.mockRestore();
 });
 
 test("renders knowledge references for assistant messages", () => {
@@ -180,7 +204,6 @@ test("renders knowledge references for assistant messages", () => {
           ],
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -218,7 +241,6 @@ test("keeps streaming reasoning copy out of the way once assistant text is visib
           },
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -254,7 +276,6 @@ test("does not render reasoning summary while waiting for assistant text", () =>
           },
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -274,7 +295,6 @@ test("renders placeholder copy while waiting for assistant content", () => {
     <ChatMessages
       assistantName="小晏"
       messages={[{ id: "user-1", role: "user", content: "你在吗" }]}
-      relationship={null}
       isSending={true}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -295,7 +315,6 @@ test("shows waiting feedback for the latest turn even when older assistant messa
         { id: "assistant-1", role: "assistant", content: "先聊到这里。" },
         { id: "user-2", role: "user", content: "第二句" },
       ]}
-      relationship={null}
       isSending={true}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -318,7 +337,6 @@ test("hides the global loading bubble once assistant text is already visible", (
           content: "我在，继续说吧。",
         },
       ]}
-      relationship={null}
       isSending={true}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -346,7 +364,6 @@ test("shows resume copy for failed assistant message", () => {
           requestMessage: "继续说",
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}

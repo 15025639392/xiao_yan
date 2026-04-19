@@ -85,6 +85,32 @@ Before finishing:
 - Update docs when dependencies, startup, config, module responsibilities, or downgrade behavior changed.
 - State which tests were run; if not run, state why and what risk remains.
 
+## Low-Token Shortcut
+
+For this early-stage project, default to the narrowest useful task shape.
+
+- Prefer one behavior chain per request.
+- Prefer an explicit scope in files/modules/routes.
+- Prefer reading the target file and related tests before broader docs.
+- Prefer relevant test subsets over full-repo validation.
+- Prefer 1-2 relevant skills instead of chaining many skills by default.
+
+Recommended request shape:
+
+```text
+Goal: <one-sentence goal>
+Scope: <files/modules/routes allowed>
+Do not: <clear exclusions>
+Output: <analyze only / patch code / tests only / plan only>
+Verify: <which tests to run or not run>
+```
+
+Quick references:
+
+- [docs/daily-shortcuts.md](./docs/daily-shortcuts.md)
+- [docs/low-token-collaboration.md](./docs/low-token-collaboration.md)
+- [docs/low-token-request-examples.md](./docs/low-token-request-examples.md)
+
 ## Review Output Expectations
 
 When reporting a completed code change, include:

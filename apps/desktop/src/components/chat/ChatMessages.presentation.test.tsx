@@ -32,7 +32,6 @@ test("keeps assistant body as the primary focus and moves status into details", 
           requestMessage: "继续说",
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -62,7 +61,6 @@ test("keeps failed user status inside the details area", () => {
           errorMessage: "网络有点不稳",
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
@@ -94,7 +92,6 @@ test("keeps memory context affordance available for assistant messages", () => {
           ],
         },
       ]}
-      relationship={null}
       isSending={false}
       showMemoryContext={new Set()}
       onToggleMemoryContext={() => {}}
