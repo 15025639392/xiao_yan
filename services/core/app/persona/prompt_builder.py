@@ -2,7 +2,7 @@
 
 
 def build_chat_instructions(
-    focus_goal_title: str | None = None,
+    focus_title: str | None = None,
     focus_context_summary: str | None = None,
     focus_context_source_kind: str | None = None,
     focus_context_source_label: str | None = None,
@@ -21,7 +21,7 @@ def build_chat_instructions(
     """构建聊天指令 prompt
 
     Args:
-        focus_goal_title: 当前焦点标题
+        focus_title: 当前焦点标题
         latest_plan_completion: 最近完成的计划
         user_message: 用户消息
         persona_system_prompt: 人格系统 prompt（来自 PersonaService）
@@ -54,8 +54,8 @@ def build_chat_instructions(
             f"你此刻脑海里还有一个没收束的念头：{normalized_thought}。先自然承接这个念头，再回答用户。"
         )
 
-    if focus_goal_title is not None:
-        guidance.append(f"你当前最在意的焦点是「{focus_goal_title}」，优先自然承接这条当前牵挂。")
+    if focus_title is not None:
+        guidance.append(f"你当前最在意的焦点是「{focus_title}」，优先自然承接这条当前牵挂。")
     if focus_context_summary is not None:
         guidance.append(f"关于这个焦点，此刻更具体的内部依据是：{focus_context_summary}")
     focus_detail_guidance = _build_focus_context_guidance(
@@ -186,20 +186,9 @@ def _build_focus_context_guidance(
     if normalized_reason_label:
         lines.append(f"当前焦点持续原因：{normalized_reason_label}。")
 
-    if source_kind == "user_topic_goal":
-        lines.append("把这个焦点当成与用户当前话题直接相连的线索，不要说成无缘无故冒出来的旧任务。")
-    elif source_kind == "goal_chain":
-        lines.append("把这个焦点当成你一直在续推的一条线，不要伪装成刚刚临时决定的新目标。")
-    elif source_kind in {"goal_backed_attention", "goal_backed_user_attention", "goal_backed_chain_attention"}:
+    if source_kind == "focus_trace":
         lines.append("把这个焦点理解为你此刻挂着的一条推进线，而不是把目标名词本身直接复读给用户。")
-    elif source_kind == "deferred_goal_reactivated":
-        lines.append("这是一个之前延后、现在重新转回来的目标，回应时要保留这份承接感。")
-
-    if reason_kind == "goal_chain_continuing":
-        lines.append("说明它仍在持续推进，但不要把它说成已经收尾。")
-    elif reason_kind == "goal_chain_closing":
-        lines.append("说明它正在收束，不要把它说成刚刚起步。")
-    elif reason_kind == "goal_still_active":
+    elif reason_kind == "focus_still_active":
         lines.append("只需表达它仍未完成，不要夸大成最高优先级或强行制造紧迫感。")
 
     return lines

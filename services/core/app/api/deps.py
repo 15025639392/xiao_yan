@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from pathlib import Path
 
 import httpx
 from fastapi import Depends, Request
@@ -9,20 +8,17 @@ from fastapi import Depends, Request
 from app.config import (
     get_chat_provider,
     get_llm_provider_configs,
-    get_mempalace_palace_path,
-    get_mempalace_results_limit,
-    get_mempalace_room,
-    get_mempalace_wing,
 )
 from app.llm.gateway import ChatGateway
 from app.memory.chat_memory_runtime import ChatMemoryBackend, ChatMemoryRuntime
+from app.memory.mempalace_adapter import MemPalaceAdapter
 from app.memory.repository import MemoryRepository
 from app.memory.service import MemoryService
-from app.memory.mempalace_adapter import MemPalaceAdapter
 from app.persona.service import InMemoryPersonaRepository, PersonaService
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import ensure_runtime_initialized
 from app.runtime_ext.runtime_config import get_runtime_config
+from app.runtime_ext.runtime_services import build_mempalace_adapter
 from app.world.repository import WorldRepository
 from app.world.service import WorldStateService
 
@@ -47,15 +43,7 @@ def get_mempalace_adapter(request: Request) -> ChatMemoryBackend:
     ensure_runtime_initialized(request.app)
     adapter = getattr(request.app.state, "mempalace_adapter", None)
     if adapter is None:
-        palace_path = get_mempalace_palace_path()
-        Path(palace_path).mkdir(parents=True, exist_ok=True)
-        adapter = MemPalaceAdapter(
-            enabled=True,
-            palace_path=palace_path,
-            results_limit=get_mempalace_results_limit(),
-            wing=get_mempalace_wing(),
-            room=get_mempalace_room(),
-        )
+        adapter = build_mempalace_adapter()
         request.app.state.mempalace_adapter = adapter
     return adapter
 

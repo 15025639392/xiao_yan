@@ -59,7 +59,7 @@ export type AppChatDeltaPayload = {
   timestamp_ms?: number;
 };
 
-export type AppKnowledgeReferencePayload = {
+export type AppMemoryReferencePayload = {
   source: string;
   wing: string;
   room: string;
@@ -72,7 +72,7 @@ export type AppChatCompletedPayload = {
   response_id: string | null;
   content: string;
   request_key?: string;
-  knowledge_references?: AppKnowledgeReferencePayload[];
+  memory_references?: AppMemoryReferencePayload[];
   reasoning_session_id?: string;
   reasoning_state?: ChatReasoningState;
   session_id?: string;

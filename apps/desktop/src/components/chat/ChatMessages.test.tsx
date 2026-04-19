@@ -183,7 +183,7 @@ test("does not emit duplicate key warnings when multiple assistant entries share
   consoleErrorSpy.mockRestore();
 });
 
-test("renders knowledge references for assistant messages", () => {
+test("renders memory references for assistant messages", () => {
   render(
     <ChatMessages
       assistantName="小晏"
@@ -193,11 +193,11 @@ test("renders knowledge references for assistant messages", () => {
           id: "assistant-1",
           role: "assistant",
           content: "我会继续按你的偏好来。",
-          knowledgeReferences: [
+          memoryReferences: [
             {
-              source: "wing_xiaoyan/knowledge",
+              source: "wing_xiaoyan/long_term",
               wing: "wing_xiaoyan",
-              room: "knowledge",
+              room: "long_term",
               similarity: 0.883,
               excerpt: "你喜欢结构化输出。",
             },
@@ -212,11 +212,11 @@ test("renders knowledge references for assistant messages", () => {
   );
 
   expect(screen.getByRole("button", { name: "回复来源 (1)" })).toBeInTheDocument();
-  expect(screen.queryByText("知识来源")).toBeNull();
+  expect(screen.queryByText("记忆来源")).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "回复来源 (1)" }));
-  expect(screen.getByText("知识来源")).toBeInTheDocument();
-  expect(screen.getByText("wing_xiaoyan/knowledge")).toBeInTheDocument();
+  expect(screen.getByText("记忆来源")).toBeInTheDocument();
+  expect(screen.getByText("wing_xiaoyan/long_term")).toBeInTheDocument();
   expect(screen.getByText("相似度 0.88")).toBeInTheDocument();
   expect(screen.getByText("你喜欢结构化输出。")).toBeInTheDocument();
 });
@@ -392,11 +392,11 @@ test("derives assistant display state from message fields in one place", () => {
           summary: "我先把线索理顺。",
           updated_at: "2026-04-18T00:00:00Z",
         },
-        knowledgeReferences: [
+        memoryReferences: [
           {
-            source: "wing_xiaoyan/knowledge",
+            source: "wing_xiaoyan/long_term",
             wing: "wing_xiaoyan",
-            room: "knowledge",
+            room: "long_term",
             similarity: 0.9,
             excerpt: "记住用户喜欢结构化回答。",
           },
@@ -417,7 +417,7 @@ test("derives assistant display state from message fields in one place", () => {
   ).toMatchObject({
     bodyMode: "streaming-placeholder",
     status: null,
-    showKnowledgeContext: true,
+    showMemoryReferenceContext: true,
     showMemoryContext: true,
     showResumeAction: false,
     showRetryAction: false,
@@ -445,7 +445,7 @@ test("derives visible streaming status without exposing reasoning summary", () =
   ).toMatchObject({
     bodyMode: "markdown",
     status: { text: "小晏还在继续说", tone: "muted" },
-    showKnowledgeContext: false,
+    showMemoryReferenceContext: false,
     showMemoryContext: false,
     showResumeAction: false,
     showRetryAction: false,
@@ -467,7 +467,7 @@ test("derives failed user display state without assistant-only affordances", () 
   ).toMatchObject({
     bodyMode: "plain-text",
     status: { text: "这句话还没顺利送到小晏那里：network timeout", tone: "failed" },
-    showKnowledgeContext: false,
+    showMemoryReferenceContext: false,
     showMemoryContext: false,
     showResumeAction: false,
     showRetryAction: true,

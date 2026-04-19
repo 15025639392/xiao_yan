@@ -1,5 +1,5 @@
 import {
-  hasKnowledgeReferences,
+  hasMemoryReferences,
   hasRecoverableAssistantReply,
   hasRelatedMemories,
   hasRetryableUserSend,
@@ -18,7 +18,7 @@ export type MessageStatus = {
 export type ChatMessageDisplayState = {
   bodyMode: ChatMessageBodyMode;
   status: MessageStatus | null;
-  showKnowledgeContext: boolean;
+  showMemoryReferenceContext: boolean;
   showMemoryContext: boolean;
   showResumeAction: boolean;
   showRetryAction: boolean;
@@ -71,7 +71,7 @@ export function getChatMessageDisplayState(
           ? "streaming-placeholder"
           : "none",
       status: assistantStatus,
-      showKnowledgeContext: hasKnowledgeReferences(message),
+      showMemoryReferenceContext: hasMemoryReferences(message),
       showMemoryContext: hasRelatedMemories(message),
       showResumeAction: hasRecoverableAssistantReply(message),
       showRetryAction: false,
@@ -81,7 +81,7 @@ export function getChatMessageDisplayState(
   return {
     bodyMode: "plain-text",
     status: message.state === "failed" ? getUserFailedStatus(message, assistantName) : null,
-    showKnowledgeContext: false,
+    showMemoryReferenceContext: false,
     showMemoryContext: false,
     showResumeAction: false,
     showRetryAction: hasRetryableUserSend(message),

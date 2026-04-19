@@ -63,7 +63,7 @@ export function groupEntriesByTheme(entries: MemoryEntryDisplay[]): [string, Mem
     groups.get(cluster)!.push(entry);
   });
 
-  const clusterOrder = ["about_user", "schedule", "preferences", "emotions", "knowledge", "chat"];
+  const clusterOrder = ["about_user", "schedule", "preferences", "emotions", "insight", "chat"];
   return clusterOrder
     .filter((c) => groups.has(c) && groups.get(c)!.length > 0)
     .map((c) => [c, groups.get(c)!] as [string, MemoryEntryDisplay[]]);

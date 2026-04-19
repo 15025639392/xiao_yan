@@ -254,7 +254,7 @@ def test_realtime_socket_pushes_chat_stream_events():
     assert isinstance(completed_event["payload"]["timestamp_ms"], int)
 
 
-def test_realtime_socket_pushes_chat_completed_with_knowledge_references():
+def test_realtime_socket_pushes_chat_completed_with_memory_references():
     _install_runtime_for_realtime_test()
 
     client = TestClient(app)
@@ -268,11 +268,11 @@ def test_realtime_socket_pushes_chat_completed_with_knowledge_references():
             "assistant_knowledge",
             "resp_knowledge",
             "我会延续你喜欢结构化输出的偏好。",
-            knowledge_references=[
+            memory_references=[
                 {
-                    "source": "wing_xiaoyan/knowledge",
+                    "source": "wing_xiaoyan/long_term",
                     "wing": "wing_xiaoyan",
-                    "room": "knowledge",
+                    "room": "long_term",
                     "similarity": 0.88,
                     "excerpt": "你喜欢结构化输出。",
                 }
@@ -284,11 +284,11 @@ def test_realtime_socket_pushes_chat_completed_with_knowledge_references():
     assert completed_event["payload"]["assistant_message_id"] == "assistant_knowledge"
     assert completed_event["payload"]["response_id"] == "resp_knowledge"
     assert completed_event["payload"]["content"] == "我会延续你喜欢结构化输出的偏好。"
-    assert completed_event["payload"]["knowledge_references"] == [
+    assert completed_event["payload"]["memory_references"] == [
         {
-            "source": "wing_xiaoyan/knowledge",
+            "source": "wing_xiaoyan/long_term",
             "wing": "wing_xiaoyan",
-            "room": "knowledge",
+            "room": "long_term",
             "similarity": 0.88,
             "excerpt": "你喜欢结构化输出。",
         }

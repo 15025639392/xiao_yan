@@ -81,6 +81,9 @@ During editing:
 Before finishing:
 
 - Run `python3 tools/check_file_budgets.py` when code structure changed or when touching large files.
+- For backend verification, prefer the project-managed environment via `uv` instead of assuming system Python dependencies are available.
+- Run backend tests with `uv run --project services/core pytest ...` and prefer relevant test subsets before broadening scope.
+- Do not claim `fastapi`, `pytest`, or other backend test dependencies are missing until `uv run --project services/core ...` has been tried.
 - Ask whether the change increased file size pressure, duplication, or hot-path cost.
 - Update docs when dependencies, startup, config, module responsibilities, or downgrade behavior changed.
 - State which tests were run; if not run, state why and what risk remains.

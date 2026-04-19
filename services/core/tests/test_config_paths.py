@@ -27,7 +27,7 @@ def test_get_mempalace_palace_path_resolves_relative_override_from_service_root(
     assert config.get_mempalace_palace_path() == str(service_root / ".mempalace" / "palace")
 
 
-def test_get_mempalace_palace_path_redirects_legacy_home_default(monkeypatch):
+def test_get_mempalace_palace_path_rejects_home_absolute_override(monkeypatch):
     monkeypatch.setattr(config, "load_local_env", lambda: None)
     monkeypatch.setenv("MEMPALACE_PALACE_PATH", "~/.mempalace/palace")
 

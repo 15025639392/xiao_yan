@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 from fastapi import Request
 
-from app.memory.observability import KnowledgeObservabilityTracker
+from app.memory.observability import MemoryObservabilityTracker
 
 
 def merge_chat_stream_content(current_content: str, delta: str) -> str:
@@ -29,8 +29,8 @@ def should_fallback_to_stream_without_tools(exception: Exception) -> bool:
     return status_code in {400, 404, 405, 415, 422, 501}
 
 
-def get_observability_tracker(request: Request) -> KnowledgeObservabilityTracker | None:
-    tracker = getattr(request.app.state, "knowledge_observability_tracker", None)
-    if isinstance(tracker, KnowledgeObservabilityTracker):
+def get_observability_tracker(request: Request) -> MemoryObservabilityTracker | None:
+    tracker = getattr(request.app.state, "memory_observability_tracker", None)
+    if isinstance(tracker, MemoryObservabilityTracker):
         return tracker
     return None

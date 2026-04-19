@@ -3,23 +3,9 @@ from __future__ import annotations
 from logging import getLogger
 from time import perf_counter
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, Request
 import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.api.chat_attachments import (
-    apply_user_content_to_messages,
-    append_attachment_context,
-    build_attachment_permission_paths,
-    build_effective_user_message,
-    build_user_content,
-    resolve_attachment_paths,
-)
-from app.api.chat_context import (
-    build_base_chat_instructions,
-    extract_knowledge_references,
-    prepare_chat_context,
-    record_retrieval_observability,
-)
 from app.api.chat_config_helpers import (
     ChatMcpServerListResponse,
     FolderPermissionListResponse,
@@ -31,7 +17,8 @@ from app.api.chat_config_helpers import (
 )
 from app.api.chat_postprocess import finalize_chat_submission
 from app.api.chat_reasoning import ChatReasoningController
-from app.api.chat_runtime_helpers import get_observability_tracker, merge_chat_stream_content
+from app.api.chat_route_context import prepare_route_chat_context, prepare_route_resume_context
+from app.api.chat_runtime_helpers import merge_chat_stream_content
 from app.api.chat_submission_runner import (
     build_resume_instruction,
     run_chat_submission,
@@ -45,7 +32,6 @@ from app.api.deps import (
     get_state_store,
 )
 from app.api.chat_skills import ChatSkillEntry, ChatSkillListResponse, append_skill_context, discover_chat_skills
-from app.config import get_chat_knowledge_extraction_enabled
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import (
     ChatMessage,
@@ -128,73 +114,15 @@ def build_chat_router() -> APIRouter:
         persona_service: PersonaService = Depends(get_persona_service),
         chat_memory_runtime: ChatMemoryRuntime = Depends(get_chat_memory_runtime),
     ) -> ChatSubmissionResult:
-        state = state_store.get()
         config = get_runtime_config()
-        gateway.model = config.chat_model
-        prepared_context = prepare_chat_context(
-            chat_memory_runtime=chat_memory_runtime,
-            context_limit=config.chat_context_limit,
+        route_context = prepare_route_chat_context(
+            request=request,
+            request_body=request_body,
+            gateway=gateway,
+            state_store=state_store,
             persona_service=persona_service,
-            state=state,
-            user_message=request_body.message,
-        )
-        attached_folder_paths = resolve_attachment_paths(request_body.attachments, "folder")
-        attached_file_paths = resolve_attachment_paths(request_body.attachments, "file")
-        attached_image_paths = resolve_attachment_paths(request_body.attachments, "image")
-
-        for folder_path in build_attachment_permission_paths(
-            folder_paths=attached_folder_paths,
-            file_paths=attached_file_paths,
-            image_paths=attached_image_paths,
-        ):
-            config.set_folder_permission(folder_path, "read_only")
-
-        effective_user_message = build_effective_user_message(
-            user_message=request_body.message,
-            file_paths=attached_file_paths,
-        )
-
-        tracker = get_observability_tracker(request)
-        retrieval_started_at = perf_counter()
-        knowledge_references = extract_knowledge_references(prepared_context.memory_context)
-        if prepared_context.retrieval_attempted:
-            record_retrieval_observability(
-                tracker=tracker,
-                latency_ms=(perf_counter() - retrieval_started_at) * 1000.0,
-                references=knowledge_references,
-                failed=prepared_context.retrieval_failed,
-            )
-        user_content, image_parts = build_user_content(
-            attachments=request_body.attachments,
-            image_paths=attached_image_paths,
-            provider_id=config.chat_provider,
-            model=config.chat_model,
-            user_message=effective_user_message,
-            wire_api=getattr(gateway, "wire_api", "responses"),
-        )
-        chat_messages = apply_user_content_to_messages(
-            prepared_context.chat_messages,
-            user_content=user_content,
-        )
-        instructions = build_base_chat_instructions(
-            folder_permissions=config.list_folder_permissions(),
-            prepared=prepared_context,
-            state=state,
-            user_message=request_body.message,
-            user_timezone=request_body.user_timezone,
-            user_local_time=request_body.user_local_time,
-            user_time_of_day=request_body.user_time_of_day,
-        )
-        instructions = append_attachment_context(
-            instructions,
-            folder_paths=attached_folder_paths,
-            file_paths=attached_file_paths,
-            image_paths=attached_image_paths,
-        )
-        instructions = append_skill_context(
-            instructions,
-            user_message=request_body.message,
-            requested_skills=request_body.skills,
+            chat_memory_runtime=chat_memory_runtime,
+            config=config,
         )
         reasoning_state: ChatReasoningState | None = None
         reasoning_session_id: str | None = None
@@ -205,21 +133,23 @@ def build_chat_router() -> APIRouter:
             )
             reasoning_session_id = reasoning_state.session_id
             instructions = reasoning.append_reasoning_instruction(
-                instructions,
+                route_context.instructions,
                 reasoning_state=reasoning_state,
             )
+        else:
+            instructions = route_context.instructions
         mcp_registry = build_chat_mcp_registry(request_body.mcp_servers)
 
         assistant_message_id = f"assistant_{uuid4().hex}"
         chat_started_at = perf_counter()
-        if image_parts:
+        if route_context.attached_image_paths:
             submission, output_text = run_chat_submission(
                 request=request,
                 gateway=gateway,
-                chat_messages=chat_messages,
+                chat_messages=route_context.chat_messages,
                 instructions=instructions,
                 assistant_message_id=assistant_message_id,
-                knowledge_references=knowledge_references,
+                memory_references=route_context.memory_references,
                 request_key=request_body.request_key,
                 reasoning_session_id=reasoning_session_id,
                 reasoning_state=reasoning_state,
@@ -228,31 +158,29 @@ def build_chat_router() -> APIRouter:
             submission, output_text = run_chat_submission_with_tools(
                 request=request,
                 gateway=gateway,
-                chat_messages=chat_messages,
+                chat_messages=route_context.chat_messages,
                 instructions=instructions,
                 assistant_message_id=assistant_message_id,
-                knowledge_references=knowledge_references,
+                memory_references=route_context.memory_references,
                 extra_tools=mcp_registry.tools,
                 mcp_registry=mcp_registry,
                 request_key=request_body.request_key,
                 reasoning_session_id=reasoning_session_id,
                 reasoning_state=reasoning_state,
             )
-        if tracker is not None:
-            tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
+        if route_context.tracker is not None:
+            route_context.tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
 
         return finalize_chat_submission(
             assistant_message_id=assistant_message_id,
             chat_memory_runtime=chat_memory_runtime,
-            knowledge_extraction_enabled=get_chat_knowledge_extraction_enabled(),
             logger=logger,
             memory_repository=memory_repository,
-            personality=persona_service.profile.personality,
             reasoning=reasoning,
             reasoning_state=reasoning_state,
             state_store=state_store,
             submission=submission,
-            tracker=tracker,
+            tracker=route_context.tracker,
             user_message=request_body.message,
             output_text=output_text,
             request_key=request_body.request_key,
@@ -268,34 +196,15 @@ def build_chat_router() -> APIRouter:
         persona_service: PersonaService = Depends(get_persona_service),
         chat_memory_runtime: ChatMemoryRuntime = Depends(get_chat_memory_runtime),
     ) -> ChatSubmissionResult:
-        state = state_store.get()
         config = get_runtime_config()
-        gateway.model = config.chat_model
-        prepared_context = prepare_chat_context(
-            chat_memory_runtime=chat_memory_runtime,
-            context_limit=config.chat_context_limit,
+        route_context = prepare_route_resume_context(
+            request=request,
+            request_body=request_body,
+            gateway=gateway,
+            state_store=state_store,
             persona_service=persona_service,
-            state=state,
-            user_message=request_body.message,
-        )
-        tracker = get_observability_tracker(request)
-        retrieval_started_at = perf_counter()
-        knowledge_references = extract_knowledge_references(prepared_context.memory_context)
-        if prepared_context.retrieval_attempted:
-            record_retrieval_observability(
-                tracker=tracker,
-                latency_ms=(perf_counter() - retrieval_started_at) * 1000.0,
-                references=knowledge_references,
-                failed=prepared_context.retrieval_failed,
-            )
-        instructions = build_base_chat_instructions(
-            folder_permissions=config.list_folder_permissions(),
-            prepared=prepared_context,
-            state=state,
-            user_message=request_body.message,
-            user_timezone=request_body.user_timezone,
-            user_local_time=request_body.user_local_time,
-            user_time_of_day=request_body.user_time_of_day,
+            chat_memory_runtime=chat_memory_runtime,
+            config=config,
         )
         resume_reasoning_session_id = (
             reasoning.resolve_resume_reasoning_session_id(request_body, memory_repository=memory_repository)
@@ -309,47 +218,42 @@ def build_chat_router() -> APIRouter:
                 session_id=resume_reasoning_session_id,
             )
             instructions = reasoning.append_reasoning_instruction(
-                instructions,
+                route_context.instructions,
                 reasoning_state=resume_reasoning_state,
             )
-
+        else:
+            instructions = route_context.instructions
         instructions = f"{instructions}\n\n{build_resume_instruction(request_body.partial_content)}"
-        instructions = append_skill_context(
-            instructions,
-            user_message=request_body.message,
-        )
         mcp_registry = build_chat_mcp_registry([])
 
         chat_started_at = perf_counter()
         submission, output_text = run_chat_submission_with_tools(
             request=request,
             gateway=gateway,
-            chat_messages=prepared_context.chat_messages,
+            chat_messages=route_context.chat_messages,
             instructions=instructions,
             assistant_message_id=request_body.assistant_message_id,
             initial_output_text=request_body.partial_content,
-            knowledge_references=knowledge_references,
+            memory_references=route_context.memory_references,
             extra_tools=mcp_registry.tools,
             mcp_registry=mcp_registry,
             request_key=request_body.request_key,
             reasoning_session_id=resume_reasoning_state.session_id if resume_reasoning_state is not None else None,
             reasoning_state=resume_reasoning_state,
         )
-        if tracker is not None:
-            tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
+        if route_context.tracker is not None:
+            route_context.tracker.record_chat_latency((perf_counter() - chat_started_at) * 1000.0)
 
         return finalize_chat_submission(
             assistant_message_id=request_body.assistant_message_id,
             chat_memory_runtime=chat_memory_runtime,
-            knowledge_extraction_enabled=get_chat_knowledge_extraction_enabled(),
             logger=logger,
             memory_repository=memory_repository,
-            personality=persona_service.profile.personality,
             reasoning=reasoning,
             reasoning_state=resume_reasoning_state,
             state_store=state_store,
             submission=submission,
-            tracker=tracker,
+            tracker=route_context.tracker,
             user_message=request_body.message,
             output_text=output_text,
             request_key=request_body.request_key,

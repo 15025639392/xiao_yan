@@ -3,7 +3,7 @@ import { MarkdownMessage } from "../MarkdownMessage";
 import { Button } from "../ui";
 import { getChatMessageDisplayState } from "./chatMessagePresentation";
 import type { ChatEntry } from "./chatTypes";
-import { ChatKnowledgeContext } from "./ChatKnowledgeContext";
+import { ChatMemoryReferenceContext } from "./ChatMemoryReferenceContext";
 import { ChatMemoryContext } from "./ChatMemoryContext";
 
 type ChatMessagesProps = {
@@ -27,13 +27,13 @@ export const ChatMessages = memo(function ChatMessages({
   onRetry,
   onDraftChange,
 }: ChatMessagesProps) {
-  const [showKnowledgeContext, setShowKnowledgeContext] = useState<Set<string>>(new Set());
+  const [showMemoryReferenceContext, setShowMemoryReferenceContext] = useState<Set<string>>(new Set());
   const latestUserIndex = findLatestUserIndex(messages);
   const hasAssistantAfterLatestUser =
     latestUserIndex >= 0 && messages.slice(latestUserIndex + 1).some((message) => message.role === "assistant");
 
-  function toggleKnowledgeContext(messageId: string) {
-    setShowKnowledgeContext((prev) => {
+  function toggleMemoryReferenceContext(messageId: string) {
+    setShowMemoryReferenceContext((prev) => {
       const next = new Set(prev);
       if (next.has(messageId)) {
         next.delete(messageId);
@@ -81,7 +81,7 @@ export const ChatMessages = memo(function ChatMessages({
           const display = getChatMessageDisplayState(message, assistantName);
           const messageKey = getChatMessageRenderKey(message, renderKeySeen);
           const hasBody = display.bodyMode !== "none";
-          const hasDetails = Boolean(display.status || display.showKnowledgeContext);
+          const hasDetails = Boolean(display.status || display.showMemoryReferenceContext);
 
           return (
             <article
@@ -128,11 +128,11 @@ export const ChatMessages = memo(function ChatMessages({
                       </div>
                     ) : null}
 
-                    {display.showKnowledgeContext ? (
-                      <ChatKnowledgeContext
-                        references={message.knowledgeReferences ?? []}
-                        isExpanded={showKnowledgeContext.has(message.id)}
-                        onToggle={() => toggleKnowledgeContext(message.id)}
+                    {display.showMemoryReferenceContext ? (
+                      <ChatMemoryReferenceContext
+                        references={message.memoryReferences ?? []}
+                        isExpanded={showMemoryReferenceContext.has(message.id)}
+                        onToggle={() => toggleMemoryReferenceContext(message.id)}
                       />
                     ) : null}
                   </div>

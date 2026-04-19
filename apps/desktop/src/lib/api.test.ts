@@ -4,8 +4,6 @@ import {
   chat,
   createDataBackup,
   fetchDataEnvironmentStatus,
-  fetchKnowledgeItems,
-  fetchKnowledgeSummary,
   fetchMemoryTimeline,
   fetchConfig,
   fetchMessages,
@@ -17,8 +15,6 @@ import {
   importDataBackup,
   updateDataEnvironmentStatus,
   updateConfig,
-  reviewKnowledgeItem,
-  reviewKnowledgeItemsBatch,
   resumeChat,
   upsertChatFolderPermission,
   updatePersona,
@@ -333,155 +329,17 @@ describe("persona api methods", () => {
 
     await fetchMemoryTimeline({
       limit: 20,
-      namespace: "knowledge",
+      namespace: "long_term",
       q: "长期偏好",
       visibility: "user",
       status: "active",
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/memory/timeline?limit=20&status=active&namespace=knowledge&visibility=user&q=%E9%95%BF%E6%9C%9F%E5%81%8F%E5%A5%BD",
+      "http://127.0.0.1:8000/memory/timeline?limit=20&status=active&namespace=long_term&visibility=user&q=%E9%95%BF%E6%9C%9F%E5%81%8F%E5%A5%BD",
     );
   });
 
-  test("fetches knowledge items with review filter and query", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          items: [],
-          total_count: 0,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await fetchKnowledgeItems({
-      limit: 20,
-      offset: 0,
-      review_status: "pending_review",
-      status: "active",
-      q: "偏好",
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/knowledge/items?limit=20&offset=0&review_status=pending_review&status=active&q=%E5%81%8F%E5%A5%BD",
-    );
-  });
-
-  test("fetches knowledge items with cursor and sort controls", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          items: [],
-          total_count: 0,
-          next_cursor: null,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await fetchKnowledgeItems({
-      limit: 10,
-      cursor: "cursor_abc",
-      sort_by: "reviewed_at",
-      sort_order: "asc",
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/knowledge/items?limit=10&offset=0&cursor=cursor_abc&sort_by=reviewed_at&sort_order=asc",
-    );
-  });
-
-  test("reviews knowledge item with expected payload", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          success: true,
-          item: {
-            id: "mem_1",
-            review_status: "approved",
-          },
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await reviewKnowledgeItem("mem_1", {
-      decision: "approve",
-      reviewer: "owner",
-      review_note: "通过",
-    });
-    await fetchKnowledgeSummary();
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "http://127.0.0.1:8000/knowledge/items/mem_1/review",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          decision: "approve",
-          reviewer: "owner",
-          review_note: "通过",
-        }),
-      }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "http://127.0.0.1:8000/knowledge/summary",
-    );
-  });
-
-  test("reviews knowledge items in batch with expected payload", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          success: true,
-          decision: "approve",
-          updated: 2,
-          failed: 0,
-          updated_ids: ["mem_a", "mem_b"],
-          failed_ids: [],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await reviewKnowledgeItemsBatch({
-      knowledge_ids: ["mem_a", "mem_b"],
-      decision: "approve",
-      reviewer: "owner",
-      review_note: "批量通过",
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/knowledge/items/review-batch",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          knowledge_ids: ["mem_a", "mem_b"],
-          decision: "approve",
-          reviewer: "owner",
-          review_note: "批量通过",
-        }),
-      }),
-    );
-  });
 
   test("sends chat attachments payload when provided", async () => {
     const fetchMock = vi.fn(async () =>

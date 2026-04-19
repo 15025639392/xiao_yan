@@ -1,6 +1,6 @@
 import type { ChatReasoningState, ChatRequestBody, MemoryEntryDisplay } from "../../lib/api";
 
-export type KnowledgeReference = {
+export type MemoryReference = {
   source: string;
   wing: string;
   room: string;
@@ -37,7 +37,7 @@ export type ChatEntryRecovery = {
 // Enrichments: optional context attached to a reply after generation.
 export type ChatEntryEnrichments = {
   relatedMemories?: MemoryEntryDisplay[];
-  knowledgeReferences?: KnowledgeReference[];
+  memoryReferences?: MemoryReference[];
   reasoningState?: ChatReasoningState;
 };
 
@@ -63,8 +63,8 @@ export function hasRetryableUserSend(entry: ChatEntry): boolean {
   return isUserChatEntry(entry) && entry.state === "failed";
 }
 
-export function hasKnowledgeReferences(entry: ChatEntry): boolean {
-  return Boolean(entry.knowledgeReferences?.length);
+export function hasMemoryReferences(entry: ChatEntry): boolean {
+  return Boolean(entry.memoryReferences?.length);
 }
 
 export function hasRelatedMemories(entry: ChatEntry): boolean {

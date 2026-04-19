@@ -1,7 +1,7 @@
 export const KIND_LABELS: Record<string, { label: string; icon: string; color: string; bgColor: string }> = {
   fact: { label: "事实", icon: "📌", color: "#3b82f6", bgColor: "rgba(59, 130, 246, 0.1)" },
   episodic: { label: "经历", icon: "💭", color: "#6366f1", bgColor: "rgba(99, 102, 241, 0.1)" },
-  semantic: { label: "知识", icon: "📚", color: "#10b981", bgColor: "rgba(16, 185, 129, 0.1)" },
+  semantic: { label: "语义", icon: "📚", color: "#10b981", bgColor: "rgba(16, 185, 129, 0.1)" },
   emotional: { label: "情绪", icon: "💓", color: "#ef4444", bgColor: "rgba(239, 68, 68, 0.1)" },
   chat_raw: { label: "对话", icon: "💬", color: "#9ca3af", bgColor: "rgba(156, 163, 175, 0.1)" },
 };
@@ -37,10 +37,10 @@ export const THEME_CLUSTERS: Record<string, { label: string; icon: string; keywo
     icon: "📅",
     keywords: ["明天", "后天", "下周", "记得", "提醒", "会议", "约会", "截止", "交", "完成"],
   },
-  knowledge: {
-    label: "知识观点",
+  insight: {
+    label: "语义观点",
     icon: "💡",
-    keywords: ["认为", "觉得", "观点是", "知识", "知道", "了解", "学习"],
+    keywords: ["认为", "觉得", "观点是", "知道", "了解", "学习"],
   },
   emotions: {
     label: "情绪感受",
@@ -53,4 +53,3 @@ export const THEME_CLUSTERS: Record<string, { label: string; icon: string; keywo
     keywords: [],
   },
 };
-

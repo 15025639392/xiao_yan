@@ -40,8 +40,8 @@ class WorldStateService:
             latest_event_at=latest_event_at,
         )
 
-    def build_event(self, world_state: WorldState, goal_title: str | None = None) -> str:
+    def build_event(self, world_state: WorldState, focus_title: str | None = None) -> str:
         lead = _event_lead(world_state)
-        if goal_title:
-            return f"{lead}我还惦记着“{goal_title}”。"
+        if focus_title:
+            return f"{lead}我还惦记着“{focus_title}”。"
         return lead

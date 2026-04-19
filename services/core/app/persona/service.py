@@ -1,70 +1,24 @@
-"""PersonaService — 人格档案管理服务
+"""PersonaService — 人格档案管理服务。"""
 
-职责：
-- 加载/保存人格档案（JSON 持久化）
-- 提供人格 CRUD 操作
-- 作为情绪引擎的统一入口
-- 生成人格感知的 prompt
-"""
-
-from pathlib import Path
-from datetime import datetime, timezone
 from logging import getLogger
 from typing import Callable
-from typing import Protocol
 
 from app.persona.models import (
-    EmotionEntry,
     EmotionIntensity,
     EmotionalState,
     EmotionType,
     PersonaProfile,
-    default_value_foundation,
     default_persona,
 )
 from app.persona.emotion_engine import EmotionEngine
+from app.persona.service_support import (
+    FilePersonaRepository,
+    InMemoryPersonaRepository,
+    PersonaRepository,
+    ensure_value_foundation,
+)
 
 logger = getLogger(__name__)
-
-
-class PersonaRepository(Protocol):
-    """人格持久化的抽象接口"""
-    def save(self, profile: PersonaProfile) -> None: ...
-    def load(self) -> PersonaProfile | None: ...
-
-
-class FilePersonaRepository:
-    """基于文件的人格持久化"""
-    def __init__(self, storage_path: Path) -> None:
-        self.storage_path = storage_path
-
-    def save(self, profile: PersonaProfile) -> None:
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.storage_path.open("w", encoding="utf-8") as f:
-            f.write(profile.model_dump_json(indent=2))
-
-    def load(self) -> PersonaProfile | None:
-        if not self.storage_path.exists():
-            return None
-        try:
-            with self.storage_path.open("r", encoding="utf-8") as f:
-                data = f.read()
-            return PersonaProfile.model_validate_json(data)
-        except Exception as exc:
-            logger.warning("Failed to load persona from %s: %s", self.storage_path, exc)
-            return None
-
-
-class InMemoryPersonaRepository:
-    """内存中的人格存储（测试用）"""
-    def __init__(self) -> None:
-        self._profile: PersonaProfile | None = None
-
-    def save(self, profile: PersonaProfile) -> None:
-        self._profile = profile
-
-    def load(self) -> PersonaProfile | None:
-        return self._profile
 
 
 class PersonaService:
@@ -93,12 +47,12 @@ class PersonaService:
     def profile(self) -> PersonaProfile:
         """获取当前人格档案，自动加载或使用默认值"""
         if self._profile is not None:
-            self._profile = self._ensure_value_foundation(self._profile)
+            self._profile = self._ensure_profile_foundation(self._profile)
             return self._profile
         if self.repository is not None:
             loaded = self.repository.load()
             if loaded is not None:
-                self._profile = self._ensure_value_foundation(loaded)
+                self._profile = self._ensure_profile_foundation(loaded)
                 return self._profile
         # 使用默认人格
         self._profile = default_persona()
@@ -214,12 +168,13 @@ class PersonaService:
         self._update_emotion(new_emotion)
         return new_emotion
 
-    def infer_goal_emotion(self, event_type: str, goal_title: str) -> EmotionalState:
-        """从目标事件推断并应用情绪变化"""
+    def infer_focus_emotion(self, event_type: str, focus_title: str) -> EmotionalState:
+        """从当前牵挂事件推断并应用情绪变化"""
         current = self.profile.emotion
-        new_emotion = self.engine.infer_from_goal_event(current, event_type, goal_title)
+        new_emotion = self.engine.infer_from_focus_event(current, event_type, focus_title)
         self._update_emotion(new_emotion)
         return new_emotion
+
 
     # ── Prompt 生成 ──────────────────────────────────────
 
@@ -284,29 +239,9 @@ class PersonaService:
         if self._on_change is not None:
             self._on_change()
 
-    def _ensure_value_foundation(self, profile: PersonaProfile) -> PersonaProfile:
-        if profile.values.core_values and profile.values.boundaries:
+    def _ensure_profile_foundation(self, profile: PersonaProfile) -> PersonaProfile:
+        merged = ensure_value_foundation(profile)
+        if merged == profile:
             return profile
-
-        foundation = default_value_foundation()
-        merged = profile.model_copy(
-            update={
-                "values": profile.values.model_copy(
-                    update={
-                        "core_values": (
-                            profile.values.core_values
-                            if profile.values.core_values
-                            else foundation.core_values
-                        ),
-                        "boundaries": (
-                            profile.values.boundaries
-                            if profile.values.boundaries
-                            else foundation.boundaries
-                        ),
-                    }
-                ),
-                "version": profile.version + 1,
-            }
-        )
         self._save_silent(merged)
         return merged

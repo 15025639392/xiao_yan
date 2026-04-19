@@ -235,15 +235,15 @@ class MemPalaceMemoryRepository:
 
     def _build_metadata(self, event: MemoryEvent) -> dict[str, str]:
         return {
-            "namespace": "memory_event",
+            "doc_namespace": "memory_event",
             "wing": self.wing,
             "room": self.room,
             "entry_id": event.entry_id,
             "kind": event.kind,
-            "memory_namespace": event.namespace or "",
+            "namespace": event.namespace or "",
             "visibility": event.visibility,
-            "knowledge_type": event.knowledge_type or "",
-            "knowledge_tags": ",".join(event.knowledge_tags),
+            "facet": event.facet or "",
+            "tags": ",".join(event.tags),
             "source_ref": event.source_ref or "",
             "version_tag": event.version_tag or "",
             "governance_source": event.governance_source,
@@ -261,7 +261,7 @@ class MemPalaceMemoryRepository:
     def _where_filter(self) -> dict:
         return {
             "$and": [
-                {"namespace": "memory_event"},
+                {"doc_namespace": "memory_event"},
                 {"wing": self.wing},
                 {"room": self.room},
             ]

@@ -3,9 +3,15 @@ from __future__ import annotations
 import httpx
 from fastapi import HTTPException, Request
 
+from app.api.chat_submission_events import ChatSubmissionEvents
 from app.api.chat_runtime_helpers import (
     merge_chat_stream_content,
     should_fallback_to_stream_without_tools,
+)
+from app.api.chat_submission_payloads import (
+    CHAT_FILE_TOOL_DEFINITIONS,
+    build_resume_instruction,
+    resolve_completed_output_text,
 )
 from app.api.chat_tool_calls import (
     build_function_call_signature,
@@ -18,93 +24,6 @@ from app.llm.gateway import ChatGateway
 from app.llm.schemas import ChatMessage, ChatReasoningState, ChatSubmissionResult
 from app.mcp import ChatMcpCallRegistry
 
-CHAT_FILE_TOOL_DEFINITIONS = [
-    {
-        "type": "function",
-        "name": "read_file",
-        "description": "Read a file and return its content. Use absolute paths when possible.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "max_bytes": {"type": "integer", "minimum": 1, "maximum": 2 * 1024 * 1024},
-            },
-            "required": ["path"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "type": "function",
-        "name": "list_directory",
-        "description": "List files and directories under a path.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "recursive": {"type": "boolean"},
-                "pattern": {"type": "string"},
-            },
-            "additionalProperties": False,
-        },
-    },
-    {
-        "type": "function",
-        "name": "search_files",
-        "description": "Search text in files under a path.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "search_path": {"type": "string"},
-                "file_pattern": {"type": "string"},
-                "max_results": {"type": "integer", "minimum": 1, "maximum": 200},
-            },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "type": "function",
-        "name": "write_file",
-        "description": "Write UTF-8 text to a file path. Requires full_access for granted folders.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
-                "create_dirs": {"type": "boolean"},
-            },
-            "required": ["path", "content"],
-            "additionalProperties": False,
-        },
-    },
-]
-
-
-def build_resume_instruction(partial_content: str) -> str:
-    return (
-        "这是一次失败后的继续生成。"
-        "你必须紧接着下面这段 assistant 已输出内容继续生成，"
-        "不要重复已经说过的文字，不要重开话题，不要改写前文。\n\n"
-        f"已输出内容：\n{partial_content}"
-    )
-
-
-def resolve_completed_output_text(
-    *,
-    current_output_text: str,
-    completed_output_text: str,
-    initial_output_text: str,
-) -> str:
-    if not completed_output_text:
-        return current_output_text
-    if initial_output_text:
-        return merge_chat_stream_content(initial_output_text, completed_output_text)
-    if completed_output_text != current_output_text:
-        return completed_output_text
-    return current_output_text
-
-
 def run_chat_submission(
     *,
     request: Request,
@@ -114,57 +33,36 @@ def run_chat_submission(
     assistant_message_id: str,
     initial_output_text: str = "",
     suppress_started_event: bool = False,
-    knowledge_references: list[dict[str, str | float | None]] | None = None,
+    memory_references: list[dict[str, str | float | None]] | None = None,
     request_key: str | None = None,
     reasoning_session_id: str | None = None,
     reasoning_state: ChatReasoningState | None = None,
 ) -> tuple[ChatSubmissionResult, str]:
     response_id: str | None = None
     output_text = initial_output_text
-    started = False
     hub = getattr(request.app.state, "realtime_hub", None)
     reasoning_payload = reasoning_state.model_dump(mode="json") if reasoning_state is not None else None
+    events = ChatSubmissionEvents(
+        hub=hub,
+        assistant_message_id=assistant_message_id,
+        request_key=request_key,
+        reasoning_session_id=reasoning_session_id,
+        reasoning_payload=reasoning_payload,
+        suppress_started_event=suppress_started_event,
+    )
 
     try:
         for event in gateway.stream_response(chat_messages, instructions=instructions):
             event_type = event["type"]
             if event_type == "response_started":
                 response_id = event.get("response_id") or response_id
-                if hub is not None and not started and not suppress_started_event:
-                    hub.publish_chat_started(
-                        assistant_message_id,
-                        response_id=response_id,
-                        request_key=request_key,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_payload,
-                    )
-                    started = True
+                events.publish_started(response_id)
                 continue
 
             if event_type == "text_delta":
-                if hub is not None and not started and not suppress_started_event:
-                    hub.publish_chat_started(
-                        assistant_message_id,
-                        response_id=response_id,
-                        request_key=request_key,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_payload,
-                    )
-                    started = True
-
                 delta = event.get("delta") or ""
-                if not delta:
-                    continue
-
                 output_text = merge_chat_stream_content(output_text, delta)
-                if hub is not None:
-                    hub.publish_chat_delta(
-                        assistant_message_id,
-                        delta,
-                        request_key=request_key,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_payload,
-                    )
+                events.publish_delta(delta, response_id=response_id)
                 continue
 
             if event_type == "response_completed":
@@ -179,14 +77,7 @@ def run_chat_submission(
 
             if event_type == "response_failed":
                 error_message = event.get("error") or "streaming failed"
-                if hub is not None:
-                    hub.publish_chat_failed(
-                        assistant_message_id,
-                        error_message,
-                        request_key=request_key,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_payload,
-                    )
+                events.publish_failed(error_message)
                 raise HTTPException(status_code=502, detail=error_message)
     except httpx.HTTPStatusError as exception:
         detail = str(exception)
@@ -195,46 +86,19 @@ def run_chat_submission(
                 detail = exception.response.text or detail
         except Exception:  # noqa: BLE001
             pass
-        if hub is not None:
-            hub.publish_chat_failed(
-                assistant_message_id,
-                detail,
-                request_key=request_key,
-                reasoning_session_id=reasoning_session_id,
-                reasoning_state=reasoning_payload,
-            )
+        events.publish_failed(detail)
         raise HTTPException(status_code=502, detail=detail) from exception
     except HTTPException:
         raise
     except Exception as exception:
-        if hub is not None:
-            hub.publish_chat_failed(
-                assistant_message_id,
-                str(exception),
-                request_key=request_key,
-                reasoning_session_id=reasoning_session_id,
-                reasoning_state=reasoning_payload,
-            )
+        events.publish_failed(str(exception))
         raise HTTPException(status_code=502, detail=str(exception)) from exception
 
-    if hub is not None and not started and not suppress_started_event:
-        hub.publish_chat_started(
-            assistant_message_id,
-            response_id=response_id,
-            request_key=request_key,
-            reasoning_session_id=reasoning_session_id,
-            reasoning_state=reasoning_payload,
-        )
-    if hub is not None:
-        hub.publish_chat_completed(
-            assistant_message_id,
-            response_id,
-            output_text,
-            request_key=request_key,
-            knowledge_references=knowledge_references,
-            reasoning_session_id=reasoning_session_id,
-            reasoning_state=reasoning_payload,
-        )
+    events.publish_completed(
+        response_id=response_id,
+        output_text=output_text,
+        memory_references=memory_references,
+    )
 
     return (
         ChatSubmissionResult(
@@ -254,7 +118,7 @@ def run_chat_submission_with_tools(
     instructions: str,
     assistant_message_id: str,
     initial_output_text: str = "",
-    knowledge_references: list[dict[str, str | float | None]] | None = None,
+    memory_references: list[dict[str, str | float | None]] | None = None,
     extra_tools: list[dict[str, object]] | None = None,
     mcp_registry: ChatMcpCallRegistry | None = None,
     request_key: str | None = None,
@@ -270,16 +134,22 @@ def run_chat_submission_with_tools(
             instructions=instructions,
             assistant_message_id=assistant_message_id,
             initial_output_text=initial_output_text,
-            knowledge_references=knowledge_references,
+            memory_references=memory_references,
             request_key=request_key,
             reasoning_session_id=reasoning_session_id,
             reasoning_state=reasoning_state,
         )
 
     hub = getattr(request.app.state, "realtime_hub", None)
-    started = False
     response_id: str | None = None
     reasoning_payload = reasoning_state.model_dump(mode="json") if reasoning_state is not None else None
+    events = ChatSubmissionEvents(
+        hub=hub,
+        assistant_message_id=assistant_message_id,
+        request_key=request_key,
+        reasoning_session_id=reasoning_session_id,
+        reasoning_payload=reasoning_payload,
+    )
 
     file_tools = build_file_tools()
     tool_definitions = [*CHAT_FILE_TOOL_DEFINITIONS, *(extra_tools or [])]
@@ -305,8 +175,8 @@ def run_chat_submission_with_tools(
             instructions=fallback_instructions,
             assistant_message_id=assistant_message_id,
             initial_output_text=initial_output_text,
-            suppress_started_event=started,
-            knowledge_references=knowledge_references,
+            suppress_started_event=events.started,
+            memory_references=memory_references,
             request_key=request_key,
             reasoning_session_id=reasoning_session_id,
             reasoning_state=reasoning_state,
@@ -322,7 +192,7 @@ def run_chat_submission_with_tools(
                 )
             except Exception as exception:  # noqa: BLE001
                 if (
-                    not started
+                    not events.started
                     and len(accumulated_input) == len(chat_messages)
                     and should_fallback_to_stream_without_tools(exception)
                 ):
@@ -333,7 +203,7 @@ def run_chat_submission_with_tools(
                         instructions=instructions,
                         assistant_message_id=assistant_message_id,
                         initial_output_text=initial_output_text,
-                        knowledge_references=knowledge_references,
+                        memory_references=memory_references,
                         request_key=request_key,
                         reasoning_session_id=reasoning_session_id,
                         reasoning_state=reasoning_state,
@@ -352,7 +222,7 @@ def run_chat_submission_with_tools(
                 if initial_output_text:
                     output_text = merge_chat_stream_content(initial_output_text, output_text)
 
-                if not output_text and not started and len(accumulated_input) == len(chat_messages):
+                if not output_text and not events.started and len(accumulated_input) == len(chat_messages):
                     return run_chat_submission(
                         request=request,
                         gateway=gateway,
@@ -360,7 +230,7 @@ def run_chat_submission_with_tools(
                         instructions=instructions,
                         assistant_message_id=assistant_message_id,
                         initial_output_text=initial_output_text,
-                        knowledge_references=knowledge_references,
+                        memory_references=memory_references,
                         request_key=request_key,
                         reasoning_session_id=reasoning_session_id,
                         reasoning_state=reasoning_state,
@@ -369,34 +239,12 @@ def run_chat_submission_with_tools(
                 if not output_text:
                     raise HTTPException(status_code=502, detail="empty gateway response payload")
 
-                if hub is not None and not started:
-                    hub.publish_chat_started(
-                        assistant_message_id,
-                        response_id=response_id,
-                        request_key=request_key,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_payload,
-                    )
-                    started = True
-
-                if hub is not None and output_text:
-                    hub.publish_chat_delta(
-                        assistant_message_id,
-                        output_text,
-                        request_key=request_key,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_payload,
-                    )
-                if hub is not None:
-                    hub.publish_chat_completed(
-                        assistant_message_id,
-                        response_id,
-                        output_text,
-                        request_key=request_key,
-                        knowledge_references=knowledge_references,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_payload,
-                    )
+                events.publish_delta(output_text, response_id=response_id)
+                events.publish_completed(
+                    response_id=response_id,
+                    output_text=output_text,
+                    memory_references=memory_references,
+                )
 
                 return (
                     ChatSubmissionResult(
@@ -407,15 +255,7 @@ def run_chat_submission_with_tools(
                     output_text,
                 )
 
-            if hub is not None and not started:
-                hub.publish_chat_started(
-                    assistant_message_id,
-                    response_id=response_id,
-                    request_key=request_key,
-                    reasoning_session_id=reasoning_session_id,
-                    reasoning_state=reasoning_payload,
-                )
-                started = True
+            events.publish_started(response_id)
 
             call_signature = build_function_call_signature(function_calls)
             if call_signature == last_call_signature:
@@ -453,14 +293,7 @@ def run_chat_submission_with_tools(
 
         return _fallback_without_tools("tool_call_recursion_limit_exceeded")
     except HTTPException:
-        if hub is not None and started:
-            hub.publish_chat_failed(
-                assistant_message_id,
-                "tool execution failed",
-                request_key=request_key,
-                reasoning_session_id=reasoning_session_id,
-                reasoning_state=reasoning_payload,
-            )
+        events.publish_failed("tool execution failed", only_if_started=True)
         raise
     except httpx.HTTPStatusError as exception:
         detail = str(exception)
@@ -469,22 +302,8 @@ def run_chat_submission_with_tools(
                 detail = exception.response.text or detail
         except Exception:  # noqa: BLE001
             pass
-        if hub is not None and started:
-            hub.publish_chat_failed(
-                assistant_message_id,
-                f"{payload_hint}; {detail}",
-                request_key=request_key,
-                reasoning_session_id=reasoning_session_id,
-                reasoning_state=reasoning_payload,
-            )
+        events.publish_failed(f"{payload_hint}; {detail}", only_if_started=True)
         raise HTTPException(status_code=502, detail=f"{payload_hint}; {detail}") from exception
     except Exception as exception:  # noqa: BLE001
-        if hub is not None and started:
-            hub.publish_chat_failed(
-                assistant_message_id,
-                str(exception),
-                request_key=request_key,
-                reasoning_session_id=reasoning_session_id,
-                reasoning_state=reasoning_payload,
-            )
+        events.publish_failed(str(exception), only_if_started=True)
         raise HTTPException(status_code=502, detail=str(exception)) from exception

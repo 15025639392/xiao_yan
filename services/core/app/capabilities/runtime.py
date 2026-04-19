@@ -8,7 +8,8 @@ from app.capabilities.models import (
     CapabilityDispatchRequest,
     CapabilityResult,
 )
-from app.capabilities.queue import CapabilityQueueStore, _CapabilityRecord
+from app.capabilities.queue import CapabilityQueueStore
+from app.capabilities.queue_records import CapabilityRecord
 from app.config import get_capability_queue_storage_path
 
 _capability_queue = CapabilityQueueStore(storage_path=get_capability_queue_storage_path())
@@ -23,7 +24,7 @@ def reset_capability_queue_for_tests() -> None:
     _capability_queue = CapabilityQueueStore()
 
 
-def dispatch_capability_request(payload: CapabilityDispatchRequest) -> _CapabilityRecord:
+def dispatch_capability_request(payload: CapabilityDispatchRequest) -> CapabilityRecord:
     return _capability_queue.dispatch(payload)
 
 

@@ -16,18 +16,7 @@ import {
 import { subscribeAppRealtime } from "../../lib/realtime";
 import type { ViewMode } from "./memoryConstants";
 
-type MemoryPanelMode = "all" | "knowledge";
-
-const KNOWLEDGE_NAMESPACE = "knowledge";
-
-function buildTimelineQuery(mode: MemoryPanelMode, query: MemoryTimelineQuery): MemoryTimelineQuery {
-  if (mode === "knowledge") {
-    return { ...query, namespace: KNOWLEDGE_NAMESPACE };
-  }
-  return query;
-}
-
-export function useMemoryPanelState(mode: MemoryPanelMode = "all") {
+export function useMemoryPanelState() {
   const [summary, setSummary] = useState<MemorySummary | null>(null);
   const [relationship, setRelationship] = useState<RelationshipSummary | null>(null);
   const [entries, setEntries] = useState<MemoryEntryDisplay[]>([]);
@@ -60,7 +49,7 @@ export function useMemoryPanelState(mode: MemoryPanelMode = "all") {
       setLoading(true);
       const [summaryData, timelineData] = await Promise.all([
         fetchMemorySummary(),
-        fetchMemoryTimeline(buildTimelineQuery(mode, { limit: 40 })),
+        fetchMemoryTimeline({ limit: 40 }),
       ]);
       setSummary(summaryData);
       setRelationship(summaryData.relationship);
@@ -70,7 +59,7 @@ export function useMemoryPanelState(mode: MemoryPanelMode = "all") {
     } finally {
       setLoading(false);
     }
-  }, [mode]);
+  }, []);
 
   const handleSearch = useCallback(async (query: string) => {
     const trimmed = query.trim();
@@ -80,13 +69,13 @@ export function useMemoryPanelState(mode: MemoryPanelMode = "all") {
       return;
     }
     try {
-      const result = await fetchMemoryTimeline(buildTimelineQuery(mode, { limit: 20, q: trimmed }));
+      const result = await fetchMemoryTimeline({ limit: 20, q: trimmed });
       setSearchResults(result.entries);
       setShowSearchOnly(true);
     } catch {
       setSearchResults([]);
     }
-  }, [mode]);
+  }, []);
 
   const handleDelete = useCallback(
     async (memoryId: string) => {
@@ -264,35 +253,19 @@ export function useMemoryPanelState(mode: MemoryPanelMode = "all") {
         return;
       }
 
-      if (mode === "knowledge") {
-        void loadData();
-        return;
-      }
-
       setSummary(memoryPayload.summary);
       setRelationship(memoryPayload.relationship ?? memoryPayload.summary.relationship ?? null);
       setEntries(memoryPayload.timeline);
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [loadData, mode]);
+  }, [loadData]);
 
   useEffect(() => {
     if (!searchQuery) return;
     const timer = setTimeout(() => handleSearch(searchQuery), 300);
     return () => clearTimeout(timer);
   }, [searchQuery, handleSearch]);
-
-  useEffect(() => {
-    setActiveFilter(null);
-    setSearchQuery("");
-    setSearchResults(null);
-    setShowSearchOnly(false);
-    setSelectedIds(new Set());
-    setIsBatchMode(false);
-    setEditingId(null);
-    setEditContent("");
-  }, [mode]);
 
   const displayEntries = showSearchOnly
     ? (searchResults ?? [])

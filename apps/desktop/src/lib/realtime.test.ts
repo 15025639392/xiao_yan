@@ -196,11 +196,11 @@ describe("app realtime client", () => {
         response_id: "resp_1",
         content: "你好",
         request_key: "request_1",
-        knowledge_references: [
+        memory_references: [
           {
-            source: "wing_xiaoyan/knowledge",
+            source: "wing_xiaoyan/long_term",
             wing: "wing_xiaoyan",
-            room: "knowledge",
+            room: "long_term",
             similarity: 0.88,
             excerpt: "你喜欢结构化输出。",
           },
@@ -265,11 +265,11 @@ describe("app realtime client", () => {
             response_id: "resp_1",
             content: "你好",
             request_key: "request_1",
-            knowledge_references: [
+            memory_references: [
               {
-                source: "wing_xiaoyan/knowledge",
+                source: "wing_xiaoyan/long_term",
                 wing: "wing_xiaoyan",
-                room: "knowledge",
+                room: "long_term",
                 similarity: 0.88,
                 excerpt: "你喜欢结构化输出。",
               },

@@ -294,7 +294,7 @@ describe("finalizeAssistantMessage", () => {
     ]);
   });
 
-  it("stores knowledge references when assistant stream completes", () => {
+  it("stores long-term memory references when assistant stream completes", () => {
     const current: ChatEntry[] = [
       {
         id: "assistant_1",
@@ -311,9 +311,9 @@ describe("finalizeAssistantMessage", () => {
       4,
       [
         {
-          source: "wing_xiaoyan/knowledge",
+          source: "wing_xiaoyan/long_term",
           wing: "wing_xiaoyan",
-          room: "knowledge",
+          room: "long_term",
           similarity: 0.88,
           excerpt: "你喜欢结构化输出。",
         },
@@ -321,11 +321,11 @@ describe("finalizeAssistantMessage", () => {
     );
 
     expect(finalized[0].state).toBeUndefined();
-    expect(finalized[0].knowledgeReferences).toEqual([
+    expect(finalized[0].memoryReferences).toEqual([
       {
-        source: "wing_xiaoyan/knowledge",
+        source: "wing_xiaoyan/long_term",
         wing: "wing_xiaoyan",
-        room: "knowledge",
+        room: "long_term",
         similarity: 0.88,
         excerpt: "你喜欢结构化输出。",
       },

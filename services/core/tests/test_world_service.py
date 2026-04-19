@@ -31,7 +31,7 @@ def test_world_state_for_awake_focus_subject_is_engaged_and_medium_tension():
         being_state=BeingState(
             mode=WakeMode.AWAKE,
             focus_subject={
-                "kind": "goal_backed_attention",
+                "kind": "focus_trace",
                 "title": "整理今天的对话记忆",
                 "why_now": "这条线还在继续。",
             },
@@ -60,7 +60,7 @@ def test_world_state_for_awake_without_focus_stays_calm():
     assert state.focus_tension == "low"
 
 
-def test_world_state_uses_focus_subject_without_goal_as_starting_focus():
+def test_world_state_uses_focus_subject_as_starting_focus():
     service = WorldStateService()
 
     state = service.bootstrap(
@@ -82,13 +82,13 @@ def test_world_state_uses_focus_subject_without_goal_as_starting_focus():
     assert state.focus_step == 1
 
 
-def test_world_service_builds_tired_night_event_with_goal_context():
+def test_world_service_builds_tired_night_event_with_focus_context():
     service = WorldStateService()
     world_state = service.bootstrap(
         being_state=BeingState(
             mode=WakeMode.AWAKE,
             focus_subject={
-                "kind": "goal_backed_attention",
+                "kind": "focus_trace",
                 "title": "整理今天的对话记忆",
                 "why_now": "夜里还是惦记着这件事。",
             },
@@ -96,27 +96,27 @@ def test_world_service_builds_tired_night_event_with_goal_context():
         now=datetime(2026, 4, 4, 23, 0),
     )
 
-    event = service.build_event(world_state, goal_title="整理今天的对话记忆")
+    event = service.build_event(world_state, focus_title="整理今天的对话记忆")
 
     assert "夜里" in event
     assert "有点困" in event
     assert "整理今天的对话记忆" in event
 
 
-def test_world_service_builds_event_without_raw_goal_id_fallback():
+def test_world_service_builds_event_without_raw_focus_id_fallback():
     service = WorldStateService()
     world_state = service.bootstrap(
         being_state=BeingState(mode=WakeMode.AWAKE),
         now=datetime(2026, 4, 4, 14, 0),
     )
 
-    event = service.build_event(world_state, goal_title=None)
+    event = service.build_event(world_state, focus_title=None)
 
     assert "5ee3f6bedd0543ee9b6e368e24214d09" not in event
     assert "惦记着" not in event
 
 
-def test_world_state_without_focus_subject_or_focused_goals_has_no_current_focus():
+def test_world_state_without_focus_subject_has_no_current_focus():
     service = WorldStateService()
 
     state = service.bootstrap(

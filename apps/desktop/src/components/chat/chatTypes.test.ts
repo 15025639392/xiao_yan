@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  hasKnowledgeReferences,
+  hasMemoryReferences,
   hasRecoverableAssistantReply,
   hasRelatedMemories,
   hasRetryableUserSend,
@@ -47,11 +47,11 @@ describe("chatTypes helpers", () => {
       id: "assistant-1",
       role: "assistant",
       content: "我按你熟悉的方式说。",
-      knowledgeReferences: [
+      memoryReferences: [
         {
-          source: "wing_xiaoyan/knowledge",
+          source: "wing_xiaoyan/long_term",
           wing: "wing_xiaoyan",
-          room: "knowledge",
+          room: "long_term",
           similarity: 0.9,
           excerpt: "用户喜欢结构化回答。",
         },
@@ -68,10 +68,10 @@ describe("chatTypes helpers", () => {
       ],
     };
 
-    expect(hasKnowledgeReferences(enrichedAssistant)).toBe(true);
+    expect(hasMemoryReferences(enrichedAssistant)).toBe(true);
     expect(hasRelatedMemories(enrichedAssistant)).toBe(true);
     expect(
-      hasKnowledgeReferences({ id: "assistant-2", role: "assistant", content: "我继续说。" }),
+      hasMemoryReferences({ id: "assistant-2", role: "assistant", content: "我继续说。" }),
     ).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from app.agent.autonomy import GoalFocusSummary, choose_next_action
+from app.agent.autonomy import FocusSummary, choose_next_action
 from app.agent.focus_timeline import list_recent_events_for_loop as _list_recent_events_for_loop
 from app.agent.focus_updates import (
     focus_command_update,
@@ -70,7 +70,7 @@ class AutonomyLoop:
         focus_summary = self._focus_summary_for(state, world_state)
         action = choose_next_action(
             state=state,
-            has_goal_backed_focus=state.focus_subject is not None,
+            has_focus_subject=state.focus_subject is not None,
             focus_summary=focus_summary,
             recent_events=[event.content for event in recent_events],
             cooldown_ready=cooldown_ready,
@@ -188,12 +188,12 @@ class AutonomyLoop:
             now=now,
         )
 
-    def _focus_summary_for(self, state, world_state) -> GoalFocusSummary | None:
+    def _focus_summary_for(self, state, world_state) -> FocusSummary | None:
         focus_title = _resolve_focus_title(state)
         if focus_title is None:
             return None
-        return GoalFocusSummary(
-            goal_title=focus_title,
+        return FocusSummary(
+            focus_title=focus_title,
             stage=world_state.focus_stage if world_state.focus_stage != "none" else "direct",
         )
 

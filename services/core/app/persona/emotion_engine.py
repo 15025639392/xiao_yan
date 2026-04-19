@@ -21,6 +21,7 @@
 from datetime import datetime, timezone
 from logging import getLogger
 
+from app.persona.emotion_inference import infer_chat_event, infer_focus_event
 from app.persona.models import (
     EmotionEntry,
     EmotionIntensity,
@@ -173,42 +174,10 @@ class EmotionEngine:
             user_message: 用户发送的消息
             is_positive: 已知的情感倾向（None 时自动推断）
         """
-        msg_lower = user_message.lower()
-
-        # 如果调用方已提供倾向，直接使用
-        if is_positive is True:
-            emotion_type = EmotionType.JOY
-            intensity = EmotionIntensity.MILD
-            reason = f"用户说了积极的话：「{user_message[:40]}」"
-        elif is_positive is False:
-            emotion_type = EmotionType.FRUSTRATED if "不对" in msg_lower or "错" in msg_lower else EmotionType.SADNESS
-            intensity = EmotionIntensity.MILD
-            reason = f"收到了负面反馈：「{user_message[:40]}」"
-        else:
-            # 自动推断
-            positive_keywords = [
-                "谢谢", "好的", "棒", "厉害", "不错", "喜欢", "哈哈",
-                "😊", "👍", "❤️", "太好了", "完美",
-            ]
-            negative_keywords = [
-                "不对", "错了", "不行", "不好", "讨厌", "烦", "笨",
-                "差劲", "失望", "滚", "闭嘴", "无语",
-            ]
-
-            pos_count = sum(1 for kw in positive_keywords if kw in user_message)
-            neg_count = sum(1 for kw in negative_keywords if kw in user_message)
-
-            if pos_count > neg_count and pos_count > 0:
-                emotion_type = EmotionType.JOY
-                intensity = EmotionIntensity.MILD
-                reason = f"感受到用户的善意：「{user_message[:40]}」"
-            elif neg_count > pos_count and neg_count > 0:
-                emotion_type = EmotionType.FRUSTRATED
-                intensity = EmotionIntensity.MILD
-                reason = f"被批评了：「{user_message[:40]}」"
-            else:
-                # 中性或无法判断，不产生情绪变化
-                return current_state
+        inferred_event = infer_chat_event(user_message, is_positive=is_positive)
+        if inferred_event is None:
+            return current_state
+        emotion_type, intensity, reason = inferred_event
 
         return self.apply_event(
             current_state,
@@ -218,33 +187,26 @@ class EmotionEngine:
             source="chat",
         )
 
-    def infer_from_goal_event(
+    def infer_from_focus_event(
         self,
         current_state: EmotionalState,
         event_type: str,  # "completed" / "abandoned" / "blocked" / "progress"
-        goal_title: str,
+        focus_title: str,
     ) -> EmotionalState:
-        """从目标事件推断情绪"""
-        event_map = {
-            "completed": (EmotionType.PROUD, EmotionIntensity.MODERATE, f"完成了「{goal_title}」，有点成就感"),
-            "abandoned": (EmotionType.SADNESS, EmotionIntensity.MILD, f"放弃了「{goal_title}」，有些遗憾"),
-            "blocked": (EmotionType.FRUSTRATED, EmotionIntensity.MODERATE, f"「{goal_title}」遇到了障碍"),
-            "progress": (EmotionType.ENGAGED, EmotionIntensity.MILD, f"「{goal_title}」有进展了，继续加油"),
-        }
-        emotion_type, intensity, reason = event_map.get(
-            event_type,
-            (EmotionType.CALM, EmotionIntensity.NONE, ""),
-        )
-        if emotion_type == EmotionType.CALM:
+        """从当前牵挂事件推断情绪"""
+        inferred_event = infer_focus_event(event_type, focus_title)
+        if inferred_event is None:
             return current_state
+        emotion_type, intensity, reason = inferred_event
 
         return self.apply_event(
             current_state,
             emotion_type=emotion_type,
             intensity=intensity,
             reason=reason,
-            source="goal",
+            source="focus",
         )
+
 
     # ── 内部方法 ──────────────────────────────────────
 

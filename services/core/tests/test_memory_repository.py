@@ -83,12 +83,12 @@ def test_repository_saves_event_and_returns_recent_items():
     assert recent[0].entry_id == event.entry_id
 
 
-def test_memory_event_defaults_knowledge_schema_fields():
+def test_memory_event_defaults_long_term_schema_fields():
     event = MemoryEvent(kind="semantic", content="她学会了新的知识点")
 
-    assert event.namespace == "knowledge"
+    assert event.namespace == "long_term"
     assert event.visibility == "internal"
-    assert event.knowledge_type is None
+    assert event.facet is None
     assert event.source_ref is None
     assert event.version_tag is None
 
@@ -190,8 +190,8 @@ def test_mempalace_repository_persists_namespace_and_visibility_metadata():
     event = MemoryEvent(
         kind="semantic",
         content="用户偏好把当前牵挂整理成清晰结构",
-        knowledge_type="preference",
-        knowledge_tags=["preference", "user-profile"],
+        facet="preference",
+        tags=["preference", "user-profile"],
         source_ref="conversation://2026-04-12/session-1",
         version_tag="v1",
         visibility="user",
@@ -201,10 +201,10 @@ def test_mempalace_repository_persists_namespace_and_visibility_metadata():
     payload = collection.get(ids=[f"memory_event:{event.entry_id}"], include=["metadatas"])
     metadata = payload["metadatas"][0]
 
-    assert metadata["memory_namespace"] == "knowledge"
+    assert metadata["namespace"] == "long_term"
     assert metadata["visibility"] == "user"
-    assert metadata["knowledge_type"] == "preference"
-    assert metadata["knowledge_tags"] == "preference,user-profile"
+    assert metadata["facet"] == "preference"
+    assert metadata["tags"] == "preference,user-profile"
     assert metadata["source_ref"] == "conversation://2026-04-12/session-1"
     assert metadata["version_tag"] == "v1"
 

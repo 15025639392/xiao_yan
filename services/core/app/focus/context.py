@@ -7,7 +7,7 @@ from app.domain.models import BeingState, FocusSubject
 
 @dataclass(slots=True)
 class FocusContext:
-    goal_title: str
+    focus_title: str
     source_kind: str
     source_label: str
     reason_kind: str
@@ -18,7 +18,7 @@ class FocusContext:
 
     def to_payload(self) -> dict[str, str]:
         return {
-            "goal_title": self.goal_title,
+            "focus_title": self.focus_title,
             "source_kind": self.source_kind,
             "source_label": self.source_label,
             "reason_kind": self.reason_kind,
@@ -41,11 +41,11 @@ def build_focus_context(
 def _focus_subject_context(
     focus_subject: FocusSubject,
 ) -> FocusContext | None:
-    if focus_subject.kind in {"goal", "goal_backed_attention"}:
+    if focus_subject.kind == "focus_trace":
         reason_kind, reason_label = _reason_descriptor_from_subject(focus_subject)
         return FocusContext(
-            goal_title=focus_subject.title,
-            source_kind="goal_backed_attention",
+            focus_title=focus_subject.title,
+            source_kind="focus_trace",
             source_label="一条挂在手上、但不等于目标本身的推进线索",
             reason_kind=reason_kind,
             reason_label=reason_label,
@@ -53,7 +53,7 @@ def _focus_subject_context(
 
     if focus_subject.kind == "user_topic":
         return FocusContext(
-            goal_title=focus_subject.title,
+            focus_title=focus_subject.title,
             source_kind="user_topic_focus",
             source_label="刚被你这轮话题重新牵动的事",
             reason_kind="user_topic_lingering",
@@ -62,7 +62,7 @@ def _focus_subject_context(
 
     if focus_subject.kind == "lingering":
         return FocusContext(
-            goal_title=focus_subject.title,
+            focus_title=focus_subject.title,
             source_kind="lingering_focus",
             source_label="刚发生过、但心里还没完全放下的事",
             reason_kind="lingering_attention",
@@ -70,7 +70,7 @@ def _focus_subject_context(
         )
 
     return FocusContext(
-        goal_title=focus_subject.title,
+        focus_title=focus_subject.title,
         source_kind="active_focus",
         source_label="她此刻正在挂着的事",
         reason_kind="active_focus_reason",
@@ -81,4 +81,4 @@ def _focus_subject_context(
 def _reason_descriptor_from_subject(focus_subject: FocusSubject) -> tuple[str, str]:
     if focus_subject.why_now.strip():
         return "focus_subject_reason", focus_subject.why_now
-    return "goal_still_active", "这件事还没完成，也还没有暂停或放下"
+    return "focus_still_active", "这件事还没完成，也还没有暂停或放下"

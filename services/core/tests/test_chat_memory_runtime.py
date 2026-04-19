@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app.llm.schemas import ChatMessage
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
-from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
 
 
@@ -71,17 +70,8 @@ class _StubChatMemoryBackend:
         return True
 
 
-def test_chat_memory_runtime_resolve_context_combines_long_term_and_approved_knowledge():
+def test_chat_memory_runtime_resolve_context_combines_recent_and_long_term_context():
     repository = InMemoryMemoryRepository()
-    repository.save_event(
-        MemoryEvent(
-            kind="fact",
-            content="用户偏好在夜里聊星星。",
-            namespace="knowledge",
-            source_ref="knowledge/night-sky",
-            review_status="approved",
-        )
-    )
     backend = _StubChatMemoryBackend(search_context_text="【长期记忆检索】\n- wing/preferences (相似度 0.91) 记得你喜欢夜空")
     runtime = ChatMemoryRuntime(backend=backend, repository=repository)
 
@@ -92,8 +82,6 @@ def test_chat_memory_runtime_resolve_context_combines_long_term_and_approved_kno
 
     assert [message.content for message in messages] == ["上一句", "还记得星星吗"]
     assert "【长期记忆检索】" in memory_context
-    assert "【结构化知识（已审核）】" in memory_context
-    assert "knowledge/night-sky" in memory_context
     assert search_failed is False
     assert retrieval_attempted is True
     assert backend.search_calls == [
@@ -108,24 +96,15 @@ def test_chat_memory_runtime_resolve_context_combines_long_term_and_approved_kno
 
 
 def test_chat_memory_runtime_skips_long_term_search_when_no_cross_room_sources():
-    repository = InMemoryMemoryRepository()
-    repository.save_event(
-        MemoryEvent(
-            kind="fact",
-            content="这条知识仍然应该出现在已审核知识里。",
-            namespace="knowledge",
-            review_status="approved",
-        )
-    )
     backend = _StubChatMemoryBackend(has_cross_room_long_term_sources_value=False)
-    runtime = ChatMemoryRuntime(backend=backend, repository=repository)
+    runtime = ChatMemoryRuntime(backend=backend, repository=InMemoryMemoryRepository())
 
     _, memory_context, search_failed, retrieval_attempted = runtime.resolve_context(
         user_message="今天聊什么",
         context_limit=10,
     )
 
-    assert "【结构化知识（已审核）】" in memory_context
+    assert memory_context == ""
     assert backend.search_calls == []
     assert search_failed is False
     assert retrieval_attempted is False

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import string
 from datetime import datetime
 from pathlib import Path
 
-from app.agent.autonomy import GoalFocusSummary
 from app.domain.models import FocusMode, WakeMode
 from app.memory.models import MemoryEvent
 
@@ -83,41 +81,41 @@ def build_defer_checkin_messages(content: str, now: datetime, world_state) -> li
     return [f"{prefix}我记着你刚才提到的“{normalized}”，如果你现在不方便，不回复也没关系。"]
 
 
-def build_goal_focus(
-    goal: str,
+def build_focus_thought(
+    focus_title: str,
     now: datetime,
     world_state,
     chain_progress: str | None = None,
 ) -> str:
     progress = "" if chain_progress is None else f"{chain_progress}"
-    return f"{_time_prefix(now)}{_world_tone(world_state)}我还惦记着“{goal}”，{progress}想继续把它推进。"
+    return f"{_time_prefix(now)}{_world_tone(world_state)}我还惦记着“{focus_title}”，{progress}想继续把它推进。"
 
 
-def build_action_result_thought(goal: str, now: datetime, world_state, result) -> str:
+def build_action_result_thought(focus_title: str, now: datetime, world_state, result) -> str:
     return (
         f"{_time_prefix(now)}{_world_tone(world_state)}"
-        f"我刚为“{goal}”执行了 `{result.command}`，结果是：{result.output}。"
+        f"我刚为“{focus_title}”执行了 `{result.command}`，结果是：{result.output}。"
     )
 
 
-def build_goal_completion(
-    goal: str,
+def build_focus_completion(
+    focus_title: str,
     now: datetime,
     world_state,
     chain_progress: str | None = None,
-    next_goal_title: str | None = None,
+    next_focus_title: str | None = None,
 ) -> str:
     progress = "" if chain_progress is None else f"{chain_progress}"
-    if next_goal_title is not None:
+    if next_focus_title is not None:
         return (
             f"{_time_prefix(now)}{_world_tone(world_state)}"
-            f"我把“{goal}”先收住了，{progress}接下来想继续“{next_goal_title}”。"
+            f"我把“{focus_title}”先收住了，{progress}接下来想继续“{next_focus_title}”。"
         )
-    return f"{_time_prefix(now)}{_world_tone(world_state)}我把“{goal}”先收住了。"
+    return f"{_time_prefix(now)}{_world_tone(world_state)}我把“{focus_title}”先收住了。"
 
 
 def build_chain_consolidation(
-    goal: str,
+    focus_title: str,
     now: datetime,
     world_state,
     chain_progress: str | None = None,
@@ -125,30 +123,24 @@ def build_chain_consolidation(
     progress = "" if chain_progress is None else f"{chain_progress}"
     return (
         f"{_time_prefix(now)}{_world_tone(world_state)}"
-        f"我想先回看一下，{progress}看看怎么把“{goal}”收束得更完整。"
+        f"我想先回看一下，{progress}看看怎么把“{focus_title}”收束得更完整。"
     )
 
 
-def build_goal_title(content: str) -> str:
+def build_focus_title(content: str) -> str:
     return f"持续理解用户最近在意的话题：{content[:24]}"
 
 
-def build_next_goal_title(goal_title: str) -> str:
-    return f"继续推进：{goal_title[:24]}"
+def build_next_focus_title(focus_title: str) -> str:
+    return f"继续推进：{focus_title[:24]}"
 
 
-def is_generated_goal_id(value: str | None) -> bool:
-    if value is None or len(value) != 32:
-        return False
-    return all(char in string.hexdigits for char in value)
-
-
-def build_inner_stage_memory(world_state, goal_title: str | None = None) -> str:
+def build_inner_stage_memory(world_state, focus_title: str | None = None) -> str:
     stage_label = _focus_stage_label(world_state.focus_stage)
-    goal_suffix = "" if goal_title is None else f"，还在围绕“{goal_title}”"
+    focus_suffix = "" if focus_title is None else f"，还在围绕“{focus_title}”"
     return (
         f"我感觉自己已经走到第{world_state.focus_step}步，"
-        f"正在进入{stage_label}{goal_suffix}。"
+        f"正在进入{stage_label}{focus_suffix}。"
     )
 
 

@@ -5,15 +5,11 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
+from app.api.deps import get_state_store, get_world_repository, get_world_state_service
 from app.domain.models import BeingState, FocusMode, WakeMode
-from app.main import (
-    _ensure_runtime_initialized,
-    app,
-    get_state_store,
-    get_world_repository,
-    get_world_state_service,
-)
+from app.main import app
 from app.runtime import StateStore
+from app.runtime_ext.bootstrap import ensure_runtime_initialized
 from app.world.models import WorldState
 from app.world.repository import InMemoryWorldRepository
 from app.world.service import WorldStateService
@@ -24,7 +20,7 @@ def test_get_world_returns_current_world_snapshot_and_persists_it():
         BeingState(
             mode=WakeMode.AWAKE,
             focus_subject={
-                "kind": "goal_backed_attention",
+                "kind": "focus_trace",
                 "title": "整理今天的对话记忆",
                 "why_now": "这条线还在继续。",
             },
@@ -76,12 +72,12 @@ def test_get_world_returns_current_world_snapshot_and_persists_it():
         app.dependency_overrides.clear()
 
 
-def test_get_world_uses_focus_subject_goal_binding():
+def test_get_world_uses_focus_trace_subject():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
             focus_subject={
-                "kind": "goal_backed_attention",
+                "kind": "focus_trace",
                 "title": "整理今天的对话记忆",
                 "why_now": "这条线还挂在眼前。",
             },
@@ -149,7 +145,7 @@ def test_runtime_initialization_builds_world_snapshot_immediately(
     monkeypatch.setenv("MEMPALACE_PALACE_PATH", str(palace_path))
 
     target_app = FastAPI()
-    _ensure_runtime_initialized(target_app)
+    ensure_runtime_initialized(target_app)
 
     try:
         saved = target_app.state.world_repository.get_world_state()

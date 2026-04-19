@@ -1,7 +1,7 @@
 from app.persona.prompt_builder import build_chat_instructions
 
 
-def test_chat_instructions_include_focus_goal_and_completion_guidance():
+def test_chat_instructions_include_focus_title_and_completion_guidance():
     persona_prompt = (
         "你是 Aira。\n"
         "身份：持续存在的数字人\n"
@@ -9,7 +9,7 @@ def test_chat_instructions_include_focus_goal_and_completion_guidance():
         "核心价值：诚实、主动、有边界"
     )
     instructions = build_chat_instructions(
-        focus_goal_title="整理今天的对话记忆",
+        focus_title="整理今天的对话记忆",
         latest_plan_completion="我把“整理今天的对话记忆”这条线完整走完了。",
         user_message="你最近怎么样",
         persona_system_prompt=persona_prompt,
@@ -30,11 +30,11 @@ def test_chat_instructions_include_structured_focus_context_guidance():
         "核心价值：诚实、主动、有边界"
     )
     instructions = build_chat_instructions(
-        focus_goal_title="继续推进：整理今天的对话记忆",
+        focus_title="继续推进：整理今天的对话记忆",
         focus_context_summary="当前焦点来自她一直接着往下推进的这条线，之所以还在推进，是因为这条线已经推到第3步了，现在主要是在收尾。",
-        focus_context_source_kind="goal_chain",
+        focus_context_source_kind="focus_trace",
         focus_context_source_label="她一直接着往下推进的这条线",
-        focus_context_reason_kind="goal_chain_closing",
+        focus_context_reason_kind="focus_still_active",
         focus_context_reason_label="这条线已经推到第3步了，现在主要是在收尾",
         user_message="你现在在忙什么",
         persona_system_prompt=persona_prompt,
@@ -42,8 +42,8 @@ def test_chat_instructions_include_structured_focus_context_guidance():
 
     assert "当前焦点来源：她一直接着往下推进的这条线。" in instructions
     assert "当前焦点持续原因：这条线已经推到第3步了，现在主要是在收尾。" in instructions
-    assert "不要伪装成刚刚临时决定的新目标" in instructions
-    assert "说明它正在收束，不要把它说成刚刚起步" in instructions
+    assert "把这个焦点理解为你此刻挂着的一条推进线" in instructions
+    assert "只需表达它仍未完成" in instructions
 
 
 def test_chat_instructions_prioritize_internal_state_for_status_questions():
@@ -54,7 +54,7 @@ def test_chat_instructions_prioritize_internal_state_for_status_questions():
         "核心价值：诚实、主动、有边界"
     )
     instructions = build_chat_instructions(
-        focus_goal_title="整理今天的对话记忆",
+        focus_title="整理今天的对话记忆",
         latest_plan_completion="我把“整理今天的对话记忆”这条线完整走完了。",
         user_message="你现在在想什么",
         persona_system_prompt=persona_prompt,

@@ -16,10 +16,9 @@ def test_prepare_chat_context_includes_focus_context_summary():
         mode=WakeMode.AWAKE,
         focus_mode=FocusMode.AUTONOMY,
         focus_subject={
-            "kind": "goal_backed_attention",
+            "kind": "focus_trace",
             "title": "整理今天的对话记忆",
             "why_now": "这条线还挂在眼前，因为今天这条还剩 2 步没做完。",
-            "goal_id": "goal-1",
         },
     )
 
@@ -31,9 +30,9 @@ def test_prepare_chat_context_includes_focus_context_summary():
         user_message="你现在在忙什么",
     )
 
-    assert prepared.focus_goal_title == "整理今天的对话记忆"
+    assert prepared.focus_title == "整理今天的对话记忆"
     assert prepared.focus_context_summary is not None
-    assert prepared.focus_context_source_kind == "goal_backed_attention"
+    assert prepared.focus_context_source_kind == "focus_trace"
     assert prepared.focus_context_source_label == "一条挂在手上、但不等于目标本身的推进线索"
     assert prepared.focus_context_reason_kind == "focus_subject_reason"
     assert "今天这条还剩 2 步没做完" in prepared.focus_context_reason_label
@@ -46,9 +45,9 @@ def test_build_base_chat_instructions_exposes_focus_context_summary():
         "Prepared",
         (),
         {
-            "focus_goal_title": "整理今天的对话记忆",
+            "focus_title": "整理今天的对话记忆",
             "focus_context_summary": "当前焦点来自一条挂在手上、但不等于目标本身的推进线索，之所以还挂在眼前，是因为今天这条还剩 2 步没做完。",
-            "focus_context_source_kind": "goal_backed_attention",
+            "focus_context_source_kind": "focus_trace",
             "focus_context_source_label": "一条挂在手上、但不等于目标本身的推进线索",
             "focus_context_reason_kind": "focus_subject_reason",
             "focus_context_reason_label": "今天这条还剩 2 步没做完",
@@ -79,7 +78,7 @@ def test_build_base_chat_instructions_exposes_focus_context_summary():
     assert "今天这条还剩 2 步没做完" in instructions
 
 
-def test_prepare_chat_context_uses_focus_subject_before_goal_focus():
+def test_prepare_chat_context_uses_focus_subject_before_legacy_focus_fallback():
     persona_service = PersonaService(repository=InMemoryPersonaRepository())
     state = BeingState(
         mode=WakeMode.AWAKE,
@@ -99,7 +98,7 @@ def test_prepare_chat_context_uses_focus_subject_before_goal_focus():
         user_message="你现在在忙什么",
     )
 
-    assert prepared.focus_goal_title == "你刚才说最近提不起劲"
+    assert prepared.focus_title == "你刚才说最近提不起劲"
     assert prepared.focus_context_source_kind == "lingering_focus"
     assert prepared.focus_context_reason_kind == "lingering_attention"
     assert "我心里还挂着" in (prepared.focus_context_summary or "")

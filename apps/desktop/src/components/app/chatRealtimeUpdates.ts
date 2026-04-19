@@ -61,7 +61,7 @@ export function applyChatRealtimeEvent(
         event.payload.assistant_message_id,
         event.payload.content,
         event.payload.sequence,
-        event.payload.knowledge_references,
+        event.payload.memory_references,
         event.payload.reasoning_session_id,
         event.payload.reasoning_state,
         event.payload.request_key,

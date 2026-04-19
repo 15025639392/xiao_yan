@@ -149,7 +149,7 @@
 例如：
 
 - 是否展开 memory
-- 是否展开 knowledge
+- 是否展开 memory references
 - hover / selected / highlighted
 - “本条消息是否显示调试块”
 

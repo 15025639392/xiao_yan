@@ -37,7 +37,6 @@ def test_mempalace_adapter_formats_search_results_into_prompt_context():
         }
 
     adapter = MemPalaceAdapter(
-        enabled=True,
         palace_path="/tmp/palace",
         results_limit=2,
         search_backend=_stub_search,
@@ -56,7 +55,6 @@ def test_mempalace_adapter_search_gracefully_degrades_on_error():
         raise RuntimeError("boom")
 
     adapter = MemPalaceAdapter(
-        enabled=True,
         palace_path="/tmp/palace",
         search_backend=_broken_search,
     )
@@ -84,7 +82,6 @@ def test_mempalace_adapter_search_context_can_exclude_current_room_hits():
         }
 
     adapter = MemPalaceAdapter(
-        enabled=True,
         palace_path="/tmp/palace",
         room="chat_exchange",
         search_backend=_stub_search,
@@ -110,7 +107,6 @@ def test_mempalace_adapter_search_context_returns_empty_when_only_current_room_h
         }
 
     adapter = MemPalaceAdapter(
-        enabled=True,
         palace_path="/tmp/palace",
         room="chat_exchange",
         search_backend=_stub_search,
@@ -126,13 +122,12 @@ def test_mempalace_adapter_search_context_respects_max_hits_override():
         captured_limits.append(limit)
         return {
             "results": [
-                {"text": "记忆A", "wing": "wing_xiaoyan", "room": "knowledge", "similarity": 0.9},
-                {"text": "记忆B", "wing": "wing_xiaoyan", "room": "knowledge", "similarity": 0.8},
+                {"text": "记忆A", "wing": "wing_xiaoyan", "room": "long_term", "similarity": 0.9},
+                {"text": "记忆B", "wing": "wing_xiaoyan", "room": "long_term", "similarity": 0.8},
             ]
         }
 
     adapter = MemPalaceAdapter(
-        enabled=True,
         palace_path="/tmp/palace",
         results_limit=5,
         search_backend=_stub_search,
@@ -146,7 +141,7 @@ def test_mempalace_adapter_search_context_respects_max_hits_override():
 
 
 def test_mempalace_adapter_build_chat_messages_uses_turn_based_history_limit():
-    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace")
+    adapter = MemPalaceAdapter(palace_path="/tmp/palace")
     latest_first_history = [
         {"id": "a6", "role": "assistant", "content": "a6", "created_at": None, "session_id": None},
         {"id": "u6", "role": "user", "content": "u6", "created_at": None, "session_id": None},
@@ -168,7 +163,7 @@ def test_mempalace_adapter_build_chat_messages_uses_turn_based_history_limit():
 
 
 def test_mempalace_adapter_build_chat_messages_stops_when_budget_reached():
-    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace")
+    adapter = MemPalaceAdapter(palace_path="/tmp/palace")
     chunk = "长文本" * 100  # around 300 chars
     latest_first_history = [
         {"id": "a3", "role": "assistant", "content": chunk, "created_at": None, "session_id": None},
@@ -188,7 +183,7 @@ def test_mempalace_adapter_build_chat_messages_stops_when_budget_reached():
 
 
 def test_mempalace_adapter_build_chat_messages_applies_recent_weight():
-    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace")
+    adapter = MemPalaceAdapter(palace_path="/tmp/palace")
     latest_first_history = [
         {"id": "a4", "role": "assistant", "content": "a4", "created_at": None, "session_id": None},
         {"id": "u4", "role": "user", "content": "u4", "created_at": None, "session_id": None},
@@ -233,7 +228,6 @@ def test_mempalace_adapter_record_exchange_calls_write_backend():
         return True
 
     adapter = MemPalaceAdapter(
-        enabled=True,
         palace_path="/tmp/palace",
         write_backend=_stub_write,
     )
@@ -277,7 +271,6 @@ def test_mempalace_adapter_does_not_fallback_to_local_history_when_write_backend
         raise RuntimeError("write unavailable")
 
     adapter = MemPalaceAdapter(
-        enabled=True,
         palace_path="/tmp/palace",
         write_backend=_broken_write,
     )
@@ -314,7 +307,7 @@ def test_mempalace_adapter_list_recent_chat_messages_keeps_session_id_from_metad
                 ],
             }
 
-    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace")
+    adapter = MemPalaceAdapter(palace_path="/tmp/palace")
     adapter._get_collection = lambda create: _FakeCollection()  # type: ignore[method-assign]
 
     recent = adapter.list_recent_chat_messages(limit=10, offset=0)
@@ -343,7 +336,7 @@ def test_mempalace_adapter_cross_room_source_probe_ignores_event_room():
                 ]
             }
 
-    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace", room="chat_exchange")
+    adapter = MemPalaceAdapter(palace_path="/tmp/palace", room="chat_exchange")
     adapter._get_collection = lambda create: _FakeCollection()  # type: ignore[method-assign]
 
     assert adapter.has_cross_room_long_term_sources(cache_seconds=1) is False
@@ -355,11 +348,11 @@ def test_mempalace_adapter_cross_room_source_probe_detects_non_event_room():
             return {
                 "metadatas": [
                     {"wing": "wing_xiaoyan", "room": "chat_exchange"},
-                    {"wing": "wing_xiaoyan", "room": "knowledge"},
+                    {"wing": "wing_xiaoyan", "room": "long_term"},
                 ]
             }
 
-    adapter = MemPalaceAdapter(enabled=True, palace_path="/tmp/palace", room="chat_exchange")
+    adapter = MemPalaceAdapter(palace_path="/tmp/palace", room="chat_exchange")
     adapter._get_collection = lambda create: _FakeCollection()  # type: ignore[method-assign]
 
     assert adapter.has_cross_room_long_term_sources(cache_seconds=1) is True

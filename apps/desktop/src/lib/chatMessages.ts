@@ -13,6 +13,7 @@ import {
   clearRuntimeTransientState,
   createAssistantEntry,
 } from "./chatMessageMutations";
+import { resolveIncomingReasoningSessionId, resolveIncomingReasoningState } from "./chatMessageReasoning";
 
 export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage[]): ChatEntry[] {
   const merged = [...current];
@@ -191,29 +192,6 @@ export function mergeMessages(current: ChatEntry[], incoming: ChatHistoryMessage
   return merged;
 }
 
-function resolveIncomingReasoningSessionId(message: ChatHistoryMessage): string | undefined {
-  if (message.role !== "assistant") {
-    return undefined;
-  }
-  const directSessionId =
-    typeof message.reasoning_session_id === "string" ? message.reasoning_session_id.trim() : "";
-  if (directSessionId) {
-    return directSessionId;
-  }
-  const fromStateSessionId =
-    message.reasoning_state != null && typeof message.reasoning_state.session_id === "string"
-      ? message.reasoning_state.session_id.trim()
-      : "";
-  return fromStateSessionId || undefined;
-}
-
-function resolveIncomingReasoningState(message: ChatHistoryMessage): ChatEntry["reasoningState"] | undefined {
-  if (message.role !== "assistant" || message.reasoning_state == null) {
-    return undefined;
-  }
-  return message.reasoning_state;
-}
-
 export function upsertAssistantMessage(
   current: ChatEntry[],
   assistantMessageId: string,
@@ -221,7 +199,7 @@ export function upsertAssistantMessage(
   state?: ChatEntry["state"],
   requestMessage?: string,
   sequence?: number,
-  knowledgeReferences?: ChatEntry["knowledgeReferences"],
+  memoryReferences?: ChatEntry["memoryReferences"],
   reasoningSessionId?: string,
   reasoningState?: ChatEntry["reasoningState"],
   requestKey?: string,
@@ -237,7 +215,7 @@ export function upsertAssistantMessage(
               state,
               requestKey,
               requestMessage,
-              knowledgeReferences,
+              memoryReferences,
               reasoningSessionId,
               reasoningState,
               streamSequence: maxStreamSequence(message.streamSequence, sequence),
@@ -254,7 +232,7 @@ export function upsertAssistantMessage(
       state,
       requestKey,
       requestMessage,
-      knowledgeReferences,
+      memoryReferences,
       reasoningSessionId,
       reasoningState,
       streamSequence: sequence,
@@ -350,7 +328,7 @@ export function finalizeAssistantMessage(
   assistantMessageId: string,
   content: string,
   sequence?: number,
-  knowledgeReferences?: ChatEntry["knowledgeReferences"],
+  memoryReferences?: ChatEntry["memoryReferences"],
   reasoningSessionId?: string,
   reasoningState?: ChatEntry["reasoningState"],
   requestKey?: string,
@@ -370,7 +348,7 @@ export function finalizeAssistantMessage(
               content,
               state: undefined,
               requestKey,
-              knowledgeReferences,
+              memoryReferences,
               reasoningSessionId,
               reasoningState,
               streamSequence: maxStreamSequence(message.streamSequence, sequence),
@@ -388,7 +366,7 @@ export function finalizeAssistantMessage(
     undefined,
     undefined,
     sequence,
-    knowledgeReferences,
+    memoryReferences,
     reasoningSessionId,
     reasoningState,
     requestKey,

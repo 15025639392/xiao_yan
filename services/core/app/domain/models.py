@@ -21,7 +21,6 @@ class FocusSubject(BaseModel):
     title: str
     why_now: str
     source_ref: str | None = None
-    goal_id: str | None = None
 
 
 class BeingState(BaseModel):

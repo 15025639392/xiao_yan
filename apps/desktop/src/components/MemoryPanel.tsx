@@ -8,16 +8,13 @@ import { MemoryStatsHeader } from "./memory/MemoryStatsHeader";
 import { MemoryCreateForm, MemoryToolbar } from "./memory/MemoryToolbar";
 import { useMemoryPanelState } from "./memory/useMemoryPanel";
 
-export type MemoryPanelMode = "all" | "knowledge";
-
 type MemoryPanelProps = {
   assistantName?: string;
   className?: string;
-  mode?: MemoryPanelMode;
 };
 
-export function MemoryPanel({ assistantName = "小晏", className, mode = "all" }: MemoryPanelProps) {
-  const state = useMemoryPanelState(mode);
+export function MemoryPanel({ assistantName = "小晏", className }: MemoryPanelProps) {
+  const state = useMemoryPanelState();
 
   return (
     <section className={`memory-panel ${className ?? ""}`}>

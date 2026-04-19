@@ -342,12 +342,12 @@ class TestEmotionEngine:
         # 中性消息不应该改变情绪
         assert new_state is calm_state
 
-    def test_infer_from_goal_completed(self, engine, calm_state):
-        new_state = engine.infer_from_goal_event(calm_state, "completed", "学习 Python")
+    def test_infer_from_focus_completed(self, engine, calm_state):
+        new_state = engine.infer_from_focus_event(calm_state, "completed", "学习 Python")
         assert new_state.primary_emotion == EmotionType.PROUD
 
-    def test_infer_from_goal_abandoned(self, engine, calm_state):
-        new_state = engine.infer_from_goal_event(calm_state, "abandoned", "旧项目")
+    def test_infer_from_focus_abandoned(self, engine, calm_state):
+        new_state = engine.infer_from_focus_event(calm_state, "abandoned", "旧项目")
         assert new_state.primary_emotion == EmotionType.SADNESS
 
     def test_personality_adjusts_intensity(self):
@@ -464,8 +464,8 @@ class TestPersonaService:
         new_state = service.infer_chat_emotion("太棒了！厉害！")
         assert isinstance(new_state, EmotionalState)
 
-    def test_infer_goal_emotion_completed(self, service):
-        new_state = service.infer_goal_emotion("completed", "学习目标")
+    def test_infer_focus_emotion_completed(self, service):
+        new_state = service.infer_focus_emotion("completed", "学习目标")
         assert new_state.primary_emotion == EmotionType.PROUD
 
 
@@ -481,7 +481,7 @@ class TestPromptBuilderWithPersona:
         """没有注入人格 prompt 时直接失败。"""
         with pytest.raises(ValueError, match="persona_system_prompt is required"):
             build_chat_instructions(
-                focus_goal_title="测试目标",
+                focus_title="测试目标",
                 user_message="你好",
             )
 
@@ -494,7 +494,7 @@ class TestPromptBuilderWithPersona:
             "【此刻心情】\n你现在有点兴奋。"
         )
         instructions = build_chat_instructions(
-            focus_goal_title="测试目标",
+            focus_title="测试目标",
             persona_system_prompt=persona_prompt,
         )
         assert "小光" in instructions
@@ -508,7 +508,7 @@ class TestPromptBuilderWithPersona:
         """人格注入后，原有的 guidance 仍然保留"""
         persona_prompt = "你是 测试者。\n身份：测试用"
         instructions = build_chat_instructions(
-            focus_goal_title="焦点目标",
+            focus_title="焦点目标",
             latest_plan_completion="完成了某事",
             user_message="你最近在忙什么",
             persona_system_prompt=persona_prompt,

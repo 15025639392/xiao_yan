@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from logging import Logger
-from typing import Any
 
 from app.api.chat_reasoning import ChatReasoningController
 from app.focus.effort import chat_reply_effort
-from app.llm.schemas import ChatMessage, ChatReasoningState, ChatSubmissionResult
+from app.llm.schemas import ChatReasoningState, ChatSubmissionResult
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
-from app.memory.extractor import MemoryExtractor
-from app.memory.models import MemoryEvent
-from app.memory.observability import KnowledgeObservabilityTracker
+from app.memory.observability import MemoryObservabilityTracker
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
 
@@ -62,49 +59,17 @@ def mirror_exchange_to_memory_repository(
     )
 
 
-def extract_structured_knowledge_events(
-    *,
-    memory_repository: MemoryRepository,
-    user_message: str,
-    assistant_response: str,
-    assistant_session_id: str,
-    personality: Any,
-) -> int:
-    user_text = (user_message or "").strip()
-    assistant_text = (assistant_response or "").strip()
-    if not user_text or not assistant_text:
-        return 0
-
-    extractor = MemoryExtractor(personality=personality)
-    events = extractor.extract_from_dialogue(
-        [
-            ChatMessage(role="user", content=user_text),
-            ChatMessage(role="assistant", content=assistant_text),
-        ],
-        {
-            "source_ref": f"chat://{assistant_session_id}",
-            "version_tag": "v1",
-            "topic": compact_text(user_text, limit=40),
-        },
-    )
-    for event in events:
-        memory_repository.save_event(event)
-    return len(events)
-
-
 def finalize_chat_submission(
     *,
     assistant_message_id: str,
     chat_memory_runtime: ChatMemoryRuntime,
-    knowledge_extraction_enabled: bool,
     logger: Logger,
     memory_repository: MemoryRepository,
-    personality: Any,
     reasoning: ChatReasoningController,
     reasoning_state: ChatReasoningState | None,
     state_store: StateStore,
     submission: ChatSubmissionResult,
-    tracker: KnowledgeObservabilityTracker | None,
+    tracker: MemoryObservabilityTracker | None,
     user_message: str,
     output_text: str,
     request_key: str | None = None,
@@ -154,29 +119,15 @@ def finalize_chat_submission(
     except Exception as exc:  # noqa: BLE001
         logger.warning("mirror exchange to memory repository failed: %s", exc)
 
-    if knowledge_extraction_enabled:
-        try:
-            extract_structured_knowledge_events(
-                memory_repository=memory_repository,
-                user_message=user_message,
-                assistant_response=output_text,
-                assistant_session_id=assistant_message_id,
-                personality=personality,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("structured knowledge extraction failed: %s", exc)
-
     latest_state = state_store.get()
     next_thought = build_post_chat_thought(user_message, output_text)
-    focus_goal_id = latest_state.focus_subject.goal_id if latest_state.focus_subject is not None else None
-    focus_goal_title = None
+    focus_title = None
     if latest_state.focus_subject is not None and latest_state.focus_subject.title.strip():
-        focus_goal_title = latest_state.focus_subject.title
+        focus_title = latest_state.focus_subject.title
     updates: dict[str, object] = {"current_thought": next_thought}
-    if focus_goal_title is not None:
+    if focus_title is not None:
         updates["focus_effort"] = chat_reply_effort(
-            goal_id=focus_goal_id,
-            goal_title=focus_goal_title,
+            focus_title=focus_title,
         )
     state_store.set(latest_state.model_copy(update=updates))
 

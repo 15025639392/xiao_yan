@@ -2,8 +2,9 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_memory_repository, get_state_store
 from app.domain.models import BeingState, WakeMode
-from app.main import app, get_memory_repository, get_state_store
+from app.main import app
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore

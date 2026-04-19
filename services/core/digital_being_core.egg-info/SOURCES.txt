@@ -19,7 +19,6 @@ app/api/chat_skills.py
 app/api/chat_tool_calls.py
 app/api/config_routes.py
 app/api/deps.py
-app/api/knowledge_routes.py
 app/api/memory_routes.py
 app/api/persona_routes.py
 app/api/runtime_routes.py

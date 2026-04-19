@@ -11,18 +11,18 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
-from app.domain.models import BeingState, FocusMode, WakeMode
-from app.llm.schemas import ChatMessage
-from app.llm.schemas import ChatResult
-from app.main import (
-    app,
+from app.api.deps import (
     get_chat_gateway,
     get_mempalace_adapter,
     get_memory_repository,
     get_state_store,
 )
+from app.domain.models import BeingState, FocusMode, WakeMode
+from app.llm.schemas import ChatMessage
+from app.llm.schemas import ChatResult
+from app.main import app
 from app.memory.models import MemoryEvent
-from app.memory.observability import KnowledgeObservabilityTracker
+from app.memory.observability import MemoryObservabilityTracker
 from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore
 from app.runtime_ext.runtime_config import get_runtime_config
@@ -588,171 +588,6 @@ def test_post_chat_round_trips_request_key_into_response_and_runtime_messages():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_extracts_structured_knowledge_events_when_flag_enabled():
-    memory_repository = InMemoryMemoryRepository()
-    gateway = StubGateway()
-    mempalace_adapter = StubMemPalaceAdapter()
-
-    def override_gateway():
-        try:
-            yield gateway
-        finally:
-            gateway.close()
-
-    def override_memory_repository():
-        return memory_repository
-
-    def override_mempalace_adapter():
-        return mempalace_adapter
-
-    app.dependency_overrides[get_chat_gateway] = override_gateway
-    app.dependency_overrides[get_memory_repository] = override_memory_repository
-    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
-
-    try:
-        client = TestClient(app)
-        with patch.dict(os.environ, {"CHAT_KNOWLEDGE_EXTRACTION_ENABLED": "1"}, clear=False):
-            response = client.post("/chat", json={"message": "我喜欢结构化输出"})
-        assert response.status_code == 200
-
-        recent = memory_repository.list_recent(limit=20, status="all")
-        extracted = [event for event in recent if event.kind != "chat"]
-        assert any(event.kind == "semantic" and event.knowledge_type == "preference" for event in extracted)
-        assert any(event.namespace == "knowledge" for event in extracted)
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_post_chat_injects_only_approved_structured_knowledge_into_instructions():
-    memory_repository = InMemoryMemoryRepository()
-    gateway = StubGateway()
-    mempalace_adapter = StubMemPalaceAdapter(search_context_text="")
-
-    memory_repository.save_event(
-        MemoryEvent(
-            kind="fact",
-            content="已审核知识：用户偏好先结论后细节",
-            namespace="knowledge",
-            review_status="approved",
-            source_ref="manual://knowledge",
-        )
-    )
-    memory_repository.save_event(
-        MemoryEvent(
-            kind="fact",
-            content="待审核知识：用户偏好超长回复",
-            namespace="knowledge",
-            review_status="pending_review",
-            source_ref="extract://chat",
-        )
-    )
-    memory_repository.save_event(
-        MemoryEvent(
-            kind="fact",
-            content="驳回知识：用户不需要上下文",
-            namespace="knowledge",
-            review_status="rejected",
-            source_ref="extract://chat",
-        )
-    )
-
-    def override_gateway():
-        try:
-            yield gateway
-        finally:
-            gateway.close()
-
-    def override_memory_repository():
-        return memory_repository
-
-    def override_mempalace_adapter():
-        return mempalace_adapter
-
-    app.dependency_overrides[get_chat_gateway] = override_gateway
-    app.dependency_overrides[get_memory_repository] = override_memory_repository
-    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
-
-    try:
-        client = TestClient(app)
-        response = client.post("/chat", json={"message": "今天继续聊输出方式"})
-        assert response.status_code == 200
-        instructions = gateway.last_instructions or ""
-        assert "已审核知识：用户偏好先结论后细节" in instructions
-        assert "待审核知识：用户偏好超长回复" not in instructions
-        assert "驳回知识：用户不需要上下文" not in instructions
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_post_chat_prioritizes_relevant_approved_knowledge_for_instructions():
-    memory_repository = InMemoryMemoryRepository()
-    gateway = StubGateway()
-    mempalace_adapter = StubMemPalaceAdapter(search_context_text="")
-    runtime_config = get_runtime_config()
-    original_context_limit = runtime_config.chat_context_limit
-    runtime_config.chat_context_limit = 3
-    now = datetime.now(timezone.utc)
-
-    memory_repository.save_event(
-        MemoryEvent(
-            kind="fact",
-            content="输出规范：先给结论再给细节",
-            namespace="knowledge",
-            review_status="approved",
-            source_ref="manual://style",
-            created_at=now - timedelta(days=14),
-        )
-    )
-    memory_repository.save_event(
-        MemoryEvent(
-            kind="fact",
-            content="无关知识：用户午饭喜欢米饭",
-            namespace="knowledge",
-            review_status="approved",
-            source_ref="manual://food",
-            created_at=now - timedelta(minutes=5),
-        )
-    )
-    memory_repository.save_event(
-        MemoryEvent(
-            kind="fact",
-            content="无关知识：用户常在周三看电影",
-            namespace="knowledge",
-            review_status="approved",
-            source_ref="manual://habit",
-            created_at=now - timedelta(minutes=2),
-        )
-    )
-
-    def override_gateway():
-        try:
-            yield gateway
-        finally:
-            gateway.close()
-
-    def override_memory_repository():
-        return memory_repository
-
-    def override_mempalace_adapter():
-        return mempalace_adapter
-
-    app.dependency_overrides[get_chat_gateway] = override_gateway
-    app.dependency_overrides[get_memory_repository] = override_memory_repository
-    app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
-
-    try:
-        client = TestClient(app)
-        response = client.post("/chat", json={"message": "后续回答请先给结论再给细节"})
-        assert response.status_code == 200
-        instructions = gateway.last_instructions or ""
-        assert "输出规范：先给结论再给细节" in instructions
-        assert "无关知识：用户午饭喜欢米饭" not in instructions
-        assert "无关知识：用户常在周三看电影" not in instructions
-    finally:
-        runtime_config.chat_context_limit = original_context_limit
-        app.dependency_overrides.clear()
-
-
 def test_post_chat_uses_response_completed_output_text_as_final_content():
     memory_repository = InMemoryMemoryRepository()
     gateway = CompletionWinsStubGateway()
@@ -904,11 +739,11 @@ def test_post_chat_streams_reply_over_realtime_socket():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_streams_knowledge_references_when_long_term_context_exists():
+def test_post_chat_streams_memory_references_when_long_term_context_exists():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(
-        search_context_text="【长期记忆检索】\n- wing_xiaoyan/knowledge (相似度 0.88) 你喜欢结构化输出。"
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/long_term (相似度 0.88) 你喜欢结构化输出。"
     )
 
     def override_gateway():
@@ -954,11 +789,11 @@ def test_post_chat_streams_knowledge_references_when_long_term_context_exists():
             response = response_box["response"]
 
         assert started_event["payload"]["assistant_message_id"].startswith("assistant_")
-        assert completed_event["payload"]["knowledge_references"] == [
+        assert completed_event["payload"]["memory_references"] == [
             {
-                "source": "wing_xiaoyan/knowledge",
+                "source": "wing_xiaoyan/long_term",
                 "wing": "wing_xiaoyan",
-                "room": "knowledge",
+                "room": "long_term",
                 "similarity": 0.88,
                 "excerpt": "你喜欢结构化输出。",
             }
@@ -968,13 +803,13 @@ def test_post_chat_streams_knowledge_references_when_long_term_context_exists():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_updates_knowledge_observability_metrics():
+def test_post_chat_updates_memory_observability_metrics():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(
-        search_context_text="【长期记忆检索】\n- wing_xiaoyan/knowledge (相似度 0.88) 你喜欢结构化输出。"
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/long_term (相似度 0.88) 你喜欢结构化输出。"
     )
-    tracker = KnowledgeObservabilityTracker(max_samples=32)
+    tracker = MemoryObservabilityTracker(max_samples=32)
     def override_gateway():
         try:
             yield gateway
@@ -991,10 +826,10 @@ def test_post_chat_updates_knowledge_observability_metrics():
     app.dependency_overrides[get_memory_repository] = override_memory_repository
     app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
 
-    original_tracker = getattr(app.state, "knowledge_observability_tracker", None)
+    original_tracker = getattr(app.state, "memory_observability_tracker", None)
     try:
         with TestClient(app) as client:
-            app.state.knowledge_observability_tracker = tracker
+            app.state.memory_observability_tracker = tracker
             response = client.post("/chat", json={"message": "继续按我的偏好来"})
             assert response.status_code == 200
 
@@ -1009,19 +844,19 @@ def test_post_chat_updates_knowledge_observability_metrics():
     finally:
         app.dependency_overrides.clear()
         if original_tracker is None:
-            delattr(app.state, "knowledge_observability_tracker")
+            delattr(app.state, "memory_observability_tracker")
         else:
-            app.state.knowledge_observability_tracker = original_tracker
+            app.state.memory_observability_tracker = original_tracker
 
 
 def test_post_chat_skips_cross_room_retrieval_when_no_long_term_sources():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(
-        search_context_text="【长期记忆检索】\n- wing_xiaoyan/knowledge (相似度 0.88) 你喜欢结构化输出。",
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/long_term (相似度 0.88) 你喜欢结构化输出。",
         has_cross_room_long_term_sources_value=False,
     )
-    tracker = KnowledgeObservabilityTracker(max_samples=32)
+    tracker = MemoryObservabilityTracker(max_samples=32)
 
     def override_gateway():
         try:
@@ -1039,10 +874,10 @@ def test_post_chat_skips_cross_room_retrieval_when_no_long_term_sources():
     app.dependency_overrides[get_memory_repository] = override_memory_repository
     app.dependency_overrides[get_mempalace_adapter] = override_mempalace_adapter
 
-    original_tracker = getattr(app.state, "knowledge_observability_tracker", None)
+    original_tracker = getattr(app.state, "memory_observability_tracker", None)
     try:
         with TestClient(app) as client:
-            app.state.knowledge_observability_tracker = tracker
+            app.state.memory_observability_tracker = tracker
             response = client.post("/chat", json={"message": "继续按我的偏好来"})
             assert response.status_code == 200
 
@@ -1054,13 +889,13 @@ def test_post_chat_skips_cross_room_retrieval_when_no_long_term_sources():
     finally:
         app.dependency_overrides.clear()
         if original_tracker is None:
-            delattr(app.state, "knowledge_observability_tracker")
+            delattr(app.state, "memory_observability_tracker")
         else:
-            app.state.knowledge_observability_tracker = original_tracker
+            app.state.memory_observability_tracker = original_tracker
 
 
-def test_knowledge_observability_alerts_require_min_samples():
-    tracker = KnowledgeObservabilityTracker(max_samples=64)
+def test_memory_observability_alerts_require_min_samples():
+    tracker = MemoryObservabilityTracker(max_samples=64)
 
     for _ in range(12):
         tracker.record_retrieval(latency_ms=500.0, hit_count=0, failed=False)
@@ -1773,7 +1608,7 @@ def test_post_chat_splits_recent_and_long_term_context_budget():
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(
-        search_context_text="【长期记忆检索】\n- wing_xiaoyan/knowledge (相似度 0.88) 你喜欢结构化输出。"
+        search_context_text="【长期记忆检索】\n- wing_xiaoyan/long_term (相似度 0.88) 你喜欢结构化输出。"
     )
     runtime_config = get_runtime_config()
     original_context_limit = runtime_config.chat_context_limit
@@ -2007,7 +1842,7 @@ def test_post_chat_includes_relevant_autobio_memory_as_system_context():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_does_not_auto_include_active_goal_as_focus_context():
+def test_post_chat_does_not_auto_include_inactive_focus_context():
     memory_repository = InMemoryMemoryRepository()
     state_store = StateStore(
         BeingState(
@@ -2079,7 +1914,7 @@ def test_post_chat_includes_recent_autobio_completion_context():
         app.dependency_overrides.clear()
 
 
-def test_post_chat_instructions_do_not_prioritize_active_goal_without_focus_subject():
+def test_post_chat_instructions_do_not_prioritize_focus_without_focus_subject():
     memory_repository = InMemoryMemoryRepository()
     state_store = StateStore(
         BeingState(
@@ -2247,8 +2082,6 @@ def test_post_chat_can_override_mempalace_adapter_dependency():
 
 
 def test_post_chat_instructions_include_mempalace_context_when_available():
-    from app.api.deps import get_mempalace_adapter
-
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(
@@ -2283,8 +2116,6 @@ def test_post_chat_instructions_include_mempalace_context_when_available():
 
 
 def test_post_chat_mirrors_exchange_to_mempalace_when_enabled():
-    from app.api.deps import get_mempalace_adapter
-
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter()
@@ -2320,8 +2151,6 @@ def test_post_chat_mirrors_exchange_to_mempalace_when_enabled():
 
 
 def test_chat_still_returns_200_when_mempalace_search_raises():
-    from app.api.deps import get_mempalace_adapter
-
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(raise_on_search=True)
@@ -2353,8 +2182,6 @@ def test_chat_still_returns_200_when_mempalace_search_raises():
 
 
 def test_chat_still_returns_200_when_mempalace_record_raises():
-    from app.api.deps import get_mempalace_adapter
-
     memory_repository = InMemoryMemoryRepository()
     gateway = StubGateway()
     mempalace_adapter = StubMemPalaceAdapter(raise_on_record=True)

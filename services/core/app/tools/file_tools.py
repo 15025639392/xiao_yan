@@ -14,19 +14,20 @@ File Tools — 安全文件操作工具集
 from __future__ import annotations
 
 import logging
-import os
-import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from app.tools.file_tools_mime import guess_mime_type
 from app.tools.file_tools_models import (
-    DirectoryEntry,
     DirectoryListResult,
     FileReadResult,
     FileWriteResult,
     SearchResult,
+)
+from app.tools.file_tools_ops import (
+    get_file_info as collect_file_info,
+    list_directory as collect_directory_listing,
+    search_content as collect_search_results,
 )
 from app.runtime_ext.runtime_config import FolderAccessLevel
 
@@ -258,65 +259,11 @@ class FileTools:
             return DirectoryListResult(path=str(full_path), error="directory not found")
         if not full_path.is_dir():
             return DirectoryListResult(path=str(full_path), error="not a directory")
-
-        entries: list[DirectoryEntry] = []
-        file_count = 0
-        dir_count = 0
-        truncated = False
-
-        try:
-            glob_pattern = "**/*" if recursive else "*"
-            items = list(full_path.glob(glob_pattern)) if recursive else list(full_path.iterdir())
-
-            # 应用过滤
-            if pattern:
-                import fnmatch
-                items = [i for i in items if fnmatch.fnmatch(i.name, pattern)]
-
-            # 排除隐藏文件/目录（除非显式请求）
-            items = [i for i in items if not i.name.startswith(".") or pattern]
-
-            for item in sorted(items)[:self.max_list_entries]:
-                if item.is_symlink():
-                    entry_type = "symlink"
-                elif item.is_dir():
-                    entry_type = "dir"
-                    dir_count += 1
-                elif item.is_file():
-                    entry_type = "file"
-                    file_count += 1
-                else:
-                    entry_type = "other"
-
-                try:
-                    stat = item.stat() if entry_type != "symlink" else item.lstat()
-                    size = stat.st_size
-                    mod_time = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
-                except (OSError, ValueError):
-                    size = 0
-                    mod_time = None
-
-                entries.append(DirectoryEntry(
-                    name=item.name,
-                    path=str(item.relative_to(full_path)),
-                    type=entry_type,
-                    size_bytes=size,
-                    modified_at=mod_time,
-                ))
-
-            if len(items) > self.max_list_entries:
-                truncated = True
-
-        except Exception as exc:
-            logger.exception("FileTools: list failed for %s", full_path)
-            return DirectoryListResult(path=str(full_path), error=str(exc))
-
-        return DirectoryListResult(
-            path=str(full_path),
-            entries=entries,
-            total_files=file_count,
-            total_dirs=dir_count,
-            truncated=truncated,
+        return collect_directory_listing(
+            full_path,
+            recursive=recursive,
+            pattern=pattern,
+            max_list_entries=self.max_list_entries,
         )
 
     def search_content(
@@ -337,91 +284,25 @@ class FileTools:
             max_results: 最大返回结果数
             case_sensitive: 是否区分大小写
         """
-        import time as _time
-        start = _time.monotonic()
-
         try:
             full_search_path = self.resolve_path(search_path, access_mode="read")
         except (PermissionError, ValueError):
             return SearchResult(query=query, error="path outside allowed base")
-
-        matches: list[dict[str, Any]] = []
-        total = 0
-
-        try:
-            flags = 0 if case_sensitive else re.IGNORECASE
-            regex = re.compile(re.escape(query), flags)
-
-            for file_item in full_search_path.rglob(file_pattern):
-                if not file_item.is_file():
-                    continue
-                # 跳过大文件
-                try:
-                    if file_item.stat().st_size > 5 * 1024 * 1024:  # > 5MB
-                        continue
-                except OSError:
-                    continue
-
-                try:
-                    text = file_item.read_text(encoding="utf-8", errors="ignore")
-                except Exception:
-                    continue
-
-                for lineno, line in enumerate(text.split("\n"), 1):
-                    if regex.search(line):
-                        rel_path = str(file_item.relative_to(full_search_path))
-                        matches.append({
-                            "file": rel_path,
-                            "line": lineno,
-                            "context": line.strip()[:200],
-                            })
-                        total += 1
-                        if len(matches) >= max_results:
-                            break
-
-                if len(matches) >= max_results:
-                    break
-
-        except Exception as exc:
-            logger.exception("FileTools: search failed in %s", full_search_path)
-            return SearchResult(query=query, error=str(exc))
-
-        elapsed = _time.monotonic() - start
-        return SearchResult(
+        return collect_search_results(
             query=query,
-            matches=matches,
-            total_matches=total,
-            search_duration_seconds=elapsed,
+            full_search_path=full_search_path,
+            file_pattern=file_pattern,
+            max_results=max_results,
+            case_sensitive=case_sensitive,
         )
 
-    def get_file_info(self, file_path: str) -> dict[str, Any]:
+    def get_file_info(self, file_path: str) -> dict[str, object]:
         """获取文件的详细元信息。"""
         try:
             full_path = self.resolve_path(file_path, access_mode="read")
         except (PermissionError, ValueError) as exc:
             return {"path": file_path, "error": str(exc)}
-
-        if not full_path.exists():
-            return {"path": str(full_path), "error": "file not found"}
-
-        try:
-            stat = full_path.stat()
-            return {
-                "path": str(full_path),
-                "name": full_path.name,
-                "size_bytes": stat.st_size,
-                "is_file": full_path.is_file(),
-                "is_dir": full_path.is_dir(),
-                "is_symlink": full_path.is_symlink(),
-                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-                "created_at": datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat(),
-                "permissions": oct(stat.st_mode)[-3:],
-                "extension": full_path.suffix,
-                "readable": os.access(full_path, os.R_OK),
-                "writable": os.access(full_path, os.W_OK),
-            }
-        except Exception as exc:
-            return {"path": str(full_path), "error": str(exc)}
+        return collect_file_info(full_path)
 
     @staticmethod
     def _guess_mime_type(path: Path) -> str:

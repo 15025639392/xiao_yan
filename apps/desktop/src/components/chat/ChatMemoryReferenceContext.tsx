@@ -1,16 +1,16 @@
-import type { KnowledgeReference } from "./chatTypes";
+import type { MemoryReference } from "./chatTypes";
 
-type ChatKnowledgeContextProps = {
-  references: KnowledgeReference[];
+type ChatMemoryReferenceContextProps = {
+  references: MemoryReference[];
   isExpanded: boolean;
   onToggle: () => void;
 };
 
-export function ChatKnowledgeContext({
+export function ChatMemoryReferenceContext({
   references,
   isExpanded,
   onToggle,
-}: ChatKnowledgeContextProps) {
+}: ChatMemoryReferenceContextProps) {
   return (
     <div className="chat-message__knowledge-context">
       <button
@@ -29,11 +29,11 @@ export function ChatKnowledgeContext({
       </button>
 
       {isExpanded ? (
-        <div className="chat-message__knowledge-references" aria-label="知识来源">
-          <span className="chat-message__knowledge-title">知识来源</span>
+        <div className="chat-message__knowledge-references" aria-label="记忆来源">
+          <span className="chat-message__knowledge-title">记忆来源</span>
           <ul className="chat-message__knowledge-list">
             {references.map((reference, index) => (
-              <li key={`knowledge-reference-${index}`} className="chat-message__knowledge-item">
+              <li key={`memory-reference-${index}`} className="chat-message__knowledge-item">
                 <div className="chat-message__knowledge-head">
                   <span className="chat-message__knowledge-source">{reference.source}</span>
                   {typeof reference.similarity === "number" ? (

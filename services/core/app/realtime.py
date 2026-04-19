@@ -122,7 +122,7 @@ class AppRealtimeHub:
         content: str,
         session_id: str | None = None,
         request_key: str | None = None,
-        knowledge_references: list[dict[str, Any]] | None = None,
+        memory_references: list[dict[str, Any]] | None = None,
         reasoning_session_id: str | None = None,
         reasoning_state: dict[str, Any] | None = None,
     ) -> None:
@@ -137,8 +137,8 @@ class AppRealtimeHub:
         }
         if request_key:
             payload["request_key"] = request_key
-        if knowledge_references:
-            payload["knowledge_references"] = knowledge_references
+        if memory_references:
+            payload["memory_references"] = memory_references
         if reasoning_session_id:
             payload["reasoning_session_id"] = reasoning_session_id
         if reasoning_state:

@@ -21,7 +21,6 @@ class RiskLevel(str, Enum):
 
 
 class CapabilityContext(BaseModel):
-    goal_id: str | None = None
     reason: str | None = None
 
 

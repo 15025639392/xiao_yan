@@ -5,7 +5,7 @@ from typing import Any
 
 from app.agent.loop_helpers import (
     build_chain_consolidation,
-    build_goal_focus,
+    build_focus_thought,
 )
 from app.domain.models import FocusMode, FocusSubject
 from app.focus.effort import (
@@ -35,14 +35,12 @@ def focus_subject_lingering(
     title: str,
     why_now: str,
     source_ref: str | None,
-    goal_id: str | None = None,
 ) -> FocusSubject:
     return FocusSubject(
         kind="lingering",
         title=title,
         why_now=why_now,
         source_ref=source_ref,
-        goal_id=goal_id,
     )
 
 
@@ -70,8 +68,7 @@ def focus_command_update(
     return {
         "current_thought": action_summary,
         "focus_effort": command_effort(
-            goal_id=None,
-            goal_title=focus_title,
+            focus_title=focus_title,
             command=result.command,
             output=result.output,
             now=now,
@@ -88,10 +85,9 @@ def focus_hold_update(
     now: datetime,
 ) -> dict[str, object]:
     return {
-        "current_thought": build_goal_focus(focus_title, now, world_state, chain_progress),
+        "current_thought": build_focus_thought(focus_title, now, world_state, chain_progress),
         "focus_effort": focus_hold_effort(
-            goal_id=None,
-            goal_title=focus_title,
+            focus_title=focus_title,
             now=now,
         ),
     }
@@ -112,8 +108,7 @@ def focus_consolidate_update(
             chain_progress,
         ),
         "focus_effort": consolidate_effort(
-            goal_id=None,
-            goal_title=focus_title,
+            focus_title=focus_title,
             now=now,
         ),
     }

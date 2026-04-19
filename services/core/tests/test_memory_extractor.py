@@ -272,19 +272,19 @@ class TestCommitmentExtraction:
 # ═══════════════════════════════════════════════════
 
 
-class TestKnowledgeExtraction:
-    def test_extract_learned_knowledge(self, extractor):
-        """测试提取学到的知识"""
+class TestLearnedMemoryExtraction:
+    def test_extract_learned_memory(self, extractor):
+        """测试提取学到的新内容"""
         message = ChatMessage(
             role="assistant",
             content="我学会了使用pytest进行测试",
         )
 
         events = extractor._extract_assistant_info(message, None)
-        knowledge_events = [e for e in events if "学习" in e.content]
+        learning_events = [e for e in events if "学习" in e.content]
 
-        assert len(knowledge_events) >= 1
-        assert "pytest" in knowledge_events[0].content
+        assert len(learning_events) >= 1
+        assert "pytest" in learning_events[0].content
 
     def test_extract_understanding(self, extractor):
         """测试提取理解"""
@@ -294,10 +294,10 @@ class TestKnowledgeExtraction:
         )
 
         events = extractor._extract_assistant_info(message, None)
-        knowledge_events = [e for e in events if "学习" in e.content]
+        learning_events = [e for e in events if "学习" in e.content]
 
         # 至少应该有一个事件
-        assert len(events) >= 1
+        assert len(learning_events) >= 1
 
 
 # ═══════════════════════════════════════════════════
@@ -428,8 +428,8 @@ class TestDeduplication:
             kind="semantic",
             content="用户偏好：喝茶",
             role="user",
-            knowledge_type="preference",
-            knowledge_tags=["preference", "user-profile"],
+            facet="preference",
+            tags=["preference", "user-profile"],
             source_ref="conversation://session-42",
             version_tag="v2",
             visibility="user",
@@ -438,9 +438,9 @@ class TestDeduplication:
         deduplicated = extractor._deduplicate_events([plain, rich])
 
         assert len(deduplicated) == 1
-        assert deduplicated[0].knowledge_type == "preference"
+        assert deduplicated[0].facet == "preference"
         assert deduplicated[0].source_ref == "conversation://session-42"
-        assert "preference" in deduplicated[0].knowledge_tags
+        assert "preference" in deduplicated[0].tags
 
 
 # ═══════════════════════════════════════════════════
@@ -639,6 +639,6 @@ class TestIntegration:
         assert target.source_ref == "conversation://session-100"
         assert target.version_tag == "v3"
         assert target.visibility == "user"
-        assert target.knowledge_type == "preference"
-        assert "preference" in target.knowledge_tags
-        assert any(tag.startswith("topic:") for tag in target.knowledge_tags)
+        assert target.facet == "preference"
+        assert "preference" in target.tags
+        assert any(tag.startswith("topic:") for tag in target.tags)

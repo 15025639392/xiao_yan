@@ -27,15 +27,13 @@ def _build_reasoning() -> ChatReasoningController:
 
 def test_finalize_chat_submission_uses_focus_subject_for_focus_effort():
     memory_repository = InMemoryMemoryRepository()
-    personality = PersonaService(repository=InMemoryPersonaRepository()).profile.personality
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
             focus_subject={
-                "kind": "goal_backed_attention",
+                "kind": "focus_trace",
                 "title": "你刚才提到最近提不起劲",
                 "why_now": "这句话我还挂着。",
-                "goal_id": "goal-focus",
             },
         ),
         memory_repository=memory_repository,
@@ -44,10 +42,8 @@ def test_finalize_chat_submission_uses_focus_subject_for_focus_effort():
     finalize_chat_submission(
         assistant_message_id="assistant_1",
         chat_memory_runtime=_StubChatMemoryRuntime(),
-        knowledge_extraction_enabled=False,
         logger=getLogger(__name__),
         memory_repository=memory_repository,
-        personality=personality,
         reasoning=_build_reasoning(),
         reasoning_state=None,
         state_store=state_store,
@@ -60,22 +56,18 @@ def test_finalize_chat_submission_uses_focus_subject_for_focus_effort():
 
     latest_state = state_store.get()
     assert latest_state.focus_effort is not None
-    assert latest_state.focus_effort.goal_id == "goal-focus"
-    assert latest_state.focus_effort.goal_title == "你刚才提到最近提不起劲"
+    assert latest_state.focus_effort.focus_title == "你刚才提到最近提不起劲"
 
 
 def test_finalize_chat_submission_does_not_fallback_without_focus_subject():
     memory_repository = InMemoryMemoryRepository()
-    personality = PersonaService(repository=InMemoryPersonaRepository()).profile.personality
     state_store = StateStore(BeingState(mode=WakeMode.AWAKE), memory_repository=memory_repository)
 
     finalize_chat_submission(
         assistant_message_id="assistant_1",
         chat_memory_runtime=_StubChatMemoryRuntime(),
-        knowledge_extraction_enabled=False,
         logger=getLogger(__name__),
         memory_repository=memory_repository,
-        personality=personality,
         reasoning=_build_reasoning(),
         reasoning_state=None,
         state_store=state_store,

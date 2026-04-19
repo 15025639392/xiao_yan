@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_mempalace_adapter
+from app.api.deps import get_memory_repository, get_mempalace_adapter, get_state_store
 from app.domain.models import BeingState, FocusMode, WakeMode
-from app.main import app, get_memory_repository, get_state_store
+from app.main import app
 from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore
 
@@ -95,7 +95,7 @@ def test_get_state_includes_focus_subject_driven_context():
 
         assert response.status_code == 200
         assert body["focus_subject"]["kind"] == "lingering"
-        assert body["focus_context"]["goal_title"] == "你刚才说最近提不起劲"
+        assert body["focus_context"]["focus_title"] == "你刚才说最近提不起劲"
         assert body["focus_context"]["source_kind"] == "lingering_focus"
         assert "我心里还挂着" in body["focus_context"]["reason_label"]
     finally:
@@ -119,7 +119,6 @@ def test_get_memory_backends_includes_mempalace_snapshot():
     class _StubMemPalaceAdapter:
         def status_snapshot(self) -> dict:
             return {
-                "enabled": True,
                 "palace_path": "/tmp/palace",
                 "palace_exists": False,
                 "dependency_available": True,
@@ -145,7 +144,6 @@ def test_get_memory_backends_includes_mempalace_snapshot():
         response = client.get("/memory/backends")
         assert response.status_code == 200
         payload = response.json()
-        assert payload["chat_memory"]["enabled"] is True
         assert payload["chat_memory"]["palace_path"] == "/tmp/palace"
     finally:
         app.dependency_overrides.clear()

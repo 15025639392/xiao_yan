@@ -6,7 +6,7 @@ export type AssistantEntryPatch = {
   errorMessage?: string;
   requestKey?: string;
   requestMessage?: string;
-  knowledgeReferences?: ChatEntry["knowledgeReferences"];
+  memoryReferences?: ChatEntry["memoryReferences"];
   reasoningSessionId?: string;
   reasoningState?: ChatEntry["reasoningState"];
   streamSequence?: number;
@@ -29,7 +29,7 @@ export function applyAssistantEntryPatch(entry: ChatEntry, patch: AssistantEntry
     errorMessage: patch.errorMessage ?? entry.errorMessage,
     requestKey: patch.requestKey ?? entry.requestKey,
     requestMessage: patch.requestMessage ?? entry.requestMessage,
-    knowledgeReferences: patch.knowledgeReferences ?? entry.knowledgeReferences,
+    memoryReferences: patch.memoryReferences ?? entry.memoryReferences,
     reasoningSessionId: patch.reasoningSessionId ?? entry.reasoningSessionId,
     reasoningState: patch.reasoningState ?? entry.reasoningState,
     streamSequence: patch.streamSequence ?? entry.streamSequence,
@@ -49,7 +49,7 @@ export function createAssistantEntry(
     errorMessage: patch.errorMessage,
     requestKey: patch.requestKey,
     requestMessage: patch.requestMessage,
-    knowledgeReferences: patch.knowledgeReferences,
+    memoryReferences: patch.memoryReferences,
     reasoningSessionId: patch.reasoningSessionId,
     reasoningState: patch.reasoningState,
     streamSequence: patch.streamSequence,

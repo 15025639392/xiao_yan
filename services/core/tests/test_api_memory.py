@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.main import app, get_memory_service
+from app.api.deps import get_memory_service
+from app.main import app
 from app.memory.models import MemoryEvent, MemoryKind
 from app.memory.repository import InMemoryMemoryRepository
 from app.memory.service import MemoryService
@@ -130,13 +131,13 @@ def test_memory_timeline_filters_by_status_kind_namespace_and_visibility():
     active_user_fact = MemoryEvent(
         kind="fact",
         content="用户希望先看方案再做决定",
-        namespace="knowledge",
+        namespace="long_term",
         visibility="user",
     )
     deleted_internal_fact = MemoryEvent(
         kind="fact",
         content="内部观察：最近更偏好短回复",
-        namespace="knowledge",
+        namespace="long_term",
         visibility="internal",
     )
     chat_event = MemoryEvent(
@@ -163,7 +164,7 @@ def test_memory_timeline_filters_by_status_kind_namespace_and_visibility():
             params={
                 "status": "active",
                 "kind": "fact",
-                "namespace": "knowledge",
+                "namespace": "long_term",
                 "visibility": "user",
             },
         )
@@ -176,7 +177,7 @@ def test_memory_timeline_filters_by_status_kind_namespace_and_visibility():
             "/memory/timeline",
             params={
                 "status": "deleted",
-                "namespace": "knowledge",
+                "namespace": "long_term",
             },
         )
         assert deleted_only.status_code == 200
@@ -212,8 +213,8 @@ def test_memory_observability_endpoint_returns_tracker_snapshot():
                 },
             }
 
-    original_tracker = getattr(app.state, "knowledge_observability_tracker", None)
-    app.state.knowledge_observability_tracker = _StubTracker()
+    original_tracker = getattr(app.state, "memory_observability_tracker", None)
+    app.state.memory_observability_tracker = _StubTracker()
 
     try:
         client = TestClient(app)
@@ -225,21 +226,21 @@ def test_memory_observability_endpoint_returns_tracker_snapshot():
         assert payload["write"]["failure_rate"] == 0.0
     finally:
         if original_tracker is None:
-            delattr(app.state, "knowledge_observability_tracker")
+            delattr(app.state, "memory_observability_tracker")
         else:
-            app.state.knowledge_observability_tracker = original_tracker
+            app.state.memory_observability_tracker = original_tracker
 
 
 def test_memory_observability_reset_endpoint_clears_tracker():
-    from app.memory.observability import KnowledgeObservabilityTracker
+    from app.memory.observability import MemoryObservabilityTracker
 
-    tracker = KnowledgeObservabilityTracker(max_samples=32)
+    tracker = MemoryObservabilityTracker(max_samples=32)
     tracker.record_retrieval(latency_ms=300.0, hit_count=0, failed=False)
     tracker.record_chat_latency(2500.0)
     tracker.record_write(success=False)
 
-    original_tracker = getattr(app.state, "knowledge_observability_tracker", None)
-    app.state.knowledge_observability_tracker = tracker
+    original_tracker = getattr(app.state, "memory_observability_tracker", None)
+    app.state.memory_observability_tracker = tracker
     try:
         client = TestClient(app)
         reset_response = client.post("/memory/observability/reset")
@@ -255,6 +256,6 @@ def test_memory_observability_reset_endpoint_clears_tracker():
         assert snapshot["write"]["attempts"] == 0
     finally:
         if original_tracker is None:
-            delattr(app.state, "knowledge_observability_tracker")
+            delattr(app.state, "memory_observability_tracker")
         else:
-            app.state.knowledge_observability_tracker = original_tracker
+            app.state.memory_observability_tracker = original_tracker

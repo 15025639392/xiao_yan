@@ -6,8 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class FocusEffort(BaseModel):
-    goal_id: str | None = None
-    goal_title: str
+    focus_title: str
     why_now: str
     action_kind: str
     did_what: str

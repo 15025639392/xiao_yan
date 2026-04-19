@@ -132,7 +132,7 @@ def build_memory_router() -> APIRouter:
 
     @router.get("/memory/observability")
     def get_memory_observability(request: Request) -> dict:
-        tracker = getattr(request.app.state, "knowledge_observability_tracker", None)
+        tracker = getattr(request.app.state, "memory_observability_tracker", None)
         if tracker is None or not hasattr(tracker, "snapshot"):
             return {
                 "window": {"max_samples": 0, "updated_at": None},
@@ -168,7 +168,7 @@ def build_memory_router() -> APIRouter:
 
     @router.post("/memory/observability/reset")
     def reset_memory_observability(request: Request) -> dict:
-        tracker = getattr(request.app.state, "knowledge_observability_tracker", None)
+        tracker = getattr(request.app.state, "memory_observability_tracker", None)
         if tracker is None or not hasattr(tracker, "reset"):
             return {"success": True, "reset": False, "reason": "tracker_unavailable"}
         tracker.reset()

@@ -4,7 +4,8 @@ from threading import Thread
 import httpx
 from fastapi.testclient import TestClient
 
-from app.main import app, get_chat_gateway, get_memory_repository, get_mempalace_adapter
+from app.api.deps import get_chat_gateway, get_memory_repository, get_mempalace_adapter
+from app.main import app
 from app.memory.models import MemoryEvent
 from app.memory.repository import InMemoryMemoryRepository
 from app.runtime_ext.runtime_config import get_runtime_config

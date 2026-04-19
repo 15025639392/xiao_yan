@@ -37,7 +37,7 @@ def _safe_average(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 3)
 
 
-class KnowledgeObservabilityTracker:
+class MemoryObservabilityTracker:
     """Tracks MemPalace baseline observability metrics for chat flows."""
 
     def __init__(self, *, max_samples: int = 500) -> None:

@@ -7,7 +7,7 @@ from app.domain.models import BeingState
 from app.focus.context import build_focus_context
 from app.llm.schemas import ChatMessage
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
-from app.memory.observability import KnowledgeObservabilityTracker
+from app.memory.observability import MemoryObservabilityTracker
 from app.persona.expression_mapper import ExpressionStyleMapper
 from app.persona.prompt_builder import build_chat_instructions
 from app.persona.service import PersonaService
@@ -20,7 +20,7 @@ LONG_TERM_REFERENCE_LINE_PATTERN = re.compile(
 
 @dataclass(slots=True)
 class PreparedChatContext:
-    focus_goal_title: str | None
+    focus_title: str | None
     focus_context_summary: str | None
     focus_context_source_kind: str | None
     focus_context_source_label: str | None
@@ -56,7 +56,7 @@ def prepare_chat_context(
         context_limit=context_limit,
     )
     return PreparedChatContext(
-        focus_goal_title=None if focus_context is None else focus_context.goal_title,
+        focus_title=None if focus_context is None else focus_context.focus_title,
         focus_context_summary=None if focus_context is None else focus_context.render_for_prompt(),
         focus_context_source_kind=None if focus_context is None else focus_context.source_kind,
         focus_context_source_label=None if focus_context is None else focus_context.source_label,
@@ -82,7 +82,7 @@ def build_base_chat_instructions(
     user_time_of_day: str | None = None,
 ) -> str:
     return build_chat_instructions(
-        focus_goal_title=prepared.focus_goal_title,
+        focus_title=prepared.focus_title,
         focus_context_summary=prepared.focus_context_summary,
         focus_context_source_kind=prepared.focus_context_source_kind,
         focus_context_source_label=prepared.focus_context_source_label,
@@ -104,7 +104,7 @@ def build_base_chat_instructions(
     )
 
 
-def extract_knowledge_references(memory_context: str) -> list[dict[str, str | float | None]]:
+def extract_memory_references(memory_context: str) -> list[dict[str, str | float | None]]:
     if not memory_context:
         return []
 
@@ -147,7 +147,7 @@ def extract_knowledge_references(memory_context: str) -> list[dict[str, str | fl
 
 def record_retrieval_observability(
     *,
-    tracker: KnowledgeObservabilityTracker | None,
+    tracker: MemoryObservabilityTracker | None,
     latency_ms: float,
     references: list[dict[str, str | float | None]],
     failed: bool,
