@@ -91,7 +91,7 @@ type FetchCapabilityJobsParams = {
   deadLetterOnly?: boolean;
   approvalStatus?: "not_required" | "pending" | "approved" | "rejected";
   approver?: string;
-  capability?: "fs.read" | "fs.write" | "fs.list" | "fs.search" | "shell.run";
+  capability?: "fs.read" | "fs.write" | "fs.list" | "fs.search" | "shell.run" | "browser.open" | "browser.snapshot" | "browser.extract" | "browser.close";
   requestId?: string;
   cursor?: string;
 };

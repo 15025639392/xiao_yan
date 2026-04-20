@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import type { ChatMcpServerConfig } from "../../lib/api";
 import { Button, Checkbox, Textarea } from "../ui";
 import { LoadingSpinner, SendIcon } from "./ChatIcons";
+import { BrowserUrlDialog } from "./BrowserUrlDialog";
 
 type ChatInputFormProps = {
   draft: string;
@@ -54,6 +55,7 @@ export function ChatInputForm({
   onToggleMcpServer,
 }: ChatInputFormProps) {
   const [showMcpSelector, setShowMcpSelector] = useState(false);
+  const [showBrowserDialog, setShowBrowserDialog] = useState(false);
   const totalAttachments = attachedFolders.length + attachedFiles.length + attachedImages.length;
   const enabledMcpServers = mcpServers.filter((server) => server.enabled);
   const effectiveSelectedMcpServerIds = selectedMcpServerIds ?? [];
@@ -123,6 +125,17 @@ export function ChatInputForm({
             }}
           >
             🧩 {mcpToolbarLabel}
+          </Button>
+          <Button
+            variant="ghost"
+            className="chat-page__toolbar-btn chat-page__toolbar-btn--text"
+            type="button"
+            aria-label="浏览网页"
+            title="浏览网页"
+            disabled={isSending}
+            onClick={() => setShowBrowserDialog(true)}
+          >
+            🌐 浏览
           </Button>
           {totalAttachments > 0 ? (
             <div className="chat-page__attached-folders" aria-label="已附加附件">
@@ -228,6 +241,14 @@ export function ChatInputForm({
           <span>Enter 发送 · Shift+Enter 换行</span>
         </div>
       </form>
+      <BrowserUrlDialog
+        isOpen={showBrowserDialog}
+        onClose={() => setShowBrowserDialog(false)}
+        onSubmit={(url) => {
+          setShowBrowserDialog(false);
+          onDraftChange(draft + (draft ? "\n" : "") + `[浏览网页] ${url}`);
+        }}
+      />
     </div>
   );
 }

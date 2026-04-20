@@ -483,6 +483,40 @@
   opacity: 0.6;
 }
 
+/* Proactive message - 主动触达消息样式 */
+.chat-message--proactive .chat-message__bubble {
+  position: relative;
+  padding-left: calc(var(--space-4) + 12px);
+}
+
+.chat-message__proactive-dot {
+  position: absolute;
+  left: var(--space-3);
+  top: var(--space-3);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: proactivePulse 2s ease-in-out infinite;
+}
+
+.chat-message--proactive .chat-message__bubble::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary) 0%, transparent 100%);
+  border-radius: 18px 18px 0 0;
+  opacity: 0.3;
+}
+
+@keyframes proactivePulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 0.4; }
+}
+
 @media (max-width: 768px) {
   .chat-message {
     width: fit-content;

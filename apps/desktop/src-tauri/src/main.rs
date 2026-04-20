@@ -31,6 +31,93 @@ impl Default for FsAccessState {
 type SharedFsAccessState = Mutex<FsAccessState>;
 type SharedDelegateProcessRegistry = Arc<Mutex<HashMap<String, Child>>>;
 
+struct BrowserSession {
+    #[allow(dead_code)]
+    page_url: Option<String>,
+    #[allow(dead_code)]
+    page_title: Option<String>,
+    #[allow(dead_code)]
+    interaction_level: String,
+    #[allow(dead_code)]
+    last_error: Option<String>,
+}
+
+impl Default for BrowserSession {
+    fn default() -> Self {
+        Self {
+            page_url: None,
+            page_title: None,
+            interaction_level: String::new(),
+            last_error: None,
+        }
+    }
+}
+
+type SharedBrowserSessions = Arc<Mutex<HashMap<String, BrowserSession>>>;
+
+fn run_browser_driver(action: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let socket_path = "/tmp/xiyan_browser_driver.sock";
+    let driver_script = std::path::PathBuf::from("/Users/ldy/Desktop/work/xiao_yan/apps/desktop/scripts/browser_driver.py");
+    let args_json = serde_json::to_string(&args).map_err(|e| e.to_string())?;
+    let output = std::process::Command::new("/Users/ldy/.local/share/uv/python/cpython-3.11-macos-aarch64-none/bin/python3")
+        .arg(&driver_script)
+        .arg(action)
+        .arg(&args_json)
+        .env("BROWSER_DRIVER_SOCKET", socket_path)
+        .output()
+        .map_err(|e| format!("failed to spawn python3: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("driver error: {}", stderr));
+    }
+    let result_str = String::from_utf8_lossy(&output.stdout);
+    let result: serde_json::Value = serde_json::from_str(&result_str)
+        .map_err(|e| format!("failed to parse driver output: {} raw={}", e, result_str))?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn browser_open(
+    url: String,
+    session_id: Option<String>,
+    headless: Option<bool>,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    let args = serde_json::json!({
+        "url": url,
+        "session_id": session_id,
+        "headless": headless.unwrap_or(true),
+    });
+    run_browser_driver("open", args)
+}
+
+#[tauri::command]
+async fn browser_snapshot(
+    session_id: String,
+    include_text: Option<bool>,
+    include_accessibility: Option<bool>,
+    include_screenshot: Option<bool>,
+    max_text_bytes: Option<u64>,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    let args = serde_json::json!({
+        "session_id": session_id,
+        "include_text": include_text.unwrap_or(true),
+        "include_accessibility": include_accessibility.unwrap_or(false),
+        "include_screenshot": include_screenshot.unwrap_or(false),
+        "max_text_bytes": max_text_bytes,
+    });
+    run_browser_driver("snapshot", args)
+}
+
+#[tauri::command]
+async fn browser_close(
+    session_id: String,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    run_browser_driver("close", serde_json::json!({"session_id": session_id}))
+}
+
 #[derive(serde::Serialize)]
 struct AllowedDirResponse {
     allowed_dir: Option<String>,
@@ -1476,6 +1563,7 @@ fn main() {
     tauri::Builder::default()
         .manage(Mutex::new(FsAccessState::default()))
         .manage(Arc::new(Mutex::new(HashMap::<String, Child>::new())))
+        .manage(Arc::new(Mutex::new(HashMap::<String, BrowserSession>::new())))
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             // FS commands
@@ -1495,7 +1583,24 @@ fn main() {
             pet_is_visible,
             pet_toggle,
             pet_send_message,
+            // Browser commands
+            browser_open,
+            browser_snapshot,
+            browser_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    // Cleanup browser driver daemon on exit
+    let socket_path = "/tmp/xiyan_browser_driver.sock";
+    let driver_script = std::path::PathBuf::from("/Users/ldy/Desktop/work/xiao_yan/apps/desktop/scripts/browser_driver.py");
+    let _ = std::process::Command::new("/Users/ldy/.local/share/uv/python/cpython-3.11-macos-aarch64-none/bin/python3")
+        .arg(driver_script)
+        .arg("shutdown")
+        .arg("{}")
+        .env("BROWSER_DRIVER_SOCKET", socket_path)
+        .spawn();
+    let _ = std::fs::remove_file(socket_path);
+    let _ = std::fs::remove_file(&(socket_path.to_string() + ".pid"));
+    let _ = std::fs::remove_file(&(socket_path.to_string() + ".lock"));
 }

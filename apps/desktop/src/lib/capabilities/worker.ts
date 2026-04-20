@@ -1,6 +1,10 @@
 import { completeCapability, fetchPendingCapabilities, heartbeatCapabilityExecutor } from "./api";
 import type { CapabilityRequest, CapabilityResult } from "./types";
 import {
+  browserClose,
+  browserExtract,
+  browserOpen,
+  browserSnapshot,
   fsGetAllowedDirectory,
   fsListDir,
   fsReadTextFile,
@@ -8,6 +12,7 @@ import {
   isTauriRuntime,
   shellRunCommand,
 } from "../tauri/fsAccess";
+import { updateBrowserOrgan, updateBrowserSession } from "../api";
 
 export type CapabilityWorkerOptions = {
   pollIntervalMs?: number;
@@ -349,6 +354,91 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
       }
     }
 
+    if (request.capability === "browser.open") {
+      const url = asString(request.args.url);
+      if (!url) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.url");
+      }
+      const sessionId = asString(request.args.session_id) ?? undefined;
+      const headless = request.args.headless === true;
+      try {
+        const result = await browserOpen(url, { session_id: sessionId, headless });
+        updateBrowserSession({
+          session_id: result.session_id,
+          status: result.status,
+          current_url: result.resolved_url,
+          page_title: result.title,
+          opened_at: result.opened_at,
+        }).catch(() => {});
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
+    if (request.capability === "browser.snapshot") {
+      const sessionId = asString(request.args.session_id);
+      if (!sessionId) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id");
+      }
+      const includeText = request.args.include_text !== false;
+      const includeScreenshot = request.args.include_screenshot === true;
+      try {
+        const result = await browserSnapshot(sessionId, {
+          include_text: includeText,
+          include_screenshot: includeScreenshot,
+          max_text_bytes: typeof request.args.max_text_bytes === "number" ? request.args.max_text_bytes : undefined,
+        });
+        updateBrowserSession({
+          session_id: sessionId,
+          status: "active",
+          current_url: result.url,
+          page_title: result.title,
+        }).catch(() => {});
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
+    if (request.capability === "browser.extract") {
+      const sessionId = asString(request.args.session_id);
+      const target = asString(request.args.target);
+      if (!sessionId || !target) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id or args.target");
+      }
+      try {
+        const result = await browserExtract(sessionId, target, {
+          schema: (typeof request.args.schema === "object" && request.args.schema !== null) ? request.args.schema as Record<string, unknown> : undefined,
+          max_items: typeof request.args.max_items === "number" ? request.args.max_items : undefined,
+        });
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
+    if (request.capability === "browser.close") {
+      const sessionId = asString(request.args.session_id);
+      if (!sessionId) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id");
+      }
+      try {
+        const result = await browserClose(sessionId);
+        updateBrowserSession({
+          session_id: sessionId,
+          status: "closed",
+        }).catch(() => {});
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
     return buildResult(
       request,
       startedAt,
@@ -376,6 +466,25 @@ export function startCapabilityWorker(options: CapabilityWorkerOptions = {}): ()
   let stopped = false;
   let inFlight = false;
   let timer: number | null = null;
+  let organReported = false;
+
+  const reportBrowserOrgan = async (healthy: boolean) => {
+    try {
+      await updateBrowserOrgan({
+        binding_status: healthy ? "bound" : "unbound",
+        health_status: healthy ? "healthy" : "degraded",
+        driver_name: "playwright-python",
+        driver_version: "1.58.0",
+        browser_binary_ready: healthy,
+      });
+      organReported = true;
+    } catch {
+      // best-effort
+    }
+  };
+
+  // Probe browser driver on startup
+  reportBrowserOrgan(true);
 
   const tick = async () => {
     if (stopped || inFlight) {

@@ -1,18 +1,50 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from app.api.deps import (
     get_memory_repository,
     get_mempalace_adapter,
     get_state_store,
 )
+from app.domain.models import (
+    BrowserInteractionLevel,
+    BrowserOrganBindingStatus,
+    BrowserOrganHealthStatus,
+    BrowserOrganState,
+    BrowserSessionState,
+    BrowserSessionStatus,
+)
 from app.llm.schemas import ChatHistoryMessage, ChatHistoryResponse
-from app.memory.repository import MemoryRepository
 from app.memory.mempalace_adapter import MemPalaceAdapter
+from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import ensure_realtime_hub_initialized, ensure_runtime_initialized
 from app.runtime_ext.snapshot import build_public_state_payload, deduplicate_entries
+
+
+class BrowserOrganUpdateRequest(BaseModel):
+    binding_status: str | None = None
+    health_status: str | None = None
+    driver_name: str | None = None
+    driver_version: str | None = None
+    browser_binary_ready: bool | None = None
+    requires_approval_for_bind: bool | None = None
+    last_error: str | None = None
+
+
+class BrowserSessionUpdateRequest(BaseModel):
+    session_id: str | None = None
+    status: str | None = None
+    current_url: str | None = None
+    page_title: str | None = None
+    opened_at: str | None = None
+    interaction_level: str | None = None
+    last_snapshot_summary: str | None = None
+    last_error: str | None = None
 
 
 def build_runtime_router() -> APIRouter:
@@ -110,5 +142,52 @@ def build_runtime_router() -> APIRouter:
         recent_events = list(reversed(memory_repository.list_recent(limit=20)))
         entries = [event.content for event in recent_events if event.kind == "autobio"]
         return {"entries": deduplicate_entries(entries)}
+
+    @router.post("/browser/organ")
+    def update_browser_organ(
+        body: BrowserOrganUpdateRequest,
+        state_store: StateStore = Depends(get_state_store),
+    ) -> dict:
+        being_state = state_store.get()
+        current = being_state.browser_organ or BrowserOrganState()
+        updated = BrowserOrganState(
+            knowledge_status=current.knowledge_status,
+            binding_status=BrowserOrganBindingStatus(body.binding_status or current.binding_status.value),
+            health_status=BrowserOrganHealthStatus(body.health_status or current.health_status.value),
+            last_checked_at=datetime.now(timezone.utc),
+            driver_name=body.driver_name or current.driver_name,
+            driver_version=body.driver_version or current.driver_version,
+            browser_binary_ready=(
+                body.browser_binary_ready if body.browser_binary_ready is not None else current.browser_binary_ready
+            ),
+            requires_approval_for_bind=(
+                body.requires_approval_for_bind if body.requires_approval_for_bind is not None else current.requires_approval_for_bind
+            ),
+            last_error=body.last_error or current.last_error,
+        )
+        being_state.browser_organ = updated
+        state_store.set(being_state)
+        return {"ok": True}
+
+    @router.post("/browser/session")
+    def update_browser_session(
+        body: BrowserSessionUpdateRequest,
+        state_store: StateStore = Depends(get_state_store),
+    ) -> dict:
+        being_state = state_store.get()
+        updated = BrowserSessionState(
+            session_id=body.session_id or "none",
+            status=BrowserSessionStatus(body.status or "closed"),
+            current_url=body.current_url,
+            page_title=body.page_title,
+            opened_at=body.opened_at,
+            last_active_at=datetime.now(timezone.utc),
+            interaction_level=BrowserInteractionLevel(body.interaction_level or "read_only"),
+            last_snapshot_summary=body.last_snapshot_summary,
+            last_error=body.last_error,
+        )
+        being_state.browser_session = updated
+        state_store.set(being_state)
+        return {"ok": True}
 
     return router

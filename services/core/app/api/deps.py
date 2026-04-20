@@ -8,13 +8,18 @@ from fastapi import Depends, Request
 from app.config import (
     get_chat_provider,
     get_llm_provider_configs,
+    get_xiaohongshu_mcp_publish_enabled,
+    get_xiaohongshu_mcp_publish_endpoint,
 )
+from app.external_executors.xiaohongshu_mcp_client import XiaohongshuMcpClient
 from app.llm.gateway import ChatGateway
 from app.memory.chat_memory_runtime import ChatMemoryBackend, ChatMemoryRuntime
 from app.memory.mempalace_adapter import MemPalaceAdapter
 from app.memory.repository import MemoryRepository
 from app.memory.service import MemoryService
 from app.persona.service import InMemoryPersonaRepository, PersonaService
+from app.platform_adapters.registry import build_platform_adapter_registry
+from app.platform_adapters.service import PlatformAdapterService
 from app.runtime import StateStore
 from app.runtime_ext.bootstrap import ensure_runtime_initialized
 from app.runtime_ext.runtime_config import get_runtime_config
@@ -106,6 +111,25 @@ def get_chat_memory_runtime(
 def get_state_store(request: Request) -> StateStore:
     ensure_runtime_initialized(request.app)
     return request.app.state.state_store
+
+
+def get_platform_adapter_service(request: Request) -> PlatformAdapterService:
+    service = getattr(request.app.state, "platform_adapter_service", None)
+    if service is None:
+        service = PlatformAdapterService(registry=build_platform_adapter_registry())
+        request.app.state.platform_adapter_service = service
+    return service
+
+
+def get_xiaohongshu_mcp_client(request: Request) -> XiaohongshuMcpClient:
+    client = getattr(request.app.state, "xiaohongshu_mcp_client", None)
+    if client is None:
+        client = XiaohongshuMcpClient(
+            enabled=get_xiaohongshu_mcp_publish_enabled(),
+            endpoint=get_xiaohongshu_mcp_publish_endpoint(),
+        )
+        request.app.state.xiaohongshu_mcp_client = client
+    return client
 
 def get_world_repository(request: Request) -> WorldRepository:
     ensure_runtime_initialized(request.app)

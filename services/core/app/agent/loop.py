@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from app.agent.autonomy import FocusSummary, choose_next_action
 from app.agent.focus_timeline import list_recent_events_for_loop as _list_recent_events_for_loop
 from app.agent.focus_updates import (
+    dropped_focus_update,
     focus_command_update,
     focus_consolidate_update,
     focus_hold_update,
@@ -118,14 +119,14 @@ class AutonomyLoop:
             focus_title = _resolve_focus_title(state)
             if focus_title is None:
                 return state
-            next_state = state.model_copy(
-                update=focus_consolidate_update(
-                    focus_title=focus_title,
-                    world_state=world_state,
-                    chain_progress=None,
-                    now=now,
-                )
+            updates = focus_consolidate_update(
+                focus_title=focus_title,
+                world_state=world_state,
+                chain_progress=None,
+                now=now,
             )
+            updates.update(dropped_focus_update(focus_mode=state.focus_mode, focus_subject=None))
+            next_state = state.model_copy(update=updates)
             return self.state_store.set(next_state)
 
         if action.kind == "reflect":

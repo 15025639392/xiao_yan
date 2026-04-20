@@ -144,3 +144,107 @@ export async function shellRunCommand(command: string, options?: ShellRunOptions
     throw new Error(toTauriErrorMessage(e));
   }
 }
+
+// Browser capability wrappers
+
+export type BrowserOpenOptions = {
+  session_id?: string;
+  headless?: boolean;
+};
+
+export type BrowserOpenResult = {
+  session_id: string;
+  url: string;
+  resolved_url: string;
+  title: string;
+  status: string;
+  opened_at: string;
+};
+
+export type BrowserSnapshotResult = {
+  session_id: string;
+  url: string;
+  title: string;
+  text_content: string;
+  accessibility_tree: unknown;
+  screenshot_path: string | null;
+  captured_at: string;
+};
+
+export type BrowserExtractResult = {
+  session_id: string;
+  target: string;
+  content: string;
+  structured_data: unknown;
+  source_url: string;
+  captured_at: string;
+};
+
+export type BrowserCloseResult = {
+  session_id: string;
+  closed_at: string;
+  status: string;
+};
+
+export async function browserOpen(url: string, options?: BrowserOpenOptions): Promise<BrowserOpenResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserOpenResult>("browser_open", { url, sessionId: options?.session_id, headless: options?.headless });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export async function browserSnapshot(
+  sessionId: string,
+  options?: { include_text?: boolean; include_accessibility?: boolean; include_screenshot?: boolean; max_text_bytes?: number },
+): Promise<BrowserSnapshotResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserSnapshotResult>("browser_snapshot", {
+      session_id: sessionId,
+      include_text: options?.include_text ?? true,
+      include_accessibility: options?.include_accessibility ?? false,
+      include_screenshot: options?.include_screenshot ?? false,
+      max_text_bytes: options?.max_text_bytes,
+    });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export async function browserExtract(
+  sessionId: string,
+  target: string,
+  options?: { schema?: Record<string, unknown>; max_items?: number },
+): Promise<BrowserExtractResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserExtractResult>("browser_extract", {
+      session_id: sessionId,
+      target,
+      schema: options?.schema,
+      max_items: options?.max_items,
+    });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export async function browserClose(sessionId: string): Promise<BrowserCloseResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserCloseResult>("browser_close", { session_id: sessionId });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export async function browserShutdown(): Promise<void> {
+  ensureTauri();
+  try {
+    await invoke("browser_shutdown");
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}

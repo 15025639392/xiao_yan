@@ -2,8 +2,38 @@ export * from "./apiClient";
 export * from "./apiConfig";
 export * from "./apiMemory";
 export * from "./apiPersona";
+export * from "./apiXiaohongshu";
 
 import { BASE_URL, buildHttpError, get, post, put } from "./apiClient";
+
+export type BrowserOrganUpdate = {
+  binding_status?: string;
+  health_status?: string;
+  driver_name?: string;
+  driver_version?: string;
+  browser_binary_ready?: boolean;
+  requires_approval_for_bind?: boolean;
+  last_error?: string;
+};
+
+export type BrowserSessionUpdate = {
+  session_id?: string;
+  status?: string;
+  current_url?: string;
+  page_title?: string;
+  opened_at?: string;
+  interaction_level?: string;
+  last_snapshot_summary?: string;
+  last_error?: string;
+};
+
+export async function updateBrowserOrgan(update: BrowserOrganUpdate): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>("/runtime/browser/organ", update);
+}
+
+export async function updateBrowserSession(update: BrowserSessionUpdate): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>("/runtime/browser/session", update);
+}
 
 export type FocusContext = {
   goal_title: string;

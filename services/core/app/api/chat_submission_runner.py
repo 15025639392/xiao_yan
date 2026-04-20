@@ -10,6 +10,7 @@ from app.api.chat_runtime_helpers import (
 )
 from app.api.chat_submission_payloads import (
     CHAT_FILE_TOOL_DEFINITIONS,
+    CHAT_BROWSER_TOOL_DEFINITIONS,
     build_resume_instruction,
     resolve_completed_output_text,
 )
@@ -152,7 +153,7 @@ def run_chat_submission_with_tools(
     )
 
     file_tools = build_file_tools()
-    tool_definitions = [*CHAT_FILE_TOOL_DEFINITIONS, *(extra_tools or [])]
+    tool_definitions = [*CHAT_FILE_TOOL_DEFINITIONS, *CHAT_BROWSER_TOOL_DEFINITIONS, *(extra_tools or [])]
     accumulated_input: list[dict] = [message.model_dump() for message in chat_messages]
     max_tool_rounds = 8
     tool_repeat_streak_limit = 3

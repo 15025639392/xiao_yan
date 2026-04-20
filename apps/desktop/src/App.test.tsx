@@ -178,7 +178,7 @@ test("keeps memory reachable as an optional entry instead of a primary nav item"
 
   await waitFor(() => {
     expect(screen.getByRole("heading", { name: "记忆库" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "全部记忆" })).toBeInTheDocument();
+    expect(screen.getByText("浏览和管理数字人的全部记忆")).toBeInTheDocument();
   });
 });
 

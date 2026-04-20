@@ -339,6 +339,10 @@ function presentCapabilityName(name: CapabilityDescriptor["name"]): string {
   if (name === "fs.list") return "查看文件列表";
   if (name === "fs.search") return "搜索文件内容";
   if (name === "shell.run") return "执行命令";
+  if (name === "browser.open") return "浏览网页";
+  if (name === "browser.snapshot") return "页面快照";
+  if (name === "browser.extract") return "提取页面内容";
+  if (name === "browser.close") return "关闭浏览器";
   return name;
 }
 

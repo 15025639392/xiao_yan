@@ -1,5 +1,6 @@
 type AppSidebarRoute =
   | "chat"
+  | "xiaohongshu"
   | "persona"
   | "memory"
   | "tools";
@@ -109,6 +110,18 @@ export function AppSidebar({
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
           <span>对话</span>
+        </button>
+        <button
+          className={`app-sidebar__nav-item ${route === "xiaohongshu" ? "app-sidebar__nav-item--active" : ""}`}
+          onClick={() => onNavigate("xiaohongshu")}
+          type="button"
+        >
+          <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 5h16v11H7l-3 3V5z" />
+            <path d="M8 9h8" />
+            <path d="M8 13h5" />
+          </svg>
+          <span>小红书经营</span>
         </button>
         <button
           className={`app-sidebar__nav-item ${route === "tools" ? "app-sidebar__nav-item--active" : ""}`}

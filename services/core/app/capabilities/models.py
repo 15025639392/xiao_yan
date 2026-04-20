@@ -12,6 +12,10 @@ class CapabilityName(str, Enum):
     FS_LIST = "fs.list"
     FS_SEARCH = "fs.search"
     SHELL_RUN = "shell.run"
+    BROWSER_OPEN = "browser.open"
+    BROWSER_SNAPSHOT = "browser.snapshot"
+    BROWSER_EXTRACT = "browser.extract"
+    BROWSER_CLOSE = "browser.close"
 
 
 class RiskLevel(str, Enum):
@@ -223,5 +227,33 @@ CAPABILITY_DESCRIPTORS: list[CapabilityDescriptor] = [
         default_requires_approval=True,
         description="Execute a shell command in the controlled sandbox.",
         current_binding="tools execute endpoint + command sandbox/runner",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_OPEN,
+        default_risk_level=RiskLevel.RESTRICTED,
+        default_requires_approval=False,
+        description="Open a browser page and establish a session. Returns session_id, url, title, and status.",
+        current_binding="desktop executor: playwright-python browser driver",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_SNAPSHOT,
+        default_risk_level=RiskLevel.SAFE,
+        default_requires_approval=False,
+        description="Capture a snapshot of the current browser page: text content, accessibility tree, screenshot.",
+        current_binding="desktop executor: playwright-python browser driver",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_EXTRACT,
+        default_risk_level=RiskLevel.SAFE,
+        default_requires_approval=False,
+        description="Extract structured data from the current browser page using a target and schema.",
+        current_binding="desktop executor: playwright-python browser driver",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_CLOSE,
+        default_risk_level=RiskLevel.SAFE,
+        default_requires_approval=False,
+        description="Close a browser session by session_id.",
+        current_binding="desktop executor: playwright-python browser driver",
     ),
 ]

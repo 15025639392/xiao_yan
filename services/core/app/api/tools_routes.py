@@ -6,13 +6,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.api.file_tool_helpers import build_file_tools
-from app.api.tool_route_handlers import (
-    clear_tool_history_response,
-    list_tools_response,
-    tool_history_response,
-    tool_status_response,
-)
-from app.api.tool_capability_bridge import try_dispatch_file_capability, try_dispatch_shell_capability
+from app.api.tool_capability_bridge import try_dispatch_file_capability, try_dispatch_shell_capability, try_dispatch_browser_capability
 from app.tools.runner import CommandRunner
 from app.tools.sandbox import CommandSandbox, ToolSafetyLevel
 
@@ -131,5 +125,64 @@ def build_tools_router() -> APIRouter:
     def get_tools_status() -> dict:
         runner = _get_command_runner()
         return tool_status_response(runner)
+
+    # --- Browser capability routes ---
+
+    @router.post("/tools/browser/open")
+    def api_browser_open(url: str, session_id: str | None = None, headless: bool | None = None) -> dict:
+        result = try_dispatch_browser_capability(
+            "browser.open",
+            {"url": url, "session_id": session_id, "headless": headless},
+        )
+        if result is not None:
+            return result
+        return {"error": "browser.open: no desktop executor available", "capability_request_id": None}
+
+    @router.post("/tools/browser/snapshot")
+    def api_browser_snapshot(
+        session_id: str,
+        include_text: bool = True,
+        include_accessibility: bool = False,
+        include_screenshot: bool = False,
+        max_text_bytes: int | None = None,
+    ) -> dict:
+        result = try_dispatch_browser_capability(
+            "browser.snapshot",
+            {
+                "session_id": session_id,
+                "include_text": include_text,
+                "include_accessibility": include_accessibility,
+                "include_screenshot": include_screenshot,
+                "max_text_bytes": max_text_bytes,
+            },
+        )
+        if result is not None:
+            return result
+        return {"error": "browser.snapshot: no desktop executor available", "capability_request_id": None}
+
+    @router.post("/tools/browser/extract")
+    def api_browser_extract(
+        session_id: str,
+        target: str,
+        schema: dict | None = None,
+        max_items: int | None = None,
+    ) -> dict:
+        result = try_dispatch_browser_capability(
+            "browser.extract",
+            {"session_id": session_id, "target": target, "schema": schema, "max_items": max_items},
+        )
+        if result is not None:
+            return result
+        return {"error": "browser.extract: no desktop executor available", "capability_request_id": None}
+
+    @router.post("/tools/browser/close")
+    def api_browser_close(session_id: str) -> dict:
+        result = try_dispatch_browser_capability(
+            "browser.close",
+            {"session_id": session_id},
+        )
+        if result is not None:
+            return result
+        return {"error": "browser.close: no desktop executor available", "capability_request_id": None}
 
     return router

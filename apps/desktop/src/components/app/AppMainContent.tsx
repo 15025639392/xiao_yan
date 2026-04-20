@@ -9,6 +9,7 @@ import type {
 } from "../../lib/api";
 import type { AppRoute } from "../../lib/appRoutes";
 import { MemoryPage } from "../../pages/MemoryPage";
+import { XiaohongshuPage } from "../../pages/XiaohongshuPage";
 
 type AppMainContentProps = {
   assistantName: string;
@@ -79,6 +80,10 @@ export function AppMainContent({
 
   if (route === "memory") {
     return <MemoryPage assistantName={assistantName} />;
+  }
+
+  if (route === "xiaohongshu") {
+    return <XiaohongshuPage assistantName={assistantName} />;
   }
 
   if (route === "tools") {

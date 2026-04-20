@@ -1,4 +1,4 @@
-export type CapabilityName = "fs.read" | "fs.write" | "fs.list" | "fs.search" | "shell.run";
+export type CapabilityName = "fs.read" | "fs.write" | "fs.list" | "fs.search" | "shell.run" | "browser.open" | "browser.snapshot" | "browser.extract" | "browser.close";
 
 export type RiskLevel = "safe" | "restricted" | "dangerous";
 
@@ -142,4 +142,70 @@ export type CapabilityApprovalDecisionResponse = {
   status: CapabilityJobStatus;
   approval_status: CapabilityApprovalStatus;
   completed_at?: string | null;
+};
+
+// Browser capability types
+
+export type BrowserSessionStatus = "opening" | "active" | "idle" | "closing" | "closed" | "failed";
+
+export type BrowserInteractionLevel = "read_only" | "interactive";
+
+export type BrowserOpenArgs = {
+  url: string;
+  session_id?: string;
+  headless?: boolean;
+  wait_until?: string;
+};
+
+export type BrowserOpenOutput = {
+  session_id: string;
+  url: string;
+  resolved_url: string;
+  title: string;
+  status: BrowserSessionStatus;
+  opened_at: string;
+};
+
+export type BrowserSnapshotArgs = {
+  session_id: string;
+  include_text?: boolean;
+  include_accessibility?: boolean;
+  include_screenshot?: boolean;
+  max_text_bytes?: number;
+};
+
+export type BrowserSnapshotOutput = {
+  session_id: string;
+  url: string;
+  title: string;
+  text_content: string;
+  accessibility_tree: unknown;
+  screenshot_path: string | null;
+  captured_at: string;
+};
+
+export type BrowserExtractArgs = {
+  session_id: string;
+  target: string;
+  schema?: Record<string, unknown>;
+  max_items?: number;
+};
+
+export type BrowserExtractOutput = {
+  session_id: string;
+  target: string;
+  content: string;
+  structured_data: unknown;
+  source_url: string;
+  captured_at: string;
+};
+
+export type BrowserCloseArgs = {
+  session_id: string;
+};
+
+export type BrowserCloseOutput = {
+  session_id: string;
+  closed_at: string;
+  status: BrowserSessionStatus;
 };

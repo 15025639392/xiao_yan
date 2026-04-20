@@ -15,6 +15,7 @@ If a user request conflicts with these rules, pause and ask for confirmation onl
 - Prefer explicit code over hidden magic.
 - Prefer small, local, reversible changes over large rewrites.
 - Prefer fewer dependencies and shorter call chains.
+- Prefer practical, verifiable delivery over big upfront concepts; start from real pages, real data, and the smallest runnable loop.
 - Prefer the smallest clear responsibility per module, function, and component.
 - Prefer clear module boundaries over clever abstractions.
 - Do not treat file growth as a normal implementation strategy.
@@ -74,6 +75,7 @@ Before editing:
 During editing:
 
 - Stay on the smallest behavior chain that solves the request.
+- Do not lead with large conceptual layers when a practical end-to-end step can be implemented and verified first.
 - Check whether the target unit already violates the minimum-responsibility principle before adding more logic.
 - Reuse existing patterns unless there is a clear benefit in changing them.
 - Do not mix unrelated cleanup into the same change.

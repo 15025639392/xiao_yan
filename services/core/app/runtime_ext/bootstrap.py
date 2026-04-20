@@ -63,8 +63,11 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     worker = Thread(target=run_loop, name="autonomy-loop", daemon=True)
     worker.start()
 
+    from app.api.tool_capability_bridge import set_memory_repository_getter
+
     target_app.state.state_store = state_store
     target_app.state.memory_repository = memory_repository
+    set_memory_repository_getter(lambda: getattr(target_app.state, "memory_repository", None))
     target_app.state.world_repository = world_repository
     target_app.state.persona_service = persona_service
     target_app.state.memory_service = memory_service
@@ -106,6 +109,10 @@ def reload_runtime(target_app: FastAPI) -> None:
         if hasattr(target_app.state, attr):
             delattr(target_app.state, attr)
     ensure_runtime_initialized(target_app)
+
+    # Re-register the memory repository getter so reload picks up the new instance.
+    from app.api.tool_capability_bridge import set_memory_repository_getter
+    set_memory_repository_getter(lambda: getattr(target_app.state, "memory_repository", None))
 
 
 def ensure_realtime_hub_initialized(target_app: FastAPI) -> None:

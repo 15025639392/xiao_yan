@@ -65,6 +65,67 @@ CHAT_FILE_TOOL_DEFINITIONS = [
     },
 ]
 
+CHAT_BROWSER_TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "name": "browser_open",
+        "description": "Open a URL in a browser and return the page metadata. Use this when you need to access external websites or web content.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The URL to open"},
+                "headless": {"type": "boolean", "description": "Run browser in headless mode (default: true)"},
+            },
+            "required": ["url"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "browser_snapshot",
+        "description": "Get a snapshot of the current browser page content.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Browser session ID from browser_open"},
+                "include_text": {"type": "boolean", "description": "Include text content (default: true)"},
+                "max_text_bytes": {"type": "integer", "description": "Max text bytes to return"},
+            },
+            "required": ["session_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "browser_extract",
+        "description": "Extract structured content from the current browser page using a CSS selector or text target.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Browser session ID from browser_open"},
+                "target": {"type": "string", "description": "CSS selector or text pattern to extract"},
+                "schema": {"type": "object", "description": "Optional schema for structured extraction"},
+                "max_items": {"type": "integer", "description": "Max items to extract"},
+            },
+            "required": ["session_id", "target"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "browser_close",
+        "description": "Close a browser session.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Browser session ID from browser_open"},
+            },
+            "required": ["session_id"],
+            "additionalProperties": False,
+        },
+    },
+]
+
 
 def build_resume_instruction(partial_content: str) -> str:
     return (

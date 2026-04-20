@@ -115,4 +115,13 @@ def execute_tool_call(
         )
         return json.dumps(result.to_dict(), ensure_ascii=False)
 
+    from app.api.tool_capability_bridge import try_dispatch_browser_capability
+
+    if tool_name in {"browser_open", "browser_snapshot", "browser_extract", "browser_close"}:
+        capability_name = tool_name.replace("_", ".", 1)
+        browser_result = try_dispatch_browser_capability(capability_name, arguments)
+        if browser_result is not None:
+            return json.dumps(browser_result, ensure_ascii=False)
+        return json.dumps({"error": f"browser tool {tool_name} unavailable: no desktop executor"}, ensure_ascii=False)
+
     return json.dumps({"error": f"unsupported tool: {tool_name}"}, ensure_ascii=False)

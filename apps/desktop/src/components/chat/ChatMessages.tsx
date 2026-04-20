@@ -83,12 +83,14 @@ export const ChatMessages = memo(function ChatMessages({
           const hasBody = display.bodyMode !== "none";
           const hasDetails = Boolean(display.status || display.showMemoryReferenceContext);
 
+          const isProactive = message.role === "assistant" && !message.requestMessage;
           return (
             <article
               key={messageKey}
-              className={`chat-message chat-message--${message.role} ${message.state === "failed" ? "chat-message--failed" : ""}`}
+              className={`chat-message chat-message--${message.role} ${message.state === "failed" ? "chat-message--failed" : ""} ${isProactive ? "chat-message--proactive" : ""}`}
             >
               <div className="chat-message__bubble">
+                {isProactive && <span className="chat-message__proactive-dot" />}
                 {hasBody ? (
                   <div className={`chat-message__body chat-message__body--${display.bodyMode}`}>
                     {display.bodyMode === "markdown" ? (

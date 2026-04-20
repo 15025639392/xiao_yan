@@ -81,6 +81,7 @@
 ## 使用建议
 
 - 将本文档作为架构设计评审、重大重构和能力引入时的前置检查。
+- 当方案涉及外部工具接入、能力绑定、环境执行器或“器官化能力”边界时，同时参考 `docs/器官化能力模型.md`。
 - 新设计文档优先使用 `docs/plans/design-template.md`，并保留“数字人本体优先评审”章节。
 - 模板的具体使用方式见 `docs/plans/design-template-usage.md`。
 - 涉及人格、边界和长期价值判断时，可同时参考 `docs/value-foundation.md`。

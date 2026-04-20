@@ -25,5 +25,6 @@ import "./chat/index.css";
 import "./modal.css";
 import "./tools.css";
 import "./capabilities.css";
+import "./xiaohongshu.css";
 import "./emotion-panel.css";
 import "./responsive.css";

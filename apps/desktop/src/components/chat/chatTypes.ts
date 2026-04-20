@@ -31,6 +31,7 @@ export type ChatEntryLinkage = {
 // Recovery: data needed to retry a user send or resume an interrupted assistant reply.
 export type ChatEntryRecovery = {
   requestMessage?: string;
+  proactiveKind?: "follow_up" | "check_in" | "reflection" | "silent";
   retryRequestBody?: ChatRequestBody;
 };
 

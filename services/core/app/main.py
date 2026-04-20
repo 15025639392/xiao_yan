@@ -10,6 +10,7 @@ from app.api.chat_routes import build_chat_router
 from app.api.config_routes import build_config_router
 from app.api.memory_routes import build_memory_router
 from app.api.persona_routes import build_persona_router
+from app.api.platform_routes import build_platform_router
 from app.api.runtime_routes import build_runtime_router
 from app.api.tools_routes import build_tools_router
 from app.api.world_routes import build_world_router
@@ -61,3 +62,4 @@ app.include_router(build_capabilities_router())
 app.include_router(build_persona_router())
 app.include_router(build_memory_router())
 app.include_router(build_tools_router())
+app.include_router(build_platform_router())
