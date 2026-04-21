@@ -184,7 +184,7 @@ def build_runtime_router() -> APIRouter:
             requires_approval_for_bind=(
                 body.requires_approval_for_bind if body.requires_approval_for_bind is not None else current.requires_approval_for_bind
             ),
-            last_error=body.last_error or current.last_error,
+            last_error=body.last_error if body.last_error is not None else current.last_error,
         )
         being_state.browser_organ = updated
         state_store.set(being_state)

@@ -102,14 +102,24 @@ async fn browser_snapshot(
     max_text_bytes: Option<u64>,
     _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
 ) -> Result<serde_json::Value, String> {
-    let args = serde_json::json!({
-        "session_id": session_id,
-        "include_text": include_text.unwrap_or(true),
-        "include_accessibility": include_accessibility.unwrap_or(false),
-        "include_screenshot": include_screenshot.unwrap_or(false),
-        "max_text_bytes": max_text_bytes,
-    });
-    run_browser_driver("snapshot", args)
+    let mut args = serde_json::Map::new();
+    args.insert("session_id".to_string(), serde_json::Value::String(session_id));
+    args.insert("include_text".to_string(), serde_json::Value::Bool(include_text.unwrap_or(true)));
+    args.insert(
+        "include_accessibility".to_string(),
+        serde_json::Value::Bool(include_accessibility.unwrap_or(false)),
+    );
+    args.insert(
+        "include_screenshot".to_string(),
+        serde_json::Value::Bool(include_screenshot.unwrap_or(false)),
+    );
+    if let Some(value) = max_text_bytes {
+        args.insert(
+            "max_text_bytes".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(value)),
+        );
+    }
+    run_browser_driver("snapshot", serde_json::Value::Object(args))
 }
 
 #[tauri::command]

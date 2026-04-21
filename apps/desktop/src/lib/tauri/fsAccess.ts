@@ -205,7 +205,7 @@ export async function browserOpen(url: string, options?: BrowserOpenOptions): Pr
   try {
     return await invoke<BrowserOpenResult>("browser_open", {
       url,
-      session_id: options?.session_id,
+      sessionId: options?.session_id,
       headless: options?.headless,
       activate: options?.activate,
     });
@@ -221,11 +221,11 @@ export async function browserSnapshot(
   ensureTauri();
   try {
     return await invoke<BrowserSnapshotResult>("browser_snapshot", {
-      session_id: sessionId,
-      include_text: options?.include_text ?? true,
-      include_accessibility: options?.include_accessibility ?? false,
-      include_screenshot: options?.include_screenshot ?? false,
-      max_text_bytes: options?.max_text_bytes,
+      sessionId,
+      includeText: options?.include_text ?? true,
+      includeAccessibility: options?.include_accessibility ?? false,
+      includeScreenshot: options?.include_screenshot ?? false,
+      maxTextBytes: options?.max_text_bytes,
     });
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));
@@ -240,10 +240,10 @@ export async function browserExtract(
   ensureTauri();
   try {
     return await invoke<BrowserExtractResult>("browser_extract", {
-      session_id: sessionId,
+      sessionId,
       target,
       schema: options?.schema,
-      max_items: options?.max_items,
+      maxItems: options?.max_items,
     });
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));
@@ -253,7 +253,7 @@ export async function browserExtract(
 export async function browserClose(sessionId: string): Promise<BrowserCloseResult> {
   ensureTauri();
   try {
-    return await invoke<BrowserCloseResult>("browser_close", { session_id: sessionId });
+    return await invoke<BrowserCloseResult>("browser_close", { sessionId });
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));
   }
@@ -263,7 +263,7 @@ export async function browserEvaluate(sessionId: string, script: string): Promis
   ensureTauri();
   try {
     return await invoke<BrowserEvaluateResult>("browser_evaluate", {
-      session_id: sessionId,
+      sessionId,
       script,
     });
   } catch (e) {
@@ -287,7 +287,7 @@ export async function browserFillForm(
   ensureTauri();
   try {
     return await invoke<BrowserFillFormResult>("browser_fill_form", {
-      session_id: sessionId,
+      sessionId,
       title: options?.title ?? "",
       body: options?.body ?? "",
     });
@@ -311,7 +311,7 @@ export async function browserClickElement(
   ensureTauri();
   try {
     return await invoke<BrowserClickElementResult>("browser_click_element", {
-      session_id: sessionId,
+      sessionId,
       selector,
     });
   } catch (e) {
@@ -337,10 +337,10 @@ export async function browserPublish(
   ensureTauri();
   try {
     return await invoke<BrowserPublishResult>("browser_publish", {
-      session_id: sessionId,
+      sessionId,
       title,
       body,
-      publish_selector: publishSelector,
+      publishSelector,
     });
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));
@@ -359,7 +359,7 @@ export async function browserFindPublishButton(
   ensureTauri();
   try {
     return await invoke<BrowserFindPublishButtonResult>("browser_find_publish_button", {
-      session_id: sessionId,
+      sessionId,
     });
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));

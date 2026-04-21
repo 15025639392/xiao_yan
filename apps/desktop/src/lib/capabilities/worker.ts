@@ -543,21 +543,20 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
 }
 
 export function startCapabilityWorker(options: CapabilityWorkerOptions = {}): () => void {
-  if (!isTauriRuntime()) {
-    return () => {};
-  }
-
   const pollIntervalMs = Math.max(300, options.pollIntervalMs ?? 500);
   const batchSize = Math.max(1, options.batchSize ?? 3);
   const executorId = options.executorId ?? "desktop";
   const logger = options.logger ?? console;
+  const bootPollIntervalMs = 1000;
 
   let stopped = false;
   let inFlight = false;
   let timer: number | null = null;
-  let organReported = false;
+  let bootTimer: number | null = null;
+  let organHealthy = false;
+  let started = false;
 
-  const reportBrowserOrgan = async (healthy: boolean) => {
+  const reportBrowserOrgan = async (healthy: boolean, lastError?: string) => {
     try {
       await updateBrowserOrgan({
         binding_status: healthy ? "bound" : "unbound",
@@ -565,23 +564,41 @@ export function startCapabilityWorker(options: CapabilityWorkerOptions = {}): ()
         driver_name: "playwright-python",
         driver_version: "1.58.0",
         browser_binary_ready: healthy,
+        last_error: healthy ? "" : (lastError ?? ""),
       });
-      organReported = true;
+      organHealthy = healthy;
     } catch {
       // best-effort
     }
   };
 
-  // Probe browser driver on startup
-  reportBrowserOrgan(true);
+  const ensureStarted = () => {
+    if (stopped || started || !isTauriRuntime()) {
+      return;
+    }
+
+    started = true;
+    void tick();
+    timer = window.setInterval(() => {
+      void tick();
+    }, pollIntervalMs);
+
+    if (bootTimer != null) {
+      window.clearInterval(bootTimer);
+      bootTimer = null;
+    }
+  };
 
   const tick = async () => {
-    if (stopped || inFlight) {
+    if (stopped || inFlight || !isTauriRuntime()) {
       return;
     }
     inFlight = true;
     try {
       await heartbeatCapabilityExecutor(executorId);
+      if (!organHealthy) {
+        await reportBrowserOrgan(true);
+      }
       const pending = await fetchPendingCapabilities(executorId, batchSize);
       for (const item of pending.items) {
         const result = await executeCapabilityLocally(item.request);
@@ -592,22 +609,31 @@ export function startCapabilityWorker(options: CapabilityWorkerOptions = {}): ()
         }
       }
     } catch (error) {
+      organHealthy = false;
+      const message = error instanceof Error ? error.message : String(error);
+      void reportBrowserOrgan(false, message);
       logger.warn("capability worker poll failed", error);
     } finally {
       inFlight = false;
     }
   };
 
-  void tick();
-  timer = window.setInterval(() => {
-    void tick();
-  }, pollIntervalMs);
+  ensureStarted();
+  if (!started) {
+    bootTimer = window.setInterval(() => {
+      ensureStarted();
+    }, bootPollIntervalMs);
+  }
 
   return () => {
     stopped = true;
     if (timer != null) {
       window.clearInterval(timer);
       timer = null;
+    }
+    if (bootTimer != null) {
+      window.clearInterval(bootTimer);
+      bootTimer = null;
     }
   };
 }

@@ -368,7 +368,9 @@ class DriverDaemon:
         include_text = args.get("include_text", True)
         include_accessibility = args.get("include_accessibility", False)
         include_screenshot = args.get("include_screenshot", False)
-        max_text_bytes = args.get("max_text_bytes", 512 * 1024)
+        max_text_bytes = args.get("max_text_bytes")
+        if not isinstance(max_text_bytes, int) or max_text_bytes <= 0:
+            max_text_bytes = 512 * 1024
 
         session = self._resolve_session(session_id)
         page = session.page
@@ -490,6 +492,8 @@ class DriverDaemon:
         browser = session.context.browser
         if browser is not None and browser.is_connected() is False:
             raise ValueError(f"session browser disconnected: {session_id}")
+        if session.page.is_closed():
+            raise ValueError(f"session page closed: {session_id}")
         return session
 
     # ── evaluate ─────────────────────────────────────────────────────────────

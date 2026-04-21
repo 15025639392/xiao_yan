@@ -46,21 +46,56 @@ RED新生代创作大赛
     assert result.activities[0].date_range == "03-30 至 05-10"
 
 
-def test_capture_creator_home_via_browser_organ_reads_snapshot_and_closes_session(monkeypatch):
+def test_extract_creator_home_from_raw_text_detects_real_nickname_account_name():
+    result = extract_creator_home_from_raw_text(
+        """
+遇到问题
+创作服务平台
+小晏
+发布笔记
+首页
+笔记管理
+数据看板
+活动中心
+收起侧边栏
+小晏
+0
+关注数
+0
+粉丝数
+0
+获赞与收藏
+小红书账号: 26532438900
+创作话题
+#高颜值巧克力
+30万人参与，14.4亿次浏览
+热门活动
+官方活动, 奖励多多
+RED新生代创作大赛
+03-30 至 05-10
+"""
+    )
+
+    assert result.account_name == "小晏"
+    assert [item.topic for item in result.topics] == ["#高颜值巧克力"]
+    assert [item.title for item in result.activities] == ["RED新生代创作大赛"]
+
+
+def test_capture_creator_home_via_browser_organ_reads_snapshot_and_reuses_login_session(monkeypatch):
     calls: list[str] = []
 
     def fake_call_browser_capability(capability, args, *, timeout_seconds=15.0):
         _ = timeout_seconds
         calls.append(capability)
         if capability == "browser.open":
-            return {"session_id": "xhs-session", "resolved_url": "https://creator.xiaohongshu.com/new/home"}
+            assert args["session_id"] == "xhs-login"
+            assert args["activate"] is False
+            return {"session_id": "xhs-login", "resolved_url": "https://creator.xiaohongshu.com/new/home"}
         if capability == "browser.snapshot":
             return {
                 "url": "https://creator.xiaohongshu.com/new/home",
                 "text_content": "创作服务平台\n小红薯8888\n#低成本副业\n12万人参与，3亿次浏览\n",
             }
-        if capability == "browser.close":
-            return {"session_id": args["session_id"], "status": "closed"}
         raise AssertionError(f"unexpected capability: {capability}")
 
     monkeypatch.setattr(creator_home_capture, "call_browser_capability", fake_call_browser_capability)
@@ -69,7 +104,7 @@ def test_capture_creator_home_via_browser_organ_reads_snapshot_and_closes_sessio
 
     assert captured.source_url == "https://creator.xiaohongshu.com/new/home"
     assert captured.account_name == "小红薯8888"
-    assert calls == ["browser.open", "browser.snapshot", "browser.close"]
+    assert calls == ["browser.open", "browser.snapshot"]
 
 
 def test_capture_lead_signals_via_browser_organ_uses_existing_session(monkeypatch):

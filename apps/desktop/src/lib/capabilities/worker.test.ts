@@ -2,6 +2,30 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { CapabilityRequest } from "./types";
 
+const testState = vi.hoisted(() => ({
+  mockFetchPendingCapabilities: vi.fn(async () => ({ items: [] })),
+  mockCompleteCapability: vi.fn(async () => ({ request_id: "req-1", status: "completed" })),
+  mockHeartbeatCapabilityExecutor: vi.fn(async () => ({ executor: "desktop", heartbeat_at: new Date().toISOString() })),
+  mockUpdateBrowserOrgan: vi.fn(async () => ({ ok: true })),
+  mockUpdateBrowserSession: vi.fn(async () => ({ ok: true })),
+  tauriRuntimeReady: true,
+}));
+
+vi.mock("./api", () => ({
+  fetchPendingCapabilities: testState.mockFetchPendingCapabilities,
+  completeCapability: testState.mockCompleteCapability,
+  heartbeatCapabilityExecutor: testState.mockHeartbeatCapabilityExecutor,
+}));
+
+vi.mock("../api", async () => {
+  const actual = await vi.importActual("../api");
+  return {
+    ...actual,
+    updateBrowserOrgan: testState.mockUpdateBrowserOrgan,
+    updateBrowserSession: testState.mockUpdateBrowserSession,
+  };
+});
+
 vi.mock("../tauri/fsAccess", () => ({
   fsGetAllowedDirectory: vi.fn(async () => "/tmp/project"),
   fsReadTextFile: vi.fn(async (path: string) => {
@@ -28,10 +52,10 @@ vi.mock("../tauri/fsAccess", () => ({
     }
     throw new Error("not_supported: unsupported command");
   }),
-  isTauriRuntime: vi.fn(() => true),
+  isTauriRuntime: vi.fn(() => testState.tauriRuntimeReady),
 }));
 
-import { executeCapabilityLocally } from "./worker";
+import { executeCapabilityLocally, startCapabilityWorker } from "./worker";
 import { shellRunCommand } from "../tauri/fsAccess";
 
 function buildRequest(capability: CapabilityRequest["capability"], args: Record<string, unknown>): CapabilityRequest {
@@ -134,5 +158,34 @@ describe("capability worker local executor", () => {
     );
     expect(result.ok).toBe(false);
     expect(result.error_code).toBe("policy_violation");
+  });
+
+  test("starts capability worker after tauri runtime becomes available later", async () => {
+    vi.useFakeTimers();
+    testState.tauriRuntimeReady = false;
+    testState.mockHeartbeatCapabilityExecutor.mockClear();
+    testState.mockFetchPendingCapabilities.mockClear();
+    testState.mockUpdateBrowserOrgan.mockClear();
+
+    const stop = startCapabilityWorker({ pollIntervalMs: 500 });
+
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(testState.mockHeartbeatCapabilityExecutor).not.toHaveBeenCalled();
+
+    testState.tauriRuntimeReady = true;
+    await vi.advanceTimersByTimeAsync(1200);
+
+    expect(testState.mockHeartbeatCapabilityExecutor).toHaveBeenCalledWith("desktop");
+    expect(testState.mockFetchPendingCapabilities).toHaveBeenCalled();
+    expect(testState.mockUpdateBrowserOrgan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        binding_status: "bound",
+        health_status: "healthy",
+      }),
+    );
+
+    stop();
+    testState.tauriRuntimeReady = true;
+    vi.useRealTimers();
   });
 });

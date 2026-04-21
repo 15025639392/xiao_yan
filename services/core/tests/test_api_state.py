@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_memory_repository, get_mempalace_adapter, get_state_store
-from app.domain.models import BeingState, FocusMode, WakeMode
+from app.domain.models import BeingState, BrowserOrganState, FocusMode, WakeMode
 from app.main import app
 from app.memory.repository import InMemoryMemoryRepository
 from app.runtime import StateStore
@@ -145,5 +145,44 @@ def test_get_memory_backends_includes_mempalace_snapshot():
         assert response.status_code == 200
         payload = response.json()
         assert payload["chat_memory"]["palace_path"] == "/tmp/palace"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_update_browser_organ_allows_clearing_last_error():
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            focus_mode=FocusMode.AUTONOMY,
+            browser_organ=BrowserOrganState(
+                binding_status="unbound",
+                health_status="degraded",
+                last_error="stale startup error",
+            ),
+        )
+    )
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/browser/organ",
+            json={
+                "binding_status": "bound",
+                "health_status": "healthy",
+                "last_error": "",
+            },
+        )
+
+        assert response.status_code == 200
+        updated = state_store.get().browser_organ
+        assert updated is not None
+        assert updated.binding_status == "bound"
+        assert updated.health_status == "healthy"
+        assert updated.last_error == ""
     finally:
         app.dependency_overrides.clear()

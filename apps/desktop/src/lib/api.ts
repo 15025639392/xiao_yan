@@ -28,11 +28,11 @@ export type BrowserSessionUpdate = {
 };
 
 export async function updateBrowserOrgan(update: BrowserOrganUpdate): Promise<{ ok: boolean }> {
-  return post<{ ok: boolean }>("/runtime/browser/organ", update);
+  return post<{ ok: boolean }>("/browser/organ", update);
 }
 
 export async function updateBrowserSession(update: BrowserSessionUpdate): Promise<{ ok: boolean }> {
-  return post<{ ok: boolean }>("/runtime/browser/session", update);
+  return post<{ ok: boolean }>("/browser/session", update);
 }
 
 export type XhsWorkDomainProfile = {

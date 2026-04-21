@@ -108,6 +108,15 @@ class XhsWorkDomainEngine:
                 title="侦察失败",
                 data={"error": "browser organ unavailable"},
             )
+        except BrowserCapabilityError:
+            domain.state.status = XhsWorkStatus.BLOCKED
+            domain.state.current_bottleneck = "打不开创作首页"
+            self._save(domain)
+            return XhsWorkDomainAction(
+                kind="scouting",
+                title="侦察失败",
+                data={"error": "browser open failed"},
+            )
 
         session_id = open_result.get("session_id")
         if not session_id:
