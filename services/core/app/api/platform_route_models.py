@@ -163,6 +163,8 @@ class XiaohongshuStructuredPublishDraft(BaseModel):
 class XiaohongshuPublishAutofillRequest(BaseModel):
     title: str
     body: str
+    auto_publish: bool = False
+    publish_selector: str = ""
 
 
 class XiaohongshuPublishAutofillResponse(BaseModel):

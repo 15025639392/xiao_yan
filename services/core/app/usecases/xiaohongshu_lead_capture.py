@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import re
 
 from app.api.platform_route_models import XiaohongshuLeadCaptureResponse
-from app.usecases.xiaohongshu_chrome_capture import capture_active_chrome_tab
+from app.api.tool_capability_bridge import BrowserCapabilityError, call_browser_capability
 
 
 _SUPPORTED_URL_PREFIXES = (
@@ -53,16 +53,30 @@ class LeadCaptureExtraction:
     tracking_template: str
 
 
-def capture_xiaohongshu_lead_signals_from_chrome(*, title_hint: str | None = None) -> XiaohongshuLeadCaptureResponse:
-    captured = capture_active_chrome_tab()
-    if not any(captured.url.startswith(prefix) for prefix in _SUPPORTED_URL_PREFIXES):
-        raise ValueError("active Chrome tab is not a supported xiaohongshu page")
+def capture_xiaohongshu_lead_signals_via_browser_organ(
+    *,
+    session_id: str,
+    title_hint: str | None = None,
+) -> XiaohongshuLeadCaptureResponse:
+    try:
+        snapshot = call_browser_capability(
+            "browser.snapshot",
+            {"session_id": session_id, "include_text": True},
+            timeout_seconds=15.0,
+        )
+    except BrowserCapabilityError as exc:
+        raise ValueError("browser organ snapshot failed for xiaohongshu lead capture") from exc
 
-    extracted = extract_lead_capture_from_raw_text(captured.body_text, title_hint=title_hint)
+    source_url = str(snapshot.get("url") or "")
+    if not any(source_url.startswith(prefix) for prefix in _SUPPORTED_URL_PREFIXES):
+        raise ValueError("browser organ session is not on a supported xiaohongshu page")
+
+    raw_text = str(snapshot.get("text_content") or "")
+    extracted = extract_lead_capture_from_raw_text(raw_text, title_hint=title_hint)
     return XiaohongshuLeadCaptureResponse(
-        source_url=captured.url,
+        source_url=source_url,
         note_title=extracted.note_title,
-        raw_text=captured.body_text,
+        raw_text=raw_text,
         like_count=extracted.like_count,
         collect_count=extracted.collect_count,
         comment_count=extracted.comment_count,

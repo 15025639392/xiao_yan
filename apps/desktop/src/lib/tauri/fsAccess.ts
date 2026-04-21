@@ -150,6 +150,7 @@ export async function shellRunCommand(command: string, options?: ShellRunOptions
 export type BrowserOpenOptions = {
   session_id?: string;
   headless?: boolean;
+  activate?: boolean;
 };
 
 export type BrowserOpenResult = {
@@ -186,10 +187,28 @@ export type BrowserCloseResult = {
   status: string;
 };
 
+export type BrowserEvaluateResult = {
+  session_id: string;
+  result: unknown;
+  evaluated_at: string;
+};
+
+export type BrowserFillFormResult = {
+  session_id: string;
+  status: string;
+  filled_title: boolean;
+  filled_body: boolean;
+};
+
 export async function browserOpen(url: string, options?: BrowserOpenOptions): Promise<BrowserOpenResult> {
   ensureTauri();
   try {
-    return await invoke<BrowserOpenResult>("browser_open", { url, sessionId: options?.session_id, headless: options?.headless });
+    return await invoke<BrowserOpenResult>("browser_open", {
+      url,
+      session_id: options?.session_id,
+      headless: options?.headless,
+      activate: options?.activate,
+    });
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));
   }
@@ -240,10 +259,108 @@ export async function browserClose(sessionId: string): Promise<BrowserCloseResul
   }
 }
 
+export async function browserEvaluate(sessionId: string, script: string): Promise<BrowserEvaluateResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserEvaluateResult>("browser_evaluate", {
+      session_id: sessionId,
+      script,
+    });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
 export async function browserShutdown(): Promise<void> {
   ensureTauri();
   try {
     await invoke("browser_shutdown");
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export async function browserFillForm(
+  sessionId: string,
+  options?: { title?: string; body?: string },
+): Promise<BrowserFillFormResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserFillFormResult>("browser_fill_form", {
+      session_id: sessionId,
+      title: options?.title ?? "",
+      body: options?.body ?? "",
+    });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export interface BrowserClickElementResult {
+  session_id: string;
+  status: string;
+  selector: string;
+  clicked: boolean;
+  error?: string;
+}
+
+export async function browserClickElement(
+  sessionId: string,
+  selector: string,
+): Promise<BrowserClickElementResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserClickElementResult>("browser_click_element", {
+      session_id: sessionId,
+      selector,
+    });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export interface BrowserPublishResult {
+  session_id: string;
+  filled_title: boolean;
+  filled_body: boolean;
+  status: string;
+  publish_clicked: boolean;
+  click_error?: string;
+}
+
+export async function browserPublish(
+  sessionId: string,
+  title: string,
+  body: string,
+  publishSelector: string,
+): Promise<BrowserPublishResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserPublishResult>("browser_publish", {
+      session_id: sessionId,
+      title,
+      body,
+      publish_selector: publishSelector,
+    });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
+export interface BrowserFindPublishButtonResult {
+  session_id: string;
+  selector: string | null;
+  found: boolean;
+}
+
+export async function browserFindPublishButton(
+  sessionId: string,
+): Promise<BrowserFindPublishButtonResult> {
+  ensureTauri();
+  try {
+    return await invoke<BrowserFindPublishButtonResult>("browser_find_publish_button", {
+      session_id: sessionId,
+    });
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));
   }

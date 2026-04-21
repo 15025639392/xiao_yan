@@ -117,7 +117,7 @@ def execute_tool_call(
 
     from app.api.tool_capability_bridge import try_dispatch_browser_capability
 
-    if tool_name in {"browser_open", "browser_snapshot", "browser_extract", "browser_close"}:
+    if tool_name in {"browser_open", "browser_snapshot", "browser_extract", "browser_fill_form", "browser_click_element", "browser_publish", "browser_find_publish_button", "browser_close"}:
         capability_name = tool_name.replace("_", ".", 1)
         browser_result = try_dispatch_browser_capability(capability_name, arguments)
         if browser_result is not None:

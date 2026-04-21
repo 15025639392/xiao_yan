@@ -81,12 +81,14 @@ async fn browser_open(
     url: String,
     session_id: Option<String>,
     headless: Option<bool>,
+    activate: Option<bool>,
     _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
 ) -> Result<serde_json::Value, String> {
     let args = serde_json::json!({
         "url": url,
         "session_id": session_id,
         "headless": headless.unwrap_or(true),
+        "activate": activate.unwrap_or(true),
     });
     run_browser_driver("open", args)
 }
@@ -111,11 +113,75 @@ async fn browser_snapshot(
 }
 
 #[tauri::command]
+async fn browser_extract(
+    session_id: String,
+    target: String,
+    schema: Option<serde_json::Value>,
+    max_items: Option<u64>,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    let args = serde_json::json!({
+        "session_id": session_id,
+        "target": target,
+        "schema": schema,
+        "max_items": max_items.unwrap_or(50),
+    });
+    run_browser_driver("extract", args)
+}
+
+#[tauri::command]
 async fn browser_close(
     session_id: String,
     _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
 ) -> Result<serde_json::Value, String> {
     run_browser_driver("close", serde_json::json!({"session_id": session_id}))
+}
+
+#[tauri::command]
+async fn browser_evaluate(
+    session_id: String,
+    script: String,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    run_browser_driver("evaluate", serde_json::json!({"session_id": session_id, "script": script}))
+}
+
+#[tauri::command]
+async fn browser_fill_form(
+    session_id: String,
+    title: String,
+    body: String,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    run_browser_driver("fill_form", serde_json::json!({"session_id": session_id, "title": title, "body": body}))
+}
+
+#[tauri::command]
+async fn browser_click_element(
+    session_id: String,
+    selector: String,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    run_browser_driver("click_element", serde_json::json!({"session_id": session_id, "selector": selector}))
+}
+
+#[tauri::command]
+async fn browser_publish(
+    session_id: String,
+    title: String,
+    body: String,
+    publish_selector: String,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    run_browser_driver("publish", serde_json::json!({"session_id": session_id, "title": title, "body": body, "publish_selector": publish_selector}))
+}
+
+#[tauri::command]
+async fn browser_find_publish_button(
+    session_id: String,
+    _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
+) -> Result<serde_json::Value, String> {
+    run_browser_driver("find_publish_button", serde_json::json!({"session_id": session_id}))
 }
 
 #[derive(serde::Serialize)]
@@ -1586,7 +1652,13 @@ fn main() {
             // Browser commands
             browser_open,
             browser_snapshot,
+            browser_extract,
             browser_close,
+            browser_evaluate,
+            browser_fill_form,
+            browser_click_element,
+            browser_publish,
+            browser_find_publish_button,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

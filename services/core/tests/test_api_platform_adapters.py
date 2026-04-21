@@ -3,6 +3,7 @@ import json
 
 from app.api.deps import get_chat_gateway, get_chat_memory_runtime, get_persona_service, get_state_store
 from app.api import platform_route_handlers
+from app.domain.models import BrowserSessionState, BrowserSessionStatus
 from app.llm.schemas import ChatMessage
 from app.main import app
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
@@ -593,7 +594,7 @@ def test_xiaohongshu_creator_home_preview_endpoint_rejects_empty_snapshot():
 def test_xiaohongshu_creator_home_capture_endpoint_returns_current_chrome_snapshot(monkeypatch):
     monkeypatch.setattr(
         platform_route_handlers,
-        "capture_xiaohongshu_creator_home_from_chrome",
+        "capture_xiaohongshu_creator_home_via_browser_organ",
         lambda: creator_home_capture.XiaohongshuCreatorHomeCaptureResponse(
             source_url="https://creator.xiaohongshu.com/new/home",
             account_name="小红薯66661C17",
@@ -629,7 +630,7 @@ def test_xiaohongshu_publish_autofill_endpoint_returns_fill_status(monkeypatch):
     monkeypatch.setattr(
         platform_route_handlers,
         "autofill_xiaohongshu_publish_page",
-        lambda *, title, body: publish_autofill.XiaohongshuPublishAutofillResponse(
+        lambda *, title, body, auto_publish=False, publish_selector="": publish_autofill.XiaohongshuPublishAutofillResponse(
             status="filled",
             publish_url="https://creator.xiaohongshu.com/publish/publish?from=xiao_yan&target=image",
             title=title,
@@ -724,8 +725,8 @@ def test_xiaohongshu_publish_via_mcp_endpoint_returns_publish_status(monkeypatch
 def test_xiaohongshu_lead_capture_endpoint_returns_current_page_lead_summary(monkeypatch):
     monkeypatch.setattr(
         platform_route_handlers,
-        "capture_xiaohongshu_lead_signals_from_chrome",
-        lambda *, title_hint: lead_capture.XiaohongshuLeadCaptureResponse(
+        "capture_xiaohongshu_lead_signals_via_browser_organ",
+        lambda *, session_id, title_hint: lead_capture.XiaohongshuLeadCaptureResponse(
             source_url="https://creator.xiaohongshu.com/new/home",
             note_title=title_hint or "测试标题",
             raw_text="点赞 128\n评论 12\n想加微信细聊预算和报价",
@@ -743,11 +744,23 @@ def test_xiaohongshu_lead_capture_endpoint_returns_current_page_lead_summary(mon
         ),
     )
 
-    client = TestClient(app)
-    response = client.post(
-        "/platform-adapters/xiaohongshu/lead-capture",
-        json={"title_hint": "测试标题"},
+    lead_state_store = StateStore()
+    state = lead_state_store.get()
+    state.browser_session = BrowserSessionState(
+        session_id="active-browser-session",
+        status=BrowserSessionStatus.ACTIVE,
     )
+    lead_state_store.set(state)
+    app.dependency_overrides[get_state_store] = lambda: lead_state_store
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/platform-adapters/xiaohongshu/lead-capture",
+            json={"title_hint": "测试标题"},
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 200
     body = response.json()

@@ -30,6 +30,8 @@ export type XiaohongshuCreatorHomeCaptureResponse = {
 export type XiaohongshuPublishAutofillRequest = {
   title: string;
   body: string;
+  auto_publish?: boolean;
+  publish_selector?: string;
 };
 
 export type XiaohongshuPublishAutofillResponse = {

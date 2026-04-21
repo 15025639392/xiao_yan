@@ -50,6 +50,22 @@ export function isRequestStatusError(error: unknown, status: number): boolean {
   return error instanceof Error && error.message.startsWith(`request failed: ${status}`);
 }
 
+export async function patch<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    throw await buildHttpError(response);
+  }
+
+  return response.json();
+}
+
 export async function post<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method: "POST",

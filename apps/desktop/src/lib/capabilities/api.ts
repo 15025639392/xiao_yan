@@ -91,7 +91,21 @@ type FetchCapabilityJobsParams = {
   deadLetterOnly?: boolean;
   approvalStatus?: "not_required" | "pending" | "approved" | "rejected";
   approver?: string;
-  capability?: "fs.read" | "fs.write" | "fs.list" | "fs.search" | "shell.run" | "browser.open" | "browser.snapshot" | "browser.extract" | "browser.close";
+  capability?:
+    | "fs.read"
+    | "fs.write"
+    | "fs.list"
+    | "fs.search"
+    | "shell.run"
+    | "browser.open"
+    | "browser.snapshot"
+    | "browser.extract"
+    | "browser.close"
+    | "browser.evaluate"
+    | "browser.fill_form"
+    | "browser.click_element"
+    | "browser.publish"
+    | "browser.find_publish_button";
   requestId?: string;
   cursor?: string;
 };

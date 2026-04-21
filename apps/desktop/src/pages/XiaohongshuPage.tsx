@@ -1,388 +1,322 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
-import {
-  autofillXiaohongshuPublishDraft,
-  publishXiaohongshuViaMcp,
-  autofillXiaohongshuTextImageCards,
-  captureXiaohongshuCreatorHome,
-  captureXiaohongshuLeadSignals,
-  previewXiaohongshuCreatorHome,
-  type XiaohongshuPublishAutofillResponse,
-  type XiaohongshuCreatorPreviewItem,
-  type XiaohongshuLeadCaptureResponse,
-  type XiaohongshuPublishViaMcpResponse,
-  type XiaohongshuTextImageAutofillResponse,
-} from "../lib/api";
-import { Button, Panel } from "../components/ui";
-import {
-  buildPublishDraft,
-  buildPublishChecklist,
-  buildLeadCaptureTemplate,
-  buildLeadFollowUpPacket,
-  buildImageCardDraft,
-  extractCreatorHomeSnapshot,
-  parseImagePaths,
-  parseActivities,
-  parseTopics,
-  type XiaohongshuImageCardDraft,
-  type XiaohongshuLeadCaptureTemplate,
-  type XiaohongshuLeadFollowUpPacket,
-  type XiaohongshuPublishChecklist,
-  type XiaohongshuPublishDraft,
-} from "./xiaohongshuPageHelpers";
-import { buildLeadReplyPlan, type XiaohongshuLeadReplyPlan } from "./xiaohongshuLeadReplyHelpers";
-import { XiaohongshuDraftCard } from "./XiaohongshuDraftCard";
-import { XiaohongshuOpportunityPanel } from "./XiaohongshuOpportunityPanel";
+import { fetchXhsWorkDomain, updateXhsWorkDomain, type XhsWorkDomainResponse } from "../lib/api";
+import { browserOpen } from "../lib/tauri/fsAccess";
+import { Button } from "../components/ui";
 
 type XiaohongshuPageProps = {
   assistantName: string;
 };
 
-const DEFAULT_ACCOUNT_NAME = "小红薯66661C17";
-const DEFAULT_TOPICS = [
-  "#高颜值巧克力 | 30万人参与 | 14.4亿次浏览",
-  "#早餐吃什么 | 288.7万人参与 | 105.3亿次浏览",
-  "#面条的花式做法 | 30.3万人参与 | 29.8亿次浏览",
-].join("\n");
-const DEFAULT_ACTIVITIES = [
-  "RED新生代创作大赛 | 03-30 至 05-10 | 官方活动, 奖励多多",
-  "我的时尚缪斯 | 04-19 至 05-31 | 官方活动, 奖励多多",
-  "春天见面会 | 04-18 至 04-30 | 官方活动, 奖励多多",
-].join("\n");
-const DEFAULT_MESSAGE =
-  "请围绕冷启动起号和后续成交经营，生成适合人工确认后发布的小红书笔记草稿。";
-const DEFAULT_RAW_SNAPSHOT = [
-  "创作话题",
-  "#高颜值巧克力",
-  "30万人参与，14.4亿次浏览",
-  "#早餐吃什么",
-  "288.7万人参与，105.3亿次浏览",
-  "#面条的花式做法",
-  "30.3万人参与，29.8亿次浏览",
-  "热门活动",
-  "官方活动, 奖励多多",
-  "RED新生代创作大赛 03-30 至 05-10",
-  "我的时尚缪斯 04-19 至 05-31",
-  "春天见面会 04-18 至 04-30",
-].join("\n");
+const XHS_LOGIN_SESSION_ID = "xhs-login";
+
+const STATUS_LABELS: Record<string, string> = {
+  idle: "空闲",
+  idle_reviewing: "待补图",
+  scouting: "侦察中",
+  drafting: "生成草稿中",
+  publishing: "发布中",
+  blocked: "已阻塞",
+};
+
+const STATUS_STEPS = ["idle", "scouting", "drafting", "publishing", "idle_reviewing"];
+
+function getStepIndex(status: string): number {
+  if (status === "blocked") return -1;
+  return STATUS_STEPS.indexOf(status);
+}
+
+function LoopProgress({ status }: { status: string }) {
+  const current = getStepIndex(status);
+  const isBlocked = status === "blocked";
+
+  return (
+    <div className="xhs-loop-progress">
+      {STATUS_STEPS.map((step, i) => {
+        const isActive = i === current;
+        const isDone = i < current;
+        const isPending = i > current;
+        return (
+          <div key={step} className={`xhs-loop-step ${isDone ? "done" : ""} ${isActive ? "active" : ""} ${isPending ? "pending" : ""}`}>
+            <div className="xhs-loop-step__dot">
+              {isDone ? "✓" : isActive ? "●" : "○"}
+            </div>
+            <div className="xhs-loop-step__label">{STATUS_LABELS[step]}</div>
+            {i < STATUS_STEPS.length - 1 && (
+              <div className={`xhs-loop-step__line ${isDone ? "done" : ""}`} />
+            )}
+          </div>
+        );
+      })}
+      {isBlocked && (
+        <div className="xhs-loop-step xhs-loop-step--blocked">
+          <div className="xhs-loop-step__dot">!</div>
+          <div className="xhs-loop-step__label">阻塞</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PublishedHistory({ history }: { history: Array<{ draft_id: string; title: string; published_at: string; post_url: string }> }) {
+  if (!history || history.length === 0) {
+    return <p className="xhs-history-empty">暂无发布记录</p>;
+  }
+  return (
+    <ul className="xhs-history-list">
+      {history.slice(-5).reverse().map((entry) => (
+        <li key={entry.draft_id} className="xhs-history-item">
+          <span className="xhs-history-item__title">{entry.title || "(无标题)"}</span>
+          <span className="xhs-history-item__time">
+            {new Date(entry.published_at).toLocaleString()}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
-  const [accountName, setAccountName] = useState(DEFAULT_ACCOUNT_NAME);
-  const [topicsText, setTopicsText] = useState(DEFAULT_TOPICS);
-  const [activitiesText, setActivitiesText] = useState(DEFAULT_ACTIVITIES);
-  const [rawSnapshotText, setRawSnapshotText] = useState(DEFAULT_RAW_SNAPSHOT);
-  const [message, setMessage] = useState(DEFAULT_MESSAGE);
-  const [loading, setLoading] = useState(false);
-  const [capturing, setCapturing] = useState(false);
-  const [autofillingIndex, setAutofillingIndex] = useState<number | null>(null);
-  const [publishViaMcpIndex, setPublishViaMcpIndex] = useState<number | null>(null);
-  const [textImageIndex, setTextImageIndex] = useState<number | null>(null);
-  const [leadCaptureIndex, setLeadCaptureIndex] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<XiaohongshuCreatorPreviewItem[]>([]);
-  const [publishDrafts, setPublishDrafts] = useState<Record<number, XiaohongshuPublishDraft>>({});
-  const [imageDrafts, setImageDrafts] = useState<Record<number, XiaohongshuImageCardDraft>>({});
-  const [publishChecklists, setPublishChecklists] = useState<Record<number, XiaohongshuPublishChecklist>>({});
-  const [followUpPackets, setFollowUpPackets] = useState<Record<number, XiaohongshuLeadFollowUpPacket>>({});
-  const [leadCaptureTemplates, setLeadCaptureTemplates] = useState<Record<number, XiaohongshuLeadCaptureTemplate>>({});
-  const [leadCaptureResults, setLeadCaptureResults] = useState<Record<number, XiaohongshuLeadCaptureResponse>>({});
-  const [leadReplyPlans, setLeadReplyPlans] = useState<Record<number, XiaohongshuLeadReplyPlan>>({});
-  const [autofillResults, setAutofillResults] = useState<Record<number, XiaohongshuPublishAutofillResponse>>({});
-  const [publishViaMcpResults, setPublishViaMcpResults] = useState<Record<number, XiaohongshuPublishViaMcpResponse>>({});
-  const [textImageResults, setTextImageResults] = useState<Record<number, XiaohongshuTextImageAutofillResponse>>({});
-  const [imagePathInputs, setImagePathInputs] = useState<Record<number, string>>({});
+  const [workDomain, setWorkDomain] = useState<XhsWorkDomainResponse | null>(null);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [accountName, setAccountName] = useState("");
+  const [scoutingInterval, setScoutingInterval] = useState(1.0);
+  const [autoPublishSelector, setAutoPublishSelector] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [openingLogin, setOpeningLogin] = useState(false);
 
-  async function handleGenerate() {
-    setLoading(true);
-    setError(null);
+  const loadDomain = useCallback(() => {
+    fetchXhsWorkDomain()
+      .then(setWorkDomain)
+      .catch(() => setWorkDomain(null));
+  }, []);
+
+  // Ref to track whether login guidance is showing (avoids interval reset on state change)
+  const loginGuidanceShownRef = useRef(false);
+
+  useEffect(() => {
+    loadDomain();
+    const interval = setInterval(() => {
+      // Auto-retry scouting while login guidance is shown
+      if (loginGuidanceShownRef.current) {
+        updateXhsWorkDomain({ status: "scouting" }).then(loadDomain);
+      } else {
+        loadDomain();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [loadDomain]);
+
+  // Keep ref in sync with whether login guidance should be shown
+  useEffect(() => {
+    const name = profile?.account_name || "";
+    loginGuidanceShownRef.current =
+      (name === "" || name === "当前账号" || state?.current_bottleneck === "需要登录小红书账号") &&
+      name !== "已登录账号";
+  });
+
+  useEffect(() => {
+    if (workDomain?.profile) {
+      setAccountName(workDomain.profile.account_name || "");
+      setScoutingInterval(workDomain.profile.scouting_interval_hours || 1.0);
+      setAutoPublishSelector(workDomain.profile.auto_publish_selector || "");
+    }
+  }, [workDomain?.profile]);
+
+  async function handleSaveConfig() {
+    setSaving(true);
     try {
-      const topics = parseTopics(topicsText);
-      const activities = parseActivities(activitiesText);
-      const nextResults = await previewXiaohongshuCreatorHome({
-        account_name: accountName.trim() || undefined,
-        topics,
-        activities,
-        message: message.trim() || undefined,
+      await updateXhsWorkDomain({
+        account_name: accountName,
+        scouting_interval_hours: scoutingInterval,
+        auto_publish_selector: autoPublishSelector,
       });
-      setResults(nextResults);
-      setPublishDrafts({});
-      setImageDrafts({});
-      setPublishChecklists({});
-      setFollowUpPackets({});
-      setLeadCaptureTemplates({});
-      setLeadCaptureResults({});
-      setLeadReplyPlans({});
-      setAutofillResults({});
-      setPublishViaMcpResults({});
-      setTextImageResults({});
-      setImagePathInputs({});
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "生成小红书经营草稿失败");
+      loadDomain();
+      setConfigOpen(false);
+    } catch {
+      // ignore
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
-  function handleExtractFromRawSnapshot() {
-    const extracted = extractCreatorHomeSnapshot(rawSnapshotText);
-    if (extracted.topics.length > 0) {
-      setTopicsText(
-        extracted.topics
-          .map((item) => [item.topic, item.participation_count, item.view_count].filter(Boolean).join(" | "))
-          .join("\n"),
-      );
-    }
-    if (extracted.activities.length > 0) {
-      setActivitiesText(
-        extracted.activities
-          .map((item) => [item.title, item.date_range, item.incentive_hint].filter(Boolean).join(" | "))
-          .join("\n"),
-      );
-    }
-  }
-
-  async function handleCaptureFromChrome() {
-    setCapturing(true);
-    setError(null);
+  async function handleOpenLoginPage() {
+    setOpeningLogin(true);
+    // Open browser for manual login if needed
     try {
-      const captured = await captureXiaohongshuCreatorHome();
-      setRawSnapshotText(captured.raw_text);
-      setAccountName(captured.account_name?.trim() || DEFAULT_ACCOUNT_NAME);
-      setTopicsText(
-        captured.topics
-          .map((item) => [item.topic, item.participation_count, item.view_count].filter(Boolean).join(" | "))
-          .join("\n"),
-      );
-      setActivitiesText(
-        captured.activities
-          .map((item) => [item.title, item.date_range, item.incentive_hint].filter(Boolean).join(" | "))
-          .join("\n"),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "自动读取当前创作首页失败");
-    } finally {
-      setCapturing(false);
-    }
-  }
-
-  function ensureDraft(index: number, item: XiaohongshuCreatorPreviewItem): XiaohongshuPublishDraft {
-    const existing = publishDrafts[index];
-    if (existing) {
-      return existing;
-    }
-    const nextDraft = buildPublishDraft(item);
-    setPublishDrafts((current) => ({ ...current, [index]: nextDraft }));
-    ensurePublishChecklist(index, item);
-    ensureFollowUpPacket(index, item);
-    ensureLeadCaptureTemplate(index, item);
-    return nextDraft;
-  }
-
-  async function handleAutofill(index: number, item: XiaohongshuCreatorPreviewItem) {
-    const draft = ensureDraft(index, item);
-    setAutofillingIndex(index);
-    setError(null);
-    try {
-      const result = await autofillXiaohongshuPublishDraft({
-        title: draft.title,
-        body: draft.body,
+      await browserOpen("https://creator.xiaohongshu.com/new/home", {
+        session_id: XHS_LOGIN_SESSION_ID,
+        headless: false,
       });
-      setAutofillResults((current) => ({ ...current, [index]: result }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "打开小红书发布页失败");
+    } catch {
+      // ignore
     } finally {
-      setAutofillingIndex(null);
+      setOpeningLogin(false);
     }
   }
 
-  function ensureImageDraft(index: number, item: XiaohongshuCreatorPreviewItem): XiaohongshuImageCardDraft {
-    const existing = imageDrafts[index];
-    if (existing) {
-      return existing;
-    }
-    const nextDraft = buildImageCardDraft(item);
-    setImageDrafts((current) => ({ ...current, [index]: nextDraft }));
-    return nextDraft;
-  }
-
-  function ensurePublishChecklist(index: number, item: XiaohongshuCreatorPreviewItem): XiaohongshuPublishChecklist {
-    const existing = publishChecklists[index];
-    if (existing) {
-      return existing;
-    }
-    const nextChecklist = buildPublishChecklist(item);
-    setPublishChecklists((current) => ({ ...current, [index]: nextChecklist }));
-    return nextChecklist;
-  }
-
-  function ensureFollowUpPacket(index: number, item: XiaohongshuCreatorPreviewItem): XiaohongshuLeadFollowUpPacket {
-    const existing = followUpPackets[index];
-    if (existing) {
-      return existing;
-    }
-    const nextPacket = buildLeadFollowUpPacket(item);
-    setFollowUpPackets((current) => ({ ...current, [index]: nextPacket }));
-    return nextPacket;
-  }
-
-  function ensureLeadCaptureTemplate(index: number, item: XiaohongshuCreatorPreviewItem): XiaohongshuLeadCaptureTemplate {
-    const existing = leadCaptureTemplates[index];
-    if (existing) {
-      return existing;
-    }
-    const nextTemplate = buildLeadCaptureTemplate(item);
-    setLeadCaptureTemplates((current) => ({ ...current, [index]: nextTemplate }));
-    return nextTemplate;
-  }
-
-  async function handleTextImageAutofill(index: number, item: XiaohongshuCreatorPreviewItem) {
-    const imageDraft = ensureImageDraft(index, item);
-    ensurePublishChecklist(index, item);
-    ensureFollowUpPacket(index, item);
-    ensureLeadCaptureTemplate(index, item);
-    setTextImageIndex(index);
-    setError(null);
-    try {
-      const result = await autofillXiaohongshuTextImageCards({
-        cards: imageDraft.cards,
-        trigger_generate: true,
-      });
-      setTextImageResults((current) => ({ ...current, [index]: result }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "填入小红书图卡失败");
-    } finally {
-      setTextImageIndex(null);
-    }
-  }
-
-  async function handlePublishViaMcp(index: number, item: XiaohongshuCreatorPreviewItem) {
-    const draft = ensureDraft(index, item);
-    setPublishViaMcpIndex(index);
-    setError(null);
-    try {
-      const result = await publishXiaohongshuViaMcp({
-        title: draft.title,
-        body: draft.body,
-        image_paths: parseImagePaths(imagePathInputs[index] || ""),
-      });
-      setPublishViaMcpResults((current) => ({ ...current, [index]: result }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "通过 MCP 发布图文失败");
-    } finally {
-      setPublishViaMcpIndex(null);
-    }
-  }
-
-  async function handleLeadCapture(index: number, item: XiaohongshuCreatorPreviewItem) {
-    const draft = ensureDraft(index, item);
-    setLeadCaptureIndex(index);
-    setError(null);
-    try {
-      const result = await captureXiaohongshuLeadSignals({
-        title_hint: draft.title,
-      });
-      setLeadCaptureResults((current) => ({ ...current, [index]: result }));
-      const nextReplyPlan = buildLeadReplyPlan(item, result);
-      setLeadReplyPlans((current) => ({ ...current, [index]: nextReplyPlan }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "自动提取当前小红书页面线索失败");
-    } finally {
-      setLeadCaptureIndex(null);
-    }
-  }
+  const state = workDomain?.state;
+  const profile = workDomain?.profile;
+  const status = state?.status || "idle";
+  const isRunning = status !== "idle" && status !== "blocked";
 
   return (
     <div className="xhs-page">
       <header className="xhs-page__header">
         <div>
-          <h2 className="xhs-page__title">小红书经营</h2>
+          <h2 className="xhs-page__title">小红书经营闭环</h2>
           <p className="xhs-page__subtitle">
-            用创作首页里的真实话题和活动，快速生成第一批可发的小红书草稿。现在是 {assistantName} 帮你跑冷启动内容闭环。
+            {assistantName} 全自动管理小红书账号：自动侦察 → AI生成草稿 → 自动发布 → 循环继续。
           </p>
         </div>
-        <Button type="button" onClick={() => void handleGenerate()} disabled={loading}>
-          {loading ? "生成中..." : "生成草稿候选"}
-        </Button>
+        <div className="xhs-page__header-actions">
+          <Button
+            type="outline"
+            onClick={() => setConfigOpen((o) => !o)}
+          >
+            {configOpen ? "收起配置" : "配置"}
+          </Button>
+          <Button
+            type={isRunning ? "destructive" : "default"}
+            onClick={() => {
+              updateXhsWorkDomain({ status: isRunning ? "idle" : "scouting" }).then(loadDomain);
+            }}
+          >
+            {isRunning ? "暂停闭环" : "启动闭环"}
+          </Button>
+        </div>
       </header>
 
-      {error ? <div className="xhs-page__error">生成失败：{error}</div> : null}
+      {configOpen && (
+        <section className="xhs-config-panel">
+          <h3 className="xhs-config-panel__title">闭环配置</h3>
+          <div className="xhs-config-panel__fields">
+            <label className="xhs-config-field">
+              <span className="xhs-config-field__label">小红书账号名</span>
+              <input
+                type="text"
+                className="xhs-config-field__input"
+                value={accountName}
+                placeholder="例如：小红薯66661C17"
+                onChange={(e) => setAccountName(e.target.value)}
+              />
+            </label>
+            <label className="xhs-config-field">
+              <span className="xhs-config-field__label">侦察间隔（小时）</span>
+              <input
+                type="number"
+                className="xhs-config-field__input"
+                value={scoutingInterval}
+                min={0.1}
+                max={24}
+                step={0.1}
+                onChange={(e) => setScoutingInterval(parseFloat(e.target.value) || 1.0)}
+              />
+            </label>
+            <label className="xhs-config-field">
+              <span className="xhs-config-field__label">发布按钮 Selector</span>
+              <input
+                type="text"
+                className="xhs-config-field__input"
+                value={autoPublishSelector}
+                placeholder="自动发现（留空）"
+                onChange={(e) => setAutoPublishSelector(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="xhs-config-panel__actions">
+            <Button type="default" onClick={() => setConfigOpen(false)}>取消</Button>
+            <Button type="primary" onClick={handleSaveConfig} disabled={saving}>
+              {saving ? "保存中..." : "保存"}
+            </Button>
+          </div>
+        </section>
+      )}
 
-      <section className="xhs-page__grid">
-        <XiaohongshuOpportunityPanel
-          rawSnapshotText={rawSnapshotText}
-          accountName={accountName}
-          topicsText={topicsText}
-          activitiesText={activitiesText}
-          message={message}
-          capturing={capturing}
-          loading={loading}
-          onRawSnapshotChange={setRawSnapshotText}
-          onAccountNameChange={setAccountName}
-          onTopicsChange={setTopicsText}
-          onActivitiesChange={setActivitiesText}
-          onMessageChange={setMessage}
-          onCapture={() => void handleCaptureFromChrome()}
-          onExtract={handleExtractFromRawSnapshot}
-        />
+      {(!(profile?.account_name && profile.account_name !== "当前账号" && profile.account_name.trim() !== "" && profile.account_name !== "已登录账号") || state?.current_bottleneck === "需要登录小红书账号") && (
+        <div className="xhs-login-guidance">
+          <div className="xhs-login-guidance__text">
+            <strong>未检测到小红书账号登录</strong>
+            <span>点击「去登录」在浏览器中完成登录，系统将自动检测。</span>
+          </div>
+          <Button
+            type="primary"
+            onClick={handleOpenLoginPage}
+            disabled={openingLogin}
+          >
+            {openingLogin ? "正在打开..." : "去登录"}
+          </Button>
+        </div>
+      )}
 
-        <Panel
-          icon="📝"
-          title="草稿候选"
-          subtitle="这里显示后端返回的可发候选，先挑最顺手的一条。"
-          className="xhs-page__panel"
-        >
-          {results.length === 0 ? (
-            <div className="xhs-empty">
-              <strong>还没有草稿结果</strong>
-              <p>先点一次“生成草稿候选”，就能把创作首页机会转成内容建议。</p>
-            </div>
-          ) : (
-            <div className="xhs-results">
-              {results.map((item, index) => {
-                const draft = publishDrafts[index];
-                const imageDraft = imageDrafts[index];
-                const publishChecklist = publishChecklists[index];
-                const followUpPacket = followUpPackets[index];
-                const leadCaptureTemplate = leadCaptureTemplates[index];
-                const leadCaptureResult = leadCaptureResults[index];
-                const leadReplyPlan = leadReplyPlans[index];
-                return (
-                  <XiaohongshuDraftCard
-                    key={`${item.platform_result.event.text.slice(0, 20)}-${index}`}
-                    item={item}
-                    index={index}
-                    draft={draft}
-                    imageDraft={imageDraft}
-                    publishChecklist={publishChecklist}
-                    followUpPacket={followUpPacket}
-                    leadCaptureTemplate={leadCaptureTemplate}
-                    leadCaptureResult={leadCaptureResult}
-                    leadReplyPlan={leadReplyPlan}
-                    autofillResult={autofillResults[index]}
-                    publishViaMcpResult={publishViaMcpResults[index]}
-                    textImageResult={textImageResults[index]}
-                    autofilling={autofillingIndex === index}
-                    publishViaMcpPending={publishViaMcpIndex === index}
-                    textImageFilling={textImageIndex === index}
-                    leadCapturing={leadCaptureIndex === index}
-                    imagePathsText={imagePathInputs[index] || ""}
-                    onExpand={() => ensureDraft(index, item)}
-                    onAutofill={() => void handleAutofill(index, item)}
-                    onImagePathsChange={(value) =>
-                      setImagePathInputs((current) => ({
-                        ...current,
-                        [index]: value,
-                      }))
-                    }
-                    onPublishViaMcp={() => void handlePublishViaMcp(index, item)}
-                    onTextImageAutofill={() => void handleTextImageAutofill(index, item)}
-                    onLeadCapture={() => void handleLeadCapture(index, item)}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </Panel>
+      <section className="xhs-status-bar">
+        <div className={`xhs-status-badge xhs-status-badge--${status}`}>
+          {STATUS_LABELS[status] || status}
+        </div>
+        {state?.current_focus && (
+          <span className="xhs-status-bar__focus">{state.current_focus}</span>
+        )}
+        {state?.current_bottleneck && (
+          <span className="xhs-status-bar__bottleneck">⛔ {state.current_bottleneck}</span>
+        )}
+      </section>
+
+      <LoopProgress status={status} />
+
+      <section className="xhs-page__body">
+        <div className="xhs-page__info-grid">
+          <div className="xhs-info-card">
+            <h4 className="xhs-info-card__title">账号</h4>
+            <p className="xhs-info-card__value">{profile?.account_name || "未配置"}</p>
+          </div>
+          <div className="xhs-info-card">
+            <h4 className="xhs-info-card__title">侦察间隔</h4>
+            <p className="xhs-info-card__value">{profile?.scouting_interval_hours ?? 1.0}h</p>
+          </div>
+          <div className="xhs-info-card">
+            <h4 className="xhs-info-card__title">上次侦察</h4>
+            <p className="xhs-info-card__value">
+              {state?.last_scouting_at
+                ? new Date(state.last_scouting_at).toLocaleString()
+                : "—"}
+            </p>
+          </div>
+          <div className="xhs-info-card">
+            <h4 className="xhs-info-card__title">上次发布</h4>
+            <p className="xhs-info-card__value">
+              {state?.last_published_at
+                ? new Date(state.last_published_at).toLocaleString()
+                : "—"}
+            </p>
+          </div>
+          <div className="xhs-info-card">
+            <h4 className="xhs-info-card__title">待发草稿</h4>
+            <p className="xhs-info-card__value">{state?.backlog_count ?? 0}</p>
+          </div>
+          <div className="xhs-info-card">
+            <h4 className="xhs-info-card__title">已发布总数</h4>
+            <p className="xhs-info-card__value">{state?.published_history?.length ?? 0}</p>
+          </div>
+        </div>
+
+        <div className="xhs-page__history-section">
+          <h4 className="xhs-section-title">发布历史（最近5条）</h4>
+          <PublishedHistory history={state?.published_history || []} />
+        </div>
+
+        {state?.pending_drafts && state.pending_drafts.length > 0 && (
+          <div className="xhs-page__pending-section">
+            <h4 className="xhs-section-title">待发布草稿</h4>
+            <ul className="xhs-pending-list">
+              {state.pending_drafts.map((draft) => (
+                <li key={draft.draft_id} className="xhs-pending-item">
+                  <span className="xhs-pending-item__title">{draft.title}</span>
+                  <span className="xhs-pending-item__status">{draft.status}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
     </div>
   );

@@ -60,6 +60,40 @@
   opacity: 0.7;
 }
 
+.app-sidebar__browser-status {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.browser-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+}
+
+.browser-status--healthy {
+  color: var(--success);
+}
+
+.browser-status--degraded {
+  color: var(--warning);
+}
+
+.browser-status--offline {
+  color: var(--text-muted);
+}
+
+.browser-status__icon {
+  font-size: 0.875rem;
+}
+
+.browser-status__label {
+  font-weight: 500;
+}
+
 /* Brand dropdown menu - macOS style */
 .app-sidebar__brand-menu {
   position: absolute;

@@ -21,7 +21,8 @@ from app.agent.loop_helpers import (
     find_latest_user_event as _find_latest_user_event,
     next_focus_mode as _next_focus_mode,
 )
-from app.domain.models import WakeMode
+from app.agent.xhs_workflow_engine import XhsWorkDomainEngine
+from app.domain.models import FocusSubject, WakeMode
 from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
@@ -51,11 +52,26 @@ class AutonomyLoop:
             CommandSandbox.with_defaults(max_level=ToolSafetyLevel.SAFE)
         )
         self.gateway = gateway
+        self.xhs_engine = XhsWorkDomainEngine(state_store, memory_repository, gateway)
 
     def tick_once(self):
         state = self.state_store.get()
         if state.mode != WakeMode.AWAKE:
             return state
+
+        # Run xhs workflow engine tick (may block for browser ops)
+        xhs_action = self.xhs_engine.tick()
+        state = self.state_store.get()  # re-read after engine may have updated state
+
+        # If xhs engine produced an action, create a focus_subject for it
+        if xhs_action is not None:
+            state.focus_subject = FocusSubject(
+                kind="xhs_workflow",
+                title=xhs_action.title,
+                why_now=f"小红书工作流: {xhs_action.kind}",
+            )
+            state.last_proactive_at = self.now_provider()
+            self.state_store.set(state)
 
         now = self.now_provider()
         recent_events = _list_recent_events_for_loop(self.memory_repository, limit=20)
@@ -79,6 +95,10 @@ class AutonomyLoop:
         )
 
         if action.kind == "idle":
+            return state
+
+        if action.kind == "xhs_wait":
+            # xhs engine ran this tick; do nothing else this tick
             return state
 
         if action.kind == "act":

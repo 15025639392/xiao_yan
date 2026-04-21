@@ -213,7 +213,7 @@ def _format_search_output(output: dict[str, Any], args: dict[str, Any], *, reque
     }
 
 
-def try_dispatch_browser_capability(
+def _dispatch_browser_capability_raw(
     capability: str,
     args: dict[str, Any],
     *,
@@ -243,20 +243,88 @@ def try_dispatch_browser_capability(
         }
 
     output = result.output if isinstance(result.output, dict) else {}
-    formatted: dict[str, Any] | None = None
+    return output
+
+
+def try_dispatch_browser_capability(
+    capability: str,
+    args: dict[str, Any],
+    *,
+    timeout_seconds: float = 15.0,
+) -> dict[str, Any] | None:
     if capability == "browser.open":
-        formatted = _format_browser_open_output(output, request_id=result.request_id)
-    elif capability == "browser.snapshot":
-        formatted = _format_browser_snapshot_output(output, request_id=result.request_id)
+        return _try_dispatch_browser_open_with_snapshot(args, timeout_seconds=timeout_seconds)
+
+    raw = _dispatch_browser_capability_raw(capability, args, timeout_seconds=timeout_seconds)
+    if raw is None:
+        return None
+
+    formatted: dict[str, Any] | None = None
+    if capability == "browser.snapshot":
+        formatted = _format_browser_snapshot_output(raw, request_id="")
     elif capability == "browser.extract":
-        formatted = _format_browser_extract_output(output, request_id=result.request_id)
+        formatted = _format_browser_extract_output(raw, request_id="")
     elif capability == "browser.close":
-        formatted = _format_browser_close_output(output, request_id=result.request_id)
+        formatted = _format_browser_close_output(raw, request_id="")
 
     if formatted is not None:
         save_browser_experience(capability, formatted)
 
     return formatted
+
+
+def _try_dispatch_browser_open_with_snapshot(
+    args: dict[str, Any],
+    *,
+    timeout_seconds: float = 15.0,
+) -> dict[str, Any] | None:
+    open_raw = _dispatch_browser_capability_raw("browser.open", args, timeout_seconds=timeout_seconds)
+    if open_raw is None:
+        return None
+
+    if isinstance(open_raw, dict) and "error" in open_raw:
+        return open_raw
+
+    session_id = open_raw.get("session_id") if isinstance(open_raw, dict) else None
+    if not session_id:
+        formatted = _format_browser_open_output(open_raw, request_id="")
+        save_browser_experience("browser.open", formatted)
+        return formatted
+
+    snapshot_raw = _dispatch_browser_capability_raw(
+        "browser.snapshot",
+        {"session_id": session_id, "include_text": True},
+        timeout_seconds=timeout_seconds,
+    )
+
+    merged = _format_browser_open_output(open_raw, request_id="")
+    if isinstance(snapshot_raw, dict):
+        merged["text_content"] = snapshot_raw.get("text_content", "")
+        merged["title"] = snapshot_raw.get("title") or merged.get("title") or ""
+        merged["links"] = _extract_links_from_accessibility_tree(snapshot_raw.get("accessibility_tree"))
+        merged["screenshot_path"] = snapshot_raw.get("screenshot_path")
+        merged["captured_at"] = snapshot_raw.get("captured_at")
+
+    save_browser_experience("browser.open", merged)
+    return merged
+
+
+def _extract_links_from_accessibility_tree(tree: Any) -> list[dict[str, str]]:
+    if not isinstance(tree, list):
+        return []
+    links: list[dict[str, str]] = []
+    for node in tree:
+        if not isinstance(node, dict):
+            continue
+        role = node.get("role", "")
+        if role == "link":
+            name = node.get("name") or ""
+            url = node.get("url") or ""
+            if name and url:
+                links.append({"text": name, "url": url})
+        elif isinstance(node.get("children"), list):
+            links.extend(_extract_links_from_accessibility_tree(node["children"]))
+    return links
 
 
 def _format_browser_open_output(output: dict[str, Any], *, request_id: str) -> dict[str, Any]:
@@ -325,7 +393,7 @@ def save_browser_experience(
     Called after browser.snapshot / browser.extract to record what was experienced
     so future prompts can reference it organically.
     """
-    if capability not in {"browser.snapshot", "browser.extract"}:
+    if capability not in {"browser.snapshot", "browser.extract", "browser.open"}:
         return
 
     try:
@@ -352,6 +420,21 @@ def save_browser_experience(
                 source_ref=url or None,
             )
             repo.save_event(event)
+
+            # Also record xhs_browse for xiaohongshu URLs
+            if "xiaohongshu.com" in url or "xhslink.com" in url:
+                xhs_text = _generate_xhs_browse_text(url, formatted_result.get("title", ""), formatted_result.get("text_content", ""))
+                if xhs_text:
+                    xhs_event = MemoryEvent(
+                        kind="autobio",
+                        content=xhs_text,
+                        source_context="autobio",
+                        namespace="autobio",
+                        facet="xhs_browse",
+                        tags=["browser", "snapshot", "xiaohongshu"],
+                        source_ref=url or None,
+                    )
+                    repo.save_event(xhs_event)
         elif capability == "browser.extract":
             url = formatted_result.get("source_url", "")
             event = MemoryEvent(
@@ -364,6 +447,37 @@ def save_browser_experience(
                 source_ref=url or None,
             )
             repo.save_event(event)
+
+            # Also record xhs_browse for xiaohongshu URLs
+            if "xiaohongshu.com" in url or "xhslink.com" in url:
+                xhs_text = _generate_xhs_browse_text(url, "", formatted_result.get("content", ""))
+                if xhs_text:
+                    xhs_event = MemoryEvent(
+                        kind="autobio",
+                        content=xhs_text,
+                        source_context="autobio",
+                        namespace="autobio",
+                        facet="xhs_browse",
+                        tags=["browser", "extract", "xiaohongshu"],
+                        source_ref=url or None,
+                    )
+                    repo.save_event(xhs_event)
+        elif capability == "browser.open":
+            url = formatted_result.get("url", "") or ""
+            title = formatted_result.get("title", "") or ""
+            if "xiaohongshu.com" in url or "xhslink.com" in url:
+                xhs_text = _generate_xhs_browse_text(url, title, formatted_result.get("text_content", ""))
+                if xhs_text:
+                    xhs_event = MemoryEvent(
+                        kind="autobio",
+                        content=xhs_text,
+                        source_context="autobio",
+                        namespace="autobio",
+                        facet="xhs_browse",
+                        tags=["browser", "open", "xiaohongshu"],
+                        source_ref=url or None,
+                    )
+                    repo.save_event(xhs_event)
     except Exception:
         pass
 
@@ -390,3 +504,47 @@ def _generate_browser_experience_text(capability: str, result: dict[str, Any]) -
         return f"在 {url} 上用选择器「{target}」提取内容，得到：{preview}{suffix}"
 
     return ""
+
+
+def _generate_xhs_browse_text(url: str, title: str, text_content: str) -> str:
+    """Generate xhs_browse autobio text for xiaohongshu browsing experiences."""
+    if not title and not text_content:
+        return ""
+    preview = (text_content or title)[:150].replace("\n", " ").strip()
+    suffix = "..." if len(text_content or title) > 150 else ""
+    label = f"「{title}」" if title else url
+    return f"浏览了小红书页面 {label}，内容摘要：{preview}{suffix}"
+
+
+# ── Browser organ call helpers ────────────────────────────────────────────────
+
+
+class BrowserOrganUnavailable(Exception):
+    """Raised when the browser organ is not available."""
+
+    pass
+
+
+class BrowserCapabilityError(Exception):
+    """Raised when a browser capability call fails."""
+
+    def __init__(self, message: str, capability_request_id: str | None = None):
+        super().__init__(message)
+        self.capability_request_id = capability_request_id
+
+
+def call_browser_capability(
+    capability: str,
+    args: dict[str, Any],
+    *,
+    timeout_seconds: float = 15.0,
+) -> dict[str, Any]:
+    """Call browser organ, raising if unavailable or failed."""
+    raw = try_dispatch_browser_capability(capability, args, timeout_seconds=timeout_seconds)
+    if raw is None:
+        raise BrowserOrganUnavailable(f"browser organ unavailable for {capability}")
+    if "error" in raw:
+        raise BrowserCapabilityError(
+            raw.get("error", "unknown"), raw.get("capability_request_id")
+        )
+    return raw

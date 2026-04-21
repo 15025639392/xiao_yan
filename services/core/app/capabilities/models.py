@@ -16,6 +16,11 @@ class CapabilityName(str, Enum):
     BROWSER_SNAPSHOT = "browser.snapshot"
     BROWSER_EXTRACT = "browser.extract"
     BROWSER_CLOSE = "browser.close"
+    BROWSER_EVALUATE = "browser.evaluate"
+    BROWSER_FILL_FORM = "browser.fill_form"
+    BROWSER_CLICK_ELEMENT = "browser.click_element"
+    BROWSER_PUBLISH = "browser.publish"
+    BROWSER_FIND_PUBLISH_BUTTON = "browser.find_publish_button"
 
 
 class RiskLevel(str, Enum):
@@ -254,6 +259,41 @@ CAPABILITY_DESCRIPTORS: list[CapabilityDescriptor] = [
         default_risk_level=RiskLevel.SAFE,
         default_requires_approval=False,
         description="Close a browser session by session_id.",
+        current_binding="desktop executor: playwright-python browser driver",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_EVALUATE,
+        default_risk_level=RiskLevel.RESTRICTED,
+        default_requires_approval=False,
+        description="Evaluate JavaScript inside the current browser session.",
+        current_binding="desktop executor: playwright-python browser driver",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_FILL_FORM,
+        default_risk_level=RiskLevel.RESTRICTED,
+        default_requires_approval=False,
+        description="Fill the Xiaohongshu publish form inside the current browser session.",
+        current_binding="desktop executor: playwright-python browser driver",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_CLICK_ELEMENT,
+        default_risk_level=RiskLevel.RESTRICTED,
+        default_requires_approval=False,
+        description="Click a selector inside the current browser session.",
+        current_binding="desktop executor: playwright-python browser driver",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_PUBLISH,
+        default_risk_level=RiskLevel.RESTRICTED,
+        default_requires_approval=False,
+        description="Fill and optionally publish a Xiaohongshu draft inside the current browser session.",
+        current_binding="desktop executor: playwright-python browser driver",
+    ),
+    CapabilityDescriptor(
+        name=CapabilityName.BROWSER_FIND_PUBLISH_BUTTON,
+        default_risk_level=RiskLevel.SAFE,
+        default_requires_approval=False,
+        description="Discover the publish button selector in the current browser session.",
         current_binding="desktop executor: playwright-python browser driver",
     ),
 ]

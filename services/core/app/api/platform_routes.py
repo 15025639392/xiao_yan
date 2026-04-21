@@ -214,6 +214,8 @@ def build_platform_router() -> APIRouter:
         return handle_xiaohongshu_publish_autofill(
             title=request_body.title,
             body=request_body.body,
+            auto_publish=request_body.auto_publish,
+            publish_selector=request_body.publish_selector,
             service=service,
         )
 
@@ -245,8 +247,13 @@ def build_platform_router() -> APIRouter:
     @router.post("/xiaohongshu/lead-capture", response_model=XiaohongshuLeadCaptureResponse)
     def capture_xiaohongshu_lead_route(
         request_body: XiaohongshuLeadCaptureRequest,
+        state_store: StateStore = Depends(get_state_store),
         service: PlatformAdapterService = Depends(get_platform_adapter_service),
     ) -> XiaohongshuLeadCaptureResponse:
-        return handle_xiaohongshu_lead_capture(request_body=request_body, service=service)
+        return handle_xiaohongshu_lead_capture(
+            request_body=request_body,
+            state_store=state_store,
+            service=service,
+        )
 
     return router

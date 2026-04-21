@@ -42,6 +42,7 @@ export default function App() {
   const {
     route,
     theme,
+    setTheme,
     showAbout,
     setShowAbout,
     showBrandMenu,
@@ -165,6 +166,7 @@ export default function App() {
         onShowBrandMenuChange={setShowBrandMenu}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
         onShowAbout={() => setShowAbout(true)}
+        browserOrgan={state.browser_organ}
       />
 
       {/* Main Content */}

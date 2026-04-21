@@ -35,6 +35,80 @@ export async function updateBrowserSession(update: BrowserSessionUpdate): Promis
   return post<{ ok: boolean }>("/runtime/browser/session", update);
 }
 
+export type XhsWorkDomainProfile = {
+  work_type: string;
+  account_name: string;
+  account_positioning: string;
+  target_audience: string;
+  expression_style: string;
+  scouting_interval_hours: number;
+  auto_publish_selector: string;
+};
+
+export type XhsWorkDomainState = {
+  status: string;
+  current_focus: string;
+  backlog_count: number;
+  active_task_ids: string[];
+  last_published_at: string | null;
+  last_scouting_at: string | null;
+  current_bottleneck: string;
+  next_recommended_action: string;
+  pending_drafts: Array<{
+    draft_id: string;
+    title: string;
+    body: string;
+    generated_at: string;
+    status: string;
+  }>;
+  published_history: Array<{
+    draft_id: string;
+    title: string;
+    published_at: string;
+    post_url: string;
+  }>;
+};
+
+export type XhsWorkDomainGoals = {
+  north_star: string;
+  weekly_goals: string[];
+  monthly_content_target: number;
+};
+
+export type XhsWorkDomainResponse = {
+  available: boolean;
+  profile?: XhsWorkDomainProfile;
+  state?: XhsWorkDomainState;
+  goals?: XhsWorkDomainGoals;
+};
+
+export type XhsWorkDomainUpdate = {
+  status?: string;
+  current_focus?: string;
+  backlog_count?: number;
+  active_task_ids?: string[];
+  last_published_at?: string;
+  current_bottleneck?: string;
+  next_recommended_action?: string;
+  account_name?: string;
+  account_positioning?: string;
+  target_audience?: string;
+  expression_style?: string;
+  scouting_interval_hours?: number;
+  auto_publish_selector?: string;
+  north_star?: string;
+  weekly_goals?: string[];
+  monthly_content_target?: number;
+};
+
+export async function fetchXhsWorkDomain(): Promise<XhsWorkDomainResponse> {
+  return get<XhsWorkDomainResponse>("/xhs-work-domain");
+}
+
+export async function updateXhsWorkDomain(update: XhsWorkDomainUpdate): Promise<{ ok: boolean }> {
+  return patch<{ ok: boolean }>("/xhs-work-domain", update);
+}
+
 export type FocusContext = {
   goal_title: string;
   source_kind: string;
@@ -63,6 +137,24 @@ export type FocusSubject = {
   goal_id?: string | null;
 };
 
+export type BrowserOrganState = {
+  binding_status: "bound" | "unbound" | "pending";
+  health_status: "healthy" | "degraded" | "unavailable";
+  knowledge_status: string;
+  last_checked_at: string;
+  driver_name?: string;
+  driver_version?: string;
+  browser_binary_ready: boolean;
+  last_error?: string;
+};
+
+export type BrowserSessionState = {
+  session_id: string;
+  status: "active" | "closed" | "error";
+  current_url?: string;
+  page_title?: string;
+};
+
 export type BeingState = {
   mode: "awake" | "sleeping";
   focus_mode: "sleeping" | "autonomy";
@@ -71,6 +163,8 @@ export type BeingState = {
   focus_subject?: FocusSubject | null;
   focus_context?: FocusContext | null;
   focus_effort?: FocusEffort | null;
+  browser_organ?: BrowserOrganState | null;
+  browser_session?: BrowserSessionState | null;
 };
 
 export type MacConsoleBootstrapStatus = {
@@ -254,6 +348,14 @@ export function fetchState(): Promise<BeingState> {
 
 export function fetchMacConsoleStatus(): Promise<MacConsoleBootstrapStatus> {
   return get<MacConsoleBootstrapStatus>("/environment/mac-console");
+}
+
+export type AutobioResponse = {
+  entries: string[];
+};
+
+export function fetchAutobio(): Promise<AutobioResponse> {
+  return get<AutobioResponse>("/runtime/autobio");
 }
 
 export function fetchMessages(params?: ChatMessagesPageParams): Promise<ChatHistoryResponse> {

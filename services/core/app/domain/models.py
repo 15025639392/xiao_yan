@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.focus.models import FocusEffort
 from app.tools.models import ToolExecutionResult
 
@@ -79,6 +79,55 @@ class BrowserSessionState(BaseModel):
     last_error: str | None = None
 
 
+# ── Xiaohongshu Work Domain ────────────────────────────────────────────────────
+
+
+class XhsWorkStatus(str, Enum):
+    IDLE = "idle"
+    IDLE_REVIEWING = "idle_reviewing"  # published, images pending
+    SCOUTING = "scouting"
+    DRAFTING = "drafting"
+    PREPARING = "preparing"
+    PUBLISHING = "publishing"
+    REVIEWING = "reviewing"
+    BLOCKED = "blocked"
+
+
+class XhsWorkProfile(BaseModel):
+    work_type: str = "xiaohongshu_operations"
+    account_name: str = ""
+    account_positioning: str = ""
+    target_audience: str = ""
+    expression_style: str = ""
+    scouting_interval_hours: float = 1.0  # hours between scouting cycles
+    auto_publish_selector: str = ""  # CSS selector for publish button; empty = auto-discover
+
+
+class XhsWorkState(BaseModel):
+    status: XhsWorkStatus = XhsWorkStatus.IDLE
+    current_focus: str = ""
+    backlog_count: int = 0
+    active_task_ids: list[str] = []
+    last_published_at: datetime | None = None
+    last_scouting_at: datetime | None = None
+    current_bottleneck: str = ""
+    next_recommended_action: str = ""
+    pending_drafts: list[dict] = Field(default_factory=list)  # [{"draft_id", "title", "body", "generated_at", "status"}]
+    published_history: list[dict] = Field(default_factory=list)  # [{"draft_id", "title", "published_at", "post_url"}]
+
+
+class XhsWorkGoals(BaseModel):
+    north_star: str = ""
+    weekly_goals: list[str] = []
+    monthly_content_target: int = 0
+
+
+class XhsWorkDomainState(BaseModel):
+    profile: XhsWorkProfile = XhsWorkProfile()
+    state: XhsWorkState = XhsWorkState()
+    goals: XhsWorkGoals = XhsWorkGoals()
+
+
 class BeingState(BaseModel):
     mode: WakeMode
     focus_mode: FocusMode = FocusMode.SLEEPING
@@ -91,6 +140,7 @@ class BeingState(BaseModel):
     last_proactive_kind: str | None = None  # "follow_up" | "check_in" | "reflection" | "silent"
     browser_organ: BrowserOrganState | None = None
     browser_session: BrowserSessionState | None = None
+    xhs_work_domain: XhsWorkDomainState | None = None
 
     @classmethod
     def default(cls) -> "BeingState":

@@ -30,12 +30,14 @@ type XiaohongshuDraftCardProps = {
   publishViaMcpResult?: XiaohongshuPublishViaMcpResponse;
   textImageResult?: XiaohongshuTextImageAutofillResponse;
   autofilling: boolean;
+  autoPublishing: boolean;
   publishViaMcpPending: boolean;
   textImageFilling: boolean;
   leadCapturing: boolean;
   imagePathsText: string;
   onExpand: () => void;
   onAutofill: () => void;
+  onAutoPublish: () => void;
   onImagePathsChange: (value: string) => void;
   onPublishViaMcp: () => void;
   onTextImageAutofill: () => void;
@@ -56,12 +58,14 @@ export function XiaohongshuDraftCard({
   publishViaMcpResult,
   textImageResult,
   autofilling,
+  autoPublishing,
   publishViaMcpPending,
   textImageFilling,
   leadCapturing,
   imagePathsText,
   onExpand,
   onAutofill,
+  onAutoPublish,
   onImagePathsChange,
   onPublishViaMcp,
   onTextImageAutofill,
@@ -94,6 +98,9 @@ export function XiaohongshuDraftCard({
         </Button>
         <Button type="button" onClick={onAutofill} disabled={autofilling}>
           {autofilling ? "填充中..." : "打开发布页并尝试填充"}
+        </Button>
+        <Button type="button" variant="primary" onClick={onAutoPublish} disabled={autoPublishing}>
+          {autoPublishing ? "自动发布中..." : "全自动发布"}
         </Button>
         <Button type="button" variant="secondary" onClick={onPublishViaMcp} disabled={publishViaMcpPending}>
           {publishViaMcpPending ? "MCP 发布中..." : "用 MCP 发布图文"}

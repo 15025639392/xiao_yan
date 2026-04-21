@@ -24,8 +24,8 @@ from app.platform_adapters.service import PlatformAdapterService
 from app.runtime import StateStore
 from app.runtime_ext.runtime_config import RuntimeConfig
 from app.usecases.platform_preview import PlatformChatPreviewResult, run_platform_chat_preview
-from app.usecases.xiaohongshu_creator_home_capture import capture_xiaohongshu_creator_home_from_chrome
-from app.usecases.xiaohongshu_lead_capture import capture_xiaohongshu_lead_signals_from_chrome
+from app.usecases.xiaohongshu_creator_home_capture import capture_xiaohongshu_creator_home_via_browser_organ
+from app.usecases.xiaohongshu_lead_capture import capture_xiaohongshu_lead_signals_via_browser_organ
 from app.usecases.xiaohongshu_creator_home_preview import build_xiaohongshu_creator_home_preview_items
 from app.usecases.xiaohongshu_generate_publish_draft import run_xiaohongshu_creator_home_publish_draft
 from app.usecases.xiaohongshu_import_batch import load_xiaohongshu_import_batch
@@ -241,18 +241,22 @@ def handle_xiaohongshu_creator_home_capture(
     *,
     service: PlatformAdapterService,
 ):
-    return _wrap_platform_errors(service, capture_xiaohongshu_creator_home_from_chrome)
+    return _wrap_platform_errors(service, capture_xiaohongshu_creator_home_via_browser_organ)
 
 
 def handle_xiaohongshu_publish_autofill(
     *,
     title: str,
     body: str,
+    auto_publish: bool = False,
+    publish_selector: str = "",
     service: PlatformAdapterService,
 ):
     return _wrap_platform_errors(
         service,
-        lambda: autofill_xiaohongshu_publish_page(title=title, body=body),
+        lambda: autofill_xiaohongshu_publish_page(
+            title=title, body=body, auto_publish=auto_publish, publish_selector=publish_selector
+        ),
     )
 
 
@@ -290,11 +294,22 @@ def handle_xiaohongshu_publish_via_mcp(
 def handle_xiaohongshu_lead_capture(
     *,
     request_body: XiaohongshuLeadCaptureRequest,
+    state_store: StateStore,
     service: PlatformAdapterService,
 ):
+    browser_session = state_store.get().browser_session
+    session_id = browser_session.session_id if browser_session else ""
+    if not session_id:
+        def _raise_no_session():
+            raise ValueError("browser organ has no active xiaohongshu session")
+
+        return _wrap_platform_errors(service, _raise_no_session)
     return _wrap_platform_errors(
         service,
-        lambda: capture_xiaohongshu_lead_signals_from_chrome(title_hint=request_body.title_hint),
+        lambda: capture_xiaohongshu_lead_signals_via_browser_organ(
+            session_id=session_id,
+            title_hint=request_body.title_hint,
+        ),
     )
 
 

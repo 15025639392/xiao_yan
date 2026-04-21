@@ -1,9 +1,7 @@
-import subprocess
-
-from app.usecases import xiaohongshu_chrome_capture as chrome_capture
 from app.usecases import xiaohongshu_creator_home_capture as creator_home_capture
-from app.usecases.xiaohongshu_lead_capture import extract_lead_capture_from_raw_text
+from app.usecases import xiaohongshu_lead_capture as lead_capture
 from app.usecases.xiaohongshu_creator_home_capture import extract_creator_home_from_raw_text
+from app.usecases.xiaohongshu_lead_capture import extract_lead_capture_from_raw_text
 
 
 def test_extract_creator_home_from_raw_text_pulls_account_topics_and_activities():
@@ -48,69 +46,52 @@ RED新生代创作大赛
     assert result.activities[0].date_range == "03-30 至 05-10"
 
 
-def test_capture_active_chrome_tab_uses_javascript_when_available(monkeypatch):
-    responses = [
-        subprocess.CompletedProcess(args=["osascript"], returncode=0, stdout="https://creator.xiaohongshu.com/new/home\n", stderr=""),
-        subprocess.CompletedProcess(
-            args=["osascript"],
-            returncode=0,
-            stdout="__XIAOYAN_CHROME_CAPTURE__创作服务平台\n小红薯8888\n",
-            stderr="",
-        ),
-    ]
+def test_capture_creator_home_via_browser_organ_reads_snapshot_and_closes_session(monkeypatch):
+    calls: list[str] = []
 
-    def fake_run(*args, **kwargs):
-        _ = (args, kwargs)
-        return responses.pop(0)
+    def fake_call_browser_capability(capability, args, *, timeout_seconds=15.0):
+        _ = timeout_seconds
+        calls.append(capability)
+        if capability == "browser.open":
+            return {"session_id": "xhs-session", "resolved_url": "https://creator.xiaohongshu.com/new/home"}
+        if capability == "browser.snapshot":
+            return {
+                "url": "https://creator.xiaohongshu.com/new/home",
+                "text_content": "创作服务平台\n小红薯8888\n#低成本副业\n12万人参与，3亿次浏览\n",
+            }
+        if capability == "browser.close":
+            return {"session_id": args["session_id"], "status": "closed"}
+        raise AssertionError(f"unexpected capability: {capability}")
 
-    monkeypatch.setattr(chrome_capture.subprocess, "run", fake_run)
+    monkeypatch.setattr(creator_home_capture, "call_browser_capability", fake_call_browser_capability)
 
-    captured = chrome_capture.capture_active_chrome_tab()
+    captured = creator_home_capture.capture_xiaohongshu_creator_home_via_browser_organ()
 
-    assert captured.url == "https://creator.xiaohongshu.com/new/home"
-    assert "创作服务平台" in captured.body_text
+    assert captured.source_url == "https://creator.xiaohongshu.com/new/home"
+    assert captured.account_name == "小红薯8888"
+    assert calls == ["browser.open", "browser.snapshot", "browser.close"]
 
 
-def test_capture_active_chrome_tab_falls_back_to_clipboard_when_javascript_disabled(monkeypatch):
-    clipboard_writes: list[str] = []
-    responses = [
-        subprocess.CompletedProcess(args=["osascript"], returncode=0, stdout="https://creator.xiaohongshu.com/new/home\n", stderr=""),
-        subprocess.CompletedProcess(
-            args=["osascript"],
-            returncode=1,
-            stdout="",
-            stderr="execution error: 通过 AppleScript 执行 JavaScript 的功能已关闭。",
-        ),
-        subprocess.CompletedProcess(args=["pbpaste"], returncode=0, stdout="original clipboard", stderr=""),
-        subprocess.CompletedProcess(
-            args=["osascript"],
-            returncode=0,
-            stdout="__XIAOYAN_CHROME_COPY_DONE__\n",
-            stderr="",
-        ),
-        subprocess.CompletedProcess(
-            args=["pbpaste"],
-            returncode=0,
-            stdout="创作服务平台\n小红薯9999\n#低成本副业\n12万人参与，3亿次浏览\n",
-            stderr="",
-        ),
-        subprocess.CompletedProcess(args=["pbcopy"], returncode=0, stdout="", stderr=""),
-    ]
+def test_capture_lead_signals_via_browser_organ_uses_existing_session(monkeypatch):
+    def fake_call_browser_capability(capability, args, *, timeout_seconds=15.0):
+        _ = (args, timeout_seconds)
+        if capability == "browser.snapshot":
+            return {
+                "url": "https://www.xiaohongshu.com/explore/test",
+                "text_content": "爆款起号模板复盘\n点赞 128\n收藏 46\n评论 12\n分享 3\n想加微信细聊预算和报价\n",
+            }
+        raise AssertionError(f"unexpected capability: {capability}")
 
-    def fake_run(cmd, *args, **kwargs):
-        _ = args
-        result = responses.pop(0)
-        if cmd == ["pbcopy"]:
-            clipboard_writes.append(kwargs.get("input", ""))
-        return result
+    monkeypatch.setattr(lead_capture, "call_browser_capability", fake_call_browser_capability)
 
-    monkeypatch.setattr(chrome_capture.subprocess, "run", fake_run)
+    captured = lead_capture.capture_xiaohongshu_lead_signals_via_browser_organ(
+        session_id="browser-session",
+        title_hint="爆款起号模板复盘",
+    )
 
-    captured = chrome_capture.capture_active_chrome_tab()
-
-    assert captured.url == "https://creator.xiaohongshu.com/new/home"
-    assert "#低成本副业" in captured.body_text
-    assert clipboard_writes == ["original clipboard"]
+    assert captured.source_url == "https://www.xiaohongshu.com/explore/test"
+    assert captured.like_count == "128"
+    assert captured.wechat_signal_count == 1
 
 
 def test_extract_lead_capture_from_raw_text_pulls_metrics_and_high_intent_lines():

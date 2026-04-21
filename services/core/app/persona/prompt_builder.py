@@ -97,6 +97,16 @@ def build_chat_instructions(
                 permission_lines.append(f"- {folder_path}: read_only（只读）")
         guidance.extend(permission_lines)
 
+    browser_guidance = [
+        "你可以使用浏览器工具访问外部网页。当你打开一个URL时，browser_open 会同时返回页面文字内容和链接列表。",
+        "链接列表（links）包含页面所有链接的 text 和 url，可以根据这些链接继续浏览其他页面。",
+        "浏览节奏：先 browser_open 获得页面概览，再根据 links 选择感兴趣的方向继续浏览。",
+        "不需要单独再调 browser_snapshot —— 页面内容已随 browser_open 一起返回。",
+        "调用 browser_close 关闭浏览器会话。",
+        "每次浏览完成后，适当总结页面关键信息给用户。",
+    ]
+    guidance.extend(browser_guidance)
+
     if current_time_context:
         guidance.append(current_time_context)
 

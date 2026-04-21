@@ -28,6 +28,66 @@
   flex-wrap: wrap;
 }
 
+.browsing-history-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  margin: var(--space-3) var(--space-4);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.browsing-history-panel__header {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+
+.browsing-history-panel__title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.browsing-history-panel__empty {
+  padding: var(--space-3);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.browsing-history-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.browsing-history-panel__entry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8125rem;
+}
+
+.browsing-history-panel__entry:last-child {
+  border-bottom: none;
+}
+
+.browsing-history-panel__icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.browsing-history-panel__content {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
 .memory-stats__chip {
   display: inline-flex;
   align-items: center;

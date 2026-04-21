@@ -1,3 +1,6 @@
+import type { BrowserOrganState } from "../../lib/api";
+import { BrowserStatusIndicator } from "./BrowserStatusIndicator";
+
 type AppSidebarRoute =
   | "chat"
   | "xiaohongshu"
@@ -14,6 +17,7 @@ type AppSidebarProps = {
   onShowBrandMenuChange: (open: boolean) => void;
   onToggleTheme: () => void;
   onShowAbout: () => void;
+  browserOrgan?: BrowserOrganState | null;
 };
 
 export function AppSidebar({
@@ -25,6 +29,7 @@ export function AppSidebar({
   onShowBrandMenuChange,
   onToggleTheme,
   onShowAbout,
+  browserOrgan,
 }: AppSidebarProps) {
   return (
     <aside className="app-sidebar">
@@ -98,6 +103,10 @@ export function AppSidebar({
             </div>
           )}
         </div>
+      </div>
+
+      <div className="app-sidebar__browser-status">
+        <BrowserStatusIndicator organ={browserOrgan} />
       </div>
 
       <nav className="app-sidebar__nav" aria-label="主导航">

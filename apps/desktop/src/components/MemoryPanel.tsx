@@ -7,6 +7,7 @@ import { MemoryRelationshipSummary } from "./memory/MemoryRelationshipSummary";
 import { MemoryStatsHeader } from "./memory/MemoryStatsHeader";
 import { MemoryCreateForm, MemoryToolbar } from "./memory/MemoryToolbar";
 import { useMemoryPanelState } from "./memory/useMemoryPanel";
+import { BrowsingHistoryPanel } from "./memory/BrowsingHistoryPanel";
 
 type MemoryPanelProps = {
   assistantName?: string;
@@ -25,6 +26,8 @@ export function MemoryPanel({ assistantName = "小晏", className }: MemoryPanel
       />
 
       <MemoryRelationshipSummary relationship={state.relationship} />
+
+      <BrowsingHistoryPanel />
 
       <MemoryToolbar
         searchQuery={state.searchQuery}

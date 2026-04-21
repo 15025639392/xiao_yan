@@ -23,6 +23,9 @@ def choose_next_action(
     cooldown_ready: bool,
     now: datetime,
 ) -> NextAction:
+    # xhs_workflow is handled entirely by the engine - just wait
+    if state.focus_subject is not None and state.focus_subject.kind == "xhs_workflow":
+        return NextAction(kind="xhs_wait", reason="小红书工作流执行中，等待下一轮")
     if state.focus_subject is not None:
         if focus_summary is not None and focus_summary.stage == "consolidate" and cooldown_ready:
             return NextAction(kind="consolidate", reason="当前牵挂进入收束阶段")

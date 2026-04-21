@@ -12,13 +12,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import threading
 import queue
+import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
+
+from browser_driver_profile import ensure_browser_organ_chrome_running, resolve_browser_cdp_endpoint
+from browser_driver_scripts import build_fill_script
 
 
 def now_iso() -> str:
@@ -44,6 +50,9 @@ class DriverDaemon:
         self._seq = 0
         self._worker_thread: threading.Thread | None = None
         self._running = True
+        # Persistent browser reuse via CDP (avoids losing cookies on restart)
+        self._cdp_browser = None  # type: ignore
+        self._cdp_context = None  # type: ignore
 
     def _run_worker(self) -> None:
         """Single thread for all Playwright operations."""
@@ -68,8 +77,19 @@ class DriverDaemon:
                         result = self._cmd_extract(args)
                     elif action == "close":
                         result = self._cmd_close(args)
+                    elif action == "fill_form":
+                        result = self._cmd_fill_form(args)
+                    elif action == "click_element":
+                        result = self._cmd_click_element(args)
+                    elif action == "publish":
+                        result = self._cmd_publish(args)
+                    elif action == "find_publish_button":
+                        result = self._cmd_find_publish_button(args)
+                    elif action == "evaluate":
+                        result = self._cmd_evaluate(args)
+                    elif action == "ping":
+                        result = {"status": "ok", "socket_path": self.socket_path}
                     else:
-                        error = f"unknown action: {action}"
                         result = {}
                 except Exception as exc:
                     error = str(exc)
@@ -121,7 +141,10 @@ class DriverDaemon:
         # Close all browser sessions
         for session in list(self.sessions.values()):
             try:
-                session.browser.close()
+                if session.browser is not None:
+                    session.browser.close()
+                else:
+                    session.context.close()
             except Exception:
                 pass
         self.sessions.clear()
@@ -130,42 +153,215 @@ class DriverDaemon:
     # --- Commands run on worker thread (no GIL issues) ---
 
     def _cmd_open(self, args: dict, pw) -> dict:
-        from playwright.sync_api import Error as PlaywrightError
-
         url = args["url"]
         session_id = args.get("session_id") or f"browser-{os.urandom(8).hex()}"
         headless = args.get("headless", True)
         wait_until = args.get("wait_until", "domcontentloaded")
+        activate = args.get("activate", True)
 
-        browser = pw.chromium.launch(headless=headless)
-        context = browser.new_context()
-        page = context.new_page()
+        reused = self._reuse_existing_session(session_id, url, wait_until=wait_until, activate=activate)
+        if reused is not None:
+            return reused
 
-        nav_err: str | None = None
+        # Try to reuse an existing Chrome via CDP (preserves cookies / login session)
+        cdp_browser = self._try_connect_existing_chrome(pw)
+        if cdp_browser is not None:
+            self._cdp_browser = cdp_browser
+            self._cdp_context = self._wait_for_cdp_context(cdp_browser)
+            try:
+                page = self._prepare_page(self._cdp_context, url)
+                self._activate_page(page, url, wait_until=wait_until, activate=activate)
+                self.sessions[session_id] = BrowserSession(session_id, self._cdp_browser, self._cdp_context, page)
+                return {
+                    "session_id": session_id,
+                    "url": url,
+                    "resolved_url": page.url,
+                    "title": page.title(),
+                    "status": "active",
+                    "opened_at": now_iso(),
+                }
+            except Exception:
+                # CDP reuse failed, fall through to fresh launch
+                try:
+                    cdp_browser.close()
+                except Exception:
+                    pass
+                self._cdp_browser = None
+                self._cdp_context = None
+
+        ensure_browser_organ_chrome_running()
+        cdp_browser = self._try_connect_existing_chrome(pw)
+        if cdp_browser is None:
+            raise RuntimeError("browser organ chrome did not expose a reusable cdp endpoint")
+
+        context = self._wait_for_cdp_context(cdp_browser)
+        browser = cdp_browser
+        page = self._prepare_page(context, url)
+
         try:
-            page.goto(url, wait_until=wait_until, timeout=15000)
-        except PlaywrightError as exc:
-            nav_err = str(exc)
-
-        if nav_err is None:
-            self.sessions[session_id] = BrowserSession(session_id, browser, context, page)
-        else:
-            browser.close()
-            raise RuntimeError(f"navigation failed: {nav_err}")
-
-        resolved_url = page.url
-        title = page.title()
+            self._activate_page(page, url, wait_until=wait_until, activate=activate)
+        except Exception as exc:
+            raise RuntimeError(f"navigation failed: {exc}")
 
         self.sessions[session_id] = BrowserSession(session_id, browser, context, page)
+        self._cdp_browser = browser
+        self._cdp_context = context
 
         return {
             "session_id": session_id,
             "url": url,
-            "resolved_url": resolved_url,
-            "title": title,
+            "resolved_url": page.url,
+            "title": page.title(),
             "status": "active",
             "opened_at": now_iso(),
         }
+
+    def _try_connect_existing_chrome(self, pw) -> Any | None:
+        """Try to connect to an already-running Chrome via CDP."""
+        try:
+            cdp_endpoint = resolve_browser_cdp_endpoint()
+            if not cdp_endpoint:
+                return None
+            return pw.chromium.connect_over_cdp(cdp_endpoint)
+        except Exception:
+            return None
+
+    def _wait_for_cdp_context(self, browser):
+        for _ in range(30):
+            contexts = list(browser.contexts)
+            if contexts:
+                return contexts[0]
+            threading.Event().wait(0.1)
+        raise RuntimeError("cdp browser exposed no reusable context")
+
+    def _prepare_page(self, context, url: str):
+        page = self._find_reusable_page(context, url)
+        if page is not None:
+            return page
+
+        page = self._pick_fallback_page(context)
+        if page is not None:
+            return page
+
+        return context.new_page()
+
+    def _reuse_existing_session(
+        self,
+        session_id: str,
+        url: str,
+        *,
+        wait_until: str,
+        activate: bool,
+    ) -> dict[str, Any] | None:
+        session = self.sessions.get(session_id)
+        if session is None:
+            return None
+
+        try:
+            resolved = self._resolve_session(session_id)
+        except Exception:
+            self.sessions.pop(session_id, None)
+            return None
+
+        page = resolved.page
+        self._activate_page(page, url, wait_until=wait_until, activate=activate)
+        return {
+            "session_id": session_id,
+            "url": url,
+            "resolved_url": page.url,
+            "title": page.title(),
+            "status": "active",
+            "opened_at": now_iso(),
+        }
+
+    def _find_reusable_page(self, context, url: str):
+        for page in reversed(list(context.pages)):
+            try:
+                if self._matches_requested_location(page.url, url):
+                    return page
+            except Exception:
+                continue
+        return None
+
+    def _pick_fallback_page(self, context):
+        pages = list(context.pages)
+        for page in reversed(pages):
+            try:
+                if self._is_reusable_page_url(page.url):
+                    return page
+            except Exception:
+                continue
+        return pages[-1] if pages else None
+
+    def _activate_page(self, page, url: str, *, wait_until: str, activate: bool) -> None:
+        if not self._matches_requested_location(page.url, url):
+            page.goto(url, wait_until=wait_until, timeout=15000)
+        if activate:
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
+
+    def _matches_requested_location(self, current_url: str, requested_url: str) -> bool:
+        if not current_url or not requested_url:
+            return False
+        normalized_current = current_url.rstrip("/")
+        normalized_requested = requested_url.rstrip("/")
+        if normalized_current == normalized_requested:
+            return True
+        if normalized_current.startswith(normalized_requested):
+            return True
+        if self._is_login_redirect_for_requested_url(current_url, requested_url):
+            return True
+        return False
+
+    def _is_reusable_page_url(self, url: str) -> bool:
+        if not url or url == "about:blank":
+            return False
+        return not url.startswith(("chrome://", "devtools://", "chrome-extension://"))
+
+    def _is_login_redirect_for_requested_url(self, current_url: str, requested_url: str) -> bool:
+        try:
+            current = urlparse(current_url)
+            requested = urlparse(requested_url)
+        except Exception:
+            return False
+
+        if not current.netloc or current.netloc != requested.netloc:
+            return False
+        if current.path != "/login":
+            return False
+
+        last_urls = parse_qs(current.query).get("lastUrl", [])
+        requested_path = requested.path.rstrip("/")
+        for raw_last_url in last_urls:
+            decoded_last_url = self._fully_unquote(raw_last_url).strip()
+            if not decoded_last_url:
+                continue
+
+            if decoded_last_url.startswith("http://") or decoded_last_url.startswith("https://"):
+                target = urlparse(decoded_last_url)
+            else:
+                target = urlparse(f"{requested.scheme}://{requested.netloc}{decoded_last_url}")
+
+            if target.netloc and target.netloc != requested.netloc:
+                continue
+
+            target_path = target.path.rstrip("/")
+            if not target_path:
+                continue
+            if target_path == requested_path or requested_path.startswith(target_path):
+                return True
+        return False
+
+    def _fully_unquote(self, value: str) -> str:
+        decoded = value
+        for _ in range(3):
+            next_decoded = unquote(decoded)
+            if next_decoded == decoded:
+                break
+            decoded = next_decoded
+        return decoded
 
     def _cmd_snapshot(self, args: dict) -> dict:
         session_id = args["session_id"]
@@ -276,7 +472,9 @@ class DriverDaemon:
         session = self.sessions.pop(session_id, None)
         if session:
             try:
-                session.browser.close()
+                # Only close the page — preserve the browser process and CDP connection
+                # so cookies/login state survive across scouting cycles.
+                session.page.close()
             except Exception:
                 pass
         return {
@@ -289,9 +487,158 @@ class DriverDaemon:
         session = self.sessions.get(session_id)
         if session is None:
             raise ValueError(f"session not found: {session_id}")
-        if session.context.browser.is_connected() is False:
+        browser = session.context.browser
+        if browser is not None and browser.is_connected() is False:
             raise ValueError(f"session browser disconnected: {session_id}")
         return session
+
+    # ── evaluate ─────────────────────────────────────────────────────────────
+
+    def cmd_evaluate(self, args: dict) -> dict:
+        return self._enqueue_request("evaluate", args)
+
+    def _cmd_evaluate(self, args: dict) -> dict:
+        session_id = args["session_id"]
+        script = args.get("script", "")
+        if not script:
+            raise ValueError("script is required")
+
+        session = self._resolve_session(session_id)
+        result = session.page.evaluate(script)
+        return {
+            "session_id": session_id,
+            "result": result,
+            "evaluated_at": now_iso(),
+        }
+
+    # ── fill_form ────────────────────────────────────────────────────────────
+
+    def cmd_fill_form(self, args: dict) -> dict:
+        """Thread-safe: enqueues to worker thread."""
+        return self._enqueue_request("fill_form", args)
+
+    def _cmd_fill_form(self, args: dict) -> dict:
+        session_id = args["session_id"]
+        title = args.get("title", "")
+        body = args.get("body", "")
+
+        session = self._resolve_session(session_id)
+        page = session.page
+
+        script = build_fill_script(title=title, body=body)
+        result = page.evaluate(script)
+        return {
+            "session_id": session_id,
+            "status": result.get("status", "unknown"),
+            "filled_title": result.get("filled_title", False),
+            "filled_body": result.get("filled_body", False),
+        }
+
+    # ── click_element ────────────────────────────────────────────────────────
+
+    def cmd_click_element(self, args: dict) -> dict:
+        """Thread-safe: enqueues to worker thread."""
+        return self._enqueue_request("click_element", args)
+
+    def _cmd_click_element(self, args: dict) -> dict:
+        session_id = args["session_id"]
+        selector = args.get("selector", "")
+        if not selector:
+            raise ValueError("selector is required for click_element")
+
+        session = self._resolve_session(session_id)
+        page = session.page
+
+        try:
+            page.click(selector, timeout=10000)
+            return {
+                "session_id": session_id,
+                "status": "clicked",
+                "selector": selector,
+                "clicked": True,
+            }
+        except Exception as exc:
+            return {
+                "session_id": session_id,
+                "status": "click_failed",
+                "selector": selector,
+                "clicked": False,
+                "error": str(exc),
+            }
+
+    # ── publish ───────────────────────────────────────────────────────────────
+
+    def cmd_publish(self, args: dict) -> dict:
+        """Thread-safe: enqueues to worker thread."""
+        return self._enqueue_request("publish", args)
+
+    def _cmd_publish(self, args: dict) -> dict:
+        session_id = args["session_id"]
+        title = args.get("title", "")
+        body = args.get("body", "")
+        publish_selector = args.get("publish_selector", "")
+
+        session = self._resolve_session(session_id)
+        page = session.page
+
+        # Fill the form first
+        script = build_fill_script(title=title, body=body)
+        fill_result = page.evaluate(script)
+
+        # Then click publish button if selector provided
+        clicked = False
+        click_error = None
+        if publish_selector:
+            try:
+                page.click(publish_selector, timeout=10000)
+                clicked = True
+            except Exception as exc:
+                click_error = str(exc)
+
+        return {
+            "session_id": session_id,
+            "filled_title": fill_result.get("filled_title", False),
+            "filled_body": fill_result.get("filled_body", False),
+            "status": fill_result.get("status", "unknown"),
+            "publish_clicked": clicked,
+            "click_error": click_error,
+        }
+
+    # ── find_publish_button ─────────────────────────────────────────────────
+
+    def cmd_find_publish_button(self, args: dict) -> dict:
+        """Thread-safe: enqueues to worker thread."""
+        return self._enqueue_request("find_publish_button", args)
+
+    def _cmd_find_publish_button(self, args: dict) -> dict:
+        session_id = args["session_id"]
+        session = self._resolve_session(session_id)
+        page = session.page
+
+        selectors_to_try = [
+            "button[type='submit']",
+            "button:has-text('发布')",
+            "[role='button']:has-text('发布')",
+            "button.primary",
+            ".publish-btn",
+            "[aria-label*='发布']",
+        ]
+        for selector in selectors_to_try:
+            try:
+                el = page.query_selector(selector)
+                if el and el.is_visible():
+                    return {
+                        "session_id": session_id,
+                        "selector": selector,
+                        "found": True,
+                    }
+            except Exception:
+                pass
+        return {
+            "session_id": session_id,
+            "selector": None,
+            "found": False,
+        }
 
     def run(self) -> None:
         self._worker_thread = threading.Thread(target=self._run_worker, daemon=True)
@@ -345,6 +692,18 @@ class DriverDaemon:
                     result = self.cmd_extract(args)
                 elif action == "close":
                     result = self.cmd_close(args)
+                elif action == "fill_form":
+                    result = self.cmd_fill_form(args)
+                elif action == "click_element":
+                    result = self.cmd_click_element(args)
+                elif action == "publish":
+                    result = self.cmd_publish(args)
+                elif action == "find_publish_button":
+                    result = self.cmd_find_publish_button(args)
+                elif action == "evaluate":
+                    result = self.cmd_evaluate(args)
+                elif action == "ping":
+                    result = {"ok": True, "result": {"status": "ok", "socket_path": self.socket_path}}
                 elif action == "shutdown":
                     result = self.cmd_shutdown(args)
                 else:
@@ -386,6 +745,16 @@ def send_to_daemon(socket_path: str, action: str, args: dict) -> dict:
         sock.close()
 
 
+def daemon_is_responsive(socket_path: str) -> bool:
+    if not os.path.exists(socket_path):
+        return False
+    try:
+        send_to_daemon(socket_path, "ping", {})
+        return True
+    except Exception:
+        return False
+
+
 def daemon_pid(socket_path: str) -> int | None:
     pidfile = socket_path + ".pid"
     if not os.path.exists(pidfile):
@@ -406,16 +775,26 @@ def _is_process_alive(pid: int) -> bool:
 
 
 def ensure_daemon(socket_path: str) -> None:
-    pid = daemon_pid(socket_path)
-    if pid and _is_process_alive(pid):
+    if daemon_is_responsive(socket_path):
         return
 
-    lockfile = socket_path + ".lock"
-    lock_fd = os.open(lockfile, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    pid = daemon_pid(socket_path)
+    if pid and _is_process_alive(pid) and daemon_is_responsive(socket_path):
+        return
+
+    lock_fd = _acquire_startup_lock(socket_path)
+    if lock_fd is None:
+        return
     try:
-        pid = daemon_pid(socket_path)
-        if pid and _is_process_alive(pid):
+        if daemon_is_responsive(socket_path):
             return
+
+        pid = daemon_pid(socket_path)
+        if pid and _is_process_alive(pid) and daemon_is_responsive(socket_path):
+            return
+
+        _cleanup_stale_daemon_artifacts(socket_path)
+        _terminate_duplicate_daemons(socket_path)
 
         script_path = os.path.abspath(__file__)
         devnull = open(os.devnull, "w")
@@ -428,18 +807,75 @@ def ensure_daemon(socket_path: str) -> None:
         )
         with open(socket_path + ".pid", "w") as f:
             f.write(str(proc.pid))
-        import time
         for _ in range(50):
-            if os.path.exists(socket_path):
-                time.sleep(0.1)
-                break
+            if daemon_is_responsive(socket_path):
+                return
             time.sleep(0.1)
+        raise RuntimeError(f"browser driver daemon did not become responsive: {socket_path}")
     finally:
         os.close(lock_fd)
         try:
-            os.unlink(lockfile)
+            os.unlink(socket_path + ".lock")
         except Exception:
             pass
+
+
+def _acquire_startup_lock(socket_path: str) -> int | None:
+    lockfile = socket_path + ".lock"
+    deadline = time.monotonic() + 5.0
+    while True:
+        try:
+            return os.open(lockfile, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            if daemon_is_responsive(socket_path):
+                return None
+            if time.monotonic() >= deadline:
+                try:
+                    os.unlink(lockfile)
+                except FileNotFoundError:
+                    pass
+                except Exception:
+                    pass
+            time.sleep(0.1)
+
+
+def _cleanup_stale_daemon_artifacts(socket_path: str) -> None:
+    for path in (socket_path, socket_path + ".pid"):
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+
+
+def _terminate_duplicate_daemons(socket_path: str) -> None:
+    script_name = os.path.basename(__file__)
+    escaped_socket = re.escape(socket_path)
+    pattern = re.compile(rf"^\s*(\d+)\s+.*{re.escape(script_name)}\s+daemon\s+{escaped_socket}\s*$")
+    try:
+        completed = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except Exception:
+        return
+
+    current_pid = os.getpid()
+    for line in completed.stdout.splitlines():
+        match = pattern.match(line.strip())
+        if not match:
+            continue
+        pid = int(match.group(1))
+        if pid == current_pid:
+            continue
+        try:
+            os.kill(pid, 15)
+        except Exception:
+            continue
 
 
 def main() -> None:

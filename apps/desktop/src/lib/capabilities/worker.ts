@@ -2,7 +2,12 @@ import { completeCapability, fetchPendingCapabilities, heartbeatCapabilityExecut
 import type { CapabilityRequest, CapabilityResult } from "./types";
 import {
   browserClose,
+  browserEvaluate,
   browserExtract,
+  browserFillForm,
+  browserClickElement,
+  browserPublish,
+  browserFindPublishButton,
   browserOpen,
   browserSnapshot,
   fsGetAllowedDirectory,
@@ -361,8 +366,9 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
       }
       const sessionId = asString(request.args.session_id) ?? undefined;
       const headless = request.args.headless === true;
+      const activate = request.args.activate !== false;
       try {
-        const result = await browserOpen(url, { session_id: sessionId, headless });
+        const result = await browserOpen(url, { session_id: sessionId, headless, activate });
         updateBrowserSession({
           session_id: result.session_id,
           status: result.status,
@@ -432,6 +438,89 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
           session_id: sessionId,
           status: "closed",
         }).catch(() => {});
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
+    if (request.capability === "browser.evaluate") {
+      const sessionId = asString(request.args.session_id);
+      const script = asString(request.args.script) ?? "";
+      if (!sessionId) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id");
+      }
+      if (!script) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.script");
+      }
+      try {
+        const result = await browserEvaluate(sessionId, script);
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
+    if (request.capability === "browser.fill_form") {
+      const sessionId = asString(request.args.session_id);
+      const title = asString(request.args.title) ?? "";
+      const body = asString(request.args.body) ?? "";
+      if (!sessionId) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id");
+      }
+      try {
+        const result = await browserFillForm(sessionId, { title, body });
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
+    if (request.capability === "browser.click_element") {
+      const sessionId = asString(request.args.session_id);
+      const selector = asString(request.args.selector) ?? "";
+      if (!sessionId) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id");
+      }
+      if (!selector) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.selector");
+      }
+      try {
+        const result = await browserClickElement(sessionId, selector);
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
+    if (request.capability === "browser.publish") {
+      const sessionId = asString(request.args.session_id);
+      const title = asString(request.args.title) ?? "";
+      const body = asString(request.args.body) ?? "";
+      const publishSelector = asString(request.args.publish_selector) ?? "";
+      if (!sessionId) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id");
+      }
+      try {
+        const result = await browserPublish(sessionId, title, body, publishSelector);
+        return buildResult(request, startedAt, true, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return buildResult(request, startedAt, false, undefined, "execution_error", message);
+      }
+    }
+
+    if (request.capability === "browser.find_publish_button") {
+      const sessionId = asString(request.args.session_id);
+      if (!sessionId) {
+        return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id");
+      }
+      try {
+        const result = await browserFindPublishButton(sessionId);
         return buildResult(request, startedAt, true, result);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

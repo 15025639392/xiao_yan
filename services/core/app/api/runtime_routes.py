@@ -17,6 +17,8 @@ from app.domain.models import (
     BrowserOrganState,
     BrowserSessionState,
     BrowserSessionStatus,
+    XhsWorkDomainState,
+    XhsWorkStatus,
 )
 from app.llm.schemas import ChatHistoryMessage, ChatHistoryResponse
 from app.memory.mempalace_adapter import MemPalaceAdapter
@@ -45,6 +47,25 @@ class BrowserSessionUpdateRequest(BaseModel):
     interaction_level: str | None = None
     last_snapshot_summary: str | None = None
     last_error: str | None = None
+
+
+class XhsWorkDomainUpdateRequest(BaseModel):
+    status: str | None = None
+    current_focus: str | None = None
+    backlog_count: int | None = None
+    active_task_ids: list[str] | None = None
+    last_published_at: str | None = None
+    current_bottleneck: str | None = None
+    next_recommended_action: str | None = None
+    account_name: str | None = None
+    account_positioning: str | None = None
+    target_audience: str | None = None
+    expression_style: str | None = None
+    scouting_interval_hours: float | None = None
+    auto_publish_selector: str | None = None
+    north_star: str | None = None
+    weekly_goals: list[str] | None = None
+    monthly_content_target: int | None = None
 
 
 def build_runtime_router() -> APIRouter:
@@ -187,6 +208,94 @@ def build_runtime_router() -> APIRouter:
             last_error=body.last_error,
         )
         being_state.browser_session = updated
+        state_store.set(being_state)
+        return {"ok": True}
+
+    @router.get("/xhs-work-domain")
+    def get_xhs_work_domain(
+        state_store: StateStore = Depends(get_state_store),
+    ) -> dict:
+        being_state = state_store.get()
+        if being_state.xhs_work_domain is None:
+            return {"available": False}
+        domain = being_state.xhs_work_domain
+        return {
+            "available": True,
+            "profile": {
+                "work_type": domain.profile.work_type,
+                "account_name": domain.profile.account_name,
+                "account_positioning": domain.profile.account_positioning,
+                "target_audience": domain.profile.target_audience,
+                "expression_style": domain.profile.expression_style,
+                "scouting_interval_hours": domain.profile.scouting_interval_hours,
+                "auto_publish_selector": domain.profile.auto_publish_selector,
+            },
+            "state": {
+                "status": domain.state.status.value,
+                "current_focus": domain.state.current_focus,
+                "backlog_count": domain.state.backlog_count,
+                "active_task_ids": domain.state.active_task_ids,
+                "last_published_at": (
+                    domain.state.last_published_at.isoformat() if domain.state.last_published_at else None
+                ),
+                "last_scouting_at": (
+                    domain.state.last_scouting_at.isoformat() if domain.state.last_scouting_at else None
+                ),
+                "current_bottleneck": domain.state.current_bottleneck,
+                "next_recommended_action": domain.state.next_recommended_action,
+                "pending_drafts": domain.state.pending_drafts,
+                "published_history": domain.state.published_history,
+            },
+            "goals": {
+                "north_star": domain.goals.north_star,
+                "weekly_goals": domain.goals.weekly_goals,
+                "monthly_content_target": domain.goals.monthly_content_target,
+            },
+        }
+
+    @router.patch("/xhs-work-domain")
+    def patch_xhs_work_domain(
+        update_req: XhsWorkDomainUpdateRequest,
+        state_store: StateStore = Depends(get_state_store),
+    ) -> dict:
+        being_state = state_store.get()
+        if being_state.xhs_work_domain is None:
+            being_state.xhs_work_domain = XhsWorkDomainState()
+        domain = being_state.xhs_work_domain
+
+        if update_req.status is not None:
+            domain.state.status = XhsWorkStatus(update_req.status)
+        if update_req.current_focus is not None:
+            domain.state.current_focus = update_req.current_focus
+        if update_req.backlog_count is not None:
+            domain.state.backlog_count = update_req.backlog_count
+        if update_req.active_task_ids is not None:
+            domain.state.active_task_ids = update_req.active_task_ids
+        if update_req.last_published_at is not None:
+            domain.state.last_published_at = datetime.fromisoformat(update_req.last_published_at)
+        if update_req.current_bottleneck is not None:
+            domain.state.current_bottleneck = update_req.current_bottleneck
+        if update_req.next_recommended_action is not None:
+            domain.state.next_recommended_action = update_req.next_recommended_action
+        if update_req.account_name is not None:
+            domain.profile.account_name = update_req.account_name
+        if update_req.account_positioning is not None:
+            domain.profile.account_positioning = update_req.account_positioning
+        if update_req.target_audience is not None:
+            domain.profile.target_audience = update_req.target_audience
+        if update_req.expression_style is not None:
+            domain.profile.expression_style = update_req.expression_style
+        if update_req.scouting_interval_hours is not None:
+            domain.profile.scouting_interval_hours = update_req.scouting_interval_hours
+        if update_req.auto_publish_selector is not None:
+            domain.profile.auto_publish_selector = update_req.auto_publish_selector
+        if update_req.north_star is not None:
+            domain.goals.north_star = update_req.north_star
+        if update_req.weekly_goals is not None:
+            domain.goals.weekly_goals = update_req.weekly_goals
+        if update_req.monthly_content_target is not None:
+            domain.goals.monthly_content_target = update_req.monthly_content_target
+
         state_store.set(being_state)
         return {"ok": True}
 

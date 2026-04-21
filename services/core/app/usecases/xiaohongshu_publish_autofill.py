@@ -1,138 +1,16 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
-import time
 
 from app.api.platform_route_models import XiaohongshuPublishAutofillResponse
+from app.api.tool_capability_bridge import (
+    BrowserCapabilityError,
+    BrowserOrganUnavailable,
+    call_browser_capability,
+)
 
 
 _PUBLISH_URL = "https://creator.xiaohongshu.com/publish/publish?from=xiao_yan&target=image"
-_JS_AUTOMATION_DISABLED_HINT = "通过 AppleScript 执行 JavaScript 的功能已关闭"
-
-
-def autofill_xiaohongshu_publish_page(*, title: str, body: str) -> XiaohongshuPublishAutofillResponse:
-    normalized_title = title.strip()
-    normalized_body = body.strip()
-    if not normalized_title:
-        raise ValueError("publish title cannot be blank")
-    if not normalized_body:
-        raise ValueError("publish body cannot be blank")
-    if sys.platform != "darwin":
-        raise ValueError("xiaohongshu publish autofill currently supports macOS only")
-
-    _open_chrome_publish_page()
-    time.sleep(0.8)
-
-    try:
-        raw_result = _run_fill_script_with_retry(title=normalized_title, body=normalized_body)
-    except ValueError as exc:
-        if _JS_AUTOMATION_DISABLED_HINT not in str(exc):
-            raise
-        return XiaohongshuPublishAutofillResponse(
-            status="opened_publish_page",
-            publish_url=_PUBLISH_URL,
-            title=normalized_title,
-            body=normalized_body,
-            filled_title=False,
-            filled_body=False,
-            message="已打开小红书发布页，但 Chrome 未开启 AppleScript JavaScript，当前改为手动粘贴。",
-        )
-
-    try:
-        payload = json.loads(raw_result)
-    except json.JSONDecodeError as exc:
-        raise ValueError("unexpected xiaohongshu publish autofill result") from exc
-
-    status = str(payload.get("status") or "opened_publish_page")
-    filled_title = bool(payload.get("filled_title"))
-    filled_body = bool(payload.get("filled_body"))
-    message = _build_result_message(status=status, filled_title=filled_title, filled_body=filled_body)
-    return XiaohongshuPublishAutofillResponse(
-        status=status,
-        publish_url=_PUBLISH_URL,
-        title=normalized_title,
-        body=normalized_body,
-        filled_title=filled_title,
-        filled_body=filled_body,
-        message=message,
-    )
-
-
-def _build_result_message(*, status: str, filled_title: bool, filled_body: bool) -> str:
-    if status == "filled":
-        return "已打开发布页，并把标题和正文草稿填进当前图文发布表单。"
-    if status == "awaiting_image_upload":
-        return "已打开发布页，但当前还在素材上传前置步骤。请先切到图文并上传首图，再点一次自动填充。"
-    if status == "missing_fields":
-        if filled_title or filled_body:
-            return "已部分填充发布页字段，剩余字段需要你手动补一下。"
-        return "已打开发布页，但暂时没识别到标题和正文输入区。"
-    return "已打开小红书发布页。"
-
-
-def _run_fill_script_with_retry(*, title: str, body: str) -> str:
-    script = _build_fill_script(title=title, body=body)
-    last_result = ""
-    for attempt in range(3):
-        last_result = _execute_active_tab_javascript(script)
-        if '"status":"missing_fields"' not in last_result.replace(" ", ""):
-            return last_result
-        if attempt < 2:
-            time.sleep(0.6)
-    return last_result
-
-
-def _open_chrome_publish_page() -> None:
-    _run_osascript(
-        f"""
-tell application "Google Chrome"
-    activate
-    if (count of windows) is 0 then
-        make new window
-    end if
-    set URL of active tab of front window to "{_PUBLISH_URL}"
-end tell
-"""
-    )
-
-
-def _execute_active_tab_javascript(script: str) -> str:
-    escaped_script = _to_applescript_string(script)
-    return _run_osascript(
-        f"""
-tell application "Google Chrome"
-    if (count of windows) is 0 then error "Google Chrome has no open windows"
-    set activeTab to active tab of front window
-    return execute activeTab javascript {escaped_script}
-end tell
-"""
-    )
-
-
-def _run_osascript(script: str) -> str:
-    completed = subprocess.run(
-        ["osascript", "-e", script],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=15,
-    )
-    if completed.returncode != 0:
-        message = (completed.stderr or completed.stdout or "").strip() or "failed to control Chrome"
-        raise ValueError(message)
-    return completed.stdout.strip()
-
-
-def _to_applescript_string(value: str) -> str:
-    escaped = (
-        value.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
-    )
-    return f'"{escaped}"'
 
 
 def _build_fill_script(*, title: str, body: str) -> str:
@@ -235,3 +113,129 @@ def _build_fill_script(*, title: str, body: str) -> str:
   }});
 }})();
 """
+
+
+def autofill_xiaohongshu_publish_page(
+    *,
+    title: str,
+    body: str,
+    auto_publish: bool = False,
+    publish_selector: str = "",
+) -> XiaohongshuPublishAutofillResponse:
+    """Auto-fill the Xiaohongshu publish page.
+
+    Args:
+        title: Title text
+        body: Body/description text
+        auto_publish: If True, also click the publish button after filling
+        publish_selector: CSS selector for the publish button (required if auto_publish=True)
+    """
+    normalized_title = title.strip()
+    normalized_body = body.strip()
+    if not normalized_title:
+        raise ValueError("publish title cannot be blank")
+    if not normalized_body:
+        raise ValueError("publish body cannot be blank")
+
+    if auto_publish and not publish_selector:
+        return _fallback_response("missing_selector", "auto_publish requires publish_selector")
+
+    # 1. Open publish page via browser organ
+    try:
+        open_result = call_browser_capability(
+            "browser.open",
+            {"url": _PUBLISH_URL, "headless": False},
+            timeout_seconds=15.0,
+        )
+    except BrowserOrganUnavailable:
+        return _fallback_response("browser_unavailable", "浏览器器官不可用，请手动打开发布页")
+
+    session_id = open_result.get("session_id")
+    if not session_id:
+        return _fallback_response("open_failed", "打开发布页失败")
+
+    # 2. Fill and optionally click publish via browser.publish capability
+    try:
+        publish_result = call_browser_capability(
+            "browser.publish",
+            {
+                "session_id": session_id,
+                "title": normalized_title,
+                "body": normalized_body,
+                "publish_selector": publish_selector if auto_publish else "",
+            },
+            timeout_seconds=20.0,
+        )
+    except BrowserCapabilityError as exc:
+        _ensure_close(session_id)
+        return _fallback_response("publish_failed", f"发布失败: {exc}")
+    finally:
+        _ensure_close(session_id)
+
+    # 3. Parse and return
+    status = str(publish_result.get("status", "filled"))
+    filled_title = bool(publish_result.get("filled_title", False))
+    filled_body = bool(publish_result.get("filled_body", False))
+    publish_clicked = bool(publish_result.get("publish_clicked", False))
+    message = _build_result_message(
+        status=status,
+        filled_title=filled_title,
+        filled_body=filled_body,
+        publish_clicked=publish_clicked,
+        auto_publish=auto_publish,
+    )
+    return XiaohongshuPublishAutofillResponse(
+        status=status,
+        publish_url=_PUBLISH_URL,
+        title=normalized_title,
+        body=normalized_body,
+        filled_title=filled_title,
+        filled_body=filled_body,
+        message=message,
+    )
+
+
+def _ensure_close(session_id: str) -> None:
+    """Ensure browser session is closed."""
+    try:
+        call_browser_capability(
+            "browser.close",
+            {"session_id": session_id},
+            timeout_seconds=5.0,
+        )
+    except Exception:
+        pass
+
+
+def _fallback_response(status: str, message: str) -> XiaohongshuPublishAutofillResponse:
+    """Return a fallback response when browser organ fails."""
+    return XiaohongshuPublishAutofillResponse(
+        status=status,
+        publish_url=_PUBLISH_URL,
+        title="",
+        body="",
+        filled_title=False,
+        filled_body=False,
+        message=message,
+    )
+
+
+def _build_result_message(
+    *,
+    status: str,
+    filled_title: bool,
+    filled_body: bool,
+    publish_clicked: bool = False,
+    auto_publish: bool = False,
+) -> str:
+    if auto_publish and publish_clicked:
+        return "已自动打开发布页、填入草稿并点击发布按钮。"
+    if status == "filled":
+        return "已打开发布页，并把标题和正文草稿填进当前图文发布表单。"
+    if status == "awaiting_image_upload":
+        return "已打开发布页，但当前还在素材上传前置步骤。请先切到图文并上传首图，再点一次自动填充。"
+    if status == "missing_fields":
+        if filled_title or filled_body:
+            return "已部分填充发布页字段，剩余字段需要你手动补一下。"
+        return "已打开发布页，但暂时没识别到标题和正文输入区。"
+    return "已打开小红书发布页。"
