@@ -13,17 +13,70 @@ class XiaohongshuDraftGenerationOutcome:
     action_data: dict[str, Any]
 
 
-def build_xiaohongshu_opportunity_items(last_scouting_data: dict[str, Any]) -> list[dict[str, str]]:
+def _parse_count(value: str | None) -> float:
+    """Parse '1.2万' / '1.2w' → 12000.0, plain digits → int."""
+    if value is None:
+        return 0.0
+    v = str(value).strip()
+    multiplier = 1.0
+    if v.endswith(("万", "w", "W")):
+        v = v[:-1]
+        multiplier = 10000.0
+    try:
+        return float(v) * multiplier
+    except ValueError:
+        return 0.0
+
+
+def build_xiaohongshu_opportunity_items(
+    last_scouting_data: dict[str, Any],
+    published_history: list[dict[str, Any]] | None = None,
+    recent_topics: list[str] | None = None,
+) -> list[dict[str, str]]:
+    """Build ranked opportunity items from scouting data.
+
+    Ranking signals:
+    1. Past engagement on this topic (from published_history metrics)
+    2. Activity entries (always included, ranked after top topics)
+    3. Topic popularity (participation + view count from page)
+
+    Topics already in recent_topics are deprioritized to the bottom.
+    """
     topics = last_scouting_data.get("topics", [])
     activities = last_scouting_data.get("activities", [])
+    history = published_history or []
+    recent = set(recent_topics or [])
+
+    # Build engagement lookup: opportunity_title → total_engagement
+    engagement: dict[str, float] = {}
+    for entry in history:
+        m = entry.get("metrics") or {}
+        score = _parse_count(m.get("like_count")) + _parse_count(m.get("collect_count")) + _parse_count(m.get("comment_count"))
+        opp_title = entry.get("opportunity_title", "")
+        if opp_title:
+            engagement[opp_title] = engagement.get(opp_title, 0.0) + score
+
+    def topic_score(t: dict) -> float:
+        title = t.get("topic", "")
+        if title in recent:
+            return -1.0  # deprioritize recently used
+        return engagement.get(title, 0.0)
+
+    # Sort: high-engagement first, recently-used topics last, keep top 5
+    sorted_topics = sorted(topics, key=topic_score, reverse=True)[:5]
 
     items: list[dict[str, str]] = []
-    for topic in topics[:5]:
+    for topic in sorted_topics:
+        topic_title = topic.get("topic", "")
+        eng = engagement.get(topic_title, 0.0)
+        eng_hint = f"，往期互动≈{eng:.0f}" if eng > 0 else ""
+        view = topic.get("view_count")
+        view_hint = f"，浏览{view}" if view else ""
         items.append(
             {
                 "source_kind": "topic",
-                "title": topic.get("topic", ""),
-                "summary": f"参与人数: {topic.get('participation_count', '未知')}",
+                "title": topic_title,
+                "summary": f"参与{topic.get('participation_count', '?')}{view_hint}{eng_hint}",
             }
         )
     for activity in activities[:3]:

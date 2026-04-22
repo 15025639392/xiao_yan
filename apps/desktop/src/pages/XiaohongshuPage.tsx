@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchXhsWorkDomain, updateXhsWorkDomain, wakeLifecycle, type XhsWorkDomainResponse } from "../lib/api";
 import { browserOpen } from "../lib/tauri/fsAccess";
 import { Button } from "../components/ui";
+import { XiaohongshuConfigPanel } from "./XiaohongshuConfigPanel";
+import { XiaohongshuLoginGuidance } from "./XiaohongshuLoginGuidance";
 
 type XiaohongshuPageProps = {
   assistantName: string;
@@ -86,6 +88,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
   const [autoPublishSelector, setAutoPublishSelector] = useState("");
   const [saving, setSaving] = useState(false);
   const [openingLogin, setOpeningLogin] = useState(false);
+  const [draftEdits, setDraftEdits] = useState<Record<string, { title: string; body: string }>>({});
 
   const loadDomain = useCallback(() => {
     fetchXhsWorkDomain()
@@ -126,6 +129,26 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     }
   }, [workDomain?.profile]);
 
+  useEffect(() => {
+    const serverDrafts = workDomain?.state?.pending_drafts || [];
+    if (serverDrafts.length === 0) {
+      setDraftEdits({});
+      return;
+    }
+    setDraftEdits((prev) => {
+      const localIds = new Set(Object.keys(prev));
+      const hasNew = serverDrafts.some((d) => !localIds.has(d.draft_id));
+      if (!hasNew && Object.keys(prev).length > 0) return prev;
+      const next: Record<string, { title: string; body: string }> = { ...prev };
+      serverDrafts.forEach((d) => {
+        if (!next[d.draft_id]) {
+          next[d.draft_id] = { title: d.title, body: d.body };
+        }
+      });
+      return next;
+    });
+  }, [workDomain?.state?.pending_drafts]);
+
   async function handleSaveConfig() {
     setSaving(true);
     try {
@@ -146,7 +169,6 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
 
   async function handleOpenLoginPage() {
     setOpeningLogin(true);
-    // Open browser for manual login if needed
     try {
       await browserOpen("https://creator.xiaohongshu.com/new/home", {
         session_id: XHS_LOGIN_SESSION_ID,
@@ -175,10 +197,56 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     loadDomain();
   }
 
+  async function handleConfirmManualPublish() {
+    await updateXhsWorkDomain({ status: "idle" });
+    loadDomain();
+  }
+
+  async function handleSaveDrafts() {
+    if (!workDomain?.state?.pending_drafts) return;
+    const updated = workDomain.state.pending_drafts.map((d) => ({
+      ...d,
+      title: draftEdits[d.draft_id]?.title ?? d.title,
+      body: draftEdits[d.draft_id]?.body ?? d.body,
+    }));
+    try {
+      await updateXhsWorkDomain({ pending_drafts: updated });
+      loadDomain();
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleDeleteDraft(draftId: string) {
+    if (!workDomain?.state?.pending_drafts) return;
+    const remaining = workDomain.state.pending_drafts.filter((d) => d.draft_id !== draftId);
+    const newBacklog = remaining.length;
+    const currentStatus = workDomain.state?.status || "idle";
+    try {
+      await updateXhsWorkDomain({
+        pending_drafts: remaining,
+        backlog_count: newBacklog,
+        ...(currentStatus === "idle_reviewing" && remaining.length === 0 ? { status: "idle" } : {}),
+      });
+      setDraftEdits((prev) => {
+        const next = { ...prev };
+        delete next[draftId];
+        return next;
+      });
+      loadDomain();
+    } catch {
+      // ignore
+    }
+  }
+
   const state = workDomain?.state;
   const profile = workDomain?.profile;
   const status = state?.status || "idle";
   const isRunning = status !== "idle" && status !== "blocked";
+
+  const showLoginGuidance =
+    (!(profile?.account_name && profile.account_name !== "当前账号" && profile.account_name.trim() !== "" && profile.account_name !== "已登录账号") ||
+      state?.current_bottleneck === "需要登录小红书账号");
 
   return (
     <div className="xhs-page">
@@ -191,13 +259,13 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
         </div>
         <div className="xhs-page__header-actions">
           <Button
-            type="outline"
+            variant="outline"
             onClick={() => setConfigOpen((o) => !o)}
           >
             {configOpen ? "收起配置" : "配置"}
           </Button>
           <Button
-            type={isRunning ? "destructive" : "default"}
+            variant={isRunning ? "destructive" : "default"}
             onClick={() => {
               void handleToggleLoop();
             }}
@@ -208,74 +276,33 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
       </header>
 
       {configOpen && (
-        <section className="xhs-config-panel">
-          <h3 className="xhs-config-panel__title">闭环配置</h3>
-          <div className="xhs-config-panel__fields">
-            <label className="xhs-config-field">
-              <span className="xhs-config-field__label">小红书账号名</span>
-              <input
-                type="text"
-                className="xhs-config-field__input"
-                value={accountName}
-                placeholder="例如：小红薯66661C17"
-                onChange={(e) => setAccountName(e.target.value)}
-              />
-            </label>
-            <label className="xhs-config-field">
-              <span className="xhs-config-field__label">侦察间隔（小时）</span>
-              <input
-                type="number"
-                className="xhs-config-field__input"
-                value={scoutingInterval}
-                min={0.1}
-                max={24}
-                step={0.1}
-                onChange={(e) => setScoutingInterval(parseFloat(e.target.value) || 1.0)}
-              />
-            </label>
-            <label className="xhs-config-field">
-              <span className="xhs-config-field__label">发布模式</span>
-              <select
-                className="xhs-config-field__input"
-                value={publishMode}
-                onChange={(e) => setPublishMode(e.target.value as "review_before_publish" | "direct_publish")}
-              >
-                <option value="review_before_publish">准备到发布前，人工确认</option>
-                <option value="direct_publish">自动直发</option>
-              </select>
-            </label>
-            <label className="xhs-config-field">
-              <span className="xhs-config-field__label">发布按钮 Selector</span>
-              <input
-                type="text"
-                className="xhs-config-field__input"
-                value={autoPublishSelector}
-                placeholder={publishMode === "direct_publish" ? "自动发现（留空）" : "仅直发模式需要"}
-                onChange={(e) => setAutoPublishSelector(e.target.value)}
-              />
-            </label>
-          </div>
-          <div className="xhs-config-panel__actions">
-            <Button type="default" onClick={() => setConfigOpen(false)}>取消</Button>
-            <Button type="primary" onClick={handleSaveConfig} disabled={saving}>
-              {saving ? "保存中..." : "保存"}
-            </Button>
-          </div>
-        </section>
+        <XiaohongshuConfigPanel
+          accountName={accountName}
+          onAccountNameChange={setAccountName}
+          scoutingInterval={scoutingInterval}
+          onScoutingIntervalChange={setScoutingInterval}
+          publishMode={publishMode}
+          onPublishModeChange={setPublishMode}
+          autoPublishSelector={autoPublishSelector}
+          onAutoPublishSelectorChange={setAutoPublishSelector}
+          onSave={handleSaveConfig}
+          onCancel={() => setConfigOpen(false)}
+          saving={saving}
+        />
       )}
 
-      {(!(profile?.account_name && profile.account_name !== "当前账号" && profile.account_name.trim() !== "" && profile.account_name !== "已登录账号") || state?.current_bottleneck === "需要登录小红书账号") && (
-        <div className="xhs-login-guidance">
-          <div className="xhs-login-guidance__text">
-            <strong>未检测到小红书账号登录</strong>
-            <span>点击「去登录」在浏览器中完成登录，系统将自动检测。</span>
-          </div>
-          <Button
-            type="primary"
-            onClick={handleOpenLoginPage}
-            disabled={openingLogin}
-          >
-            {openingLogin ? "正在打开..." : "去登录"}
+      {showLoginGuidance && (
+        <XiaohongshuLoginGuidance
+          onOpenLoginPage={handleOpenLoginPage}
+          opening={openingLogin}
+        />
+      )}
+
+      {status === "reviewing" && (
+        <div className="xhs-review-confirm">
+          <span>小晏已把内容填到发布页，请检查后直接点击浏览器中的「发布」。</span>
+          <Button variant="default" onClick={handleConfirmManualPublish}>
+            已手动发布，结束本轮
           </Button>
         </div>
       )}
@@ -349,9 +376,51 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
             <h4 className="xhs-section-title">待发布草稿</h4>
             <ul className="xhs-pending-list">
               {state.pending_drafts.map((draft) => (
-                <li key={draft.draft_id} className="xhs-pending-item">
-                  <span className="xhs-pending-item__title">{draft.title}</span>
-                  <span className="xhs-pending-item__status">{draft.status}</span>
+                <li key={draft.draft_id} className="xhs-pending-item xhs-pending-item--editable">
+                  <input
+                    className="xhs-pending-item__title-input"
+                    type="text"
+                    value={draftEdits[draft.draft_id]?.title ?? draft.title}
+                    onChange={(e) =>
+                      setDraftEdits((prev) => ({
+                        ...prev,
+                        [draft.draft_id]: {
+                          ...prev[draft.draft_id],
+                          title: e.target.value,
+                        },
+                      }))
+                    }
+                  />
+                  <textarea
+                    className="xhs-pending-item__body-input"
+                    rows={3}
+                    value={draftEdits[draft.draft_id]?.body ?? draft.body}
+                    onChange={(e) =>
+                      setDraftEdits((prev) => ({
+                        ...prev,
+                        [draft.draft_id]: {
+                          ...prev[draft.draft_id],
+                          body: e.target.value,
+                        },
+                      }))
+                    }
+                  />
+                  <div className="xhs-pending-item__actions">
+                    <span className="xhs-pending-item__status">{draft.status}</span>
+                    <Button variant="outline" onClick={handleSaveDrafts}>
+                      保存修改
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        if (window.confirm("确定删除这条草稿？")) {
+                          void handleDeleteDraft(draft.draft_id);
+                        }
+                      }}
+                    >
+                      删除
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>

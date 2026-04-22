@@ -9,46 +9,26 @@ from app.api.tool_capability_bridge import (
     call_browser_capability,
 )
 from app.config import get_xiaohongshu_mcp_publish_enabled, get_xiaohongshu_mcp_publish_endpoint
-from app.domain.models import XhsPublishMode, XhsWorkDomainState, XhsWorkStatus
+from app.domain.models import XhsPublishMode, XhsTaskChain, XhsTaskKind, XhsTaskStep, XhsWorkDomainState, XhsWorkStatus
 from app.external_executors.xiaohongshu_mcp_client import XiaohongshuMcpClient
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
-from app.usecases.xiaohongshu_browser_publish_executor import (
-    execute_xiaohongshu_browser_publish,
-    resolve_xiaohongshu_publish_selector,
-)
-from app.usecases.xiaohongshu_browser_publish_review import (
-    evaluate_xiaohongshu_browser_review_preparation,
-)
-from app.usecases.xiaohongshu_cover_image import (
-    XiaohongshuCoverImageGenerationError,
-    XiaohongshuCoverImageUnavailableError,
-    generate_xiaohongshu_cover_image,
-)
 from app.usecases.xiaohongshu_draft_generation import (
     build_xiaohongshu_opportunity_items,
     generate_xiaohongshu_draft_from_opportunity,
 )
 from app.usecases.xiaohongshu_publish_orchestration import (
     XiaohongshuPublishTransition,
-    mark_xiaohongshu_browser_publish_success,
-    mark_xiaohongshu_mcp_publish_success,
-    mark_xiaohongshu_publish_blocked,
-    mark_xiaohongshu_publish_review_ready,
-    mark_xiaohongshu_text_image_review,
     reset_xiaohongshu_publish_to_idle,
 )
-from app.usecases.xiaohongshu_publish_preparation import (
-    build_xiaohongshu_browser_publish_image_paths,
-    find_xiaohongshu_publish_button,
-    prepare_xiaohongshu_text_image_cards_for_draft,
+from app.usecases.xiaohongshu_publish_pipeline import (
+    run_xiaohongshu_publish_pipeline,
 )
 from app.usecases.xiaohongshu_scouting_orchestration import (
     apply_xiaohongshu_scouting_result,
     is_xiaohongshu_creator_home_login_required,
 )
-from app.usecases.xiaohongshu_publish_via_mcp import publish_xiaohongshu_image_post_via_mcp
-from app.usecases.xiaohongshu_text_image_autofill import autofill_xiaohongshu_text_image_cards
+from app.usecases.xiaohongshu_policy import can_post_today, check_draft_against_policy
 
 
 @dataclass
@@ -61,6 +41,15 @@ class XhsWorkDomainAction:
 _CREATOR_HOME_URL = "https://creator.xiaohongshu.com/new/home"
 _PUBLISH_URL = "https://creator.xiaohongshu.com/publish/publish?from=xiao_yan&target=image"
 _CREATOR_HOME_SESSION_ID = "xhs-login"
+
+_BLOCKED_RETRY_SECONDS = 300
+_MIN_IDLE_REVIEWING_SECONDS = 60
+_MIN_PUBLISH_INTERVAL_SECONDS = 300
+_MAX_DRAFTS_PER_SCOUTING = 2
+_MAX_DRAFT_QUEUE_SIZE = 3
+
+# Canonical task chain — drives step dispatch and retryable-blockage lookups.
+XHS_TASK_CHAIN = XhsTaskChain()
 
 
 class XhsWorkDomainEngine:
@@ -78,8 +67,6 @@ class XhsWorkDomainEngine:
             enabled=get_xiaohongshu_mcp_publish_enabled(),
             endpoint=get_xiaohongshu_mcp_publish_endpoint(),
         )
-        # In-memory cache of last scouting result (not persisted separately)
-        self._last_scouting_data: dict | None = None
         # Skip timer on first tick to avoid triggering on service startup
         self._is_first_tick = True
 
@@ -101,31 +88,63 @@ class XhsWorkDomainEngine:
         return state.xhs_work_domain
 
     def _check_and_fire_timer(self, domain: XhsWorkDomainState) -> None:
-        """检查是否该开始新一轮侦察。"""
+        """检查是否该开始新一轮侦察，或对可恢复的 BLOCKED 自动重试。"""
+        now = datetime.now(timezone.utc)
+        if domain.state.status == XhsWorkStatus.BLOCKED:
+            if (
+                XHS_TASK_CHAIN.is_retryable(XhsTaskKind.BLOCKED, domain.state.blocked_reason)
+                and domain.state.blocked_at is not None
+                and (now - domain.state.blocked_at).total_seconds() >= _BLOCKED_RETRY_SECONDS
+            ):
+                domain.state.status = XhsWorkStatus.IDLE
+                domain.state.current_bottleneck = ""
+                domain.state.blocked_reason = ""
+                domain.state.next_recommended_action = ""
+                self._save(domain)
+            return
         if domain.state.status != XhsWorkStatus.IDLE:
             return  # 已经在流程中，不重复触发
+        # Fast-track to publishing if there are queued drafts and enough time has passed
+        if domain.state.pending_drafts:
+            last_published = domain.state.last_published_at
+            if last_published is None or (now - last_published).total_seconds() >= _MIN_PUBLISH_INTERVAL_SECONDS:
+                domain.state.status = XhsWorkStatus.PUBLISHING
+                domain.state.current_focus = "队列中有待发草稿，继续发布"
+                self._save(domain)
+                return
         interval_hours = domain.profile.scouting_interval_hours
         last = domain.state.last_scouting_at
-        now = datetime.now(timezone.utc)
         if last is None or (now - last).total_seconds() >= interval_hours * 3600:
             domain.state.status = XhsWorkStatus.SCOUTING
             self._save(domain)
 
     def _step(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction | None:
+        """Dispatch to the handler for the current status, as defined by XHS_TASK_CHAIN."""
         status = domain.state.status
-        if status == XhsWorkStatus.SCOUTING:
-            return self._do_scouting(domain)
-        elif status == XhsWorkStatus.DRAFTING:
-            return self._do_drafting(domain)
-        elif status == XhsWorkStatus.PUBLISHING:
-            return self._do_publishing(domain)
-        elif status == XhsWorkStatus.IDLE_REVIEWING:
-            return self._do_idle_reviewing(domain)
-        elif status == XhsWorkStatus.REVIEWING:
-            return self._do_reviewing(domain)
-        elif status == XhsWorkStatus.BLOCKED:
+        step = XHS_TASK_CHAIN.find_step(XhsTaskKind(status.value))
+        if step is None:
             return None
-        return None
+        return self._dispatch_step(step, domain)
+
+    def _dispatch_step(
+        self,
+        step: XhsTaskStep,
+        domain: XhsWorkDomainState,
+    ) -> XhsWorkDomainAction | None:
+        """Execute the handler for the given task step."""
+        dispatch = {
+            XhsTaskKind.SCOUTING: self._do_scouting,
+            XhsTaskKind.DRAFTING: self._do_drafting,
+            XhsTaskKind.PUBLISHING: self._do_publishing,
+            XhsTaskKind.IDLE_REVIEWING: self._do_idle_reviewing,
+            XhsTaskKind.REVIEWING: self._do_reviewing,
+            XhsTaskKind.BLOCKED: lambda _: None,
+            XhsTaskKind.IDLE: lambda _: None,
+        }
+        handler = dispatch.get(step.kind)
+        if handler is None:
+            return None
+        return handler(domain)
 
     def _save(self, domain: XhsWorkDomainState) -> None:
         state = self.state_store.get()
@@ -158,8 +177,11 @@ class XhsWorkDomainEngine:
                 timeout_seconds=20.0,
             )
         except BrowserOrganUnavailable:
+            now = datetime.now(timezone.utc)
             domain.state.status = XhsWorkStatus.BLOCKED
             domain.state.current_bottleneck = "浏览器器官不可用"
+            domain.state.blocked_at = now
+            domain.state.blocked_reason = "浏览器器官不可用"
             self._save(domain)
             return XhsWorkDomainAction(
                 kind="scouting",
@@ -167,8 +189,11 @@ class XhsWorkDomainEngine:
                 data={"error": "browser organ unavailable"},
             )
         except BrowserCapabilityError:
+            now = datetime.now(timezone.utc)
             domain.state.status = XhsWorkStatus.BLOCKED
             domain.state.current_bottleneck = "打不开创作首页"
+            domain.state.blocked_at = now
+            domain.state.blocked_reason = "打不开创作首页"
             self._save(domain)
             return XhsWorkDomainAction(
                 kind="scouting",
@@ -178,8 +203,11 @@ class XhsWorkDomainEngine:
 
         session_id = open_result.get("session_id")
         if not session_id:
+            now = datetime.now(timezone.utc)
             domain.state.status = XhsWorkStatus.BLOCKED
             domain.state.current_bottleneck = "打不开创作首页"
+            domain.state.blocked_at = now
+            domain.state.blocked_reason = "打不开创作首页"
             self._save(domain)
             return XhsWorkDomainAction(
                 kind="scouting",
@@ -194,8 +222,11 @@ class XhsWorkDomainEngine:
                 timeout_seconds=15.0,
             )
         except BrowserCapabilityError:
+            now = datetime.now(timezone.utc)
             domain.state.status = XhsWorkStatus.BLOCKED
             domain.state.current_bottleneck = "页面快照失败"
+            domain.state.blocked_at = now
+            domain.state.blocked_reason = "页面快照失败"
             self._save(domain)
             return XhsWorkDomainAction(
                 kind="scouting",
@@ -208,8 +239,11 @@ class XhsWorkDomainEngine:
         text_content = snapshot.get("text_content") or ""
 
         if is_xiaohongshu_creator_home_login_required(text_content):
+            now = datetime.now(timezone.utc)
             domain.state.status = XhsWorkStatus.BLOCKED
             domain.state.current_bottleneck = "需要登录小红书账号"
+            domain.state.blocked_at = now
+            domain.state.blocked_reason = "需要登录小红书账号"
             self._save(domain)
             return XhsWorkDomainAction(
                 kind="scouting",
@@ -220,13 +254,23 @@ class XhsWorkDomainEngine:
         # Use the proper extraction function
         from app.usecases.xiaohongshu_creator_home_capture import extract_creator_home_from_raw_text
         extracted = extract_creator_home_from_raw_text(text_content)
+
+        # Try to fetch engagement metrics for the most recent published post
+        history = domain.state.published_history
+        if history:
+            last_entry = history[-1]
+            post_url = last_entry.get("post_url", "")
+            if post_url:
+                metrics_updated = _try_fetch_metrics(session_id, post_url, history)
+                if metrics_updated is not None:
+                    domain.state.published_history = metrics_updated
+
         scouting_outcome = apply_xiaohongshu_scouting_result(
             domain,
             extracted=extracted,
             text_content=text_content,
             now=datetime.now(timezone.utc),
         )
-        self._last_scouting_data = scouting_outcome.last_scouting_data
         self._save(domain)
 
         return XhsWorkDomainAction(
@@ -237,267 +281,144 @@ class XhsWorkDomainEngine:
 
     def _do_drafting(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction:
         """基于侦察结果生成草稿，放入待发布队列。"""
-        if not self._last_scouting_data:
+        if not domain.state.last_scouting_data:
             domain.state.status = XhsWorkStatus.IDLE
             domain.state.current_focus = "无侦察数据，跳过草稿生成"
             self._save(domain)
             return XhsWorkDomainAction(kind="drafting", title="无侦察数据", data={})
 
-        opportunity_items = build_xiaohongshu_opportunity_items(self._last_scouting_data)
+        opportunity_items = build_xiaohongshu_opportunity_items(
+            domain.state.last_scouting_data,
+            domain.state.published_history,
+            recent_topics=domain.memory.successful_topic_titles,
+        )
         if not opportunity_items:
             domain.state.status = XhsWorkStatus.IDLE
             domain.state.current_focus = "未发现话题或活动"
             self._save(domain)
             return XhsWorkDomainAction(kind="drafting", title="无机会内容", data={})
 
-        opportunity = opportunity_items[0]
-        draft_outcome = generate_xiaohongshu_draft_from_opportunity(
-            opportunity,
-            gateway=self.gateway,
-            build_prompt=self._build_draft_prompt,
-        )
-        domain.state.pending_drafts = [draft_outcome.draft]
+        current_drafts = domain.state.pending_drafts
+        if len(current_drafts) >= _MAX_DRAFT_QUEUE_SIZE:
+            domain.state.status = XhsWorkStatus.PUBLISHING
+            domain.state.current_focus = f"草稿队列已满 ({_MAX_DRAFT_QUEUE_SIZE})，优先发布"
+            self._save(domain)
+            return XhsWorkDomainAction(kind="drafting", title="队列已满，转入发布", data={})
+
+        new_drafts = []
+        titles = []
+        error_count = 0
+        warning_count = 0
+        for opportunity in opportunity_items[:_MAX_DRAFTS_PER_SCOUTING]:
+            draft_outcome = generate_xiaohongshu_draft_from_opportunity(
+                opportunity,
+                gateway=self.gateway,
+                build_prompt=self._build_draft_prompt,
+            )
+            draft = draft_outcome.draft
+            # Validate against work policy
+            check = check_draft_against_policy(draft, domain.policy)
+            if not check.ok:
+                # Mark draft as policy-rejected; still queue it but flag the violations
+                draft["policy_rejected"] = True
+                draft["policy_violations"] = [v.message for v in check.errors]
+                error_count += 1
+            for w in check.warnings:
+                draft.setdefault("policy_warnings", []).append(w.message)
+                warning_count += 1
+            new_drafts.append(draft)
+            titles.append(draft_outcome.action_title)
+
+        domain.state.pending_drafts = current_drafts + new_drafts
         domain.state.status = XhsWorkStatus.PUBLISHING
-        domain.state.backlog_count = 1
+        domain.state.backlog_count = len(domain.state.pending_drafts)
         self._save(domain)
 
         return XhsWorkDomainAction(
             kind="drafting",
-            title=draft_outcome.action_title,
-            data=draft_outcome.action_data,
+            title=f"生成 {len(new_drafts)} 条草稿",
+            data={
+                "drafts": [{"title": t} for t in titles],
+                "policy_errors": error_count,
+                "policy_warnings": warning_count,
+            },
         )
 
     def _do_publishing(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction:
-        """从队列取草稿，通过 browser.publish 发布。"""
+        """从队列取草稿，通过发布管道完成 MCP 或浏览器发布。"""
         drafts = domain.state.pending_drafts
         if not drafts:
             self._clear_review_session(domain)
             return self._commit_publish_transition(domain, reset_xiaohongshu_publish_to_idle(domain))
 
-        self._clear_review_session(domain)
-        draft = drafts[0]
-        browser_image_paths: list[str] = []
-        requires_manual_review = self._requires_manual_publish_review(domain)
-
-        mcp_result = None if requires_manual_review else self._publish_draft_via_mcp(draft)
-        if mcp_result is not None:
-            browser_image_paths = [str(item).strip() for item in mcp_result.image_paths if str(item).strip()]
-            status = mcp_result.status
-            if status not in {
-                "publisher_disabled",
-                "service_unreachable",
-                "publish_failed",
-                "cover_generation_failed",
-                "cover_generation_unavailable",
-            }:
-                return self._commit_publish_transition(
-                    domain,
-                    mark_xiaohongshu_mcp_publish_success(
-                        domain,
-                        drafts=drafts,
-                        draft=draft,
-                        post_url=mcp_result.post_url or _PUBLISH_URL,
-                        message=mcp_result.message,
-                        image_paths=mcp_result.image_paths,
-                    ),
-                )
-        if not browser_image_paths:
-            browser_image_paths = build_xiaohongshu_browser_publish_image_paths(
-                draft,
-                generate_cover_image=generate_xiaohongshu_cover_image,
+        # Policy check: daily post limit
+        today_count = self._count_posts_today(domain)
+        if not can_post_today(today_count, domain.policy):
+            # Consume this draft so the queue advances (don't re-enter on next tick)
+            skipped_draft = drafts[0]
+            domain.state.pending_drafts = drafts[1:]
+            domain.state.backlog_count = len(domain.state.pending_drafts)
+            skipped_draft["status"] = "skipped_policy"
+            skipped_draft["skip_reason"] = "daily_limit"
+            domain.state.status = XhsWorkStatus.IDLE
+            domain.state.current_focus = (
+                f"今日发布次数已达上限（{domain.policy.max_posts_per_day}），"
+                f"跳过草稿「{skipped_draft.get('title', '(无标题)')}」"
+            )
+            domain.state.current_bottleneck = ""
+            self._save(domain)
+            return XhsWorkDomainAction(
+                kind="publishing",
+                title="发布频率超限，已跳过草稿",
+                data={"skipped_draft": skipped_draft.get("draft_id"), "limit": domain.policy.max_posts_per_day},
             )
 
-        selector_resolution = resolve_xiaohongshu_publish_selector(
-            requires_manual_review=requires_manual_review,
-            auto_publish_selector=domain.profile.auto_publish_selector,
-            find_publish_button=lambda: find_xiaohongshu_publish_button(
+        self._clear_review_session(domain)
+        draft = drafts[0]
+        requires_manual_review = self._requires_manual_publish_review(domain)
+
+        try:
+            result = run_xiaohongshu_publish_pipeline(
+                domain=domain,
+                drafts=drafts,
+                draft=draft,
+                mcp_client=self.mcp_client,
+                requires_manual_review=requires_manual_review,
                 publish_url=_PUBLISH_URL,
                 call_browser_capability=call_browser_capability,
                 close_session=self._close_session,
-            ),
-            prepare_text_image_cards=lambda: prepare_xiaohongshu_text_image_cards_for_draft(
-                draft,
-                autofill_cards=autofill_xiaohongshu_text_image_cards,
-            ),
-        )
-        if selector_resolution.text_image_result is not None:
-            status = selector_resolution.text_image_result.get("status", "missing_editor")
-            if status == "browser_unavailable":
-                return self._commit_publish_transition(
-                    domain,
-                    mark_xiaohongshu_publish_blocked(
-                        domain,
-                        bottleneck="浏览器器官不可用",
-                        title="发布失败",
-                        data={"error": "browser organ unavailable"},
-                    ),
-                )
-            return self._commit_publish_transition(
-                domain,
-                mark_xiaohongshu_text_image_review(
-                    domain,
-                    focus=str(
-                        selector_resolution.text_image_result.get("focus")
-                        or "已进入补图阶段，等待图片生成后再继续发布"
-                    ),
-                    status=status,
-                    message=selector_resolution.text_image_result.get("message", ""),
-                ),
             )
-        if selector_resolution.blocked_reason:
-            return self._commit_publish_transition(
-                domain,
-                mark_xiaohongshu_publish_blocked(
-                    domain,
-                    bottleneck=selector_resolution.blocked_reason,
-                    title="发布失败",
-                    data={"error": "publish button not found"},
-                ),
+        except Exception as exc:  # noqa: BLE001
+            # Unexpected exception in the publish pipeline — treat as a recoverable BLOCKED
+            domain.state.status = XhsWorkStatus.BLOCKED
+            domain.state.current_bottleneck = f"发布管道异常：{exc}"
+            domain.state.blocked_reason = "发布失败"
+            domain.state.blocked_at = datetime.now(timezone.utc)
+            self._save(domain)
+            return XhsWorkDomainAction(
+                kind="publishing",
+                title="发布管道异常",
+                data={"error": str(exc)},
             )
-        selector = selector_resolution.selector
-        if selector and selector != domain.profile.auto_publish_selector and not requires_manual_review:
-            domain.profile.auto_publish_selector = selector
+
+        if result.updated_selector:
+            domain.profile.auto_publish_selector = result.updated_selector
             self._save(domain)
 
-        execution = execute_xiaohongshu_browser_publish(
-            title=str(draft.get("title", "")),
-            body=str(draft.get("body", "")),
-            selector=selector,
-            image_paths=browser_image_paths,
-            open_publish_page=lambda: call_browser_capability(
-                "browser.open",
-                {"url": _PUBLISH_URL, "headless": False},
-                timeout_seconds=20.0,
-            ),
-            publish_to_page=lambda session_id, title, body, publish_selector, image_paths: call_browser_capability(
-                "browser.publish",
-                {
-                    "session_id": session_id,
-                    "title": title,
-                    "body": body,
-                    "publish_selector": publish_selector,
-                    "image_paths": image_paths,
-                },
-                timeout_seconds=20.0,
-            ),
-        )
-        session_id = execution.session_id
-        if execution.error:
-            if session_id:
-                self._close_session(session_id)
-            return self._commit_publish_transition(
-                domain,
-                mark_xiaohongshu_publish_blocked(
-                    domain,
-                    bottleneck=execution.blocked_reason or "发布失败",
-                    title="发布失败",
-                    data={"error": execution.error},
-                ),
-            )
-        if not session_id:
-            return self._commit_publish_transition(
-                domain,
-                mark_xiaohongshu_publish_blocked(
-                    domain,
-                    bottleneck=execution.blocked_reason or "无法打开发布页",
-                    title="打开发布页失败",
-                    data={},
-                ),
-            )
-
-        publish_result = execution.publish_result or {}
-        publish_clicked = publish_result.get("publish_clicked", False)
-        status = publish_result.get("status", "unknown")
-
-        if requires_manual_review:
-            if status == "awaiting_image_upload" and not browser_image_paths:
-                text_image_result = prepare_xiaohongshu_text_image_cards_for_draft(
-                    draft,
-                    autofill_cards=autofill_xiaohongshu_text_image_cards,
-                )
-                if text_image_result is not None:
-                    review_status = text_image_result.get("status", "missing_editor")
-                    if review_status == "browser_unavailable":
-                        self._close_session(session_id)
-                        return self._commit_publish_transition(
-                            domain,
-                            mark_xiaohongshu_publish_blocked(
-                                domain,
-                                bottleneck="浏览器器官不可用",
-                                title="发布失败",
-                                data={"error": "browser organ unavailable"},
-                            ),
-                        )
-                    self._close_session(session_id)
-                    return self._commit_publish_transition(
-                        domain,
-                        mark_xiaohongshu_text_image_review(
-                            domain,
-                            focus=str(
-                                text_image_result.get("focus")
-                                or "已进入补图阶段，等待图片生成后再继续发布"
-                            ),
-                            status=review_status,
-                            message=text_image_result.get("message", ""),
-                        ),
-                    )
-            review_preparation = evaluate_xiaohongshu_browser_review_preparation(
-                publish_result=publish_result,
-                requested_image_paths=browser_image_paths,
-            )
-            if review_preparation.ready:
-                return self._commit_publish_transition(
-                    domain,
-                    mark_xiaohongshu_publish_review_ready(
-                        domain,
-                        draft=draft,
-                        session_id=session_id,
-                        focus=review_preparation.focus,
-                        next_action=review_preparation.next_action,
-                        status=status,
-                        uploaded_image_count=int(publish_result.get("uploaded_image_count", 0) or 0),
-                    ),
-                )
-            self._close_session(session_id)
-            return self._commit_publish_transition(
-                domain,
-                mark_xiaohongshu_publish_blocked(
-                    domain,
-                    bottleneck=review_preparation.blocking_reason or "还没准备到可发布状态",
-                    title="发布前准备失败",
-                    data={"status": status},
-                ),
-            )
-        if publish_clicked:
-            self._close_session(session_id)
-            return self._commit_publish_transition(
-                domain,
-                mark_xiaohongshu_browser_publish_success(
-                    domain,
-                    drafts=drafts,
-                    draft=draft,
-                    post_url=_PUBLISH_URL,
-                    current_focus="已自动补封面并发布成功" if browser_image_paths else "已完成补图并发布成功",
-                ),
-            )
-        self._close_session(session_id)
-        return self._commit_publish_transition(
-            domain,
-            mark_xiaohongshu_publish_blocked(
-                domain,
-                bottleneck=f"无法点击发布按钮（status={status}）",
-                title="发布未完成",
-                data={"status": status},
-            ),
-        )
+        return self._commit_publish_transition(domain, result.transition)
 
     def _do_idle_reviewing(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction | None:
+        entered_at = domain.state.idle_reviewing_entered_at
+        if entered_at and (datetime.now(timezone.utc) - entered_at).total_seconds() < _MIN_IDLE_REVIEWING_SECONDS:
+            return None
+
         drafts = domain.state.pending_drafts
         if not drafts:
             domain.state.status = XhsWorkStatus.IDLE
             domain.state.current_focus = "补图阶段已结束"
             domain.state.current_bottleneck = ""
             domain.state.next_recommended_action = ""
+            domain.state.idle_reviewing_entered_at = None
             self._save(domain)
             return XhsWorkDomainAction(kind="idle", title="补图完成", data={})
 
@@ -505,25 +426,51 @@ class XhsWorkDomainEngine:
         domain.state.current_focus = "检测到仍有待发草稿，继续完成发布"
         domain.state.current_bottleneck = ""
         domain.state.next_recommended_action = ""
+        domain.state.idle_reviewing_entered_at = None
         self._save(domain)
         return self._do_publishing(domain)
 
-    def _do_reviewing(self, _domain: XhsWorkDomainState) -> XhsWorkDomainAction | None:
-        return None
+    def _do_reviewing(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction | None:
+        """Handle REVIEWING: check for review timeout and auto-continue."""
+        if not domain.state.review_session_id:
+            # No active review session — just return to idle
+            domain.state.status = XhsWorkStatus.IDLE
+            domain.state.current_focus = "无待审核会话"
+            domain.state.review_started_at = None
+            self._save(domain)
+            return XhsWorkDomainAction(kind="idle", title="审核会话已结束", data={})
 
-    def _publish_draft_via_mcp(self, draft: dict):
-        title = str(draft.get("title", "")).strip()
-        body = str(draft.get("body", "")).strip()
-        if not title or not body:
-            return None
-        raw_image_paths = draft.get("image_paths")
-        image_paths = raw_image_paths if isinstance(raw_image_paths, list) else []
-        return publish_xiaohongshu_image_post_via_mcp(
-            title=title,
-            body=body,
-            image_paths=image_paths,
-            client=self.mcp_client,
-        )
+        timeout_minutes = domain.policy.review_timeout_minutes
+        if timeout_minutes <= 0:
+            return None  # timeout disabled
+
+        # Check if review session has timed out
+        # We track when the review started implicitly via review_session_id presence
+        # For a proper timeout, we'd need review_started_at — check if it exists
+        review_started_at = getattr(domain.state, "review_started_at", None)
+        if review_started_at:
+            from datetime import timedelta
+
+            elapsed = datetime.now(timezone.utc) - review_started_at
+            if elapsed.total_seconds() >= timeout_minutes * 60:
+                # Timeout: consume the draft (user didn't confirm) and return to idle
+                drafts = domain.state.pending_drafts
+                if drafts:
+                    timed_out_draft = drafts[0]
+                    timed_out_draft["status"] = "review_timeout"
+                    domain.state.pending_drafts = drafts[1:]
+                    domain.state.backlog_count = len(domain.state.pending_drafts)
+                domain.state.status = XhsWorkStatus.IDLE
+                domain.state.current_focus = f"审核超时（>{timeout_minutes}分钟），已跳过草稿"
+                domain.state.review_session_id = ""
+                domain.state.review_started_at = None
+                self._save(domain)
+                return XhsWorkDomainAction(
+                    kind="reviewing",
+                    title="审核超时跳过",
+                    data={"draft_id": timed_out_draft.get("draft_id") if drafts else None},
+                )
+        return None
 
     def _close_session(self, session_id: str) -> None:
         if session_id == _CREATOR_HOME_SESSION_ID:
@@ -537,11 +484,40 @@ class XhsWorkDomainEngine:
         except Exception:
             pass
 
+    def _count_posts_today(self, domain: XhsWorkDomainState) -> int:
+        """Count how many posts were published today (UTC)."""
+        today = datetime.now(timezone.utc).date()
+        return sum(
+            1 for entry in domain.state.published_history
+            if entry.get("published_at")
+            and datetime.fromisoformat(entry["published_at"]).date() == today
+        )
+
+    def _try_fetch_metrics(
+        self,
+        scout_session_id: str,
+        post_url: str,
+        history: list[dict],
+    ) -> list[dict] | None:
+        """Attempt to fetch engagement metrics for the most recent published post.
+
+        Opens the post URL in the scouting session, captures metrics from the
+        rendered page, then navigates back to the creator home. Silently returns
+        None on any error so scouting is never blocked by metrics failures.
+        """
+        try:
+            from app.usecases.xiaohongshu_metrics_capture import fetch_metrics_for_history
+
+            return fetch_metrics_for_history(history, session_id=scout_session_id, post_url=post_url)
+        except Exception:
+            return None
+
     def _clear_review_session(self, domain: XhsWorkDomainState) -> None:
         session_id = domain.state.review_session_id.strip()
         if not session_id:
             return
         domain.state.review_session_id = ""
+        domain.state.review_started_at = None
         self._close_session(session_id)
 
     def _requires_manual_publish_review(self, domain: XhsWorkDomainState) -> bool:
@@ -551,6 +527,30 @@ class XhsWorkDomainEngine:
         title = opportunity.get("title", "")
         summary = opportunity.get("summary", "")
         source_kind = opportunity.get("source_kind", "topic")
+        domain = self._get_or_init_domain()
+        persona_lines = []
+        if domain.profile.account_positioning:
+            persona_lines.append(f"账号定位：{domain.profile.account_positioning}")
+        if domain.profile.target_audience:
+            persona_lines.append(f"目标受众：{domain.profile.target_audience}")
+        if domain.profile.expression_style:
+            persona_lines.append(f"表达风格：{domain.profile.expression_style}")
+        persona_section = "\n".join(persona_lines)
+        if persona_section:
+            persona_section = "\n" + persona_section + "\n"
+        memory_lines = []
+        if domain.memory.recent_draft_titles:
+            memory_lines.append(
+                "近期已发布标题（请避免重复类似主题）："
+                + "、".join(domain.memory.recent_draft_titles)
+            )
+        if domain.memory.successful_topic_titles:
+            memory_lines.append(
+                "近期成功话题：" + "、".join(domain.memory.successful_topic_titles)
+            )
+        memory_section = "\n".join(memory_lines)
+        if memory_section:
+            memory_section = "\n" + memory_section + "\n"
         return (
             "你现在不是在写运营建议，也不是在写方法论说明，而是在直接写一篇可以人工确认后发布的小红书图文稿。\n"
             "要求：\n"
@@ -558,8 +558,10 @@ class XhsWorkDomainEngine:
             "2. 必须写出一个明确场景、一个明确问题、一个明确动作。\n"
             '3. 禁止出现"最小闭环""验证反馈""轻量转化""先跑通"这类产品黑话。\n'
             "4. 不要写成课程大纲，不要写成写作指导。\n"
-            "5. 输出必须严格使用下面格式。\n\n"
-            f"机会来源：{source_kind}\n"
+            "5. 输出必须严格使用下面格式。\n"
+            f"{persona_section}"
+            f"{memory_section}"
+            f"\n机会来源：{source_kind}\n"
             f"机会标题：{title}\n"
             f"补充信息：{summary}\n\n"
             "请严格输出：\n"

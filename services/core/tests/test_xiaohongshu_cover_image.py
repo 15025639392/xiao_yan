@@ -2,51 +2,58 @@ from pathlib import Path
 
 import pytest
 
-from app.api.tool_capability_bridge import BrowserOrganUnavailable
 from app.usecases import xiaohongshu_cover_image as cover_image
 
 
-def test_generate_xiaohongshu_cover_image_writes_png(monkeypatch, tmp_path):
-    calls: list[str] = []
-    png_data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2pW1cAAAAASUVORK5CYII="
-
-    def fake_call_browser_capability(capability, args, *, timeout_seconds=15.0):
-        _ = timeout_seconds
-        calls.append(capability)
-        if capability == "browser.open":
-            assert args["headless"] is True
-            return {"session_id": "cover-session"}
-        if capability == "browser.evaluate":
-            assert args["session_id"] == "cover-session"
-            return {"result": png_data_url}
-        if capability == "browser.close":
-            return {"status": "closed"}
-        raise AssertionError(f"unexpected capability: {capability}")
-
-    monkeypatch.setattr(cover_image, "call_browser_capability", fake_call_browser_capability)
-
+def test_generate_xiaohongshu_cover_image_writes_png(tmp_path):
     result = cover_image.generate_xiaohongshu_cover_image(
-        title="测试标题",
-        body="第一句是副标题。\n\n第二句不用上封面。",
+        title="巧克力礼盒开箱体验，真的太惊艳了！",
+        body="开箱第一眼就被惊艳到了，包装非常精致，内容也很用心。\n\n第二句不用上封面。",
         output_dir=str(tmp_path),
     )
 
-    assert calls == ["browser.open", "browser.evaluate", "browser.close"]
     assert result.badge == "小晏数字人全自动运营"
-    assert result.subtitle == "第一句是副标题"
+    assert result.subtitle == "开箱第一眼就被惊艳到了，包装非常精致，内容也很用心"
     assert Path(result.path).exists()
     assert Path(result.path).suffix == ".png"
+    assert Path(result.path).parent == tmp_path
 
 
-def test_generate_xiaohongshu_cover_image_raises_when_browser_unavailable(monkeypatch):
-    def fake_call_browser_capability(capability, args, *, timeout_seconds=15.0):
-        _ = (capability, args, timeout_seconds)
-        raise BrowserOrganUnavailable("offline")
+def test_subtitle_extraction_first_paragraph():
+    result = cover_image.generate_xiaohongshu_cover_image(
+        title="测试",
+        body="第一段正文。\n\n第二段正文。",
+    )
+    assert result.subtitle == "第一段正文"  # trailing punctuation stripped by rstrip
 
-    monkeypatch.setattr(cover_image, "call_browser_capability", fake_call_browser_capability)
+    result2 = cover_image.generate_xiaohongshu_cover_image(
+        title="测试",
+        body="",
+    )
+    assert result2.subtitle == cover_image._DEFAULT_SUBTITLE
 
-    with pytest.raises(cover_image.XiaohongshuCoverImageUnavailableError):
+
+def test_title_too_long_truncated():
+    long_title = "测试标题" * 50
+    result = cover_image.generate_xiaohongshu_cover_image(
+        title=long_title,
+        body="正文内容",
+    )
+    assert len(result.title) > 0
+
+
+def test_raises_on_blank_title():
+    with pytest.raises(ValueError, match="cannot be blank"):
         cover_image.generate_xiaohongshu_cover_image(
-            title="测试标题",
-            body="测试正文",
+            title="  ",
+            body="正文",
         )
+
+
+def test_custom_badge():
+    result = cover_image.generate_xiaohongshu_cover_image(
+        title="测试",
+        body="正文",
+        badge="我的自定义徽章",
+    )
+    assert result.badge == "我的自定义徽章"

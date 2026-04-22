@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from browser_driver_runtime import launch_browser_organ_persistent_context
 from browser_driver_profile import ensure_browser_organ_chrome_running, resolve_browser_cdp_endpoint
+from browser_driver_result_parser import parse_evaluate_result
 from browser_driver_scripts import build_fill_script
 
 
@@ -179,6 +180,9 @@ class DriverDaemon:
             try:
                 page = self._prepare_page(self._cdp_context, url)
                 self._activate_page(page, url, wait_until=wait_until, activate=activate)
+                usable, reason = self._is_page_usable(page, url)
+                if not usable:
+                    raise RuntimeError(f"page unusable after CDP navigation: {reason}")
                 self.sessions[session_id] = BrowserSession(session_id, self._cdp_browser, self._cdp_context, page)
                 return {
                     "session_id": session_id,
@@ -201,6 +205,9 @@ class DriverDaemon:
             try:
                 page = self._prepare_page(self._persistent_context, url)
                 self._activate_page(page, url, wait_until=wait_until, activate=activate)
+                usable, reason = self._is_page_usable(page, url)
+                if not usable:
+                    raise RuntimeError(f"page unusable after persistent context navigation: {reason}")
                 self.sessions[session_id] = BrowserSession(session_id, None, self._persistent_context, page)
                 return {
                     "session_id": session_id,
@@ -227,6 +234,9 @@ class DriverDaemon:
             page = self._prepare_page(persistent_context, url)
             try:
                 self._activate_page(page, url, wait_until=wait_until, activate=activate)
+                usable, reason = self._is_page_usable(page, url)
+                if not usable:
+                    raise RuntimeError(f"page unusable after launch navigation: {reason}")
             except Exception as exc:
                 try:
                     persistent_context.close()
@@ -256,6 +266,9 @@ class DriverDaemon:
 
         try:
             self._activate_page(page, url, wait_until=wait_until, activate=activate)
+            usable, reason = self._is_page_usable(page, url)
+            if not usable:
+                raise RuntimeError(f"page unusable after CDP fresh navigation: {reason}")
         except Exception as exc:
             raise RuntimeError(f"navigation failed: {exc}")
 
@@ -357,6 +370,18 @@ class DriverDaemon:
                 page.bring_to_front()
             except Exception:
                 pass
+
+    def _is_page_usable(self, page, url: str) -> tuple[bool, str]:
+        """Check if page is usable for the requested URL. Returns (usable, reason)."""
+        try:
+            current = page.url
+        except Exception as exc:
+            return False, f"cannot read page URL: {exc}"
+        if not current or current == "about:blank":
+            return False, f"page is blank after navigation to {url}"
+        if current.startswith(("chrome://", "devtools://", "chrome-extension://")):
+            return False, f"page navigated to internal URL: {current}"
+        return True, ""
 
     def _matches_requested_location(self, current_url: str, requested_url: str) -> bool:
         if not current_url or not requested_url:
@@ -586,12 +611,31 @@ class DriverDaemon:
         page = session.page
 
         script = build_fill_script(title=title, body=body)
-        result = page.evaluate(script)
+        try:
+            raw_result = page.evaluate(script)
+        except Exception as exc:
+            return {
+                "session_id": session_id,
+                "status": "page_error",
+                "filled_title": False,
+                "filled_body": False,
+                "error": str(exc),
+            }
+        try:
+            parsed_result = parse_evaluate_result(raw_result)
+        except ValueError as exc:
+            return {
+                "session_id": session_id,
+                "status": "page_error",
+                "filled_title": False,
+                "filled_body": False,
+                "error": str(exc),
+            }
         return {
             "session_id": session_id,
-            "status": result.get("status", "unknown"),
-            "filled_title": result.get("filled_title", False),
-            "filled_body": result.get("filled_body", False),
+            "status": parsed_result.get("status", "unknown"),
+            "filled_title": parsed_result.get("filled_title", False),
+            "filled_body": parsed_result.get("filled_body", False),
         }
 
     # ── click_element ────────────────────────────────────────────────────────
@@ -633,56 +677,217 @@ class DriverDaemon:
         return self._enqueue_request("publish", args)
 
     def _cmd_publish(self, args: dict) -> dict:
-        session_id = args["session_id"]
-        title = args.get("title", "")
-        body = args.get("body", "")
-        publish_selector = args.get("publish_selector", "")
-        image_paths = args.get("image_paths", [])
+        session_id = args.get("session_id") if isinstance(args, dict) else str(args)
+        title = args.get("title", "") if isinstance(args, dict) else ""
+        body = args.get("body", "") if isinstance(args, dict) else ""
+        publish_selector = args.get("publish_selector", "") if isinstance(args, dict) else ""
+        image_paths = args.get("image_paths", []) if isinstance(args, dict) else []
 
-        session = self._resolve_session(session_id)
-        page = session.page
+        def _log(msg: str) -> None:
+            print(f"[publish {session_id[:8]}] {msg}", flush=True)
+
+        _log(f"starting: images={len(image_paths) if isinstance(image_paths, list) else 0}, title={repr(title[:20])}, body={repr(body[:30])}")
+
+        try:
+            session = self._resolve_session(session_id)
+        except Exception as exc:
+            _log(f"session error: {exc}")
+            return self._publish_result(
+                session_id=session_id,
+                status="session_error",
+                error=f"session error: {exc}",
+            )
+
+        try:
+            page = getattr(session, "page", None)
+            if page is None:
+                _log("session.page is None")
+                return self._publish_result(session_id=session_id, status="session_error", error="session.page is None")
+            if page.is_closed():
+                _log("page is closed")
+                return self._publish_result(session_id=session_id, status="page_closed", error="page is closed")
+            current_url = page.url
+            if not current_url or current_url.startswith(("chrome://", "devtools://", "about:")):
+                _log(f"invalid page URL: {current_url}")
+                return self._publish_result(session_id=session_id, status="page_error", error=f"invalid URL: {current_url}")
+            _log(f"page URL: {current_url}")
+        except Exception as exc:
+            _log(f"page access error: {exc}")
+            return self._publish_result(session_id=session_id, status="page_error", error=f"page access error: {exc}")
 
         uploaded_image_count = 0
-        upload_error = None
+        upload_error: str | None = None
+        images_already_on_page = False
+
         if isinstance(image_paths, list) and image_paths:
+            _log(f"uploading {len(image_paths)} image(s)")
             try:
                 uploaded_image_count = self._set_publish_images(page, image_paths)
-                if uploaded_image_count > 0:
-                    page.wait_for_timeout(800)
+                _log(f"upload returned: {uploaded_image_count}")
             except Exception as exc:
                 upload_error = str(exc)
+                _log(f"upload error: {exc}")
+        elif isinstance(image_paths, list) and not image_paths:
+            # No image_paths provided — check if images are already on the page
+            try:
+                existing = page.evaluate(
+                    "(function(){"
+                    "const imgs=document.querySelectorAll('img');"
+                    "return imgs.length;"
+                    "})()",
+                    timeout=3000,
+                )
+                images_already_on_page = isinstance(existing, (int, float)) and existing > 0
+                if images_already_on_page:
+                    _log(f"no image_paths given, but {existing} images already on page")
+            except Exception:
+                pass
 
-        # Fill the form first
         script = build_fill_script(title=title, body=body)
-        fill_result = page.evaluate(script)
 
-        # Then click publish button if selector provided
+        # After upload, wait for the page to transition from "upload state" to "form state".
+        # The upload triggers a DOM re-render. Poll until upload prompts disappear.
+        if uploaded_image_count > 0 or images_already_on_page:
+            _log("waiting for form to appear after image upload")
+            form_ready = False
+            for poll in range(8):
+                try:
+                    page.wait_for_timeout(2000)
+                    body_text = page.inner_text("body", timeout=3000).lower()
+                    # Check if upload prompts are gone (form state reached)
+                    upload_prompts = any(
+                        kw in body_text for kw in ["上传图片", "上传视频", "文字配图", "上传图文", "选择文件", "拖拽上传"]
+                    )
+                    if not upload_prompts:
+                        _log(f"form ready after {poll + 1} polls (upload prompts gone)")
+                        form_ready = True
+                        break
+                    _log(f"poll {poll + 1}: still showing upload prompts, waiting...")
+                except Exception as poll_exc:
+                    _log(f"poll {poll + 1} failed: {poll_exc}")
+                    break
+            if not form_ready:
+                _log("form did not appear after 8 polls — proceeding anyway")
+
+        fill_result: dict = {}
+        fill_error: str | None = None
+
+        # Verify page is alive before attempting fill
+        try:
+            _ = page.inner_text("body", timeout=3000)
+        except Exception as exc:
+            _log(f"page dead before fill: {exc}")
+            return self._publish_result(
+                session_id=session_id,
+                status="page_error",
+                filled_title=False,
+                filled_body=False,
+                uploaded_image_count=uploaded_image_count,
+                upload_error=upload_error,
+                error=f"page dead before fill: {exc}",
+            )
+
+        def _run_fill() -> dict:
+            try:
+                raw = page.evaluate(script)
+                return parse_evaluate_result(raw)
+            except Exception as exc:
+                raise RuntimeError(f"fill evaluate failed: {exc}")
+
+        # Try fill with up to 2 retries. "awaiting_image_upload" means the page is still
+        # in upload state (transition not complete yet). Wait and retry.
+        for attempt in range(3):
+            try:
+                fill_result = _run_fill()
+                status_val = fill_result.get("status", "") if isinstance(fill_result, dict) else ""
+                _log(f"fill attempt {attempt + 1}: {fill_result}")
+
+                if status_val == "awaiting_image_upload" and attempt < 2:
+                    _log("form not ready yet, waiting 3s and retrying...")
+                    try:
+                        page.wait_for_timeout(3000)
+                    except Exception:
+                        pass
+                    continue
+
+                # Success or non-retryable status
+                break
+            except RuntimeError as exc:
+                _log(f"fill attempt {attempt + 1} error: {exc}")
+                fill_error = str(exc)
+                if attempt < 2:
+                    try:
+                        page.wait_for_timeout(2000)
+                    except Exception:
+                        pass
+                    continue
+                fill_result = {}
+
+        # Click publish button if selector provided
         clicked = False
-        click_error = None
-        if publish_selector:
+        click_error: str | None = None
+        if publish_selector and fill_result.get("filled_title") and fill_result.get("filled_body"):
+            _log(f"clicking publish button: {publish_selector}")
             try:
                 page.click(publish_selector, timeout=10000)
                 clicked = True
             except Exception as exc:
                 click_error = str(exc)
+                _log(f"publish click error: {exc}")
 
-        return {
+        status = fill_result.get("status", "unknown") if isinstance(fill_result, dict) else "unknown"
+        if fill_error and not isinstance(fill_result, dict):
+            status = "fill_error"
+
+        _log(f"done: status={status}, filled_title={fill_result.get('filled_title', False)}, filled_body={fill_result.get('filled_body', False)}, error={fill_error}")
+        return self._publish_result(
+            session_id=session_id,
+            status=status,
+            filled_title=fill_result.get("filled_title", False) if isinstance(fill_result, dict) else False,
+            filled_body=fill_result.get("filled_body", False) if isinstance(fill_result, dict) else False,
+            publish_clicked=clicked,
+            click_error=click_error,
+            uploaded_image_count=uploaded_image_count,
+            upload_error=upload_error,
+            error=fill_error,
+        )
+
+    def _publish_result(
+        self,
+        session_id: str,
+        status: str,
+        filled_title: bool = False,
+        filled_body: bool = False,
+        publish_clicked: bool = False,
+        click_error: str | None = None,
+        uploaded_image_count: int = 0,
+        upload_error: str | None = None,
+        error: str | None = None,
+    ) -> dict:
+        result = {
             "session_id": session_id,
-            "filled_title": fill_result.get("filled_title", False),
-            "filled_body": fill_result.get("filled_body", False),
-            "status": fill_result.get("status", "unknown"),
-            "publish_clicked": clicked,
+            "filled_title": filled_title,
+            "filled_body": filled_body,
+            "status": status,
+            "publish_clicked": publish_clicked,
             "click_error": click_error,
             "uploaded_image_count": uploaded_image_count,
             "upload_error": upload_error,
         }
+        if error is not None:
+            result["error"] = error
+        return result
 
     def _set_publish_images(self, page, image_paths: list[str]) -> int:
         normalized = [str(item).strip() for item in image_paths if str(item).strip()]
         if not normalized:
             return 0
 
-        file_inputs = page.query_selector_all("input[type='file']")
+        try:
+            file_inputs = page.query_selector_all("input[type='file']")
+        except Exception as exc:
+            raise ValueError(f"failed to query file inputs: {exc}")
+
         if not file_inputs:
             raise ValueError("publish page has no file input")
 
@@ -831,10 +1036,15 @@ def send_to_daemon(socket_path: str, action: str, args: dict) -> dict:
             response_bytes += chunk
             if b"\n" in response_bytes:
                 break
-        response = json.loads(response_bytes.decode("utf-8"))
+        try:
+            response = json.loads(response_bytes.decode("utf-8"))
+        except Exception as exc:
+            raise Exception(f"daemon returned invalid JSON: {exc} raw={response_bytes[:200]!r}")
+        if not isinstance(response, dict):
+            raise Exception(f"daemon returned non-dict response: {type(response).__name__} {str(response)[:200]}")
         if not response.get("ok"):
             raise Exception(response.get("error", "unknown error"))
-        return response.get("result", {})
+        return response.get("result", {}) if isinstance(response.get("result"), dict) else {}
     finally:
         sock.close()
 

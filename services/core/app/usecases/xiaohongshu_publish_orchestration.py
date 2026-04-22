@@ -28,8 +28,11 @@ def mark_xiaohongshu_publish_blocked(
     title: str,
     data: dict[str, Any],
 ) -> XiaohongshuPublishTransition:
+    now = datetime.now(timezone.utc)
     domain.state.status = XhsWorkStatus.BLOCKED
     domain.state.current_bottleneck = bottleneck
+    domain.state.blocked_at = now
+    domain.state.blocked_reason = bottleneck
     domain.state.next_recommended_action = ""
     return XiaohongshuPublishTransition(kind="publishing", title=title, data=data)
 
@@ -41,10 +44,12 @@ def mark_xiaohongshu_text_image_review(
     status: str,
     message: str,
 ) -> XiaohongshuPublishTransition:
+    now = datetime.now(timezone.utc)
     domain.state.status = XhsWorkStatus.IDLE_REVIEWING
     domain.state.current_bottleneck = ""
     domain.state.current_focus = focus
     domain.state.next_recommended_action = ""
+    domain.state.idle_reviewing_entered_at = now
     return XiaohongshuPublishTransition(
         kind="publishing",
         title="已进入补图阶段",
@@ -69,6 +74,7 @@ def mark_xiaohongshu_publish_review_ready(
     domain.state.current_focus = focus
     domain.state.next_recommended_action = next_action
     domain.state.review_session_id = session_id
+    domain.state.review_started_at = datetime.now(timezone.utc)
     return XiaohongshuPublishTransition(
         kind="publishing",
         title="已准备到发布前",
@@ -129,13 +135,29 @@ def _consume_pending_draft(
     published_entry = {
         "draft_id": draft.get("draft_id"),
         "title": draft.get("title"),
+        "opportunity_title": draft.get("opportunity_title", ""),
+        "source_kind": draft.get("source_kind", ""),
         "published_at": now.isoformat(),
         "post_url": post_url,
+        "metrics": {},
     }
     domain.state.pending_drafts = drafts[1:]
     domain.state.published_history = (domain.state.published_history + [published_entry])[-20:]
     domain.state.last_published_at = now
-    domain.state.backlog_count = max(0, domain.state.backlog_count - 1)
+    domain.state.backlog_count = len(domain.state.pending_drafts)
     domain.state.status = XhsWorkStatus.IDLE
     domain.state.current_bottleneck = ""
+    _update_work_memory_on_publish(domain, draft)
     return published_entry
+
+
+def _update_work_memory_on_publish(domain: XhsWorkDomainState, draft: dict[str, Any]) -> None:
+    title = str(draft.get("title", "")).strip()
+    opportunity_title = str(draft.get("opportunity_title", "")).strip()
+    source_kind = str(draft.get("source_kind", "")).strip()
+    if title:
+        domain.memory.recent_draft_titles = (domain.memory.recent_draft_titles + [title])[-10:]
+    if opportunity_title:
+        domain.memory.successful_topic_titles = (domain.memory.successful_topic_titles + [opportunity_title])[-10:]
+    if source_kind:
+        domain.memory.last_source_kind = source_kind

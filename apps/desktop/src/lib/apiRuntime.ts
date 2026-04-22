@@ -89,6 +89,13 @@ export type XhsWorkDomainUpdate = {
   north_star?: string;
   weekly_goals?: string[];
   monthly_content_target?: number;
+  pending_drafts?: Array<{
+    draft_id: string;
+    title: string;
+    body: string;
+    generated_at: string;
+    status: string;
+  }>;
 };
 
 export type FocusContext = {

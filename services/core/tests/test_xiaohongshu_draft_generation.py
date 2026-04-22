@@ -1,7 +1,76 @@
 from app.usecases.xiaohongshu_draft_generation import (
     build_xiaohongshu_opportunity_items,
     generate_xiaohongshu_draft_from_opportunity,
+    _parse_count,
 )
+
+
+def test_parse_count():
+    assert _parse_count("1.2万") == 12000.0
+    assert _parse_count("500") == 500.0
+    assert _parse_count("1.5w") == 15000.0
+    assert _parse_count(None) == 0.0
+    assert _parse_count("invalid") == 0.0
+
+
+def test_build_opportunity_items_sorts_by_past_engagement():
+    history = [
+        {
+            "draft_id": "d1",
+            "opportunity_title": "#高颜值巧克力",
+            "metrics": {"like_count": "100", "collect_count": "50", "comment_count": "10"},
+        },
+        {
+            "draft_id": "d2",
+            "opportunity_title": "#春日穿搭",
+            "metrics": {"like_count": "10", "collect_count": "5", "comment_count": "1"},
+        },
+    ]
+    items = build_xiaohongshu_opportunity_items(
+        {
+            "topics": [
+                {"topic": "#春日穿搭", "participation_count": "5000"},
+                {"topic": "#高颜值巧克力", "participation_count": "1万"},
+            ],
+            "activities": [],
+        },
+        published_history=history,
+    )
+
+    # #高颜值巧克力 has higher engagement → should come first
+    assert items[0]["title"] == "#高颜值巧克力"
+    assert items[1]["title"] == "#春日穿搭"
+    # High-engagement topics should include the engagement hint
+    assert "往期互动" in items[0]["summary"]
+
+
+def test_build_opportunity_items_deprioritizes_recently_used():
+    items = build_xiaohongshu_opportunity_items(
+        {
+            "topics": [
+                {"topic": "#巧克力", "participation_count": "1万"},
+                {"topic": "#零食", "participation_count": "2万"},
+            ],
+            "activities": [],
+        },
+        recent_topics=["#巧克力"],
+    )
+
+    # #零食 has higher participation but #巧克力 was recently used → #零食 first
+    assert items[0]["title"] == "#零食"
+    assert items[1]["title"] == "#巧克力"
+
+
+def test_build_opportunity_items_includes_view_count():
+    items = build_xiaohongshu_opportunity_items(
+        {
+            "topics": [{"topic": "#咖啡", "participation_count": "5千", "view_count": "50万"}],
+            "activities": [],
+        },
+    )
+
+    assert "参与5千" in items[0]["summary"]
+    assert "浏览50万" in items[0]["summary"]
 
 
 def test_build_opportunity_items_merges_topics_and_activities():

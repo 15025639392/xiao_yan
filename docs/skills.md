@@ -1,6 +1,6 @@
 # xiao_yan Skill 首页清单
 
-本文档用于说明当前仓库内 7 个项目专用 skill 的用途、触发方式、适用问题和推荐顺序。
+本文档用于说明当前仓库内 9 个项目专用 skill 的用途、触发方式、适用问题和推荐顺序。
 
 目标不是“把所有 skill 都用一遍”，而是让 AI 和人类都能更快选到当前最合适的那一个，减少跑偏、误改和无效重构。
 
@@ -22,6 +22,18 @@
   - `简化分析: <目标>`
   - `简化执行: <目标>`
   - `简化只出方案: <目标>`
+- 对 `xiao-yan-code-optimizer`，也可以用它已有的短触发：
+  - `优化: <目标>`
+  - `代码优化: <目标>`
+  - `优化分析: <目标>`
+  - `优化执行: <目标>`
+  - `只做最小优化: <目标>`
+- 对 `xiao-yan-refactor-executor`，也可以用它已有的短触发：
+  - `重构: <目标>`
+  - `重构执行: <目标>`
+  - `安全重构: <目标>`
+  - `拆分执行: <目标>`
+  - `只做小步重构: <目标>`
 
 推荐优先显式点名 skill，而不是只写模糊需求。这样更稳定，也更容易复现。
 
@@ -68,6 +80,10 @@
    使用 [`optional-dependency-boundary-check`](../tools/skills/optional-dependency-boundary-check/SKILL.md)
 7. 改完了，担心文档、测试、验证命令没同步：
    使用 [`docs-and-tests-sync-guard`](../tools/skills/docs-and-tests-sync-guard/SKILL.md)
+8. 想做局部代码优化，但不想升级成大重构：
+   使用 [`xiao-yan-code-optimizer`](../tools/skills/xiao-yan-code-optimizer/SKILL.md)
+9. 已经决定要重构，想按最小、可回退步骤落地：
+   使用 [`xiao-yan-refactor-executor`](../tools/skills/xiao-yan-refactor-executor/SKILL.md)
 
 ## Skill 清单
 
@@ -195,6 +211,44 @@
 - 推荐顺序：
   - 大多数改动的最后一步
 
+### 8. `xiao-yan-code-optimizer`
+
+- 作用：在不扩大架构的前提下，对重复逻辑、热路径、边界泄漏和局部复杂度做最小可验证优化。
+- 什么时候用：
+  - 想减重复、提速、收敛职责
+  - 想优化调用链或热路径，但不想做大重构
+  - 想先判断这轮优化该局部整理、提小模块，还是先拆后改
+- 适合解决什么问题：
+  - 这轮优化的最小动作是什么
+  - 是该合并重复分支、修热路径，还是先收边界
+  - 优化会不会无意间扩大架构或恶化文件职责
+- 推荐触发：
+  - `$xiao-yan-code-optimizer`
+  - `优化: <目标>`
+  - `代码优化: <目标>`
+- 推荐顺序：
+  - 常放在 `core-change-entrypoint` 之后
+  - 如果目标已知且范围很窄，也可以直接作为第一步
+
+### 9. `xiao-yan-refactor-executor`
+
+- 作用：把已经决定要做的重构，按最小、可回退步骤真正落地。
+- 什么时候用：
+  - 要提 helper、assembler、adapter、presenter
+  - 要把混合职责文件拆成更小承载点
+  - 要迁移越界逻辑，但又要尽量保留外部行为稳定
+- 适合解决什么问题：
+  - 这轮重构该分几步做
+  - 哪些接口应该先兼容保留
+  - 怎么在不大改全链路的前提下完成迁移
+- 推荐触发：
+  - `$xiao-yan-refactor-executor`
+  - `重构: <目标>`
+  - `安全重构: <目标>`
+- 推荐顺序：
+  - 常放在 `large-file-split-advisor` 或 `xiao-yan-code-optimizer` 之后
+  - 当“该怎么执行重构”比“该不该重构”更关键时优先使用
+
 ## 推荐组合
 
 ### 方案评审型
@@ -237,6 +291,26 @@
 4. 编码
 5. `docs-and-tests-sync-guard`
 
+### 优化收敛型
+
+适合减重复、修热路径、收边界，但不想升级成大重构：
+
+1. `core-change-entrypoint`
+2. `xiao-yan-code-optimizer`
+3. 必要时 `large-file-split-advisor`
+4. 编码
+5. `docs-and-tests-sync-guard`
+
+### 安全重构型
+
+适合已经确定要提取模块、拆职责或迁移逻辑：
+
+1. `core-change-entrypoint`
+2. 必要时 `large-file-split-advisor`
+3. `xiao-yan-refactor-executor`
+4. 编码
+5. `docs-and-tests-sync-guard`
+
 ## 测试义务
 
 这些 project skill 不只是“帮助选入口”的说明文档，也对应一组默认测试义务。
@@ -257,6 +331,10 @@
   - 收尾时必须写明实际跑过哪些测试、没跑哪些、剩余风险是什么。
 - `project-simplifier`
   - 做减法时优先保住主链路冒烟测试，并同步删除或更新失效测试。
+- `xiao-yan-code-optimizer`
+  - 只要优化了重复逻辑、热路径或边界行为，本轮至少要跑和该行为链直接相关的测试或检查。
+- `xiao-yan-refactor-executor`
+  - 先锁定外部行为，再做结构迁移；重构完成后至少要验证入口行为未漂移，并在必要时运行文件预算检查。
 
 如果想看完整的项目级测试策略，见 [`docs/testing-strategy.md`](./testing-strategy.md)。
 如果想直接复用收尾模板，见 [`docs/test-checklist-template.md`](./test-checklist-template.md)。

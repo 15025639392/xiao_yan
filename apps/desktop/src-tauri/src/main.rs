@@ -181,9 +181,17 @@ async fn browser_publish(
     title: String,
     body: String,
     publish_selector: String,
+    image_paths: Option<Vec<String>>,
     _browser_sessions: tauri::State<'_, SharedBrowserSessions>,
 ) -> Result<serde_json::Value, String> {
-    run_browser_driver("publish", serde_json::json!({"session_id": session_id, "title": title, "body": body, "publish_selector": publish_selector}))
+    let args = serde_json::json!({
+        "session_id": session_id,
+        "title": title,
+        "body": body,
+        "publish_selector": publish_selector,
+        "image_paths": image_paths.unwrap_or_default(),
+    });
+    run_browser_driver("publish", args)
 }
 
 #[tauri::command]

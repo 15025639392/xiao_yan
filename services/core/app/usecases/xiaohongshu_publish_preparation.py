@@ -29,6 +29,8 @@ def build_xiaohongshu_browser_publish_image_paths(
         generated_cover = generate_cover_image(title=title, body=body)
     except (XiaohongshuCoverImageUnavailableError, XiaohongshuCoverImageGenerationError):
         return []
+    if generated_cover is None:
+        return []
     return [generated_cover.path]
 
 

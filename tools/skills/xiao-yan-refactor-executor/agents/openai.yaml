@@ -1,0 +1,7 @@
+interface:
+  display_name: "Xiao Yan Refactor Executor"
+  short_description: "Execute small, reversible refactors in xiao_yan"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#A6541A"
+  default_prompt: "Use $xiao-yan-refactor-executor to execute this xiao_yan refactor in the smallest reversible steps, keeping boundaries clear and behavior stable."

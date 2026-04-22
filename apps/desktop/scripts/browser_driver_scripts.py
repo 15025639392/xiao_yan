@@ -7,6 +7,7 @@ def build_fill_script(*, title: str, body: str) -> str:
     payload = json.dumps({"title": title, "body": body}, ensure_ascii=False)
     return f"""
 (() => {{
+  try {{
   const payload = {payload};
   const visible = (element) => {{
     if (!element) return false;
@@ -52,6 +53,15 @@ def build_fill_script(*, title: str, body: str) -> str:
   }};
   const candidates = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"]'))
     .filter(visible);
+  const isTextboxLike = (element) => {{
+    const tagName = element.tagName.toLowerCase();
+    return (
+      tagName === "input" ||
+      tagName === "textarea" ||
+      element.getAttribute("contenteditable") === "true" ||
+      element.getAttribute("role") === "textbox"
+    );
+  }};
   const findField = (patterns, extraCheck) =>
     candidates.find((element) => {{
       const text = metaText(element);
@@ -60,11 +70,44 @@ def build_fill_script(*, title: str, body: str) -> str:
       }}
       return extraCheck ? extraCheck(element, text) : false;
     }}) || null;
-  const titleField = findField([/标题/, /title/], (element) => element.tagName.toLowerCase() === "input");
-  const bodyField = findField([/正文/, /内容/, /描述/, /caption/, /desc/], (element, text) => {{
-    if (text.includes("title")) return false;
-    return element.tagName.toLowerCase() === "textarea" || element.getAttribute("contenteditable") === "true";
+  let titleField = findField([/标题/, /title/], (element, text) => {{
+    if (!isTextboxLike(element)) return false;
+    if (text.includes("正文") || text.includes("内容") || text.includes("描述") || text.includes("caption") || text.includes("desc")) {{
+      return false;
+    }}
+    return element.tagName.toLowerCase() === "input";
   }});
+  let bodyField = findField([/正文/, /内容/, /描述/, /caption/, /desc/], (element, text) => {{
+    if (text.includes("title")) return false;
+    return (
+      element.tagName.toLowerCase() === "textarea" ||
+      element.getAttribute("contenteditable") === "true" ||
+      element.getAttribute("role") === "textbox"
+    );
+  }});
+  if (!titleField) {{
+    titleField = candidates.find((element) => {{
+      if (!isTextboxLike(element)) return false;
+      if (element === bodyField) return false;
+      return element.tagName.toLowerCase() === "input";
+    }}) || candidates.find((element) => {{
+      if (!isTextboxLike(element)) return false;
+      if (element === bodyField) return false;
+      const text = metaText(element);
+      return !(/正文|内容|描述|caption|desc/.test(text));
+    }}) || null;
+  }}
+  if (!bodyField) {{
+    bodyField = candidates.find((element) => {{
+      if (!isTextboxLike(element)) return false;
+      if (element === titleField) return false;
+      return (
+        element.tagName.toLowerCase() === "textarea" ||
+        element.getAttribute("contenteditable") === "true" ||
+        element.getAttribute("role") === "textbox"
+      );
+    }}) || null;
+  }}
   const pageText = document.body.innerText || "";
   const uploadPrompt =
     pageText.includes("上传图片") ||
@@ -101,5 +144,13 @@ def build_fill_script(*, title: str, body: str) -> str:
     filled_title: filledTitle,
     filled_body: filledBody
   }});
+  }} catch(err) {{
+    return JSON.stringify({{
+      status: "js_error",
+      filled_title: false,
+      filled_body: false,
+      error: String(err && err.message ? err.message : err)
+    }});
+  }}
 }})();
 """

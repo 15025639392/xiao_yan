@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 import json
 
 from app.api.deps import get_chat_gateway, get_chat_memory_runtime, get_persona_service, get_state_store
-from app.api import platform_route_handlers
+from app.api import xiaohongshu_handlers
 from app.domain.models import BrowserSessionState, BrowserSessionStatus
 from app.llm.schemas import ChatMessage
 from app.main import app
@@ -593,7 +593,7 @@ def test_xiaohongshu_creator_home_preview_endpoint_rejects_empty_snapshot():
 
 def test_xiaohongshu_creator_home_capture_endpoint_returns_current_chrome_snapshot(monkeypatch):
     monkeypatch.setattr(
-        platform_route_handlers,
+        xiaohongshu_handlers,
         "capture_xiaohongshu_creator_home_via_browser_organ",
         lambda: creator_home_capture.XiaohongshuCreatorHomeCaptureResponse(
             source_url="https://creator.xiaohongshu.com/new/home",
@@ -628,7 +628,7 @@ def test_xiaohongshu_creator_home_capture_endpoint_returns_current_chrome_snapsh
 
 def test_xiaohongshu_publish_autofill_endpoint_returns_fill_status(monkeypatch):
     monkeypatch.setattr(
-        platform_route_handlers,
+        xiaohongshu_handlers,
         "autofill_xiaohongshu_publish_page",
         lambda *, title, body, auto_publish=False, publish_selector="": publish_autofill.XiaohongshuPublishAutofillResponse(
             status="filled",
@@ -659,7 +659,7 @@ def test_xiaohongshu_publish_autofill_endpoint_returns_fill_status(monkeypatch):
 
 def test_xiaohongshu_text_image_autofill_endpoint_returns_fill_status(monkeypatch):
     monkeypatch.setattr(
-        platform_route_handlers,
+        xiaohongshu_handlers,
         "autofill_xiaohongshu_text_image_cards",
         lambda *, cards, trigger_generate: text_image_autofill.XiaohongshuTextImageAutofillResponse(
             status="submitted_generation",
@@ -692,7 +692,7 @@ def test_xiaohongshu_publish_via_mcp_endpoint_returns_publish_status(monkeypatch
     cover.write_bytes(b"cover")
 
     monkeypatch.setattr(
-        platform_route_handlers,
+        xiaohongshu_handlers,
         "publish_xiaohongshu_image_post_via_mcp",
         lambda *, title, body, image_paths, client: publish_via_mcp.XiaohongshuPublishViaMcpResponse(
             status="submitted",
@@ -724,7 +724,7 @@ def test_xiaohongshu_publish_via_mcp_endpoint_returns_publish_status(monkeypatch
 
 def test_xiaohongshu_lead_capture_endpoint_returns_current_page_lead_summary(monkeypatch):
     monkeypatch.setattr(
-        platform_route_handlers,
+        xiaohongshu_handlers,
         "capture_xiaohongshu_lead_signals_via_browser_organ",
         lambda *, session_id, title_hint: lead_capture.XiaohongshuLeadCaptureResponse(
             source_url="https://creator.xiaohongshu.com/new/home",

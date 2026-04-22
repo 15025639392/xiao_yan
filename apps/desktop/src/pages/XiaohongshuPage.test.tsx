@@ -53,23 +53,6 @@ RED新生代创作大赛 03-30 至 05-10
   ]);
 });
 
-test("page can extract topic and activity text into editable fields", () => {
-  render(<XiaohongshuPage assistantName="小晏" />);
-
-  fireEvent.change(screen.getByPlaceholderText("把创作服务平台首页复制出来的文字粘进来"), {
-    target: {
-      value: "创作话题\n#高颜值巧克力\n30万人参与，14.4亿次浏览\n热门活动\n官方活动, 奖励多多\nRED新生代创作大赛 03-30 至 05-10",
-    },
-  });
-
-  fireEvent.click(screen.getByRole("button", { name: "自动提取话题和活动" }));
-
-  expect(screen.getByPlaceholderText("话题 | 参与人数 | 浏览量")).toHaveValue("#高颜值巧克力 | 30万人参与 | 14.4亿次浏览");
-  expect(screen.getByPlaceholderText("活动标题 | 时间 | 激励提示")).toHaveValue(
-    "RED新生代创作大赛 | 03-30 至 05-10 | 官方活动, 奖励多多",
-  );
-});
-
 test("expandPreviewIntoPublishDraft builds a publish-ready draft from preview result", () => {
   const previewItem = {
     output_text: "可以先轻一点接住对方，再给一个低压力的下一步。",

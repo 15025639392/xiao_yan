@@ -10,17 +10,19 @@ from app.api.deps import (
     get_state_store,
     get_xiaohongshu_mcp_client,
 )
-from app.api.platform_route_handlers import (
+from app.api.platform_handlers_core import (
     handle_platform_preview,
     handle_platform_preview_from_chat_submission,
     handle_platform_preview_from_core,
     handle_platform_preview_from_draft,
     handle_platform_preview_with_chat,
+)
+from app.api.xiaohongshu_handlers import (
     handle_xiaohongshu_creator_home_capture,
     handle_xiaohongshu_creator_home_preview,
-    handle_xiaohongshu_lead_capture,
     handle_xiaohongshu_import_file_preview,
     handle_xiaohongshu_import_preview,
+    handle_xiaohongshu_lead_capture,
     handle_xiaohongshu_notification_preview,
     handle_xiaohongshu_publish_autofill,
     handle_xiaohongshu_publish_via_mcp,

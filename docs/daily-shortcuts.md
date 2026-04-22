@@ -34,7 +34,9 @@
 
 - 局部 bug：先用 `runtime-bug-triage`
 - 局部后端改动：先用 `core-change-entrypoint`
+- 局部代码优化：先用 `xiao-yan-code-optimizer`
 - 大文件但只改一小块：必要时再加 `large-file-split-advisor`
+- 已确定要拆分或提取模块：用 `xiao-yan-refactor-executor`
 - 收尾同步：用 `docs-and-tests-sync-guard`
 - 项目收敛：优先用 `project-simplifier` 的轻量模式
 

@@ -81,13 +81,14 @@ class BrowserSessionState(BaseModel):
 
 # ── Xiaohongshu Work Domain ────────────────────────────────────────────────────
 
+from dataclasses import dataclass, field
+
 
 class XhsWorkStatus(str, Enum):
     IDLE = "idle"
     IDLE_REVIEWING = "idle_reviewing"  # published, images pending
     SCOUTING = "scouting"
     DRAFTING = "drafting"
-    PREPARING = "preparing"
     PUBLISHING = "publishing"
     REVIEWING = "reviewing"
     BLOCKED = "blocked"
@@ -96,6 +97,34 @@ class XhsWorkStatus(str, Enum):
 class XhsPublishMode(str, Enum):
     REVIEW_BEFORE_PUBLISH = "review_before_publish"
     DIRECT_PUBLISH = "direct_publish"
+
+
+# ── Work Policy ────────────────────────────────────────────────────────────────
+
+
+class XhsWorkPolicy(BaseModel):
+    """Content and operational constraints for the XHS work domain.
+
+    This is the authoritative policy document consulted at each step of the
+    task chain. Unlike publish_mode (a single gate), policy covers multiple
+    dimensions: what content is allowed, how often to post, how long to wait
+    for human review, and when to retry automatically.
+    """
+
+    # Content constraints
+    forbidden_keywords: list[str] = Field(default_factory=list)  # draft blocked if any appear
+    required_keywords: list[str] = Field(default_factory=list)  # draft flagged if none appear
+    min_body_chars: int = 50   # drafts shorter than this are flagged
+    max_body_chars: int = 1000  # drafts longer than this are flagged
+
+    # Posting constraints
+    max_posts_per_day: int = 3   # cap on posts per UTC day; 0 = no limit
+
+    # Review settings
+    review_timeout_minutes: int = 30  # auto-cancel review session after this long
+
+    # Retry behaviour
+    auto_retry_on_failure: bool = True  # retry a failed publish without blocking
 
 
 class XhsWorkProfile(BaseModel):
@@ -119,8 +148,13 @@ class XhsWorkState(BaseModel):
     current_bottleneck: str = ""
     next_recommended_action: str = ""
     review_session_id: str = ""
+    review_started_at: datetime | None = None
     pending_drafts: list[dict] = Field(default_factory=list)  # [{"draft_id", "title", "body", "generated_at", "status"}]
     published_history: list[dict] = Field(default_factory=list)  # [{"draft_id", "title", "published_at", "post_url"}]
+    last_scouting_data: dict = Field(default_factory=dict)
+    blocked_at: datetime | None = None
+    blocked_reason: str = ""
+    idle_reviewing_entered_at: datetime | None = None
 
 
 class XhsWorkGoals(BaseModel):
@@ -129,10 +163,92 @@ class XhsWorkGoals(BaseModel):
     monthly_content_target: int = 0
 
 
+class XhsWorkMemory(BaseModel):
+    recent_draft_titles: list[str] = Field(default_factory=list)  # last 10 titles to avoid repetition
+    successful_topic_titles: list[str] = Field(default_factory=list)  # last 10 topics that led to publish
+    last_source_kind: str = ""  # "topic" | "activity" | ""
+
+
+# ── Xiaohongshu Task Chain ─────────────────────────────────────────────────────
+
+
+class XhsTaskKind(str, Enum):
+    """Kinds of steps in the XHS work domain task chain."""
+    IDLE = "idle"
+    SCOUTING = "scouting"
+    DRAFTING = "drafting"
+    PUBLISHING = "publishing"
+    IDLE_REVIEWING = "idle_reviewing"
+    REVIEWING = "reviewing"
+    BLOCKED = "blocked"
+
+
+@dataclass(frozen=True)
+class XhsTaskStep:
+    """A single step in the XHS work domain task chain."""
+    kind: XhsTaskKind
+    label: str  # display name for logs/UI
+    can_skip: bool = False
+    max_retries: int = 0  # 0 = no retry
+    retryable_blockages: tuple[str, ...] = ()  # blockage reasons that trigger retry
+
+
+@dataclass(frozen=True)
+class XhsTaskChain:
+    """The ordered XHS work domain task chain.
+
+    This is the canonical definition of the workflow. Each step declares its
+    status, display name, skip behaviour, and which blockage reasons are
+    retried automatically.
+    """
+    steps: tuple[XhsTaskStep, ...] = field(default_factory=lambda: _DEFAULT_XHS_TASK_CHAIN)
+
+    def find_step(self, kind: XhsTaskKind) -> XhsTaskStep | None:
+        """Return the step with the given kind, or None if not in the chain."""
+        return next((s for s in self.steps if s.kind == kind), None)
+
+    def is_retryable(self, kind: XhsTaskKind, blockage: str) -> bool:
+        """Check whether a blockage is retryable for the given step kind.
+
+        Checks if the given blockage is in the step's retryable_blockages set.
+        max_retries on the step governs whether a step can be retried at all
+        (e.g. via timer backoff for BLOCKED), but is_retryable focuses on
+        whether a *specific* blockage type qualifies.
+        """
+        step = self.find_step(kind)
+        if step is None:
+            return False
+        return blockage in step.retryable_blockages
+
+
+# The default chain. Steps are tried in order until one matches the current status.
+_DEFAULT_XHS_TASK_CHAIN = (
+    XhsTaskStep(kind=XhsTaskKind.SCOUTING, label="侦察", can_skip=False, max_retries=0),
+    XhsTaskStep(kind=XhsTaskKind.DRAFTING, label="生成草稿", can_skip=False, max_retries=0),
+    XhsTaskStep(kind=XhsTaskKind.PUBLISHING, label="发布", can_skip=False, max_retries=0,
+                retryable_blockages=("发布失败",)),
+    XhsTaskStep(kind=XhsTaskKind.IDLE_REVIEWING, label="补图", can_skip=False, max_retries=0),
+    XhsTaskStep(kind=XhsTaskKind.REVIEWING, label="人工确认发布", can_skip=False, max_retries=0),
+    XhsTaskStep(kind=XhsTaskKind.BLOCKED, label="阻塞", can_skip=False, max_retries=3,
+                retryable_blockages=(
+                    "浏览器器官不可用",
+                    "打开发布页失败",
+                    "发布失败",
+                    "页面快照失败",
+                    "找不到发布按钮",
+                    "无法点击发布按钮",
+                    "CDP 连接失败",
+                )),
+    XhsTaskStep(kind=XhsTaskKind.IDLE, label="空闲", can_skip=True, max_retries=0),
+)
+
+
 class XhsWorkDomainState(BaseModel):
     profile: XhsWorkProfile = XhsWorkProfile()
     state: XhsWorkState = XhsWorkState()
     goals: XhsWorkGoals = XhsWorkGoals()
+    memory: XhsWorkMemory = XhsWorkMemory()
+    policy: XhsWorkPolicy = XhsWorkPolicy()
 
 
 class BeingState(BaseModel):

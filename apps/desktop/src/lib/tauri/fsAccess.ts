@@ -326,6 +326,8 @@ export interface BrowserPublishResult {
   status: string;
   publish_clicked: boolean;
   click_error?: string;
+  uploaded_image_count?: number;
+  upload_error?: string;
 }
 
 export async function browserPublish(
@@ -333,6 +335,7 @@ export async function browserPublish(
   title: string,
   body: string,
   publishSelector: string,
+  imagePaths?: string[],
 ): Promise<BrowserPublishResult> {
   ensureTauri();
   try {
@@ -341,6 +344,7 @@ export async function browserPublish(
       title,
       body,
       publishSelector,
+      imagePaths,
     });
   } catch (e) {
     throw new Error(toTauriErrorMessage(e));

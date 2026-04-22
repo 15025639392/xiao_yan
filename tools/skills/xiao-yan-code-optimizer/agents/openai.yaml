@@ -1,0 +1,7 @@
+interface:
+  display_name: "Xiao Yan Code Optimizer"
+  short_description: "Optimize xiao_yan code with minimal, verifiable changes"
+  icon_small: "./assets/icon-small.svg"
+  icon_large: "./assets/icon-large.svg"
+  brand_color: "#17766B"
+  default_prompt: "Use $xiao-yan-code-optimizer to optimize this xiao_yan code path with the smallest safe change, keeping file boundaries, hot paths, dependency edges, and verification in check."

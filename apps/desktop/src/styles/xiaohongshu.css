@@ -354,6 +354,42 @@
   flex-shrink: 0;
 }
 
+.xhs-pending-item--editable {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+}
+
+.xhs-pending-item__title-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.xhs-pending-item__body-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.xhs-pending-item__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 /* ===== Config Panel ===== */
 .xhs-config-panel {
   background: var(--bg-secondary);

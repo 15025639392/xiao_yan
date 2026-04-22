@@ -502,11 +502,13 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
       const title = asString(request.args.title) ?? "";
       const body = asString(request.args.body) ?? "";
       const publishSelector = asString(request.args.publish_selector) ?? "";
+      const imagePathsRaw = request.args.image_paths;
+      const imagePaths = Array.isArray(imagePathsRaw) ? imagePathsRaw.filter((item): item is string => typeof item === "string" && item.length > 0) : undefined;
       if (!sessionId) {
         return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.session_id");
       }
       try {
-        const result = await browserPublish(sessionId, title, body, publishSelector);
+        const result = await browserPublish(sessionId, title, body, publishSelector, imagePaths);
         return buildResult(request, startedAt, true, result);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

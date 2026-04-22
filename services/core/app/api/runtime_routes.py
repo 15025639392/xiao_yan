@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -19,6 +20,7 @@ from app.domain.models import (
     BrowserSessionStatus,
     XhsWorkDomainState,
     XhsPublishMode,
+    XhsWorkPolicy,
     XhsWorkStatus,
 )
 from app.llm.schemas import ChatHistoryMessage, ChatHistoryResponse
@@ -65,9 +67,12 @@ class XhsWorkDomainUpdateRequest(BaseModel):
     scouting_interval_hours: float | None = None
     publish_mode: str | None = None
     auto_publish_selector: str | None = None
+    work_memory: dict[str, Any] | None = None
+    pending_drafts: list[dict[str, Any]] | None = None
     north_star: str | None = None
     weekly_goals: list[str] | None = None
     monthly_content_target: int | None = None
+    policy: dict[str, Any] | None = None  # XhsWorkPolicy fields
 
 
 def build_runtime_router() -> APIRouter:
@@ -249,11 +254,35 @@ def build_runtime_router() -> APIRouter:
                 "review_session_id": domain.state.review_session_id,
                 "pending_drafts": domain.state.pending_drafts,
                 "published_history": domain.state.published_history,
+                "last_scouting_data": domain.state.last_scouting_data,
+                "blocked_at": (
+                    domain.state.blocked_at.isoformat() if domain.state.blocked_at else None
+                ),
+                "blocked_reason": domain.state.blocked_reason,
+                "idle_reviewing_entered_at": (
+                    domain.state.idle_reviewing_entered_at.isoformat()
+                    if domain.state.idle_reviewing_entered_at
+                    else None
+                ),
             },
             "goals": {
                 "north_star": domain.goals.north_star,
                 "weekly_goals": domain.goals.weekly_goals,
                 "monthly_content_target": domain.goals.monthly_content_target,
+            },
+            "memory": {
+                "recent_draft_titles": domain.memory.recent_draft_titles,
+                "successful_topic_titles": domain.memory.successful_topic_titles,
+                "last_source_kind": domain.memory.last_source_kind,
+            },
+            "policy": {
+                "forbidden_keywords": domain.policy.forbidden_keywords,
+                "required_keywords": domain.policy.required_keywords,
+                "min_body_chars": domain.policy.min_body_chars,
+                "max_body_chars": domain.policy.max_body_chars,
+                "max_posts_per_day": domain.policy.max_posts_per_day,
+                "review_timeout_minutes": domain.policy.review_timeout_minutes,
+                "auto_retry_on_failure": domain.policy.auto_retry_on_failure,
             },
         }
 
@@ -268,7 +297,22 @@ def build_runtime_router() -> APIRouter:
         domain = being_state.xhs_work_domain
 
         if update_req.status is not None:
+            old_status = domain.state.status
             domain.state.status = XhsWorkStatus(update_req.status)
+            if old_status == XhsWorkStatus.REVIEWING and domain.state.status == XhsWorkStatus.IDLE:
+                if domain.state.pending_drafts:
+                    draft = domain.state.pending_drafts[0]
+                    now = datetime.now(timezone.utc)
+                    published_entry = {
+                        "draft_id": draft.get("draft_id"),
+                        "title": draft.get("title"),
+                        "published_at": now.isoformat(),
+                        "post_url": "https://creator.xiaohongshu.com/publish/publish?from=xiao_yan&target=image",
+                    }
+                    domain.state.pending_drafts = domain.state.pending_drafts[1:]
+                    domain.state.published_history = (domain.state.published_history + [published_entry])[-20:]
+                    domain.state.last_published_at = now
+                    domain.state.backlog_count = max(0, domain.state.backlog_count - 1)
             if domain.state.status != XhsWorkStatus.REVIEWING:
                 domain.state.review_session_id = ""
         if update_req.current_focus is not None:
@@ -297,12 +341,38 @@ def build_runtime_router() -> APIRouter:
             domain.profile.publish_mode = XhsPublishMode(update_req.publish_mode)
         if update_req.auto_publish_selector is not None:
             domain.profile.auto_publish_selector = update_req.auto_publish_selector
+        if update_req.work_memory is not None:
+            wm = update_req.work_memory
+            if "recent_draft_titles" in wm:
+                domain.memory.recent_draft_titles = wm["recent_draft_titles"]
+            if "successful_topic_titles" in wm:
+                domain.memory.successful_topic_titles = wm["successful_topic_titles"]
+            if "last_source_kind" in wm:
+                domain.memory.last_source_kind = wm["last_source_kind"]
+        if update_req.pending_drafts is not None:
+            domain.state.pending_drafts = update_req.pending_drafts
         if update_req.north_star is not None:
             domain.goals.north_star = update_req.north_star
         if update_req.weekly_goals is not None:
             domain.goals.weekly_goals = update_req.weekly_goals
         if update_req.monthly_content_target is not None:
             domain.goals.monthly_content_target = update_req.monthly_content_target
+        if update_req.policy is not None:
+            p = update_req.policy
+            if "forbidden_keywords" in p:
+                domain.policy.forbidden_keywords = p["forbidden_keywords"]
+            if "required_keywords" in p:
+                domain.policy.required_keywords = p["required_keywords"]
+            if "min_body_chars" in p:
+                domain.policy.min_body_chars = p["min_body_chars"]
+            if "max_body_chars" in p:
+                domain.policy.max_body_chars = p["max_body_chars"]
+            if "max_posts_per_day" in p:
+                domain.policy.max_posts_per_day = p["max_posts_per_day"]
+            if "review_timeout_minutes" in p:
+                domain.policy.review_timeout_minutes = p["review_timeout_minutes"]
+            if "auto_retry_on_failure" in p:
+                domain.policy.auto_retry_on_failure = p["auto_retry_on_failure"]
 
         state_store.set(being_state)
         return {"ok": True}
