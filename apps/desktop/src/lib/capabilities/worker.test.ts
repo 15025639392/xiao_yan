@@ -188,4 +188,43 @@ describe("capability worker local executor", () => {
     testState.tauriRuntimeReady = true;
     vi.useRealTimers();
   });
+
+  test("keeps browser organ bound on transient poll failure after a healthy heartbeat", async () => {
+    vi.useFakeTimers();
+    testState.tauriRuntimeReady = true;
+    testState.mockHeartbeatCapabilityExecutor.mockReset();
+    testState.mockFetchPendingCapabilities.mockReset();
+    testState.mockUpdateBrowserOrgan.mockClear();
+
+    testState.mockHeartbeatCapabilityExecutor
+      .mockResolvedValueOnce({ executor: "desktop", heartbeat_at: new Date().toISOString() })
+      .mockRejectedValueOnce(new Error("network jitter"));
+    testState.mockFetchPendingCapabilities.mockResolvedValue({ items: [] });
+
+    const stop = startCapabilityWorker({ pollIntervalMs: 500 });
+
+    await vi.advanceTimersByTimeAsync(600);
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(testState.mockUpdateBrowserOrgan).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        binding_status: "bound",
+        health_status: "healthy",
+        browser_binary_ready: true,
+      }),
+    );
+    expect(testState.mockUpdateBrowserOrgan).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        binding_status: "bound",
+        health_status: "degraded",
+        browser_binary_ready: true,
+        last_error: "network jitter",
+      }),
+    );
+
+    stop();
+    vi.useRealTimers();
+  });
 });

@@ -5,6 +5,7 @@ from app.external_executors.xiaohongshu_mcp_client import (
     XiaohongshuMcpClientDisabledError,
     XiaohongshuMcpClientResponseError,
 )
+from app.usecases.xiaohongshu_cover_image import GeneratedXiaohongshuCoverImage
 from app.usecases.xiaohongshu_publish_via_mcp import publish_xiaohongshu_image_post_via_mcp
 
 
@@ -112,6 +113,9 @@ def test_publish_xiaohongshu_image_post_via_mcp_validates_absolute_existing_path
     detail.write_bytes(b"png")
 
     class _StubClient:
+        def can_publish(self) -> bool:
+            return True
+
         def publish_image_post(self, *, title: str, content: str, images: list[str]):
             assert title == "测试标题"
             assert content == "测试正文"
@@ -138,10 +142,57 @@ def test_publish_xiaohongshu_image_post_via_mcp_validates_absolute_existing_path
     assert result.post_url == "https://www.xiaohongshu.com/explore/test"
 
 
+def test_publish_xiaohongshu_image_post_via_mcp_generates_cover_when_paths_missing(monkeypatch, tmp_path):
+    cover = tmp_path / "generated-cover.png"
+    cover.write_bytes(b"png")
+
+    monkeypatch.setattr(
+        "app.usecases.xiaohongshu_publish_via_mcp.generate_xiaohongshu_cover_image",
+        lambda *, title, body: GeneratedXiaohongshuCoverImage(
+            path=str(cover),
+            title=title,
+            subtitle="先发一条能接住咨询的内容。",
+            badge="小晏数字人全自动运营",
+        ),
+    )
+
+    class _StubClient:
+        def can_publish(self) -> bool:
+            return True
+
+        def publish_image_post(self, *, title: str, content: str, images: list[str]):
+            assert title == "测试标题"
+            assert content == "测试正文"
+            assert images == [str(cover)]
+
+            class _Result:
+                status = "submitted"
+                message = "已提交图文发布"
+                post_url = "https://www.xiaohongshu.com/explore/test"
+                platform_post_id = "note_123"
+
+            return _Result()
+
+    result = publish_xiaohongshu_image_post_via_mcp(
+        title="测试标题",
+        body="测试正文",
+        image_paths=[],
+        client=_StubClient(),  # type: ignore[arg-type]
+    )
+
+    assert result.status == "submitted"
+    assert result.image_count == 1
+    assert result.image_paths == [str(cover)]
+    assert "已自动生成封面图" in result.message
+
+
 def test_publish_xiaohongshu_image_post_via_mcp_requires_existing_absolute_paths(tmp_path):
     missing = tmp_path / "missing.png"
 
     class _UnusedClient:
+        def can_publish(self) -> bool:
+            return True
+
         def publish_image_post(self, *, title: str, content: str, images: list[str]):
             raise AssertionError("client should not be called")
 

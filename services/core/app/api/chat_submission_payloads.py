@@ -152,6 +152,11 @@ CHAT_BROWSER_TOOL_DEFINITIONS = [
                 "title": {"type": "string", "description": "Title text to fill into the title field"},
                 "body": {"type": "string", "description": "Body/description text to fill into the body field"},
                 "publish_selector": {"type": "string", "description": "CSS selector for the publish button (e.g., 'button[type=\"submit\"]')"},
+                "image_paths": {
+                    "type": "array",
+                    "description": "Optional local absolute image paths to upload before publishing.",
+                    "items": {"type": "string"},
+                },
             },
             "required": ["session_id", "title", "body", "publish_selector"],
             "additionalProperties": False,

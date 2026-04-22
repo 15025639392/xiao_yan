@@ -4,18 +4,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from app.api.browser_capability_formats import (
+    format_browser_close_output,
+    format_browser_extract_output,
+    format_browser_snapshot_output,
+    format_browser_open_output,
+    merge_browser_open_with_snapshot,
+)
+from app.api.browser_experience_memory import (
+    save_browser_experience,
+    set_browser_memory_repository_getter,
+)
 from app.api.file_tool_helpers import file_policy_args
 from app.capabilities.models import CapabilityDispatchRequest, RiskLevel
 from app.capabilities.runtime import dispatch_and_wait, has_recent_capability_executor
 from app.memory.repository import MemoryRepository
-from app.memory.storage_models import MemoryEvent
 from app.runtime_ext.runtime_config import get_runtime_config
 from app.tools.models import ToolExecutionResult
 from app.tools.runner import CommandRunner
 from app.tools.sandbox import SandboxViolation
 
 DESKTOP_EXECUTOR = "desktop"
-DESKTOP_EXECUTOR_MAX_AGE_SECONDS = 10
+DESKTOP_EXECUTOR_MAX_AGE_SECONDS = 60
 
 
 def try_dispatch_file_capability(
@@ -261,16 +271,17 @@ def try_dispatch_browser_capability(
 
     formatted: dict[str, Any] | None = None
     if capability == "browser.snapshot":
-        formatted = _format_browser_snapshot_output(raw, request_id="")
+        formatted = format_browser_snapshot_output(raw, request_id="")
     elif capability == "browser.extract":
-        formatted = _format_browser_extract_output(raw, request_id="")
+        formatted = format_browser_extract_output(raw, request_id="")
     elif capability == "browser.close":
-        formatted = _format_browser_close_output(raw, request_id="")
+        formatted = format_browser_close_output(raw, request_id="")
 
     if formatted is not None:
         save_browser_experience(capability, formatted)
+        return formatted
 
-    return formatted
+    return raw
 
 
 def _try_dispatch_browser_open_with_snapshot(
@@ -287,7 +298,7 @@ def _try_dispatch_browser_open_with_snapshot(
 
     session_id = open_raw.get("session_id") if isinstance(open_raw, dict) else None
     if not session_id:
-        formatted = _format_browser_open_output(open_raw, request_id="")
+        formatted = format_browser_open_output(open_raw, request_id="")
         save_browser_experience("browser.open", formatted)
         return formatted
 
@@ -297,223 +308,13 @@ def _try_dispatch_browser_open_with_snapshot(
         timeout_seconds=timeout_seconds,
     )
 
-    merged = _format_browser_open_output(open_raw, request_id="")
-    if isinstance(snapshot_raw, dict):
-        merged["text_content"] = snapshot_raw.get("text_content", "")
-        merged["title"] = snapshot_raw.get("title") or merged.get("title") or ""
-        merged["links"] = _extract_links_from_accessibility_tree(snapshot_raw.get("accessibility_tree"))
-        merged["screenshot_path"] = snapshot_raw.get("screenshot_path")
-        merged["captured_at"] = snapshot_raw.get("captured_at")
-
+    merged = merge_browser_open_with_snapshot(open_raw, snapshot_raw if isinstance(snapshot_raw, dict) else None, request_id="")
     save_browser_experience("browser.open", merged)
     return merged
 
 
-def _extract_links_from_accessibility_tree(tree: Any) -> list[dict[str, str]]:
-    if not isinstance(tree, list):
-        return []
-    links: list[dict[str, str]] = []
-    for node in tree:
-        if not isinstance(node, dict):
-            continue
-        role = node.get("role", "")
-        if role == "link":
-            name = node.get("name") or ""
-            url = node.get("url") or ""
-            if name and url:
-                links.append({"text": name, "url": url})
-        elif isinstance(node.get("children"), list):
-            links.extend(_extract_links_from_accessibility_tree(node["children"]))
-    return links
-
-
-def _format_browser_open_output(output: dict[str, Any], *, request_id: str) -> dict[str, Any]:
-    return {
-        "session_id": output.get("session_id"),
-        "url": output.get("url"),
-        "resolved_url": output.get("resolved_url"),
-        "title": output.get("title"),
-        "status": output.get("status"),
-        "opened_at": output.get("opened_at"),
-        "capability_request_id": request_id,
-    }
-
-
-def _format_browser_snapshot_output(output: dict[str, Any], *, request_id: str) -> dict[str, Any]:
-    return {
-        "session_id": output.get("session_id"),
-        "url": output.get("url"),
-        "title": output.get("title"),
-        "text_content": output.get("text_content"),
-        "accessibility_tree": output.get("accessibility_tree"),
-        "screenshot_path": output.get("screenshot_path"),
-        "captured_at": output.get("captured_at"),
-        "capability_request_id": request_id,
-    }
-
-
-def _format_browser_extract_output(output: dict[str, Any], *, request_id: str) -> dict[str, Any]:
-    return {
-        "session_id": output.get("session_id"),
-        "target": output.get("target"),
-        "content": output.get("content"),
-        "structured_data": output.get("structured_data"),
-        "source_url": output.get("source_url"),
-        "captured_at": output.get("captured_at"),
-        "capability_request_id": request_id,
-    }
-
-
-def _format_browser_close_output(output: dict[str, Any], *, request_id: str) -> dict[str, Any]:
-    return {
-        "session_id": output.get("session_id"),
-        "closed_at": output.get("closed_at"),
-        "status": output.get("status"),
-        "capability_request_id": request_id,
-    }
-
-
-# ── Browser experience 回流 ──────────────────────────────────────────────────
-
-_memory_repository_getter: Callable[[], MemoryRepository | None] | None = None
-
-
 def set_memory_repository_getter(getter: Callable[[], MemoryRepository | None]) -> None:
-    """DI-style injection of the memory repository getter."""
-    global _memory_repository_getter
-    _memory_repository_getter = getter
-
-
-def save_browser_experience(
-    capability: str,
-    formatted_result: dict[str, Any],
-) -> None:
-    """Generate structured autobio text from browser capability results and persist as memory.
-
-    Called after browser.snapshot / browser.extract to record what was experienced
-    so future prompts can reference it organically.
-    """
-    if capability not in {"browser.snapshot", "browser.extract", "browser.open"}:
-        return
-
-    try:
-        if _memory_repository_getter is None:
-            return
-
-        repo = _memory_repository_getter()
-        if repo is None:
-            return
-
-        text = _generate_browser_experience_text(capability, formatted_result)
-        if not text:
-            return
-
-        if capability == "browser.snapshot":
-            url = formatted_result.get("url", "")
-            event = MemoryEvent(
-                kind="autobio",
-                content=text,
-                source_context="autobio",
-                namespace="autobio",
-                facet="browser_experience",
-                tags=["browser", "snapshot", "webpage"],
-                source_ref=url or None,
-            )
-            repo.save_event(event)
-
-            # Also record xhs_browse for xiaohongshu URLs
-            if "xiaohongshu.com" in url or "xhslink.com" in url:
-                xhs_text = _generate_xhs_browse_text(url, formatted_result.get("title", ""), formatted_result.get("text_content", ""))
-                if xhs_text:
-                    xhs_event = MemoryEvent(
-                        kind="autobio",
-                        content=xhs_text,
-                        source_context="autobio",
-                        namespace="autobio",
-                        facet="xhs_browse",
-                        tags=["browser", "snapshot", "xiaohongshu"],
-                        source_ref=url or None,
-                    )
-                    repo.save_event(xhs_event)
-        elif capability == "browser.extract":
-            url = formatted_result.get("source_url", "")
-            event = MemoryEvent(
-                kind="autobio",
-                content=text,
-                source_context="autobio",
-                namespace="autobio",
-                facet="browser_experience",
-                tags=["browser", "extract", "webpage"],
-                source_ref=url or None,
-            )
-            repo.save_event(event)
-
-            # Also record xhs_browse for xiaohongshu URLs
-            if "xiaohongshu.com" in url or "xhslink.com" in url:
-                xhs_text = _generate_xhs_browse_text(url, "", formatted_result.get("content", ""))
-                if xhs_text:
-                    xhs_event = MemoryEvent(
-                        kind="autobio",
-                        content=xhs_text,
-                        source_context="autobio",
-                        namespace="autobio",
-                        facet="xhs_browse",
-                        tags=["browser", "extract", "xiaohongshu"],
-                        source_ref=url or None,
-                    )
-                    repo.save_event(xhs_event)
-        elif capability == "browser.open":
-            url = formatted_result.get("url", "") or ""
-            title = formatted_result.get("title", "") or ""
-            if "xiaohongshu.com" in url or "xhslink.com" in url:
-                xhs_text = _generate_xhs_browse_text(url, title, formatted_result.get("text_content", ""))
-                if xhs_text:
-                    xhs_event = MemoryEvent(
-                        kind="autobio",
-                        content=xhs_text,
-                        source_context="autobio",
-                        namespace="autobio",
-                        facet="xhs_browse",
-                        tags=["browser", "open", "xiaohongshu"],
-                        source_ref=url or None,
-                    )
-                    repo.save_event(xhs_event)
-    except Exception:
-        pass
-
-
-def _generate_browser_experience_text(capability: str, result: dict[str, Any]) -> str:
-    if capability == "browser.snapshot":
-        url = result.get("url", "")
-        title = result.get("title", "")
-        text_content = result.get("text_content", "")
-        if not text_content:
-            return ""
-        preview = text_content[:200].replace("\n", " ").strip()
-        suffix = "..." if len(text_content) > 200 else ""
-        return f"访问了 {url}，看到了「{title}」，内容摘要：{preview}{suffix}"
-
-    if capability == "browser.extract":
-        url = result.get("source_url", "")
-        target = result.get("target", "")
-        content = result.get("content", "")
-        if not content:
-            return ""
-        preview = content[:200].replace("\n", " ").strip()
-        suffix = "..." if len(content) > 200 else ""
-        return f"在 {url} 上用选择器「{target}」提取内容，得到：{preview}{suffix}"
-
-    return ""
-
-
-def _generate_xhs_browse_text(url: str, title: str, text_content: str) -> str:
-    """Generate xhs_browse autobio text for xiaohongshu browsing experiences."""
-    if not title and not text_content:
-        return ""
-    preview = (text_content or title)[:150].replace("\n", " ").strip()
-    suffix = "..." if len(text_content or title) > 150 else ""
-    label = f"「{title}」" if title else url
-    return f"浏览了小红书页面 {label}，内容摘要：{preview}{suffix}"
+    set_browser_memory_repository_getter(getter)
 
 
 # ── Browser organ call helpers ────────────────────────────────────────────────

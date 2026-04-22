@@ -17,6 +17,7 @@ import {
   updateConfig,
   resumeChat,
   upsertChatFolderPermission,
+  updateXhsWorkDomain,
   updatePersona,
   updatePersonaFeatures,
   updatePersonality,
@@ -309,6 +310,32 @@ describe("persona api methods", () => {
     await fetchMessages({ limit: 80, offset: 0 });
 
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8000/messages?limit=80&offset=0");
+  });
+
+  test("updates xhs work domain with PATCH", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await updateXhsWorkDomain({
+      current_focus: "补封面并完成发布前编排",
+      publish_mode: "review_before_publish",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/xhs-work-domain",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          current_focus: "补封面并完成发布前编排",
+          publish_mode: "review_before_publish",
+        }),
+      }),
+    );
   });
 
   test("builds memory timeline query with namespace and search keyword", async () => {

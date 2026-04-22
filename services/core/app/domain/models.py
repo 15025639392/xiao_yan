@@ -93,6 +93,11 @@ class XhsWorkStatus(str, Enum):
     BLOCKED = "blocked"
 
 
+class XhsPublishMode(str, Enum):
+    REVIEW_BEFORE_PUBLISH = "review_before_publish"
+    DIRECT_PUBLISH = "direct_publish"
+
+
 class XhsWorkProfile(BaseModel):
     work_type: str = "xiaohongshu_operations"
     account_name: str = ""
@@ -100,6 +105,7 @@ class XhsWorkProfile(BaseModel):
     target_audience: str = ""
     expression_style: str = ""
     scouting_interval_hours: float = 1.0  # hours between scouting cycles
+    publish_mode: XhsPublishMode = XhsPublishMode.REVIEW_BEFORE_PUBLISH
     auto_publish_selector: str = ""  # CSS selector for publish button; empty = auto-discover
 
 
@@ -112,6 +118,7 @@ class XhsWorkState(BaseModel):
     last_scouting_at: datetime | None = None
     current_bottleneck: str = ""
     next_recommended_action: str = ""
+    review_session_id: str = ""
     pending_drafts: list[dict] = Field(default_factory=list)  # [{"draft_id", "title", "body", "generated_at", "status"}]
     published_history: list[dict] = Field(default_factory=list)  # [{"draft_id", "title", "published_at", "post_url"}]
 

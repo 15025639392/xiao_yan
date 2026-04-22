@@ -41,6 +41,10 @@ def resolve_browser_cdp_endpoint(base_url: str = _CDP_BASE_URL) -> str | None:
     return base_url
 
 
+def resolve_browser_organ_chrome_binary() -> str | None:
+    return _CHROME_BINARY if Path(_CHROME_BINARY).exists() else None
+
+
 def ensure_browser_organ_chrome_running(base_url: str = _CDP_BASE_URL) -> None:
     if resolve_browser_cdp_endpoint(base_url) is not None:
         return
@@ -73,8 +77,8 @@ def ensure_browser_organ_chrome_running(base_url: str = _CDP_BASE_URL) -> None:
     raise RuntimeError("failed to start browser organ chrome with cdp endpoint")
 
 
-def prepare_browser_organ_user_data_dir() -> Path:
-    target_root = _browser_organ_user_data_dir()
+def prepare_browser_organ_user_data_dir(*, target_name: str = "google-chrome") -> Path:
+    target_root = _browser_organ_user_data_dir(target_name=target_name)
     if _is_bootstrapped(target_root):
         return target_root
 
@@ -104,8 +108,8 @@ def prepare_browser_organ_user_data_dir() -> Path:
     return target_root
 
 
-def _browser_organ_user_data_dir() -> Path:
-    return Path.home() / ".xiao_yan" / "browser-organ" / "google-chrome"
+def _browser_organ_user_data_dir(*, target_name: str) -> Path:
+    return Path.home() / ".xiao_yan" / "browser-organ" / target_name
 
 
 def _google_chrome_user_data_dir() -> Path:

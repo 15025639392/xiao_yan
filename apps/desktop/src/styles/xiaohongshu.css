@@ -122,6 +122,11 @@
   color: #ec4899;
 }
 
+.xhs-status-badge--reviewing {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+}
+
 .xhs-status-badge--blocked {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
@@ -130,6 +135,11 @@
 .xhs-status-bar__focus {
   font-size: 0.8125rem;
   color: var(--text-secondary);
+}
+
+.xhs-status-bar__next {
+  font-size: 0.8125rem;
+  color: #d97706;
 }
 
 .xhs-status-bar__bottleneck {

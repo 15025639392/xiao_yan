@@ -554,19 +554,32 @@ export function startCapabilityWorker(options: CapabilityWorkerOptions = {}): ()
   let timer: number | null = null;
   let bootTimer: number | null = null;
   let organHealthy = false;
+  let browserBinaryReady = false;
   let started = false;
 
-  const reportBrowserOrgan = async (healthy: boolean, lastError?: string) => {
+  const reportBrowserOrgan = async (
+    healthy: boolean,
+    lastError?: string,
+    overrides?: {
+      bindingStatus?: "bound" | "unbound";
+      healthStatus?: "healthy" | "degraded";
+      browserBinaryReady?: boolean;
+    },
+  ) => {
+    const bindingStatus = overrides?.bindingStatus ?? (healthy ? "bound" : "unbound");
+    const healthStatus = overrides?.healthStatus ?? (healthy ? "healthy" : "degraded");
+    const nextBrowserBinaryReady = overrides?.browserBinaryReady ?? healthy;
     try {
       await updateBrowserOrgan({
-        binding_status: healthy ? "bound" : "unbound",
-        health_status: healthy ? "healthy" : "degraded",
+        binding_status: bindingStatus,
+        health_status: healthStatus,
         driver_name: "playwright-python",
         driver_version: "1.58.0",
-        browser_binary_ready: healthy,
+        browser_binary_ready: nextBrowserBinaryReady,
         last_error: healthy ? "" : (lastError ?? ""),
       });
       organHealthy = healthy;
+      browserBinaryReady = nextBrowserBinaryReady;
     } catch {
       // best-effort
     }
@@ -611,7 +624,11 @@ export function startCapabilityWorker(options: CapabilityWorkerOptions = {}): ()
     } catch (error) {
       organHealthy = false;
       const message = error instanceof Error ? error.message : String(error);
-      void reportBrowserOrgan(false, message);
+      void reportBrowserOrgan(false, message, {
+        bindingStatus: browserBinaryReady ? "bound" : "unbound",
+        healthStatus: "degraded",
+        browserBinaryReady,
+      });
       logger.warn("capability worker poll failed", error);
     } finally {
       inFlight = false;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-import { fetchXhsWorkDomain, updateXhsWorkDomain, type XhsWorkDomainResponse } from "../lib/api";
+import { fetchXhsWorkDomain, updateXhsWorkDomain, wakeLifecycle, type XhsWorkDomainResponse } from "../lib/api";
 import { browserOpen } from "../lib/tauri/fsAccess";
 import { Button } from "../components/ui";
 
@@ -16,10 +16,11 @@ const STATUS_LABELS: Record<string, string> = {
   scouting: "侦察中",
   drafting: "生成草稿中",
   publishing: "发布中",
+  reviewing: "待确认发布",
   blocked: "已阻塞",
 };
 
-const STATUS_STEPS = ["idle", "scouting", "drafting", "publishing", "idle_reviewing"];
+const STATUS_STEPS = ["idle", "scouting", "drafting", "publishing", "idle_reviewing", "reviewing"];
 
 function getStepIndex(status: string): number {
   if (status === "blocked") return -1;
@@ -81,6 +82,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
   const [configOpen, setConfigOpen] = useState(false);
   const [accountName, setAccountName] = useState("");
   const [scoutingInterval, setScoutingInterval] = useState(1.0);
+  const [publishMode, setPublishMode] = useState<"review_before_publish" | "direct_publish">("review_before_publish");
   const [autoPublishSelector, setAutoPublishSelector] = useState("");
   const [saving, setSaving] = useState(false);
   const [openingLogin, setOpeningLogin] = useState(false);
@@ -119,6 +121,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     if (workDomain?.profile) {
       setAccountName(workDomain.profile.account_name || "");
       setScoutingInterval(workDomain.profile.scouting_interval_hours || 1.0);
+      setPublishMode(workDomain.profile.publish_mode || "review_before_publish");
       setAutoPublishSelector(workDomain.profile.auto_publish_selector || "");
     }
   }, [workDomain?.profile]);
@@ -129,6 +132,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
       await updateXhsWorkDomain({
         account_name: accountName,
         scouting_interval_hours: scoutingInterval,
+        publish_mode: publishMode,
         auto_publish_selector: autoPublishSelector,
       });
       loadDomain();
@@ -155,6 +159,22 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     }
   }
 
+  async function handleToggleLoop() {
+    if (isRunning) {
+      await updateXhsWorkDomain({ status: "idle" });
+      loadDomain();
+      return;
+    }
+
+    try {
+      await wakeLifecycle();
+    } catch {
+      // ignore wake failure and still try to start xhs loop state
+    }
+    await updateXhsWorkDomain({ status: "scouting" });
+    loadDomain();
+  }
+
   const state = workDomain?.state;
   const profile = workDomain?.profile;
   const status = state?.status || "idle";
@@ -179,7 +199,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
           <Button
             type={isRunning ? "destructive" : "default"}
             onClick={() => {
-              updateXhsWorkDomain({ status: isRunning ? "idle" : "scouting" }).then(loadDomain);
+              void handleToggleLoop();
             }}
           >
             {isRunning ? "暂停闭环" : "启动闭环"}
@@ -214,12 +234,23 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
               />
             </label>
             <label className="xhs-config-field">
+              <span className="xhs-config-field__label">发布模式</span>
+              <select
+                className="xhs-config-field__input"
+                value={publishMode}
+                onChange={(e) => setPublishMode(e.target.value as "review_before_publish" | "direct_publish")}
+              >
+                <option value="review_before_publish">准备到发布前，人工确认</option>
+                <option value="direct_publish">自动直发</option>
+              </select>
+            </label>
+            <label className="xhs-config-field">
               <span className="xhs-config-field__label">发布按钮 Selector</span>
               <input
                 type="text"
                 className="xhs-config-field__input"
                 value={autoPublishSelector}
-                placeholder="自动发现（留空）"
+                placeholder={publishMode === "direct_publish" ? "自动发现（留空）" : "仅直发模式需要"}
                 onChange={(e) => setAutoPublishSelector(e.target.value)}
               />
             </label>
@@ -256,6 +287,9 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
         {state?.current_focus && (
           <span className="xhs-status-bar__focus">{state.current_focus}</span>
         )}
+        {state?.next_recommended_action && (
+          <span className="xhs-status-bar__next">{state.next_recommended_action}</span>
+        )}
         {state?.current_bottleneck && (
           <span className="xhs-status-bar__bottleneck">⛔ {state.current_bottleneck}</span>
         )}
@@ -272,6 +306,12 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
           <div className="xhs-info-card">
             <h4 className="xhs-info-card__title">侦察间隔</h4>
             <p className="xhs-info-card__value">{profile?.scouting_interval_hours ?? 1.0}h</p>
+          </div>
+          <div className="xhs-info-card">
+            <h4 className="xhs-info-card__title">发布模式</h4>
+            <p className="xhs-info-card__value">
+              {profile?.publish_mode === "direct_publish" ? "自动直发" : "待确认发布"}
+            </p>
           </div>
           <div className="xhs-info-card">
             <h4 className="xhs-info-card__title">上次侦察</h4>

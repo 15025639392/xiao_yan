@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -9,9 +8,47 @@ from app.api.tool_capability_bridge import (
     BrowserOrganUnavailable,
     call_browser_capability,
 )
-from app.domain.models import XhsWorkDomainState, XhsWorkStatus
+from app.config import get_xiaohongshu_mcp_publish_enabled, get_xiaohongshu_mcp_publish_endpoint
+from app.domain.models import XhsPublishMode, XhsWorkDomainState, XhsWorkStatus
+from app.external_executors.xiaohongshu_mcp_client import XiaohongshuMcpClient
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
+from app.usecases.xiaohongshu_browser_publish_executor import (
+    execute_xiaohongshu_browser_publish,
+    resolve_xiaohongshu_publish_selector,
+)
+from app.usecases.xiaohongshu_browser_publish_review import (
+    evaluate_xiaohongshu_browser_review_preparation,
+)
+from app.usecases.xiaohongshu_cover_image import (
+    XiaohongshuCoverImageGenerationError,
+    XiaohongshuCoverImageUnavailableError,
+    generate_xiaohongshu_cover_image,
+)
+from app.usecases.xiaohongshu_draft_generation import (
+    build_xiaohongshu_opportunity_items,
+    generate_xiaohongshu_draft_from_opportunity,
+)
+from app.usecases.xiaohongshu_publish_orchestration import (
+    XiaohongshuPublishTransition,
+    mark_xiaohongshu_browser_publish_success,
+    mark_xiaohongshu_mcp_publish_success,
+    mark_xiaohongshu_publish_blocked,
+    mark_xiaohongshu_publish_review_ready,
+    mark_xiaohongshu_text_image_review,
+    reset_xiaohongshu_publish_to_idle,
+)
+from app.usecases.xiaohongshu_publish_preparation import (
+    build_xiaohongshu_browser_publish_image_paths,
+    find_xiaohongshu_publish_button,
+    prepare_xiaohongshu_text_image_cards_for_draft,
+)
+from app.usecases.xiaohongshu_scouting_orchestration import (
+    apply_xiaohongshu_scouting_result,
+    is_xiaohongshu_creator_home_login_required,
+)
+from app.usecases.xiaohongshu_publish_via_mcp import publish_xiaohongshu_image_post_via_mcp
+from app.usecases.xiaohongshu_text_image_autofill import autofill_xiaohongshu_text_image_cards
 
 
 @dataclass
@@ -32,10 +69,15 @@ class XhsWorkDomainEngine:
         state_store: StateStore,
         memory_repository: MemoryRepository,
         gateway=None,  # ChatGateway, optional for now
+        mcp_client: XiaohongshuMcpClient | None = None,
     ):
         self.state_store = state_store
         self.memory_repository = memory_repository
         self.gateway = gateway
+        self.mcp_client = mcp_client or XiaohongshuMcpClient(
+            enabled=get_xiaohongshu_mcp_publish_enabled(),
+            endpoint=get_xiaohongshu_mcp_publish_endpoint(),
+        )
         # In-memory cache of last scouting result (not persisted separately)
         self._last_scouting_data: dict | None = None
         # Skip timer on first tick to avoid triggering on service startup
@@ -77,6 +119,10 @@ class XhsWorkDomainEngine:
             return self._do_drafting(domain)
         elif status == XhsWorkStatus.PUBLISHING:
             return self._do_publishing(domain)
+        elif status == XhsWorkStatus.IDLE_REVIEWING:
+            return self._do_idle_reviewing(domain)
+        elif status == XhsWorkStatus.REVIEWING:
+            return self._do_reviewing(domain)
         elif status == XhsWorkStatus.BLOCKED:
             return None
         return None
@@ -85,6 +131,18 @@ class XhsWorkDomainEngine:
         state = self.state_store.get()
         state.xhs_work_domain = domain
         self.state_store.set(state)
+
+    def _commit_publish_transition(
+        self,
+        domain: XhsWorkDomainState,
+        transition: XiaohongshuPublishTransition,
+    ) -> XhsWorkDomainAction:
+        self._save(domain)
+        return XhsWorkDomainAction(
+            kind=transition.kind,
+            title=transition.title,
+            data=transition.data,
+        )
 
     def _do_scouting(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction:
         """browser organ 打开创作首页，提取话题和活动。"""
@@ -149,66 +207,32 @@ class XhsWorkDomainEngine:
 
         text_content = snapshot.get("text_content") or ""
 
-        # Detect login page (check first 500 chars for login UI)
-        login_indicators = ["登录", "login", "账号登录", "手机号登录", "密码登录", "验证码登录"]
-        text_sample = text_content[:500].lower()
-        if any(ind.lower() in text_sample for ind in login_indicators):
-            # Further verify: if we can't find topic patterns, it's likely a login page
-            if "#" not in text_content[:1000] and "话题" not in text_content[:500]:
-                domain.state.status = XhsWorkStatus.BLOCKED
-                domain.state.current_bottleneck = "需要登录小红书账号"
-                self._save(domain)
-                self._close_session(session_id)
-                return XhsWorkDomainAction(
-                    kind="scouting",
-                    title="需要登录",
-                    data={"error": "login required"},
-                )
+        if is_xiaohongshu_creator_home_login_required(text_content):
+            domain.state.status = XhsWorkStatus.BLOCKED
+            domain.state.current_bottleneck = "需要登录小红书账号"
+            self._save(domain)
+            return XhsWorkDomainAction(
+                kind="scouting",
+                title="需要登录",
+                data={"error": "login required"},
+            )
 
         # Use the proper extraction function
         from app.usecases.xiaohongshu_creator_home_capture import extract_creator_home_from_raw_text
         extracted = extract_creator_home_from_raw_text(text_content)
-
-        topics_data = [
-            {"topic": t.topic, "participation_count": t.participation_count, "view_count": t.view_count}
-            for t in extracted.topics
-        ]
-        activities_data = [
-            {"title": a.title, "date_range": a.date_range, "incentive_hint": a.incentive_hint}
-            for a in extracted.activities
-        ]
-
-        # Cache in instance for drafting
-        self._last_scouting_data = {
-            "topics": topics_data,
-            "activities": activities_data,
-            "account_name": extracted.account_name,
-            "raw_text": text_content,
-        }
-
-        topic_count = len(topics_data)
-        activity_count = len(activities_data)
-
-        # Persist account name to profile
-        if extracted.account_name:
-            domain.profile.account_name = extracted.account_name
-        elif topic_count > 0 or activity_count > 0:
-            # Scouting succeeded but account name not found in text
-            # Mark as logged in with unknown account so login guidance clears
-            if not domain.profile.account_name or domain.profile.account_name in ("", "当前账号"):
-                domain.profile.account_name = "已登录账号"
-
-        now = datetime.now(timezone.utc)
-        domain.state.status = XhsWorkStatus.DRAFTING
-        domain.state.last_scouting_at = now
-        domain.state.current_focus = f"发现 {topic_count} 个话题、{activity_count} 个活动"
-        domain.state.current_bottleneck = ""
+        scouting_outcome = apply_xiaohongshu_scouting_result(
+            domain,
+            extracted=extracted,
+            text_content=text_content,
+            now=datetime.now(timezone.utc),
+        )
+        self._last_scouting_data = scouting_outcome.last_scouting_data
         self._save(domain)
 
         return XhsWorkDomainAction(
             kind="scouting",
-            title=f"侦察完成：{topic_count} 个话题",
-            data={"topics": topics_data, "activities": activities_data},
+            title=scouting_outcome.action_title,
+            data=scouting_outcome.action_data,
         )
 
     def _do_drafting(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction:
@@ -219,197 +243,287 @@ class XhsWorkDomainEngine:
             self._save(domain)
             return XhsWorkDomainAction(kind="drafting", title="无侦察数据", data={})
 
-        topics = self._last_scouting_data.get("topics", [])
-        activities = self._last_scouting_data.get("activities", [])
-        account_name = self._last_scouting_data.get("account_name", "")
-
-        # Build opportunity items from scouting data for LLM prompt
-        opportunity_items = []
-        for t in topics[:5]:
-            opportunity_items.append({
-                "source_kind": "topic",
-                "title": t.get("topic", ""),
-                "summary": f"参与人数: {t.get('participation_count', '未知')}",
-            })
-        for a in activities[:3]:
-            opportunity_items.append({
-                "source_kind": "activity",
-                "title": a.get("title", ""),
-                "summary": a.get("date_range", "") + " " + (a.get("incentive_hint") or ""),
-            })
-
+        opportunity_items = build_xiaohongshu_opportunity_items(self._last_scouting_data)
         if not opportunity_items:
             domain.state.status = XhsWorkStatus.IDLE
             domain.state.current_focus = "未发现话题或活动"
             self._save(domain)
             return XhsWorkDomainAction(kind="drafting", title="无机会内容", data={})
 
-        # Use first opportunity for draft generation
         opportunity = opportunity_items[0]
-        prompt = self._build_draft_prompt(opportunity)
-
-        # Call LLM via gateway if available
-        generated_title = ""
-        generated_body = ""
-        if self.gateway is not None:
-            from app.llm.schemas import ChatMessage
-            messages = [ChatMessage(role="user", content=prompt)]
-            try:
-                result = self.gateway.create_response(messages, instructions="你是一个小红书内容创作专家，直接输出标题和正文，不要其他解释。")
-                output_text = result.output_text or ""
-                # Parse title from output (expecting "标题：...正文：...")
-                if "标题：" in output_text:
-                    parts = output_text.split("标题：", 1)
-                    if len(parts) > 1:
-                        title_and_body = parts[1]
-                        if "正文：" in title_and_body:
-                            title_parts = title_and_body.split("正文：", 1)
-                            generated_title = title_parts[0].strip()
-                            generated_body = title_parts[1].strip()
-                        else:
-                            generated_title = title_and_body.strip()
-                            generated_body = ""
-                if not generated_title:
-                    generated_title = f"探索 {opportunity['title'][:15]} 的创作灵感"
-                    generated_body = output_text[:500] if output_text else f"根据最新侦察结果生成的内容草稿：{opportunity['title']}"
-            except Exception as exc:
-                # Fallback on LLM error
-                generated_title = ""
-                generated_body = ""
-
-        # Fallback if no LLM result
-        if not generated_title:
-            generated_title = f"探索 {opportunity['title'][:20]} 的创作灵感"
-            generated_body = f"根据最新侦察结果生成的内容草稿：{opportunity['title']}。{opportunity.get('summary', '')}"
-
-        draft_id = str(uuid.uuid4())[:8]
-        draft = {
-            "draft_id": draft_id,
-            "title": generated_title,
-            "body": generated_body,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "status": "pending",
-            "source_kind": opportunity.get("source_kind", "topic"),
-            "opportunity_title": opportunity.get("title", ""),
-        }
-        domain.state.pending_drafts = [draft]
+        draft_outcome = generate_xiaohongshu_draft_from_opportunity(
+            opportunity,
+            gateway=self.gateway,
+            build_prompt=self._build_draft_prompt,
+        )
+        domain.state.pending_drafts = [draft_outcome.draft]
         domain.state.status = XhsWorkStatus.PUBLISHING
         domain.state.backlog_count = 1
         self._save(domain)
 
         return XhsWorkDomainAction(
             kind="drafting",
-            title=f"草稿生成：{generated_title[:20]}",
-            data={"draft_id": draft_id, "title": generated_title},
+            title=draft_outcome.action_title,
+            data=draft_outcome.action_data,
         )
 
     def _do_publishing(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction:
         """从队列取草稿，通过 browser.publish 发布。"""
         drafts = domain.state.pending_drafts
         if not drafts:
-            domain.state.status = XhsWorkStatus.IDLE
-            domain.state.current_focus = "草稿队列为空"
-            self._save(domain)
-            return XhsWorkDomainAction(kind="idle", title="无草稿可发", data={})
+            self._clear_review_session(domain)
+            return self._commit_publish_transition(domain, reset_xiaohongshu_publish_to_idle(domain))
 
+        self._clear_review_session(domain)
         draft = drafts[0]
-        selector = domain.profile.auto_publish_selector
+        browser_image_paths: list[str] = []
+        requires_manual_review = self._requires_manual_publish_review(domain)
 
-        # 如果没有配置 selector，先尝试动态发现
-        if not selector:
-            selector = self._find_publish_button_sync()
-            if not selector:
-                domain.state.status = XhsWorkStatus.BLOCKED
-                domain.state.current_bottleneck = "找不到发布按钮"
-                self._save(domain)
-                return XhsWorkDomainAction(
-                    kind="publishing",
+        mcp_result = None if requires_manual_review else self._publish_draft_via_mcp(draft)
+        if mcp_result is not None:
+            browser_image_paths = [str(item).strip() for item in mcp_result.image_paths if str(item).strip()]
+            status = mcp_result.status
+            if status not in {
+                "publisher_disabled",
+                "service_unreachable",
+                "publish_failed",
+                "cover_generation_failed",
+                "cover_generation_unavailable",
+            }:
+                return self._commit_publish_transition(
+                    domain,
+                    mark_xiaohongshu_mcp_publish_success(
+                        domain,
+                        drafts=drafts,
+                        draft=draft,
+                        post_url=mcp_result.post_url or _PUBLISH_URL,
+                        message=mcp_result.message,
+                        image_paths=mcp_result.image_paths,
+                    ),
+                )
+        if not browser_image_paths:
+            browser_image_paths = build_xiaohongshu_browser_publish_image_paths(
+                draft,
+                generate_cover_image=generate_xiaohongshu_cover_image,
+            )
+
+        selector_resolution = resolve_xiaohongshu_publish_selector(
+            requires_manual_review=requires_manual_review,
+            auto_publish_selector=domain.profile.auto_publish_selector,
+            find_publish_button=lambda: find_xiaohongshu_publish_button(
+                publish_url=_PUBLISH_URL,
+                call_browser_capability=call_browser_capability,
+                close_session=self._close_session,
+            ),
+            prepare_text_image_cards=lambda: prepare_xiaohongshu_text_image_cards_for_draft(
+                draft,
+                autofill_cards=autofill_xiaohongshu_text_image_cards,
+            ),
+        )
+        if selector_resolution.text_image_result is not None:
+            status = selector_resolution.text_image_result.get("status", "missing_editor")
+            if status == "browser_unavailable":
+                return self._commit_publish_transition(
+                    domain,
+                    mark_xiaohongshu_publish_blocked(
+                        domain,
+                        bottleneck="浏览器器官不可用",
+                        title="发布失败",
+                        data={"error": "browser organ unavailable"},
+                    ),
+                )
+            return self._commit_publish_transition(
+                domain,
+                mark_xiaohongshu_text_image_review(
+                    domain,
+                    focus=str(
+                        selector_resolution.text_image_result.get("focus")
+                        or "已进入补图阶段，等待图片生成后再继续发布"
+                    ),
+                    status=status,
+                    message=selector_resolution.text_image_result.get("message", ""),
+                ),
+            )
+        if selector_resolution.blocked_reason:
+            return self._commit_publish_transition(
+                domain,
+                mark_xiaohongshu_publish_blocked(
+                    domain,
+                    bottleneck=selector_resolution.blocked_reason,
                     title="发布失败",
                     data={"error": "publish button not found"},
-                )
-            # Cache discovered selector for next time
+                ),
+            )
+        selector = selector_resolution.selector
+        if selector and selector != domain.profile.auto_publish_selector and not requires_manual_review:
             domain.profile.auto_publish_selector = selector
             self._save(domain)
 
-        try:
-            open_result = call_browser_capability(
+        execution = execute_xiaohongshu_browser_publish(
+            title=str(draft.get("title", "")),
+            body=str(draft.get("body", "")),
+            selector=selector,
+            image_paths=browser_image_paths,
+            open_publish_page=lambda: call_browser_capability(
                 "browser.open",
                 {"url": _PUBLISH_URL, "headless": False},
                 timeout_seconds=20.0,
-            )
-        except BrowserOrganUnavailable:
-            domain.state.status = XhsWorkStatus.BLOCKED
-            domain.state.current_bottleneck = "浏览器器官不可用"
-            self._save(domain)
-            return XhsWorkDomainAction(
-                kind="publishing",
-                title="发布失败",
-                data={"error": "browser organ unavailable"},
-            )
-
-        session_id = open_result.get("session_id")
-        if not session_id:
-            domain.state.status = XhsWorkStatus.BLOCKED
-            domain.state.current_bottleneck = "无法打开发布页"
-            self._save(domain)
-            return XhsWorkDomainAction(kind="publishing", title="打开发布页失败", data={})
-
-        try:
-            publish_result = call_browser_capability(
+            ),
+            publish_to_page=lambda session_id, title, body, publish_selector, image_paths: call_browser_capability(
                 "browser.publish",
                 {
                     "session_id": session_id,
-                    "title": draft.get("title", ""),
-                    "body": draft.get("body", ""),
-                    "publish_selector": selector,
+                    "title": title,
+                    "body": body,
+                    "publish_selector": publish_selector,
+                    "image_paths": image_paths,
                 },
                 timeout_seconds=20.0,
+            ),
+        )
+        session_id = execution.session_id
+        if execution.error:
+            if session_id:
+                self._close_session(session_id)
+            return self._commit_publish_transition(
+                domain,
+                mark_xiaohongshu_publish_blocked(
+                    domain,
+                    bottleneck=execution.blocked_reason or "发布失败",
+                    title="发布失败",
+                    data={"error": execution.error},
+                ),
             )
-        except BrowserCapabilityError as exc:
-            domain.state.status = XhsWorkStatus.BLOCKED
-            domain.state.current_bottleneck = f"发布失败: {exc}"
-            self._save(domain)
-            return XhsWorkDomainAction(
-                kind="publishing",
-                title="发布失败",
-                data={"error": str(exc)},
+        if not session_id:
+            return self._commit_publish_transition(
+                domain,
+                mark_xiaohongshu_publish_blocked(
+                    domain,
+                    bottleneck=execution.blocked_reason or "无法打开发布页",
+                    title="打开发布页失败",
+                    data={},
+                ),
             )
-        finally:
-            self._close_session(session_id)
 
+        publish_result = execution.publish_result or {}
         publish_clicked = publish_result.get("publish_clicked", False)
         status = publish_result.get("status", "unknown")
 
-        if publish_clicked:
-            # 发布成功
-            now = datetime.now(timezone.utc)
-            published_entry = {
-                "draft_id": draft.get("draft_id"),
-                "title": draft.get("title"),
-                "published_at": now.isoformat(),
-                "post_url": _PUBLISH_URL,
-            }
-            domain.state.pending_drafts = drafts[1:]
-            domain.state.last_published_at = now
-            domain.state.backlog_count = max(0, domain.state.backlog_count - 1)
-            domain.state.status = XhsWorkStatus.IDLE_REVIEWING
-            domain.state.current_focus = "发布成功，等待补图"
-            self._save(domain)
-            return XhsWorkDomainAction(
-                kind="publishing",
-                title=f"发布成功：{draft.get('title', '')[:20]}",
-                data={"published": published_entry},
+        if requires_manual_review:
+            if status == "awaiting_image_upload" and not browser_image_paths:
+                text_image_result = prepare_xiaohongshu_text_image_cards_for_draft(
+                    draft,
+                    autofill_cards=autofill_xiaohongshu_text_image_cards,
+                )
+                if text_image_result is not None:
+                    review_status = text_image_result.get("status", "missing_editor")
+                    if review_status == "browser_unavailable":
+                        self._close_session(session_id)
+                        return self._commit_publish_transition(
+                            domain,
+                            mark_xiaohongshu_publish_blocked(
+                                domain,
+                                bottleneck="浏览器器官不可用",
+                                title="发布失败",
+                                data={"error": "browser organ unavailable"},
+                            ),
+                        )
+                    self._close_session(session_id)
+                    return self._commit_publish_transition(
+                        domain,
+                        mark_xiaohongshu_text_image_review(
+                            domain,
+                            focus=str(
+                                text_image_result.get("focus")
+                                or "已进入补图阶段，等待图片生成后再继续发布"
+                            ),
+                            status=review_status,
+                            message=text_image_result.get("message", ""),
+                        ),
+                    )
+            review_preparation = evaluate_xiaohongshu_browser_review_preparation(
+                publish_result=publish_result,
+                requested_image_paths=browser_image_paths,
             )
-        else:
-            # 表单填充了但没点到发布按钮（可能是 awaiting_image_upload 或找不到按钮）
-            domain.state.status = XhsWorkStatus.BLOCKED
-            domain.state.current_bottleneck = f"无法点击发布按钮（status={status}）"
-            self._save(domain)
-            return XhsWorkDomainAction(
-                kind="publishing",
+            if review_preparation.ready:
+                return self._commit_publish_transition(
+                    domain,
+                    mark_xiaohongshu_publish_review_ready(
+                        domain,
+                        draft=draft,
+                        session_id=session_id,
+                        focus=review_preparation.focus,
+                        next_action=review_preparation.next_action,
+                        status=status,
+                        uploaded_image_count=int(publish_result.get("uploaded_image_count", 0) or 0),
+                    ),
+                )
+            self._close_session(session_id)
+            return self._commit_publish_transition(
+                domain,
+                mark_xiaohongshu_publish_blocked(
+                    domain,
+                    bottleneck=review_preparation.blocking_reason or "还没准备到可发布状态",
+                    title="发布前准备失败",
+                    data={"status": status},
+                ),
+            )
+        if publish_clicked:
+            self._close_session(session_id)
+            return self._commit_publish_transition(
+                domain,
+                mark_xiaohongshu_browser_publish_success(
+                    domain,
+                    drafts=drafts,
+                    draft=draft,
+                    post_url=_PUBLISH_URL,
+                    current_focus="已自动补封面并发布成功" if browser_image_paths else "已完成补图并发布成功",
+                ),
+            )
+        self._close_session(session_id)
+        return self._commit_publish_transition(
+            domain,
+            mark_xiaohongshu_publish_blocked(
+                domain,
+                bottleneck=f"无法点击发布按钮（status={status}）",
                 title="发布未完成",
                 data={"status": status},
-            )
+            ),
+        )
+
+    def _do_idle_reviewing(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction | None:
+        drafts = domain.state.pending_drafts
+        if not drafts:
+            domain.state.status = XhsWorkStatus.IDLE
+            domain.state.current_focus = "补图阶段已结束"
+            domain.state.current_bottleneck = ""
+            domain.state.next_recommended_action = ""
+            self._save(domain)
+            return XhsWorkDomainAction(kind="idle", title="补图完成", data={})
+
+        domain.state.status = XhsWorkStatus.PUBLISHING
+        domain.state.current_focus = "检测到仍有待发草稿，继续完成发布"
+        domain.state.current_bottleneck = ""
+        domain.state.next_recommended_action = ""
+        self._save(domain)
+        return self._do_publishing(domain)
+
+    def _do_reviewing(self, _domain: XhsWorkDomainState) -> XhsWorkDomainAction | None:
+        return None
+
+    def _publish_draft_via_mcp(self, draft: dict):
+        title = str(draft.get("title", "")).strip()
+        body = str(draft.get("body", "")).strip()
+        if not title or not body:
+            return None
+        raw_image_paths = draft.get("image_paths")
+        image_paths = raw_image_paths if isinstance(raw_image_paths, list) else []
+        return publish_xiaohongshu_image_post_via_mcp(
+            title=title,
+            body=body,
+            image_paths=image_paths,
+            client=self.mcp_client,
+        )
 
     def _close_session(self, session_id: str) -> None:
         if session_id == _CREATOR_HOME_SESSION_ID:
@@ -423,51 +537,15 @@ class XhsWorkDomainEngine:
         except Exception:
             pass
 
-    def _find_publish_button_sync(self) -> str | None:
-        """用 browser.find_publish_button capability 找到发布按钮 selector。"""
-        try:
-            open_result = call_browser_capability(
-                "browser.open",
-                {"url": _PUBLISH_URL, "headless": False},
-                timeout_seconds=15.0,
-            )
-        except (BrowserOrganUnavailable, BrowserCapabilityError):
-            return None
-
-        session_id = open_result.get("session_id")
+    def _clear_review_session(self, domain: XhsWorkDomainState) -> None:
+        session_id = domain.state.review_session_id.strip()
         if not session_id:
-            return None
+            return
+        domain.state.review_session_id = ""
+        self._close_session(session_id)
 
-        try:
-            result = call_browser_capability(
-                "browser.find_publish_button",
-                {"session_id": session_id},
-                timeout_seconds=10.0,
-            )
-            if result.get("found"):
-                return result.get("selector")
-            return None
-        except (BrowserCapabilityError, BrowserOrganUnavailable):
-            return None
-        finally:
-            self._close_session(session_id)
-
-    def _node_is_publish_button(self, node: dict) -> bool:
-        role = node.get("role", "").lower()
-        name = node.get("name", "")
-        if role == "button" and name and ("发布" in name or "submit" in name.lower()):
-            return True
-        if role in ("button", "link") and name and "发布" in name:
-            return True
-        return False
-
-    def _selector_for_node(self, node: dict) -> str:
-        # 优先用 aria-label 或 name
-        name = node.get("name", "")
-        if name:
-            return f"button:has-text('{name}')"
-        # 降级到 tag + index（不太可靠）
-        return "button[type='submit']"
+    def _requires_manual_publish_review(self, domain: XhsWorkDomainState) -> bool:
+        return domain.profile.publish_mode == XhsPublishMode.REVIEW_BEFORE_PUBLISH
 
     def _build_draft_prompt(self, opportunity: dict) -> str:
         title = opportunity.get("title", "")

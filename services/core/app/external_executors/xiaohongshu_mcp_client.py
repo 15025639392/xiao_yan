@@ -45,8 +45,11 @@ class XiaohongshuMcpClient:
         self._timeout_seconds = max(timeout_seconds, 3.0)
         self._http_client = http_client
 
+    def can_publish(self) -> bool:
+        return self._enabled and bool(self._endpoint)
+
     def publish_image_post(self, *, title: str, content: str, images: list[str]) -> XiaohongshuMcpPublishResult:
-        if not self._enabled or not self._endpoint:
+        if not self.can_publish():
             raise XiaohongshuMcpClientDisabledError("xiaohongshu mcp publisher is disabled")
 
         payload = {

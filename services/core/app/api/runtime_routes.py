@@ -18,6 +18,7 @@ from app.domain.models import (
     BrowserSessionState,
     BrowserSessionStatus,
     XhsWorkDomainState,
+    XhsPublishMode,
     XhsWorkStatus,
 )
 from app.llm.schemas import ChatHistoryMessage, ChatHistoryResponse
@@ -62,6 +63,7 @@ class XhsWorkDomainUpdateRequest(BaseModel):
     target_audience: str | None = None
     expression_style: str | None = None
     scouting_interval_hours: float | None = None
+    publish_mode: str | None = None
     auto_publish_selector: str | None = None
     north_star: str | None = None
     weekly_goals: list[str] | None = None
@@ -228,6 +230,7 @@ def build_runtime_router() -> APIRouter:
                 "target_audience": domain.profile.target_audience,
                 "expression_style": domain.profile.expression_style,
                 "scouting_interval_hours": domain.profile.scouting_interval_hours,
+                "publish_mode": domain.profile.publish_mode.value,
                 "auto_publish_selector": domain.profile.auto_publish_selector,
             },
             "state": {
@@ -243,6 +246,7 @@ def build_runtime_router() -> APIRouter:
                 ),
                 "current_bottleneck": domain.state.current_bottleneck,
                 "next_recommended_action": domain.state.next_recommended_action,
+                "review_session_id": domain.state.review_session_id,
                 "pending_drafts": domain.state.pending_drafts,
                 "published_history": domain.state.published_history,
             },
@@ -265,6 +269,8 @@ def build_runtime_router() -> APIRouter:
 
         if update_req.status is not None:
             domain.state.status = XhsWorkStatus(update_req.status)
+            if domain.state.status != XhsWorkStatus.REVIEWING:
+                domain.state.review_session_id = ""
         if update_req.current_focus is not None:
             domain.state.current_focus = update_req.current_focus
         if update_req.backlog_count is not None:
@@ -287,6 +293,8 @@ def build_runtime_router() -> APIRouter:
             domain.profile.expression_style = update_req.expression_style
         if update_req.scouting_interval_hours is not None:
             domain.profile.scouting_interval_hours = update_req.scouting_interval_hours
+        if update_req.publish_mode is not None:
+            domain.profile.publish_mode = XhsPublishMode(update_req.publish_mode)
         if update_req.auto_publish_selector is not None:
             domain.profile.auto_publish_selector = update_req.auto_publish_selector
         if update_req.north_star is not None:

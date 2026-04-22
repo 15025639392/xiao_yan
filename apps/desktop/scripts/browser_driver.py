@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from browser_driver_runtime import launch_browser_organ_persistent_context
 from browser_driver_profile import ensure_browser_organ_chrome_running, resolve_browser_cdp_endpoint
 from browser_driver_scripts import build_fill_script
 
@@ -50,9 +51,10 @@ class DriverDaemon:
         self._seq = 0
         self._worker_thread: threading.Thread | None = None
         self._running = True
-        # Persistent browser reuse via CDP (avoids losing cookies on restart)
+        # Prefer reusing browser state instead of cold-booting a fresh session each time.
         self._cdp_browser = None  # type: ignore
         self._cdp_context = None  # type: ignore
+        self._persistent_context = None  # type: ignore
 
     def _run_worker(self) -> None:
         """Single thread for all Playwright operations."""
@@ -147,6 +149,12 @@ class DriverDaemon:
                     session.context.close()
             except Exception:
                 pass
+        if self._persistent_context is not None:
+            try:
+                self._persistent_context.close()
+            except Exception:
+                pass
+            self._persistent_context = None
         self.sessions.clear()
         return {"ok": True}
 
@@ -188,6 +196,54 @@ class DriverDaemon:
                     pass
                 self._cdp_browser = None
                 self._cdp_context = None
+
+        if self._persistent_context is not None:
+            try:
+                page = self._prepare_page(self._persistent_context, url)
+                self._activate_page(page, url, wait_until=wait_until, activate=activate)
+                self.sessions[session_id] = BrowserSession(session_id, None, self._persistent_context, page)
+                return {
+                    "session_id": session_id,
+                    "url": url,
+                    "resolved_url": page.url,
+                    "title": page.title(),
+                    "status": "active",
+                    "opened_at": now_iso(),
+                }
+            except Exception:
+                try:
+                    self._persistent_context.close()
+                except Exception:
+                    pass
+                self._persistent_context = None
+
+        try:
+            persistent_context = launch_browser_organ_persistent_context(pw, headless=headless)
+        except Exception:
+            persistent_context = None
+
+        if persistent_context is not None:
+            self._persistent_context = persistent_context
+            page = self._prepare_page(persistent_context, url)
+            try:
+                self._activate_page(page, url, wait_until=wait_until, activate=activate)
+            except Exception as exc:
+                try:
+                    persistent_context.close()
+                except Exception:
+                    pass
+                self._persistent_context = None
+                raise RuntimeError(f"navigation failed: {exc}")
+
+            self.sessions[session_id] = BrowserSession(session_id, None, persistent_context, page)
+            return {
+                "session_id": session_id,
+                "url": url,
+                "resolved_url": page.url,
+                "title": page.title(),
+                "status": "active",
+                "opened_at": now_iso(),
+            }
 
         ensure_browser_organ_chrome_running()
         cdp_browser = self._try_connect_existing_chrome(pw)
@@ -581,9 +637,20 @@ class DriverDaemon:
         title = args.get("title", "")
         body = args.get("body", "")
         publish_selector = args.get("publish_selector", "")
+        image_paths = args.get("image_paths", [])
 
         session = self._resolve_session(session_id)
         page = session.page
+
+        uploaded_image_count = 0
+        upload_error = None
+        if isinstance(image_paths, list) and image_paths:
+            try:
+                uploaded_image_count = self._set_publish_images(page, image_paths)
+                if uploaded_image_count > 0:
+                    page.wait_for_timeout(800)
+            except Exception as exc:
+                upload_error = str(exc)
 
         # Fill the form first
         script = build_fill_script(title=title, body=body)
@@ -606,7 +673,30 @@ class DriverDaemon:
             "status": fill_result.get("status", "unknown"),
             "publish_clicked": clicked,
             "click_error": click_error,
+            "uploaded_image_count": uploaded_image_count,
+            "upload_error": upload_error,
         }
+
+    def _set_publish_images(self, page, image_paths: list[str]) -> int:
+        normalized = [str(item).strip() for item in image_paths if str(item).strip()]
+        if not normalized:
+            return 0
+
+        file_inputs = page.query_selector_all("input[type='file']")
+        if not file_inputs:
+            raise ValueError("publish page has no file input")
+
+        last_error = None
+        for file_input in file_inputs:
+            try:
+                file_input.set_input_files(normalized)
+                return len(normalized)
+            except Exception as exc:
+                last_error = exc
+                continue
+        if last_error is not None:
+            raise last_error
+        return 0
 
     # ── find_publish_button ─────────────────────────────────────────────────
 
