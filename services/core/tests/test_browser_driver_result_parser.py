@@ -33,6 +33,18 @@ def _load_browser_driver_module():
     return module
 
 
+def _load_browser_driver_scripts_module():
+    scripts_dir = Path(__file__).resolve().parents[3] / "apps" / "desktop" / "scripts"
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    spec = importlib.util.spec_from_file_location("browser_driver_scripts", scripts_dir / "browser_driver_scripts.py")
+    if spec is None or spec.loader is None:
+        raise AssertionError("failed to load browser_driver_scripts")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_parse_evaluate_result_accepts_dict():
     module = _load_module()
 
@@ -115,3 +127,13 @@ def test_cmd_publish_accepts_json_string_fill_result():
     assert result["filled_body"] is False
     assert "error" not in result
     assert page.evaluate_calls >= 3
+
+
+def test_build_fill_script_preserves_multiline_body_paragraphs():
+    module = _load_browser_driver_scripts_module()
+
+    script = module.build_fill_script(title="标题", body="第一段\n\n第二段\n第三行")
+
+    assert "createParagraphNodes" in script
+    assert 'setEditableValue(bodyField, payload.body, { multiline: true })' in script
+    assert 'inputType: multiline ? "insertParagraph" : "insertText"' in script

@@ -48,17 +48,49 @@ def _build_fill_script(*, title: str, body: str) -> str:
     element.dispatchEvent(new Event("input", {{ bubbles: true }}));
     element.dispatchEvent(new Event("change", {{ bubbles: true }}));
   }};
-  const setEditableValue = (element, value) => {{
+  const createParagraphNodes = (value) => {{
+    const fragment = document.createDocumentFragment();
+    const blocks = value.split(/\\n\\s*\\n/);
+    blocks.forEach((block) => {{
+      const paragraph = document.createElement("p");
+      const lines = block.split("\\n");
+      lines.forEach((line, index) => {{
+        if (index > 0) {{
+          paragraph.appendChild(document.createElement("br"));
+        }}
+        if (line) {{
+          paragraph.appendChild(document.createTextNode(line));
+        }}
+      }});
+      if (!paragraph.childNodes.length) {{
+        paragraph.appendChild(document.createElement("br"));
+      }}
+      fragment.appendChild(paragraph);
+    }});
+    if (!fragment.childNodes.length) {{
+      const paragraph = document.createElement("p");
+      paragraph.appendChild(document.createElement("br"));
+      fragment.appendChild(paragraph);
+    }}
+    return fragment;
+  }};
+  const setEditableValue = (element, value, options = {{}}) => {{
+    const multiline = Boolean(options.multiline);
     element.focus();
     element.innerHTML = "";
-    const lines = value.split("\\n");
-    lines.forEach((line, index) => {{
-      if (index > 0) {{
-        element.appendChild(document.createElement("br"));
-      }}
-      element.appendChild(document.createTextNode(line));
+    if (multiline) {{
+      element.appendChild(createParagraphNodes(value));
+    }} else {{
+      element.appendChild(document.createTextNode(value));
+    }}
+    Array.from(element.querySelectorAll(".is-empty, .is-editor-empty")).forEach((node) => {{
+      node.classList.remove("is-empty");
+      node.classList.remove("is-editor-empty");
     }});
-    element.dispatchEvent(new InputEvent("input", {{ bubbles: true, data: value, inputType: "insertText" }}));
+    element.dispatchEvent(new InputEvent("beforeinput", {{ bubbles: true, data: value, inputType: multiline ? "insertParagraph" : "insertText" }}));
+    element.dispatchEvent(new InputEvent("input", {{ bubbles: true, data: value, inputType: multiline ? "insertParagraph" : "insertText" }}));
+    element.dispatchEvent(new Event("change", {{ bubbles: true }}));
+    element.dispatchEvent(new Event("blur", {{ bubbles: true }}));
   }};
   const candidates = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"]'))
     .filter(visible);
@@ -86,7 +118,7 @@ def _build_fill_script(*, title: str, body: str) -> str:
   let filledBody = false;
   if (titleField) {{
     if (titleField.getAttribute("contenteditable") === "true" || titleField.getAttribute("role") === "textbox") {{
-      setEditableValue(titleField, payload.title);
+      setEditableValue(titleField, payload.title, {{ multiline: false }});
     }} else {{
       setInputValue(titleField, payload.title);
     }}
@@ -94,7 +126,7 @@ def _build_fill_script(*, title: str, body: str) -> str:
   }}
   if (bodyField) {{
     if (bodyField.getAttribute("contenteditable") === "true" || bodyField.getAttribute("role") === "textbox") {{
-      setEditableValue(bodyField, payload.body);
+      setEditableValue(bodyField, payload.body, {{ multiline: true }});
     }} else {{
       setInputValue(bodyField, payload.body);
     }}
