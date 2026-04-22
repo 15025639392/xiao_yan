@@ -60,6 +60,21 @@ export type XiaohongshuPublishViaMcpResponse = {
   platform_post_id?: string | null;
 };
 
+export type XiaohongshuCoverPreviewRequest = {
+  title: string;
+  body: string;
+  template_name?: string | null;
+};
+
+export type XiaohongshuCoverPreviewResponse = {
+  title: string;
+  body: string;
+  template_name: string;
+  available_templates: string[];
+  image_path: string;
+  image_data_url: string;
+};
+
 export type XiaohongshuTextImageAutofillRequest = {
   cards: string[];
   trigger_generate?: boolean;
@@ -160,6 +175,12 @@ export function publishXiaohongshuViaMcp(
   body: XiaohongshuPublishViaMcpRequest,
 ): Promise<XiaohongshuPublishViaMcpResponse> {
   return post<XiaohongshuPublishViaMcpResponse>("/platform-adapters/xiaohongshu/publish-via-mcp", body);
+}
+
+export function previewXiaohongshuCover(
+  body: XiaohongshuCoverPreviewRequest,
+): Promise<XiaohongshuCoverPreviewResponse> {
+  return post<XiaohongshuCoverPreviewResponse>("/platform-adapters/xiaohongshu/cover-preview", body);
 }
 
 export function autofillXiaohongshuTextImageCards(

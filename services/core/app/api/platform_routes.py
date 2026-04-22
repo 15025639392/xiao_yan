@@ -18,6 +18,7 @@ from app.api.platform_handlers_core import (
     handle_platform_preview_with_chat,
 )
 from app.api.xiaohongshu_handlers import (
+    handle_xiaohongshu_cover_preview,
     handle_xiaohongshu_creator_home_capture,
     handle_xiaohongshu_creator_home_preview,
     handle_xiaohongshu_import_file_preview,
@@ -35,6 +36,8 @@ from app.api.platform_route_models import (
     PlatformInternalPreviewRequest,
     PlatformListResponse,
     PlatformPreviewRequest,
+    XiaohongshuCoverPreviewRequest,
+    XiaohongshuCoverPreviewResponse,
     XiaohongshuCreatorHomeCaptureResponse,
     XiaohongshuCreatorHomePreviewRequest,
     XiaohongshuImportFilePreviewRequest,
@@ -232,6 +235,18 @@ def build_platform_router() -> APIRouter:
             body=request_body.body,
             image_paths=request_body.image_paths,
             client=client,
+            service=service,
+        )
+
+    @router.post("/xiaohongshu/cover-preview", response_model=XiaohongshuCoverPreviewResponse)
+    def preview_xiaohongshu_cover_route(
+        request_body: XiaohongshuCoverPreviewRequest,
+        service: PlatformAdapterService = Depends(get_platform_adapter_service),
+    ) -> XiaohongshuCoverPreviewResponse:
+        return handle_xiaohongshu_cover_preview(
+            title=request_body.title,
+            body=request_body.body,
+            template_name=request_body.template_name,
             service=service,
         )
 

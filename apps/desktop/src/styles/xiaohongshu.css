@@ -390,6 +390,26 @@
   justify-content: flex-end;
 }
 
+.xhs-pending-item__cover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.xhs-pending-item__cover-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.xhs-pending-item__cover-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* ===== Config Panel ===== */
 .xhs-config-panel {
   background: var(--bg-secondary);
@@ -436,4 +456,18 @@
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.xhs-cover-preview {
+  margin-top: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.xhs-cover-preview__image {
+  display: block;
+  width: 100%;
+  height: auto;
 }

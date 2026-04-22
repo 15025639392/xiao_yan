@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 import { fetchXhsWorkDomain, updateXhsWorkDomain, wakeLifecycle, type XhsWorkDomainResponse } from "../lib/api";
+import { previewXiaohongshuCover, type XiaohongshuCoverPreviewResponse } from "../lib/apiXiaohongshu";
 import { browserOpen } from "../lib/tauri/fsAccess";
 import { Button } from "../components/ui";
 import { XiaohongshuConfigPanel } from "./XiaohongshuConfigPanel";
@@ -11,6 +12,11 @@ type XiaohongshuPageProps = {
 };
 
 const XHS_LOGIN_SESSION_ID = "xhs-login";
+const COVER_TEMPLATE_LABELS: Record<string, string> = {
+  warm_story: "故事感",
+  expert_clean: "专业感",
+  bold_hook: "强钩子",
+};
 
 const STATUS_LABELS: Record<string, string> = {
   idle: "空闲",
@@ -89,6 +95,9 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
   const [saving, setSaving] = useState(false);
   const [openingLogin, setOpeningLogin] = useState(false);
   const [draftEdits, setDraftEdits] = useState<Record<string, { title: string; body: string }>>({});
+  const [draftCoverPreviews, setDraftCoverPreviews] = useState<Record<string, XiaohongshuCoverPreviewResponse | null>>({});
+  const [draftCoverLoading, setDraftCoverLoading] = useState<Record<string, boolean>>({});
+  const [draftCoverErrors, setDraftCoverErrors] = useState<Record<string, string>>({});
 
   const loadDomain = useCallback(() => {
     fetchXhsWorkDomain()
@@ -133,6 +142,9 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     const serverDrafts = workDomain?.state?.pending_drafts || [];
     if (serverDrafts.length === 0) {
       setDraftEdits({});
+      setDraftCoverPreviews({});
+      setDraftCoverLoading({});
+      setDraftCoverErrors({});
       return;
     }
     setDraftEdits((prev) => {
@@ -148,6 +160,69 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
       return next;
     });
   }, [workDomain?.state?.pending_drafts]);
+
+  useEffect(() => {
+    const serverDrafts = workDomain?.state?.pending_drafts || [];
+    if (serverDrafts.length === 0) return;
+    let cancelled = false;
+
+    async function ensureCoverPreviews() {
+      for (const draft of serverDrafts) {
+        if (draftCoverPreviews[draft.draft_id]) continue;
+        const title = draftEdits[draft.draft_id]?.title ?? draft.title;
+        const body = draftEdits[draft.draft_id]?.body ?? draft.body;
+        if (!title.trim() || !body.trim()) continue;
+        setDraftCoverLoading((prev) => ({ ...prev, [draft.draft_id]: true }));
+        setDraftCoverErrors((prev) => ({ ...prev, [draft.draft_id]: "" }));
+        try {
+          const result = await previewXiaohongshuCover({ title, body });
+          if (!cancelled) {
+            setDraftCoverPreviews((prev) => ({ ...prev, [draft.draft_id]: result }));
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setDraftCoverErrors((prev) => ({
+              ...prev,
+              [draft.draft_id]: error instanceof Error ? error.message : "生成封面预览失败",
+            }));
+          }
+        } finally {
+          if (!cancelled) {
+            setDraftCoverLoading((prev) => ({ ...prev, [draft.draft_id]: false }));
+          }
+        }
+      }
+    }
+
+    void ensureCoverPreviews();
+    return () => {
+      cancelled = true;
+    };
+  }, [workDomain?.state?.pending_drafts, draftEdits, draftCoverPreviews]);
+
+  async function handleSwitchDraftCoverTemplate(draftId: string, templateName: string) {
+    const pendingDraft = workDomain?.state?.pending_drafts?.find((item) => item.draft_id === draftId);
+    if (!pendingDraft) return;
+    const title = draftEdits[draftId]?.title ?? pendingDraft.title;
+    const body = draftEdits[draftId]?.body ?? pendingDraft.body;
+    setDraftCoverLoading((prev) => ({ ...prev, [draftId]: true }));
+    setDraftCoverErrors((prev) => ({ ...prev, [draftId]: "" }));
+    try {
+      const result = await previewXiaohongshuCover({
+        title,
+        body,
+        template_name: templateName,
+      });
+      setDraftCoverPreviews((prev) => ({ ...prev, [draftId]: result }));
+    } catch (error) {
+      setDraftCoverErrors((prev) => ({
+        ...prev,
+        [draftId]: error instanceof Error ? error.message : "切换封面模板失败",
+      }));
+    } finally {
+      setDraftCoverLoading((prev) => ({ ...prev, [draftId]: false }));
+    }
+  }
 
   async function handleSaveConfig() {
     setSaving(true);
@@ -405,6 +480,36 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
                       }))
                     }
                   />
+                  <div className="xhs-pending-item__cover">
+                    <div className="xhs-pending-item__cover-header">
+                      <strong>封面模板预览</strong>
+                      <div className="xhs-pending-item__cover-actions">
+                        {(draftCoverPreviews[draft.draft_id]?.available_templates || Object.keys(COVER_TEMPLATE_LABELS)).map((templateName) => (
+                          <Button
+                            key={templateName}
+                            variant={draftCoverPreviews[draft.draft_id]?.template_name === templateName ? "default" : "secondary"}
+                            onClick={() => {
+                              void handleSwitchDraftCoverTemplate(draft.draft_id, templateName);
+                            }}
+                            disabled={draftCoverLoading[draft.draft_id]}
+                          >
+                            {COVER_TEMPLATE_LABELS[templateName] || templateName}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    {draftCoverLoading[draft.draft_id] ? <p className="xhs-history-empty">封面预览生成中...</p> : null}
+                    {draftCoverErrors[draft.draft_id] ? <p className="xhs-history-empty">{draftCoverErrors[draft.draft_id]}</p> : null}
+                    {draftCoverPreviews[draft.draft_id] ? (
+                      <div className="xhs-cover-preview">
+                        <img
+                          className="xhs-cover-preview__image"
+                          src={draftCoverPreviews[draft.draft_id]?.image_data_url}
+                          alt={`待发布草稿封面-${draftCoverPreviews[draft.draft_id]?.template_name}`}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                   <div className="xhs-pending-item__actions">
                     <span className="xhs-pending-item__status">{draft.status}</span>
                     <Button variant="outline" onClick={handleSaveDrafts}>

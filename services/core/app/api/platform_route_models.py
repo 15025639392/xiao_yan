@@ -193,6 +193,21 @@ class XiaohongshuPublishViaMcpResponse(BaseModel):
     platform_post_id: str | None = None
 
 
+class XiaohongshuCoverPreviewRequest(BaseModel):
+    title: str
+    body: str
+    template_name: str | None = None
+
+
+class XiaohongshuCoverPreviewResponse(BaseModel):
+    title: str
+    body: str
+    template_name: str
+    available_templates: list[str] = Field(default_factory=list)
+    image_path: str
+    image_data_url: str
+
+
 class XiaohongshuTextImageAutofillRequest(BaseModel):
     cards: list[str] = Field(default_factory=list)
     trigger_generate: bool = True

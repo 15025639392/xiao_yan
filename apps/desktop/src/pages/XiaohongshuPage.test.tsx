@@ -1,4 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { vi } from "vitest";
+
+import { previewXiaohongshuCover } from "../lib/api";
 
 import { XiaohongshuPage } from "./XiaohongshuPage";
 import {
@@ -13,6 +16,21 @@ import {
 } from "./xiaohongshuPageHelpers";
 import { XiaohongshuDraftCard } from "./XiaohongshuDraftCard";
 import { buildLeadReplyPlan } from "./xiaohongshuLeadReplyHelpers";
+
+vi.mock("../lib/api", async () => {
+  const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
+  return {
+    ...actual,
+    previewXiaohongshuCover: vi.fn().mockResolvedValue({
+      title: "测试标题",
+      body: "测试正文",
+      template_name: "expert_clean",
+      available_templates: ["warm_story", "expert_clean", "bold_hook"],
+      image_path: "/tmp/xhs-cover-preview.png",
+      image_data_url: "data:image/png;base64,preview-default",
+    }),
+  };
+});
 
 test("extractCreatorHomeSnapshot pulls topics and activities from raw creator-home text", () => {
   const result = extractCreatorHomeSnapshot(`
@@ -344,12 +362,14 @@ test("draft card switches text-image button label after manual expand is needed"
         platform_post_id: "note_123",
       }}
       autofilling={false}
+      autoPublishing={false}
       publishViaMcpPending={false}
       textImageFilling={false}
       leadCapturing={false}
       imagePathsText={"/tmp/cover.png\n/tmp/page2.png"}
       onExpand={() => {}}
       onAutofill={() => {}}
+      onAutoPublish={() => {}}
       onImagePathsChange={() => {}}
       onPublishViaMcp={() => {}}
       onTextImageAutofill={() => {}}
@@ -381,6 +401,73 @@ test("draft card switches text-image button label after manual expand is needed"
   expect(screen.getByText(/https:\/\/www\.xiaohongshu\.com\/explore\/test/)).toBeInTheDocument();
 });
 
+test("draft card can preview and switch xiaohongshu cover templates", async () => {
+  const previewMock = vi.mocked(previewXiaohongshuCover);
+  previewMock.mockResolvedValueOnce({
+    title: "测试标题",
+    body: "测试正文",
+    template_name: "expert_clean",
+    available_templates: ["warm_story", "expert_clean", "bold_hook"],
+    image_path: "/tmp/xhs-cover-preview.png",
+    image_data_url: "data:image/png;base64,preview-default",
+  });
+  previewMock.mockResolvedValueOnce({
+    title: "测试标题",
+    body: "测试正文",
+    template_name: "bold_hook",
+    available_templates: ["warm_story", "expert_clean", "bold_hook"],
+    image_path: "/tmp/xhs-cover-preview-bold.png",
+    image_data_url: "data:image/png;base64,preview-bold",
+  });
+
+  render(
+    <XiaohongshuDraftCard
+      item={{
+        output_text: "先借平台给的流量入口起步。",
+        platform_result: {
+          event: { event_type: "post", text: "推荐话题：#早餐吃什么" },
+          actions: [{ action_type: "note_draft_candidate", title: "小红书笔记草稿", content: "先借平台给的流量入口起步。" }],
+        },
+      }}
+      index={0}
+      draft={{
+        title: "测试标题",
+        body: "测试正文",
+        fullText: "标题：测试标题\n\n正文：\n测试正文",
+      }}
+      autofilling={false}
+      autoPublishing={false}
+      publishViaMcpPending={false}
+      textImageFilling={false}
+      leadCapturing={false}
+      imagePathsText=""
+      onExpand={() => {}}
+      onAutofill={() => {}}
+      onAutoPublish={() => {}}
+      onImagePathsChange={() => {}}
+      onPublishViaMcp={() => {}}
+      onTextImageAutofill={() => {}}
+      onLeadCapture={() => {}}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByAltText("封面预览-expert_clean")).toBeInTheDocument();
+  });
+  expect(previewMock).toHaveBeenCalledWith({ title: "测试标题", body: "测试正文" });
+
+  fireEvent.click(screen.getByRole("button", { name: "强钩子" }));
+
+  await waitFor(() => {
+    expect(screen.getByAltText("封面预览-bold_hook")).toBeInTheDocument();
+  });
+  expect(previewMock).toHaveBeenLastCalledWith({
+    title: "测试标题",
+    body: "测试正文",
+    template_name: "bold_hook",
+  });
+});
+
 test("lead queue can advance a suggestion from pending to dm follow-up", () => {
   render(
     <XiaohongshuDraftCard
@@ -405,12 +492,14 @@ test("lead queue can advance a suggestion from pending to dm follow-up", () => {
         fullText: "高意向评论优先回复：\n1. 优先级 P1：马上承接并尽快导到微信",
       }}
       autofilling={false}
+      autoPublishing={false}
       publishViaMcpPending={false}
       textImageFilling={false}
       leadCapturing={false}
       imagePathsText=""
       onExpand={() => {}}
       onAutofill={() => {}}
+      onAutoPublish={() => {}}
       onImagePathsChange={() => {}}
       onPublishViaMcp={() => {}}
       onTextImageAutofill={() => {}}
@@ -451,12 +540,14 @@ test("lead queue note can raise qualification hint when budget and schedule appe
         fullText: "高意向评论优先回复：\n1. 优先级 P2：优先回复并继续追问",
       }}
       autofilling={false}
+      autoPublishing={false}
       publishViaMcpPending={false}
       textImageFilling={false}
       leadCapturing={false}
       imagePathsText=""
       onExpand={() => {}}
       onAutofill={() => {}}
+      onAutoPublish={() => {}}
       onImagePathsChange={() => {}}
       onPublishViaMcp={() => {}}
       onTextImageAutofill={() => {}}

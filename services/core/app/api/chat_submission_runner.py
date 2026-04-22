@@ -25,6 +25,30 @@ from app.llm.gateway import ChatGateway
 from app.llm.schemas import ChatMessage, ChatReasoningState, ChatSubmissionResult
 from app.mcp import ChatMcpCallRegistry
 
+
+def _create_submission_result(
+    *,
+    response_id: str | None,
+    assistant_message_id: str,
+    request_key: str | None,
+) -> ChatSubmissionResult:
+    return ChatSubmissionResult(
+        response_id=response_id,
+        assistant_message_id=assistant_message_id,
+        request_key=request_key,
+    )
+
+
+def _extract_http_error_detail(exception: httpx.HTTPStatusError) -> str:
+    detail = str(exception)
+    try:
+        if exception.response is not None:
+            detail = exception.response.text or detail
+    except Exception:  # noqa: BLE001
+        pass
+    return detail
+
+
 def run_chat_submission(
     *,
     request: Request,
@@ -81,12 +105,7 @@ def run_chat_submission(
                 events.publish_failed(error_message)
                 raise HTTPException(status_code=502, detail=error_message)
     except httpx.HTTPStatusError as exception:
-        detail = str(exception)
-        try:
-            if exception.response is not None:
-                detail = exception.response.text or detail
-        except Exception:  # noqa: BLE001
-            pass
+        detail = _extract_http_error_detail(exception)
         events.publish_failed(detail)
         raise HTTPException(status_code=502, detail=detail) from exception
     except HTTPException:
@@ -102,7 +121,7 @@ def run_chat_submission(
     )
 
     return (
-        ChatSubmissionResult(
+        _create_submission_result(
             response_id=response_id,
             assistant_message_id=assistant_message_id,
             request_key=request_key,
@@ -126,20 +145,28 @@ def run_chat_submission_with_tools(
     reasoning_session_id: str | None = None,
     reasoning_state: ChatReasoningState | None = None,
 ) -> tuple[ChatSubmissionResult, str]:
-    create_with_tools = getattr(gateway, "create_response_with_tools", None)
-    if not callable(create_with_tools):
+    def _run_plain_submission(
+        *,
+        override_instructions: str | None = None,
+        suppress_started_event: bool = False,
+    ) -> tuple[ChatSubmissionResult, str]:
         return run_chat_submission(
             request=request,
             gateway=gateway,
             chat_messages=chat_messages,
-            instructions=instructions,
+            instructions=override_instructions or instructions,
             assistant_message_id=assistant_message_id,
             initial_output_text=initial_output_text,
+            suppress_started_event=suppress_started_event,
             memory_references=memory_references,
             request_key=request_key,
             reasoning_session_id=reasoning_session_id,
             reasoning_state=reasoning_state,
         )
+
+    create_with_tools = getattr(gateway, "create_response_with_tools", None)
+    if not callable(create_with_tools):
+        return _run_plain_submission()
 
     hub = getattr(request.app.state, "realtime_hub", None)
     response_id: str | None = None
@@ -169,18 +196,9 @@ def run_chat_submission_with_tools(
             "请不要再调用任何工具，直接基于已有上下文回答；"
             "如信息不足请明确说明不足点。"
         )
-        return run_chat_submission(
-            request=request,
-            gateway=gateway,
-            chat_messages=chat_messages,
-            instructions=fallback_instructions,
-            assistant_message_id=assistant_message_id,
-            initial_output_text=initial_output_text,
+        return _run_plain_submission(
+            override_instructions=fallback_instructions,
             suppress_started_event=events.started,
-            memory_references=memory_references,
-            request_key=request_key,
-            reasoning_session_id=reasoning_session_id,
-            reasoning_state=reasoning_state,
         )
 
     try:
@@ -197,18 +215,7 @@ def run_chat_submission_with_tools(
                     and len(accumulated_input) == len(chat_messages)
                     and should_fallback_to_stream_without_tools(exception)
                 ):
-                    return run_chat_submission(
-                        request=request,
-                        gateway=gateway,
-                        chat_messages=chat_messages,
-                        instructions=instructions,
-                        assistant_message_id=assistant_message_id,
-                        initial_output_text=initial_output_text,
-                        memory_references=memory_references,
-                        request_key=request_key,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_state,
-                    )
+                    return _run_plain_submission()
                 raise
             if not isinstance(response_payload, dict):
                 raise HTTPException(status_code=502, detail="invalid gateway response payload")
@@ -224,18 +231,7 @@ def run_chat_submission_with_tools(
                     output_text = merge_chat_stream_content(initial_output_text, output_text)
 
                 if not output_text and not events.started and len(accumulated_input) == len(chat_messages):
-                    return run_chat_submission(
-                        request=request,
-                        gateway=gateway,
-                        chat_messages=chat_messages,
-                        instructions=instructions,
-                        assistant_message_id=assistant_message_id,
-                        initial_output_text=initial_output_text,
-                        memory_references=memory_references,
-                        request_key=request_key,
-                        reasoning_session_id=reasoning_session_id,
-                        reasoning_state=reasoning_state,
-                    )
+                    return _run_plain_submission()
 
                 if not output_text:
                     raise HTTPException(status_code=502, detail="empty gateway response payload")
@@ -248,7 +244,7 @@ def run_chat_submission_with_tools(
                 )
 
                 return (
-                    ChatSubmissionResult(
+                    _create_submission_result(
                         response_id=response_id,
                         assistant_message_id=assistant_message_id,
                         request_key=request_key,
@@ -297,12 +293,7 @@ def run_chat_submission_with_tools(
         events.publish_failed("tool execution failed", only_if_started=True)
         raise
     except httpx.HTTPStatusError as exception:
-        detail = str(exception)
-        try:
-            if exception.response is not None:
-                detail = exception.response.text or detail
-        except Exception:  # noqa: BLE001
-            pass
+        detail = _extract_http_error_detail(exception)
         events.publish_failed(f"{payload_hint}; {detail}", only_if_started=True)
         raise HTTPException(status_code=502, detail=f"{payload_hint}; {detail}") from exception
     except Exception as exception:  # noqa: BLE001

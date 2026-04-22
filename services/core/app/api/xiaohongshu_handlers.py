@@ -20,6 +20,7 @@ from app.runtime import StateStore
 from app.runtime_ext.runtime_config import RuntimeConfig
 from app.usecases.platform_preview import PlatformChatPreviewResult, run_platform_chat_preview
 from app.usecases.xiaohongshu_creator_home_capture import capture_xiaohongshu_creator_home_via_browser_organ
+from app.usecases.xiaohongshu_cover_preview import preview_xiaohongshu_cover_image
 from app.usecases.xiaohongshu_creator_home_preview import build_xiaohongshu_creator_home_preview_items
 from app.usecases.xiaohongshu_generate_publish_draft import run_xiaohongshu_creator_home_publish_draft
 from app.usecases.xiaohongshu_import_batch import load_xiaohongshu_import_batch
@@ -185,6 +186,23 @@ def handle_xiaohongshu_publish_via_mcp(
             body=body,
             image_paths=image_paths,
             client=client,
+        ),
+    )
+
+
+def handle_xiaohongshu_cover_preview(
+    *,
+    title: str,
+    body: str,
+    template_name: str | None,
+    service: PlatformAdapterService,
+):
+    return _wrap_platform_errors(
+        service,
+        lambda: preview_xiaohongshu_cover_image(
+            title=title,
+            body=body,
+            template_name=template_name,
         ),
     )
 

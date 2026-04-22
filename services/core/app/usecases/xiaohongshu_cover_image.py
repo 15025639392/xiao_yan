@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.usecases.xiaohongshu_cover_layout import resolve_xiaohongshu_cover_layout
+from app.usecases.xiaohongshu_cover_templates import XiaohongshuCoverTemplate
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -17,20 +19,6 @@ _CANVAS_HEIGHT = 1660
 _DEFAULT_BADGE = "小晏数字人全自动运营"
 _DEFAULT_SUBTITLE = "先发一条能接住咨询的内容。"
 _OUTPUT_DIR = Path.home() / ".xiao_yan" / "xhs-covers"
-
-# Palette — mirrors the JS canvas version
-_COLOR_BG_TOP = (255, 249, 244)       # #fff9f4
-_COLOR_BG_MID = (255, 233, 223)       # #ffe9df
-_COLOR_BG_BOT = (255, 212, 197)       # #ffd4c5
-_COLOR_CARD = (255, 253, 249, 246)    # rgba(255,253,249,0.96)
-_COLOR_ACCENT = (255, 106, 77)        # #ff6a4d
-_COLOR_BADGE_BG = (255, 106, 77, 30)  # rgba(255,106,77,0.12)
-_COLOR_CIRCLE_BG = (255, 102, 72, 36) # rgba(255,102,72,0.14)
-_COLOR_BADGE_TINT = (255, 123, 99, 28) # rgba(255,123,99,0.35)
-_COLOR_TEXT_DARK = (28, 27, 26)       # #1c1b1a
-_COLOR_TEXT_MUTED = (89, 76, 72)      # #594c48
-_COLOR_BADGE_TEXT = (255, 255, 255)   # white
-
 _CHINESE_FONTS = [
     "/System/Library/Fonts/STHeiti Medium.ttc",
     "/System/Library/Fonts/STHeiti Light.ttc",
@@ -58,12 +46,11 @@ class GeneratedXiaohongshuCoverImage:
     title: str
     subtitle: str
     badge: str
+    template_name: str
 
 
-def _load_font(size: float, bold: bool = False) -> ImageFont.FreeTypeFont:
-    """Load the best available Chinese-compatible font at the given size."""
-    candidates = _CHINESE_FONTS
-    for path in candidates:
+def _load_font(size: float) -> ImageFont.FreeTypeFont:
+    for path in _CHINESE_FONTS:
         if os.path.exists(path):
             try:
                 return ImageFont.truetype(path, int(size))
@@ -73,7 +60,6 @@ def _load_font(size: float, bold: bool = False) -> ImageFont.FreeTypeFont:
 
 
 def _gradient_rect(draw: ImageDraw.Draw, x0: int, y0: int, x1: int, y1: int, color_top, color_bot) -> None:
-    """Draw a vertical gradient rectangle."""
     steps = max(1, y1 - y0)
     for y in range(y0, y1):
         t = (y - y0) / steps
@@ -83,45 +69,37 @@ def _gradient_rect(draw: ImageDraw.Draw, x0: int, y0: int, x1: int, y1: int, col
         draw.line([(x0, y), (x1 - 1, y)], fill=(r, g, b))
 
 
-def _rounded_rect(draw: ImageDraw.Draw, xy: tuple, radius: int, fill, outline=None) -> None:
-    """Draw a rounded rectangle."""
+def _rounded_rect(draw: ImageDraw.Draw, xy: tuple[int, int, int, int], radius: int, fill, outline=None) -> None:
     x0, y0, x1, y1 = xy
-    draw.rectangle([x0 + radius, y0, x1 - radius, y1], fill=fill)
-    draw.rectangle([x0, y0 + radius, x1, y1 - radius], fill=fill)
-    draw.pieslice([x0, y0, x0 + 2 * radius, y0 + 2 * radius], 180, 270, fill=fill)
-    draw.pieslice([x1 - 2 * radius, y0, x1, y0 + 2 * radius], 270, 360, fill=fill)
-    draw.pieslice([x0, y1 - 2 * radius, x0 + 2 * radius, y1], 90, 180, fill=fill)
-    draw.pieslice([x1 - 2 * radius, y1 - 2 * radius, x1, y1], 0, 90, fill=fill)
-    if outline is not None:
-        draw.rectangle([x0 + radius, y0, x1 - radius, y0 + 1], fill=outline)
-        draw.rectangle([x0 + radius, y1 - 1, x1 - radius, y1], fill=outline)
-        draw.rectangle([x0, y0 + radius, x0 + 1, y1 - radius], fill=outline)
-        draw.rectangle([x1 - 1, y0 + radius, x1, y1 - radius], fill=outline)
+    draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill, outline=outline, width=2 if outline else 0)
 
 
-def _wrap_text(draw: ImageDraw.Draw, text: str, font: ImageFont.FreeTypeFont, max_width: int, max_lines: int) -> list[str]:
-    """Wrap text into lines that fit within max_width."""
+def _wrap_text(
+    draw: ImageDraw.Draw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    max_width: int,
+    max_lines: int,
+) -> list[str]:
     if not text:
         return []
-    chars = list(text)
-    lines = []
+    lines: list[str] = []
     current = ""
-    for char in chars:
+    for char in text:
         test = current + char
         if draw.textlength(test, font=font) <= max_width:
             current = test
+            continue
+        if current:
+            lines.append(current)
+            current = char
         else:
-            if current:
-                lines.append(current)
-                current = char
-            else:
-                lines.append(char)
-            if len(lines) >= max_lines:
-                break
+            lines.append(char)
+        if len(lines) >= max_lines:
+            break
     if current and len(lines) < max_lines:
         lines.append(current)
-    # Truncate last line if too long
-    if lines and draw.textlength(lines[-1] + "...", font=font) > max_width:
+    if lines and draw.textlength(lines[-1] + "…", font=font) > max_width:
         while lines[-1] and draw.textlength(lines[-1] + "…", font=font) > max_width:
             lines[-1] = lines[-1][:-1]
         lines[-1] = lines[-1].rstrip(" ，、。；")
@@ -130,19 +108,42 @@ def _wrap_text(draw: ImageDraw.Draw, text: str, font: ImageFont.FreeTypeFont, ma
     return lines
 
 
-def _derive_subtitle(body: str) -> str:
-    """Extract first non-empty paragraph as subtitle."""
-    if not body:
-        return _DEFAULT_SUBTITLE
-    import re
-    segments = [s.strip() for s in re.split(r"\n\s*\n|\n", body) if s.strip()]
-    candidate = segments[0] if segments else body.strip()
-    normalized = re.sub(r"\s+", " ", candidate).strip(" ，、。；…")
-    if not normalized:
-        return _DEFAULT_SUBTITLE
-    if len(normalized) <= 28:
-        return normalized
-    return normalized[:27].rstrip(" ，、。；") + "…"
+def _draw_decorations(draw: ImageDraw.Draw, template: XiaohongshuCoverTemplate) -> None:
+    if template.decoration_mode == "warm_story":
+        _rounded_rect(draw, (74, 76, 434, 224), 52, template.accent_soft)
+        draw.ellipse([884, 118, 1104, 338], fill=(255, 255, 255))
+        _rounded_rect(draw, (920, 1010, 1112, 1202), 54, template.accent_soft)
+        draw.ellipse([900, 372, 1196, 668], fill=template.accent_soft)
+        return
+    if template.decoration_mode == "expert_clean":
+        draw.line([(94, 146), (1148, 146)], fill=template.accent_soft, width=4)
+        draw.line([(1120, 146), (1120, 300)], fill=template.accent, width=10)
+        draw.line([(122, 380), (122, 1260)], fill=template.accent_soft, width=14)
+        _rounded_rect(draw, (964, 1094, 1112, 1236), 34, template.accent_soft)
+        return
+    if template.decoration_mode == "bold_hook":
+        draw.polygon([(0, 0), (410, 0), (220, 320), (0, 240)], fill=template.accent_soft)
+        draw.polygon([(942, 0), (_CANVAS_WIDTH, 0), (_CANVAS_WIDTH, 420), (1038, 300)], fill=template.accent)
+        draw.rounded_rectangle([86, 1240, 1158, 1296], radius=28, fill=template.accent_soft)
+        draw.rounded_rectangle([86, 1308, 690, 1336], radius=14, fill=template.accent)
+
+
+def _draw_badge(draw: ImageDraw.Draw, template: XiaohongshuCoverTemplate, badge: str) -> None:
+    badge_font = _load_font(template.badge_font_size)
+    badge_x0, badge_y0 = template.badge_origin
+    badge_width = int(draw.textlength(badge, font=badge_font)) + template.badge_padding_x * 2
+    _rounded_rect(
+        draw,
+        (badge_x0, badge_y0, badge_x0 + badge_width, badge_y0 + template.badge_height),
+        template.badge_height // 2,
+        template.badge_fill,
+    )
+    draw.text(
+        (badge_x0 + template.badge_padding_x, badge_y0 + (template.badge_height - template.badge_font_size) // 2 - 2),
+        badge,
+        font=badge_font,
+        fill=template.badge_text,
+    )
 
 
 def generate_xiaohongshu_cover_image(
@@ -151,94 +152,93 @@ def generate_xiaohongshu_cover_image(
     body: str,
     badge: str = _DEFAULT_BADGE,
     output_dir: str | None = None,
+    template_name: str | None = None,
 ) -> GeneratedXiaohongshuCoverImage:
-    """Generate a Xiaohongshu cover image locally using PIL.
-
-    No browser dependency. Draws a peach-gradient card with title,
-    subtitle, badge, and decorative elements.
-    """
     if Image is None:
-        raise XiaohongshuCoverImageUnavailableError(
-            "PIL is not installed. Install with: pip install Pillow"
-        )
+        raise XiaohongshuCoverImageUnavailableError("PIL is not installed. Install with: pip install Pillow")
 
     normalized_title = title.strip()
     normalized_badge = badge.strip() or _DEFAULT_BADGE
     if not normalized_title:
         raise ValueError("cover title cannot be blank")
 
-    subtitle = _derive_subtitle(body.strip())
-
+    layout = resolve_xiaohongshu_cover_layout(
+        title=normalized_title,
+        body=body.strip(),
+        default_subtitle=_DEFAULT_SUBTITLE,
+        template_name=template_name,
+    )
     target_dir = Path(output_dir.strip()) if output_dir and output_dir.strip() else _OUTPUT_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
     output_path = target_dir / f"xhs-cover-{uuid.uuid4().hex[:12]}.png"
 
     try:
-        # ── Canvas ──────────────────────────────────────────────────────────
-        img = Image.new("RGB", (_CANVAS_WIDTH, _CANVAS_HEIGHT), _COLOR_BG_TOP)
+        img = Image.new("RGB", (_CANVAS_WIDTH, _CANVAS_HEIGHT), layout.template.bg_top)
         draw = ImageDraw.Draw(img)
-
-        # Gradient background
-        _gradient_rect(draw, 0, 0, _CANVAS_WIDTH, _CANVAS_HEIGHT, _COLOR_BG_TOP, _COLOR_BG_BOT)
-
-        # ── Decorative shapes ──────────────────────────────────────────────
-        # Top-left blob
-        _rounded_rect(draw, (74, 76, 434, 224), 52, _COLOR_BADGE_BG)
-        # Top-right circle
-        draw.ellipse([884, 118, 1104, 338], fill=(255, 255, 255, 88))  # semi-transparent white
-        # Bottom-right blob
-        _rounded_rect(draw, (920, 1010, 1112, 1202), 54, _COLOR_BADGE_BG)
-        # Main card
-        _rounded_rect(draw, (72, 248, 1170, 1428), 64, _COLOR_CARD)
-        # Accent circle (top right, inside card area)
-        draw.ellipse([900, 372, 1196, 668], fill=_COLOR_CIRCLE_BG)
-
-        # ── Badge ───────────────────────────────────────────────────────────
-        badge_font = _load_font(34, bold=True)
-        badge_w = int(draw.textlength(normalized_badge, font=badge_font)) + 40
-        badge_h = 86
-        badge_x0 = 102
-        badge_y0 = 112
-        _rounded_rect(draw, (badge_x0, badge_y0, badge_x0 + badge_w, badge_y0 + badge_h), 42, _COLOR_ACCENT)
-        draw.text(
-            (badge_x0 + 20, badge_y0 + 23),
-            normalized_badge,
-            font=badge_font,
-            fill=_COLOR_BADGE_TEXT,
+        _gradient_rect(draw, 0, 0, _CANVAS_WIDTH, _CANVAS_HEIGHT, layout.template.bg_top, layout.template.bg_bottom)
+        _draw_decorations(draw, layout.template)
+        _rounded_rect(
+            draw,
+            layout.template.card_rect,
+            layout.template.card_radius,
+            layout.template.card_fill,
+            outline=layout.template.card_outline,
         )
+        _draw_badge(draw, layout.template, normalized_badge)
 
-        # ── Title ──────────────────────────────────────────────────────────
-        title_font = _load_font(104, bold=True)
-        title_lines = _wrap_text(draw, normalized_title, title_font, 910, 3)
-        y = 340
-        for line in title_lines:
-            draw.text((118, y), line, font=title_font, fill=_COLOR_TEXT_DARK)
-            y += 132
+        title_font = _load_font(layout.template.title_font_size)
+        title_lines = _wrap_text(
+            draw,
+            normalized_title,
+            title_font,
+            layout.template.title_max_width,
+            layout.template.title_max_lines,
+        )
+        title_height = max(1, len(title_lines)) * layout.template.title_line_height
+        title_y = layout.template.title_anchor_y - title_height // 2
+        for index, line in enumerate(title_lines):
+            draw.text(
+                (layout.template.title_x, title_y + index * layout.template.title_line_height),
+                line,
+                font=title_font,
+                fill=layout.template.title_color,
+            )
 
-        # ── Subtitle ───────────────────────────────────────────────────────
-        subtitle_font = _load_font(44, bold=False)
-        subtitle_lines = _wrap_text(draw, subtitle, subtitle_font, 860, 2)
-        y = 870
-        for line in subtitle_lines:
-            draw.text((122, y), line, font=subtitle_font, fill=_COLOR_TEXT_MUTED)
-            y += 64
+        if layout.show_subtitle:
+            subtitle_font = _load_font(layout.template.subtitle_font_size)
+            subtitle_lines = _wrap_text(
+                draw,
+                layout.subtitle,
+                subtitle_font,
+                layout.template.subtitle_max_width,
+                layout.template.subtitle_max_lines,
+            )
+            subtitle_y = title_y + title_height + layout.template.subtitle_gap
+            for index, line in enumerate(subtitle_lines):
+                draw.text(
+                    (layout.template.subtitle_x, subtitle_y + index * layout.template.subtitle_line_height),
+                    line,
+                    font=subtitle_font,
+                    fill=layout.template.subtitle_color,
+                )
 
-        # ── Bottom accent bars ─────────────────────────────────────────────
-        draw.rounded_rectangle([122, 1174, 586, 1186], radius=6, fill=_COLOR_ACCENT)
-        draw.rounded_rectangle([122, 1220, 334, 1232], radius=6, fill=_COLOR_BADGE_TINT)
-
-        # ── Footer note ────────────────────────────────────────────────────
-        note_font = _load_font(34, bold=False)
-        draw.text((122, 1378), "模板封面已自动生成，可直接作为小红书封面", font=note_font, fill=_COLOR_TEXT_MUTED)
+        if layout.template.footer_text.strip():
+            footer_font = _load_font(layout.template.footer_font_size)
+            draw.text(
+                (layout.template.footer_x, layout.template.footer_y),
+                layout.template.footer_text,
+                font=footer_font,
+                fill=layout.template.footer_color,
+            )
 
         img.save(output_path, "PNG")
         return GeneratedXiaohongshuCoverImage(
             path=str(output_path),
             title=normalized_title,
-            subtitle=subtitle,
+            subtitle=layout.subtitle,
             badge=normalized_badge,
+            template_name=layout.template.name,
         )
-
     except XiaohongshuCoverImageUnavailableError:
         raise
     except Exception as exc:

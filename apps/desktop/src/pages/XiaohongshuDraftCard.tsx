@@ -1,10 +1,14 @@
+import { useEffect, useState } from "react";
+
 import type {
+  XiaohongshuCoverPreviewResponse,
   XiaohongshuCreatorPreviewItem,
   XiaohongshuLeadCaptureResponse,
   XiaohongshuPublishAutofillResponse,
   XiaohongshuPublishViaMcpResponse,
   XiaohongshuTextImageAutofillResponse,
 } from "../lib/api";
+import { previewXiaohongshuCover } from "../lib/api";
 import { Button } from "../components/ui";
 import type {
   XiaohongshuImageCardDraft,
@@ -44,6 +48,12 @@ type XiaohongshuDraftCardProps = {
   onLeadCapture: () => void;
 };
 
+const TEMPLATE_LABELS: Record<string, string> = {
+  warm_story: "故事感",
+  expert_clean: "专业感",
+  bold_hook: "强钩子",
+};
+
 export function XiaohongshuDraftCard({
   item,
   index,
@@ -71,6 +81,9 @@ export function XiaohongshuDraftCard({
   onTextImageAutofill,
   onLeadCapture,
 }: XiaohongshuDraftCardProps) {
+  const [coverPreview, setCoverPreview] = useState<XiaohongshuCoverPreviewResponse | null>(null);
+  const [coverPreviewLoading, setCoverPreviewLoading] = useState(false);
+  const [coverPreviewError, setCoverPreviewError] = useState("");
   const action = item.platform_result.actions[0];
   const lead = item.lead_assessment;
   const textImageButtonLabel =
@@ -79,6 +92,59 @@ export function XiaohongshuDraftCard({
       : textImageFilling
         ? "生成图卡中..."
         : "生成3张图卡并尝试填入";
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadInitialPreview() {
+      if (!draft) {
+        setCoverPreview(null);
+        setCoverPreviewError("");
+        return;
+      }
+      setCoverPreviewLoading(true);
+      setCoverPreviewError("");
+      try {
+        const result = await previewXiaohongshuCover({
+          title: draft.title,
+          body: draft.body,
+        });
+        if (!cancelled) {
+          setCoverPreview(result);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCoverPreview(null);
+          setCoverPreviewError(error instanceof Error ? error.message : "生成封面预览失败");
+        }
+      } finally {
+        if (!cancelled) {
+          setCoverPreviewLoading(false);
+        }
+      }
+    }
+    void loadInitialPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [draft?.title, draft?.body]);
+
+  async function handleSwitchCoverTemplate(templateName: string) {
+    if (!draft) return;
+    setCoverPreviewLoading(true);
+    setCoverPreviewError("");
+    try {
+      const result = await previewXiaohongshuCover({
+        title: draft.title,
+        body: draft.body,
+        template_name: templateName,
+      });
+      setCoverPreview(result);
+    } catch (error) {
+      setCoverPreviewError(error instanceof Error ? error.message : "切换封面模板失败");
+    } finally {
+      setCoverPreviewLoading(false);
+    }
+  }
 
   return (
     <article key={`${item.platform_result.event.text.slice(0, 20)}-${index}`} className="xhs-result-card">
@@ -121,6 +187,35 @@ export function XiaohongshuDraftCard({
             </Button>
           </div>
           <pre>{draft.fullText}</pre>
+          <div className="xhs-result-card__expanded">
+            <strong>封面模板预览</strong>
+            <div className="xhs-result-card__actions">
+              {(coverPreview?.available_templates || Object.keys(TEMPLATE_LABELS)).map((templateName) => (
+                <Button
+                  key={templateName}
+                  type="button"
+                  variant={coverPreview?.template_name === templateName ? "default" : "secondary"}
+                  disabled={coverPreviewLoading}
+                  onClick={() => {
+                    void handleSwitchCoverTemplate(templateName);
+                  }}
+                >
+                  {TEMPLATE_LABELS[templateName] || templateName}
+                </Button>
+              ))}
+            </div>
+            {coverPreviewLoading ? <p className="xhs-result-card__hint">封面预览生成中...</p> : null}
+            {coverPreviewError ? <p className="xhs-result-card__hint">封面预览：{coverPreviewError}</p> : null}
+            {coverPreview ? (
+              <div className="xhs-cover-preview">
+                <img
+                  className="xhs-cover-preview__image"
+                  src={coverPreview.image_data_url}
+                  alt={`封面预览-${coverPreview.template_name}`}
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {imageDraft ? (
