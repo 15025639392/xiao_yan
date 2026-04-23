@@ -6,7 +6,7 @@ from app.main import app
 from app.runtime import StateStore
 
 
-def test_patch_xhs_work_domain_from_reviewing_to_idle_consumes_draft():
+def test_patch_xhs_work_domain_from_reviewing_to_idle_keeps_drafts():
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
@@ -47,53 +47,6 @@ def test_patch_xhs_work_domain_from_reviewing_to_idle_consumes_draft():
         assert domain is not None
         assert domain.state.status == XhsWorkStatus.IDLE
         assert domain.state.review_session_id == ""
-        assert len(domain.state.pending_drafts) == 0
-        assert len(domain.state.published_history) == 1
-        assert domain.state.published_history[0]["title"] == "高颜值巧克力怎么发"
-        assert domain.state.backlog_count == 0
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_patch_xhs_work_domain_idle_does_not_consume_drafts_when_not_reviewing():
-    state_store = StateStore(
-        BeingState(
-            mode=WakeMode.AWAKE,
-            focus_mode=FocusMode.AUTONOMY,
-            xhs_work_domain=XhsWorkDomainState(
-                state={
-                    "status": XhsWorkStatus.BLOCKED,
-                    "pending_drafts": [
-                        {
-                            "draft_id": "draft-1",
-                            "title": "高颜值巧克力怎么发",
-                            "body": "先拍开箱第一眼。",
-                            "status": "pending",
-                        }
-                    ],
-                    "backlog_count": 1,
-                    "published_history": [],
-                }
-            ),
-        )
-    )
-
-    def override_state_store():
-        return state_store
-
-    app.dependency_overrides[get_state_store] = override_state_store
-
-    try:
-        client = TestClient(app)
-        response = client.patch(
-            "/xhs-work-domain",
-            json={"status": "idle"},
-        )
-
-        assert response.status_code == 200
-        domain = state_store.get().xhs_work_domain
-        assert domain is not None
-        assert domain.state.status == XhsWorkStatus.IDLE
         assert len(domain.state.pending_drafts) == 1
         assert len(domain.state.published_history) == 0
         assert domain.state.backlog_count == 1

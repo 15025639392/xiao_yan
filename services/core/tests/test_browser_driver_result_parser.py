@@ -134,6 +134,286 @@ def test_build_fill_script_preserves_multiline_body_paragraphs():
 
     script = module.build_fill_script(title="标题", body="第一段\n\n第二段\n第三行")
 
-    assert "createParagraphNodes" in script
-    assert 'setEditableValue(bodyField, payload.body, { multiline: true })' in script
-    assert 'inputType: multiline ? "insertParagraph" : "insertText"' in script
+    assert 'data-xiaoyan-fill-target", "body"' in script
+    assert "const resolveTypingTarget" in script
+    assert "createParagraphNodes" not in script
+    assert 'element.innerText = normalizedValue;' not in script
+    assert 'setEditableValue(bodyField, payload.body, { multiline: true })' not in script
+    assert "const setEditableValue" not in script
+    assert 'bodyTarget.tagName.toLowerCase() === "textarea"' in script
+
+
+def test_cmd_publish_rewrites_multiline_body_with_keyboard():
+    browser_driver = _load_browser_driver_module()
+    daemon = browser_driver.DriverDaemon("/tmp/browser-driver-test.sock")
+
+    class DummyKeyboard:
+        def __init__(self):
+            self.events: list[tuple[str, str]] = []
+
+        def press(self, key):
+            self.events.append(("press", key))
+
+        def insert_text(self, text):
+            self.events.append(("insert_text", text))
+
+    class DummyElement:
+        def __init__(self, keyboard):
+            self.keyboard = keyboard
+            self.clicked = False
+
+        def click(self, timeout=5000):
+            _ = timeout
+            self.clicked = True
+
+        def focus(self):
+            self.clicked = True
+
+        def press(self, key):
+            self.keyboard.events.append(("press", key))
+
+        def type(self, text):
+            self.keyboard.events.append(("type", text))
+
+    class DummyPage:
+        url = "https://creator.xiaohongshu.com/publish/publish"
+
+        def __init__(self):
+            self.evaluate_calls = 0
+            self.keyboard = DummyKeyboard()
+            self.body_element = DummyElement(self.keyboard)
+
+        def is_closed(self):
+            return False
+
+        def inner_text(self, selector, timeout=3000):
+            _ = (selector, timeout)
+            return "发布页"
+
+        def evaluate(self, script, timeout=None):
+            _ = (script, timeout)
+            self.evaluate_calls += 1
+            return '{"status":"missing_fields","filled_title":true,"filled_body":false}'
+
+        def wait_for_timeout(self, ms):
+            _ = ms
+            return None
+
+        def click(self, selector, timeout=10000):
+            _ = (selector, timeout)
+            return None
+
+        def query_selector(self, selector):
+            if selector == '[data-xiaoyan-fill-target="body"]':
+                return self.body_element
+            return None
+
+    page = DummyPage()
+    daemon._resolve_session = lambda session_id: type("Session", (), {"page": page})()
+    browser_driver.build_fill_script = lambda title, body: "fake-script"
+
+    result = daemon._cmd_publish(
+        {
+            "session_id": "test-session",
+            "title": "标题",
+            "body": "第一段\n\n第二段",
+            "publish_selector": "",
+            "image_paths": [],
+        }
+    )
+
+    assert result["status"] == "filled"
+    assert page.body_element.clicked is True
+    assert ("press", "Meta+A") in page.keyboard.events
+    assert ("type", "第一段") in page.keyboard.events
+    assert ("type", "第二段") in page.keyboard.events
+    assert page.keyboard.events.count(("press", "Enter")) >= 2
+
+
+def test_cmd_fill_form_uses_keyboard_for_contenteditable_body():
+    browser_driver = _load_browser_driver_module()
+    daemon = browser_driver.DriverDaemon("/tmp/browser-driver-test.sock")
+
+    class DummyKeyboard:
+        def __init__(self):
+            self.events: list[tuple[str, str]] = []
+
+        def press(self, key):
+            self.events.append(("press", key))
+
+        def insert_text(self, text):
+            self.events.append(("insert_text", text))
+
+    class DummyElement:
+        def __init__(self):
+            self.clicked = False
+
+        def click(self, timeout=5000):
+            _ = timeout
+            self.clicked = True
+
+        def focus(self):
+            self.clicked = True
+
+        def press(self, key):
+            page.keyboard.events.append(("press", key))
+
+        def type(self, text):
+            page.keyboard.events.append(("type", text))
+
+    class DummyPage:
+        def __init__(self):
+            self.keyboard = DummyKeyboard()
+            self.body_element = DummyElement()
+
+        def evaluate(self, script):
+            _ = script
+            return '{"status":"missing_fields","filled_title":true,"filled_body":false}'
+
+        def query_selector(self, selector):
+            if selector == '[data-xiaoyan-fill-target="body"]':
+                return self.body_element
+            return None
+
+    page = DummyPage()
+    daemon._resolve_session = lambda session_id: type("Session", (), {"page": page})()
+    browser_driver.build_fill_script = lambda title, body: "fake-script"
+
+    result = daemon._cmd_fill_form(
+        {
+            "session_id": "test-session",
+            "title": "标题",
+            "body": "第一段\n第二段",
+        }
+    )
+
+    assert result["status"] == "filled"
+    assert result["filled_body"] is True
+    assert ("type", "第一段") in page.keyboard.events
+    assert ("type", "第二段") in page.keyboard.events
+    assert ("press", "Enter") in page.keyboard.events
+
+
+def test_cmd_fill_form_uses_keyboard_for_single_paragraph_body():
+    browser_driver = _load_browser_driver_module()
+    daemon = browser_driver.DriverDaemon("/tmp/browser-driver-test.sock")
+
+    class DummyKeyboard:
+        def __init__(self):
+            self.events: list[tuple[str, str]] = []
+
+        def press(self, key):
+            self.events.append(("press", key))
+
+        def type(self, text):
+            self.events.append(("type", text))
+
+        def insert_text(self, text):
+            self.events.append(("insert_text", text))
+
+    class DummyElement:
+        def click(self, timeout=5000):
+            _ = timeout
+
+        def focus(self):
+            return None
+
+        def press(self, key):
+            page.keyboard.events.append(("press", key))
+
+        def type(self, text):
+            page.keyboard.events.append(("type", text))
+
+    class DummyPage:
+        def __init__(self):
+            self.keyboard = DummyKeyboard()
+            self.body_element = DummyElement()
+
+        def evaluate(self, script):
+            _ = script
+            return '{"status":"missing_fields","filled_title":true,"filled_body":false}'
+
+        def query_selector(self, selector):
+            if selector == '[data-xiaoyan-fill-target="body"]':
+                return self.body_element
+            return None
+
+    page = DummyPage()
+    daemon._resolve_session = lambda session_id: type("Session", (), {"page": page})()
+    browser_driver.build_fill_script = lambda title, body: "fake-script"
+
+    result = daemon._cmd_fill_form(
+        {
+            "session_id": "test-session",
+            "title": "标题",
+            "body": "只有一段正文",
+        }
+    )
+
+    assert result["status"] == "filled"
+    assert result["filled_body"] is True
+    assert ("type", "只有一段正文") in page.keyboard.events
+
+
+def test_cmd_fill_form_uses_keyboard_for_contenteditable_title():
+    browser_driver = _load_browser_driver_module()
+    daemon = browser_driver.DriverDaemon("/tmp/browser-driver-test.sock")
+
+    class DummyKeyboard:
+        def __init__(self):
+            self.events: list[tuple[str, str]] = []
+
+        def press(self, key):
+            self.events.append(("press", key))
+
+        def type(self, text):
+            self.events.append(("type", text))
+
+        def insert_text(self, text):
+            self.events.append(("insert_text", text))
+
+    class DummyElement:
+        def click(self, timeout=5000):
+            _ = timeout
+
+        def focus(self):
+            return None
+
+        def press(self, key):
+            page.keyboard.events.append(("press", key))
+
+        def type(self, text):
+            page.keyboard.events.append(("type", text))
+
+    class DummyPage:
+        def __init__(self):
+            self.keyboard = DummyKeyboard()
+            self.title_element = DummyElement()
+            self.body_element = DummyElement()
+
+        def evaluate(self, script):
+            _ = script
+            return '{"status":"missing_fields","filled_title":false,"filled_body":false}'
+
+        def query_selector(self, selector):
+            if selector == '[data-xiaoyan-fill-target="title"]':
+                return self.title_element
+            if selector == '[data-xiaoyan-fill-target="body"]':
+                return self.body_element
+            return None
+
+    page = DummyPage()
+    daemon._resolve_session = lambda session_id: type("Session", (), {"page": page})()
+    browser_driver.build_fill_script = lambda title, body: "fake-script"
+
+    result = daemon._cmd_fill_form(
+        {
+            "session_id": "test-session",
+            "title": "就是这个标题",
+            "body": "只有一段正文",
+        }
+    )
+
+    assert result["status"] == "filled"
+    assert result["filled_title"] is True
+    assert ("type", "就是这个标题") in page.keyboard.events

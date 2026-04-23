@@ -39,50 +39,6 @@ def build_fill_script(*, title: str, body: str) -> str:
     element.dispatchEvent(new Event("input", {{ bubbles: true }}));
     element.dispatchEvent(new Event("change", {{ bubbles: true }}));
   }};
-  const createParagraphNodes = (value) => {{
-    const fragment = document.createDocumentFragment();
-    const blocks = value.split(/\\n\\s*\\n/);
-    blocks.forEach((block) => {{
-      const paragraph = document.createElement("p");
-      const lines = block.split("\\n");
-      lines.forEach((line, index) => {{
-        if (index > 0) {{
-          paragraph.appendChild(document.createElement("br"));
-        }}
-        if (line) {{
-          paragraph.appendChild(document.createTextNode(line));
-        }}
-      }});
-      if (!paragraph.childNodes.length) {{
-        paragraph.appendChild(document.createElement("br"));
-      }}
-      fragment.appendChild(paragraph);
-    }});
-    if (!fragment.childNodes.length) {{
-      const paragraph = document.createElement("p");
-      paragraph.appendChild(document.createElement("br"));
-      fragment.appendChild(paragraph);
-    }}
-    return fragment;
-  }};
-  const setEditableValue = (element, value, options = {{}}) => {{
-    const multiline = Boolean(options.multiline);
-    element.focus();
-    element.innerHTML = "";
-    if (multiline) {{
-      element.appendChild(createParagraphNodes(value));
-    }} else {{
-      element.appendChild(document.createTextNode(value));
-    }}
-    Array.from(element.querySelectorAll(".is-empty, .is-editor-empty")).forEach((node) => {{
-      node.classList.remove("is-empty");
-      node.classList.remove("is-editor-empty");
-    }});
-    element.dispatchEvent(new InputEvent("beforeinput", {{ bubbles: true, data: value, inputType: multiline ? "insertParagraph" : "insertText" }}));
-    element.dispatchEvent(new InputEvent("input", {{ bubbles: true, data: value, inputType: multiline ? "insertParagraph" : "insertText" }}));
-    element.dispatchEvent(new Event("change", {{ bubbles: true }}));
-    element.dispatchEvent(new Event("blur", {{ bubbles: true }}));
-  }};
   const candidates = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"]'))
     .filter(visible);
   const isTextboxLike = (element) => {{
@@ -102,6 +58,23 @@ def build_fill_script(*, title: str, body: str) -> str:
       }}
       return extraCheck ? extraCheck(element, text) : false;
     }}) || null;
+  const resolveTypingTarget = (element) => {{
+    if (!element) return null;
+    const tagName = element.tagName.toLowerCase();
+    if (
+      tagName === "input" ||
+      tagName === "textarea" ||
+      element.getAttribute("contenteditable") === "true"
+    ) {{
+      return element;
+    }}
+    const nested = Array.from(element.querySelectorAll('input, textarea, [contenteditable="true"], [role="textbox"]'))
+      .find((candidate) => visible(candidate));
+    return nested || element;
+  }};
+  Array.from(document.querySelectorAll("[data-xiaoyan-fill-target]")).forEach((element) => {{
+    element.removeAttribute("data-xiaoyan-fill-target");
+  }});
   let titleField = findField([/标题/, /title/], (element, text) => {{
     if (!isTextboxLike(element)) return false;
     if (text.includes("正文") || text.includes("内容") || text.includes("描述") || text.includes("caption") || text.includes("desc")) {{
@@ -140,6 +113,14 @@ def build_fill_script(*, title: str, body: str) -> str:
       );
     }}) || null;
   }}
+  const titleTarget = resolveTypingTarget(titleField);
+  const bodyTarget = resolveTypingTarget(bodyField);
+  if (titleTarget) {{
+    titleTarget.setAttribute("data-xiaoyan-fill-target", "title");
+  }}
+  if (bodyTarget) {{
+    bodyTarget.setAttribute("data-xiaoyan-fill-target", "body");
+  }}
   const pageText = document.body.innerText || "";
   const uploadPrompt =
     pageText.includes("上传图片") ||
@@ -148,21 +129,33 @@ def build_fill_script(*, title: str, body: str) -> str:
     pageText.includes("选择文件");
   let filledTitle = false;
   let filledBody = false;
-  if (titleField) {{
-    if (titleField.getAttribute("contenteditable") === "true" || titleField.getAttribute("role") === "textbox") {{
-      setEditableValue(titleField, payload.title, {{ multiline: false }});
+  if (titleTarget) {{
+    if (
+      titleTarget.tagName.toLowerCase() === "input" ||
+      titleTarget.tagName.toLowerCase() === "textarea"
+    ) {{
+      setInputValue(titleTarget, payload.title);
+      filledTitle = true;
+    }} else if (
+      titleTarget.getAttribute("contenteditable") === "true" ||
+      titleTarget.getAttribute("role") === "textbox"
+    ) {{
+      filledTitle = false;
     }} else {{
-      setInputValue(titleField, payload.title);
+      setInputValue(titleTarget, payload.title);
+      filledTitle = true;
     }}
-    filledTitle = true;
   }}
-  if (bodyField) {{
-    if (bodyField.getAttribute("contenteditable") === "true" || bodyField.getAttribute("role") === "textbox") {{
-      setEditableValue(bodyField, payload.body, {{ multiline: true }});
+  if (bodyTarget) {{
+    if (bodyTarget.tagName.toLowerCase() === "textarea") {{
+      setInputValue(bodyTarget, payload.body);
+      filledBody = true;
+    }} else if (bodyTarget.getAttribute("contenteditable") === "true" || bodyTarget.getAttribute("role") === "textbox") {{
+      filledBody = false;
     }} else {{
-      setInputValue(bodyField, payload.body);
+      setInputValue(bodyTarget, payload.body);
+      filledBody = true;
     }}
-    filledBody = true;
   }}
   let status = "missing_fields";
   if (filledTitle && filledBody) {{

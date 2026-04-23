@@ -11,6 +11,7 @@ avoiding cross-thread Playwright API calls.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import socket
@@ -91,7 +92,11 @@ class DriverDaemon:
                     elif action == "evaluate":
                         result = self._cmd_evaluate(args)
                     elif action == "ping":
-                        result = {"status": "ok", "socket_path": self.socket_path}
+                        result = {
+                            "status": "ok",
+                            "socket_path": self.socket_path,
+                            "code_version": browser_driver_code_version(),
+                        }
                     else:
                         result = {}
                 except Exception as exc:
@@ -631,12 +636,117 @@ class DriverDaemon:
                 "filled_body": False,
                 "error": str(exc),
             }
+        if not parsed_result.get("filled_title", False) and self._rewrite_field_with_keyboard(
+            page,
+            field_name="title",
+            text=title,
+            multiline=False,
+        ):
+            parsed_result["filled_title"] = True
+        if not parsed_result.get("filled_body", False) and self._rewrite_field_with_keyboard(
+            page,
+            field_name="body",
+            text=body,
+            multiline=True,
+        ):
+            parsed_result["filled_body"] = True
+        if parsed_result.get("filled_title", False) and parsed_result.get("filled_body", False):
+            parsed_result["status"] = "filled"
         return {
             "session_id": session_id,
             "status": parsed_result.get("status", "unknown"),
             "filled_title": parsed_result.get("filled_title", False),
             "filled_body": parsed_result.get("filled_body", False),
         }
+
+    def _rewrite_field_with_keyboard(
+        self,
+        page,
+        *,
+        field_name: str,
+        text: str,
+        multiline: bool,
+    ) -> bool:
+        normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+        if not normalized.strip():
+            return False
+
+        field = page.query_selector(f'[data-xiaoyan-fill-target="{field_name}"]')
+        if field is None:
+            return False
+
+        try:
+            field.click(timeout=5000)
+        except Exception:
+            try:
+                field.focus()
+            except Exception:
+                return False
+
+        keyboard = getattr(page, "keyboard", None)
+        if keyboard is None:
+            return False
+
+        def _press_key(key: str) -> bool:
+            if hasattr(field, "press"):
+                try:
+                    field.press(key)
+                    return True
+                except Exception:
+                    pass
+            try:
+                keyboard.press(key)
+                return True
+            except Exception:
+                return False
+
+        def _type_text(text: str) -> bool:
+            if not text:
+                return True
+            if hasattr(field, "type"):
+                try:
+                    field.type(text)
+                    return True
+                except Exception:
+                    pass
+            if hasattr(keyboard, "type"):
+                try:
+                    keyboard.type(text)
+                    return True
+                except Exception:
+                    pass
+            try:
+                keyboard.insert_text(text)
+                return True
+            except Exception:
+                return False
+
+        try:
+            selected = _press_key("Meta+A") or _press_key("Control+A")
+        except Exception:
+            selected = False
+        if not selected:
+            return False
+
+        for key in ("Backspace", "Delete"):
+            if _press_key(key):
+                break
+
+        if not multiline:
+            return _type_text(normalized)
+
+        # Preserve each source newline as a visible editor paragraph break.
+        # Xiaohongshu note bodies are usually authored as short stacked lines,
+        # so treating single newlines as soft breaks makes content look cramped.
+        lines = normalized.split("\n")
+        for line_index, line in enumerate(lines):
+            if line and not _type_text(line):
+                return False
+            if line_index < len(lines) - 1:
+                if not _press_key("Enter"):
+                    return False
+
+        return True
 
     # ── click_element ────────────────────────────────────────────────────────
 
@@ -823,6 +933,40 @@ class DriverDaemon:
                     continue
                 fill_result = {}
 
+        title_retyped = False
+        if isinstance(fill_result, dict):
+            try:
+                title_retyped = self._rewrite_field_with_keyboard(
+                    page,
+                    field_name="title",
+                    text=title,
+                    multiline=False,
+                )
+            except Exception as exc:
+                _log(f"keyboard title rewrite skipped: {exc}")
+            else:
+                if title_retyped:
+                    fill_result["filled_title"] = True
+                    _log("rewrote title with keyboard input")
+
+        body_retyped = False
+        if isinstance(fill_result, dict):
+            try:
+                body_retyped = self._rewrite_field_with_keyboard(
+                    page,
+                    field_name="body",
+                    text=body,
+                    multiline=True,
+                )
+            except Exception as exc:
+                _log(f"keyboard body rewrite skipped: {exc}")
+            else:
+                if body_retyped:
+                    fill_result["filled_body"] = True
+                    _log("rewrote body with keyboard paragraph input")
+        if isinstance(fill_result, dict) and fill_result.get("filled_title") and fill_result.get("filled_body"):
+            fill_result["status"] = "filled"
+
         # Click publish button if selector provided
         clicked = False
         click_error: str | None = None
@@ -1002,7 +1146,14 @@ class DriverDaemon:
                 elif action == "evaluate":
                     result = self.cmd_evaluate(args)
                 elif action == "ping":
-                    result = {"ok": True, "result": {"status": "ok", "socket_path": self.socket_path}}
+                    result = {
+                        "ok": True,
+                        "result": {
+                            "status": "ok",
+                            "socket_path": self.socket_path,
+                            "code_version": browser_driver_code_version(),
+                        },
+                    }
                 elif action == "shutdown":
                     result = self.cmd_shutdown(args)
                 else:
@@ -1049,14 +1200,38 @@ def send_to_daemon(socket_path: str, action: str, args: dict) -> dict:
         sock.close()
 
 
-def daemon_is_responsive(socket_path: str) -> bool:
+def browser_driver_code_version() -> str:
+    digest = hashlib.sha1()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    tracked_files = [
+        os.path.abspath(__file__),
+        os.path.join(base_dir, "browser_driver_scripts.py"),
+        os.path.join(base_dir, "browser_driver_result_parser.py"),
+        os.path.join(base_dir, "browser_driver_profile.py"),
+        os.path.join(base_dir, "browser_driver_runtime.py"),
+    ]
+    for path in tracked_files:
+        try:
+            stat = os.stat(path)
+        except OSError:
+            continue
+        digest.update(path.encode("utf-8", errors="replace"))
+        digest.update(str(stat.st_mtime_ns).encode("ascii"))
+        digest.update(str(stat.st_size).encode("ascii"))
+    return digest.hexdigest()
+
+
+def daemon_status(socket_path: str) -> dict[str, Any] | None:
     if not os.path.exists(socket_path):
-        return False
+        return None
     try:
-        send_to_daemon(socket_path, "ping", {})
-        return True
+        return send_to_daemon(socket_path, "ping", {})
     except Exception:
-        return False
+        return None
+
+
+def daemon_is_responsive(socket_path: str) -> bool:
+    return daemon_status(socket_path) is not None
 
 
 def daemon_pid(socket_path: str) -> int | None:
@@ -1079,22 +1254,38 @@ def _is_process_alive(pid: int) -> bool:
 
 
 def ensure_daemon(socket_path: str) -> None:
-    if daemon_is_responsive(socket_path):
+    expected_version = browser_driver_code_version()
+    status = daemon_status(socket_path)
+    if status and status.get("code_version") == expected_version:
         return
+    if status:
+        try:
+            send_to_daemon(socket_path, "shutdown", {})
+            time.sleep(0.2)
+        except Exception:
+            pid = daemon_pid(socket_path)
+            if pid and _is_process_alive(pid):
+                try:
+                    os.kill(pid, 15)
+                except OSError:
+                    pass
 
     pid = daemon_pid(socket_path)
-    if pid and _is_process_alive(pid) and daemon_is_responsive(socket_path):
+    status = daemon_status(socket_path)
+    if pid and _is_process_alive(pid) and status and status.get("code_version") == expected_version:
         return
 
     lock_fd = _acquire_startup_lock(socket_path)
     if lock_fd is None:
         return
     try:
-        if daemon_is_responsive(socket_path):
+        status = daemon_status(socket_path)
+        if status and status.get("code_version") == expected_version:
             return
 
         pid = daemon_pid(socket_path)
-        if pid and _is_process_alive(pid) and daemon_is_responsive(socket_path):
+        status = daemon_status(socket_path)
+        if pid and _is_process_alive(pid) and status and status.get("code_version") == expected_version:
             return
 
         _cleanup_stale_daemon_artifacts(socket_path)
@@ -1112,7 +1303,8 @@ def ensure_daemon(socket_path: str) -> None:
         with open(socket_path + ".pid", "w") as f:
             f.write(str(proc.pid))
         for _ in range(50):
-            if daemon_is_responsive(socket_path):
+            status = daemon_status(socket_path)
+            if status and status.get("code_version") == expected_version:
                 return
             time.sleep(0.1)
         raise RuntimeError(f"browser driver daemon did not become responsive: {socket_path}")

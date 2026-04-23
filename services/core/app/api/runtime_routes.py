@@ -290,22 +290,7 @@ def build_runtime_router() -> APIRouter:
         domain = being_state.xhs_work_domain
 
         if update_req.status is not None:
-            old_status = domain.state.status
             domain.state.status = XhsWorkStatus(update_req.status)
-            if old_status == XhsWorkStatus.REVIEWING and domain.state.status == XhsWorkStatus.IDLE:
-                if domain.state.pending_drafts:
-                    draft = domain.state.pending_drafts[0]
-                    now = datetime.now(timezone.utc)
-                    published_entry = {
-                        "draft_id": draft.get("draft_id"),
-                        "title": draft.get("title"),
-                        "published_at": now.isoformat(),
-                        "post_url": "https://creator.xiaohongshu.com/publish/publish?from=xiao_yan&target=image",
-                    }
-                    domain.state.pending_drafts = domain.state.pending_drafts[1:]
-                    domain.state.published_history = (domain.state.published_history + [published_entry])[-20:]
-                    domain.state.last_published_at = now
-                    domain.state.backlog_count = max(0, domain.state.backlog_count - 1)
             if domain.state.status != XhsWorkStatus.REVIEWING:
                 domain.state.review_session_id = ""
         if update_req.current_focus is not None:

@@ -280,3 +280,51 @@ test("xiaohongshu page saves publish mode from config panel", async () => {
     );
   });
 });
+
+test("xiaohongshu page reviewing state only shows browser publish guidance", async () => {
+  vi.mocked(fetchXhsWorkDomain).mockResolvedValue({
+    available: true,
+    profile: {
+      work_type: "xiaohongshu_operations",
+      account_name: "已登录账号",
+      account_positioning: "数字生命式情绪关系轻科普",
+      target_audience: "需要被理解的人",
+      expression_style: "先接住再解释",
+      scouting_interval_hours: 1,
+      publish_mode: "manual",
+    },
+    state: {
+      status: "reviewing",
+      current_focus: "已上传并填好，停在发布前最后一步",
+      backlog_count: 1,
+      active_task_ids: [],
+      last_published_at: null,
+      last_scouting_at: null,
+      current_bottleneck: "",
+      next_recommended_action: "请检查封面、标题和正文，确认无误后再点击发布。",
+      review_session_id: "review-session",
+      pending_drafts: [
+        {
+          draft_id: "draft-1",
+          title: "测试标题",
+          body: "测试正文",
+          generated_at: "2026-04-23T00:00:00Z",
+          status: "ready_for_review",
+        },
+      ],
+      published_history: [],
+    },
+    goals: {
+      north_star: "",
+      weekly_goals: [],
+      monthly_content_target: 0,
+    },
+  });
+
+  render(<XiaohongshuPage assistantName="小晏" />);
+
+  await waitFor(() => {
+    expect(screen.getByText("小晏已把内容填到发布页，请检查后直接点击浏览器中的「发布」。")).toBeInTheDocument();
+  });
+  expect(screen.queryByRole("button", { name: "已手动发布，结束本轮" })).not.toBeInTheDocument();
+});

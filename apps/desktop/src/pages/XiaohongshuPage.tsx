@@ -268,11 +268,6 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     loadDomain();
   }
 
-  async function handleConfirmManualPublish() {
-    await updateXhsWorkDomain({ status: "idle" });
-    loadDomain();
-  }
-
   async function handleSaveDrafts() {
     if (!workDomain?.state?.pending_drafts) return;
     const updated = workDomain.state.pending_drafts.map((d) => ({
@@ -411,9 +406,6 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
       {status === "reviewing" && (
         <div className="xhs-review-confirm">
           <span>小晏已把内容填到发布页，请检查后直接点击浏览器中的「发布」。</span>
-          <Button variant="default" onClick={handleConfirmManualPublish}>
-            已手动发布，结束本轮
-          </Button>
         </div>
       )}
 
