@@ -118,5 +118,74 @@ def test_generate_draft_from_opportunity_falls_back_without_gateway():
         build_prompt=lambda opportunity: "prompt",
     )
 
-    assert "探索" in outcome.draft["title"]
+    assert outcome.draft["title"] == "巧克力礼盒: 小晏先讲这个瞬间"
     assert "根据最新侦察结果生成的内容草稿" in outcome.draft["body"]
+
+
+def test_generate_draft_from_opportunity_normalizes_long_title_and_body_layout():
+    gateway = type(
+        "Gateway",
+        (),
+        {
+            "create_response": lambda self, messages, instructions: type(
+                "Result",
+                (),
+                {"output_text": "标题：#早餐吃什么 这个话题，小晏会先从这个瞬间讲起，顺便把整件事慢慢解释清楚\n正文：1. 先接住你\n2. 再解释原因\n3. 最后留一句收束"},
+            )(),
+        },
+    )()
+
+    outcome = generate_xiaohongshu_draft_from_opportunity(
+        {"source_kind": "topic", "title": "#早餐吃什么", "summary": "参与人数: 1万"},
+        gateway=gateway,
+        build_prompt=lambda opportunity: "prompt",
+    )
+
+    assert len(outcome.draft["title"]) <= 20
+    assert outcome.draft["body"] == "先接住你\n\n再解释原因\n\n最后留一句收束"
+
+
+def test_generate_draft_from_opportunity_backfills_body_when_model_only_returns_title():
+    gateway = type(
+        "Gateway",
+        (),
+        {
+            "create_response": lambda self, messages, instructions: type(
+                "Result",
+                (),
+                {"output_text": "标题：收到礼物却有点失落"},
+            )(),
+        },
+    )()
+
+    outcome = generate_xiaohongshu_draft_from_opportunity(
+        {"source_kind": "topic", "title": "#高颜值巧克力", "summary": "参与人数: 1万"},
+        gateway=gateway,
+        build_prompt=lambda opportunity: "prompt",
+    )
+
+    assert outcome.draft["title"] == "收到礼物却有点失落"
+    assert "看到 #高颜值巧克力 的时候" in outcome.draft["body"]
+    assert "如果你也有过类似时刻" in outcome.draft["body"]
+
+
+def test_generate_draft_from_opportunity_splits_long_light_science_paragraphs():
+    gateway = type(
+        "Gateway",
+        (),
+        {
+            "create_response": lambda self, messages, instructions: type(
+                "Result",
+                (),
+                {"output_text": "标题：情绪总是晚到一步\n正文：你不是不难过，你只是太习惯先把别人安顿好。等你终于停下来，那些委屈才会一起上来。"},
+            )(),
+        },
+    )()
+
+    outcome = generate_xiaohongshu_draft_from_opportunity(
+        {"source_kind": "topic", "title": "情绪总是晚到一步", "summary": ""},
+        gateway=gateway,
+        build_prompt=lambda opportunity: "prompt",
+    )
+
+    assert outcome.draft["body"] == "你不是不难过，你只是太习惯先把别人安顿好。\n\n等你终于停下来，那些委屈才会一起上来。"

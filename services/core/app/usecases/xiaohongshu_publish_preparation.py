@@ -1,13 +1,35 @@
 from __future__ import annotations
 
-import re
 from typing import Any, Callable
 
 from app.api.tool_capability_bridge import BrowserCapabilityError, BrowserOrganUnavailable
-from app.usecases.xiaohongshu_cover_image import (
-    XiaohongshuCoverImageGenerationError,
-    XiaohongshuCoverImageUnavailableError,
-)
+from app.usecases.xiaohongshu_cover_image import XiaohongshuCoverImageGenerationError, XiaohongshuCoverImageUnavailableError
+from app.usecases.xiaohongshu_content_strategy import normalize_xiaohongshu_body, normalize_xiaohongshu_title
+
+
+def prepare_xiaohongshu_publish_draft(draft: dict[str, Any]) -> dict[str, Any]:
+    normalized_draft = dict(draft)
+    fallback_title = "小晏先讲这个瞬间"
+    title = normalize_xiaohongshu_title(str(draft.get("title", "")), fallback=fallback_title)
+    body = normalize_xiaohongshu_body(str(draft.get("body", "")))
+    if not body:
+        source_title = str(draft.get("opportunity_title", "")).strip() or title
+        body = _build_light_science_publish_body(title=title, source_title=source_title)
+
+    normalized_draft["title"] = title
+    normalized_draft["body"] = body
+    return normalized_draft
+
+
+def _build_light_science_publish_body(*, title: str, source_title: str) -> str:
+    source_label = source_title if source_title.startswith("#") else f"“{source_title}”"
+    return normalize_xiaohongshu_body(
+        (
+            f"看到 {source_label} 的时候，我先想到的不是跟风，而是很多人会在类似瞬间里突然被自己的情绪轻轻撞一下。\n\n"
+            f"{title} 这种感受，很多时候不是你太敏感，而是那件事刚好碰到了你心里还没来得及说清的位置。\n\n"
+            "如果你也有过这种时候，小晏可以继续陪你慢慢把它讲明白。"
+        )
+    )
 
 
 def build_xiaohongshu_browser_publish_image_paths(
@@ -66,77 +88,3 @@ def find_xiaohongshu_publish_button(
         return None
     finally:
         close_session(session_id)
-
-
-def prepare_xiaohongshu_text_image_cards_for_draft(
-    draft: dict[str, Any],
-    *,
-    autofill_cards: Callable[..., Any],
-) -> dict[str, str] | None:
-    cards = _build_text_image_cards_from_draft(draft)
-    if not cards:
-        return None
-
-    try:
-        result = autofill_cards(cards=cards, trigger_generate=True)
-    except (BrowserOrganUnavailable, BrowserCapabilityError):
-        return {
-            "status": "browser_unavailable",
-            "message": "浏览器器官不可用，请稍后再试",
-            "focus": "浏览器器官暂时不可用",
-        }
-    except ValueError:
-        return None
-
-    status = result.status
-    if status == "browser_unavailable":
-        return None
-
-    focus = "已进入补图阶段，等待图片生成后再继续发布"
-    if status == "submitted_generation":
-        focus = f"已填入 {result.filled_cards}/{len(cards)} 张图卡并触发生成图片"
-    elif status == "needs_manual_expand":
-        focus = "已填入部分图卡，请在发布页点一次“再写一张”后继续"
-    elif status == "filled_cards":
-        focus = f"已填入 {result.filled_cards}/{len(cards)} 张图卡，等待继续补图"
-    elif status == "opened_text_to_image":
-        focus = "已打开文字配图入口，等待编辑区出现"
-
-    return {
-        "status": status,
-        "message": result.message,
-        "focus": focus,
-    }
-
-
-def _build_text_image_cards_from_draft(draft: dict[str, Any]) -> list[str]:
-    raw_cards = draft.get("image_cards")
-    if isinstance(raw_cards, list):
-        normalized = [str(item).strip() for item in raw_cards if str(item).strip()]
-        if normalized:
-            return normalized[:3]
-
-    title = str(draft.get("title", "")).strip()
-    body = str(draft.get("body", "")).strip()
-    paragraphs = [
-        segment.strip()
-        for segment in re.split(r"\n\s*\n|\n", body)
-        if segment.strip()
-    ]
-
-    cards: list[str] = []
-    if title:
-        cards.append(title)
-    if paragraphs:
-        cards.append(paragraphs[0])
-        remainder = "\n".join(paragraphs[1:]).strip()
-        if remainder:
-            cards.append(remainder)
-    elif body:
-        cards.append(body)
-
-    deduped: list[str] = []
-    for item in cards:
-        if item and item not in deduped:
-            deduped.append(item)
-    return deduped[:3]

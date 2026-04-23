@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from app.usecases.xiaohongshu_content_strategy import normalize_xiaohongshu_body, normalize_xiaohongshu_title
+
 
 @dataclass(frozen=True)
 class XiaohongshuDraftGenerationOutcome:
@@ -112,15 +114,30 @@ def generate_xiaohongshu_draft_from_opportunity(
             output_text = result.output_text or ""
             generated_title, generated_body = _parse_generated_title_and_body(output_text)
             if not generated_title:
-                generated_title = f"探索 {opportunity['title'][:15]} 的创作灵感"
-                generated_body = output_text[:500] if output_text else f"根据最新侦察结果生成的内容草稿：{opportunity['title']}"
+                generated_title = normalize_xiaohongshu_title(
+                    f"{opportunity['title']}: 小晏先讲这个瞬间",
+                    fallback="小晏先讲这个瞬间",
+                )
+                generated_body = normalize_xiaohongshu_body(
+                    output_text[:500] if output_text else f"根据最新侦察结果生成的内容草稿：{opportunity['title']}"
+                )
+            elif not normalize_xiaohongshu_body(generated_body):
+                generated_body = _build_fallback_draft_body(opportunity)
         except Exception:
             generated_title = ""
             generated_body = ""
 
     if not generated_title:
-        generated_title = f"探索 {opportunity['title'][:20]} 的创作灵感"
-        generated_body = f"根据最新侦察结果生成的内容草稿：{opportunity['title']}。{opportunity.get('summary', '')}"
+        generated_title = normalize_xiaohongshu_title(
+            f"{opportunity['title']}: 小晏先讲这个瞬间",
+            fallback="小晏先讲这个瞬间",
+        )
+        generated_body = normalize_xiaohongshu_body(
+            f"根据最新侦察结果生成的内容草稿：{opportunity['title']}。{opportunity.get('summary', '')}"
+        )
+
+    generated_title = normalize_xiaohongshu_title(generated_title, fallback="小晏先讲这个瞬间")
+    generated_body = normalize_xiaohongshu_body(generated_body)
 
     draft_id = str(uuid.uuid4())[:8]
     draft = {
@@ -139,6 +156,19 @@ def generate_xiaohongshu_draft_from_opportunity(
     )
 
 
+def _build_fallback_draft_body(opportunity: dict[str, str]) -> str:
+    title = str(opportunity.get("title", "")).strip() or "这个瞬间"
+    summary = str(opportunity.get("summary", "")).strip()
+    return normalize_xiaohongshu_body(
+        (
+            f"看到 {title} 的时候，我先想到的不是跟风，而是这背后多半藏着一个很多人说不清的情绪瞬间。\n\n"
+            f"你会被 {title} 触动，往往不是因为事情本身有多大，而是它刚好碰到了你心里那个还没被好好说出来的位置。"
+            f"{f' {summary}' if summary else ''}\n\n"
+            "如果你也有过类似时刻，小晏可以继续陪你慢慢把这件事讲明白。"
+        )
+    )
+
+
 def _parse_generated_title_and_body(output_text: str) -> tuple[str, str]:
     if "标题：" not in output_text:
         return "", ""
@@ -150,5 +180,5 @@ def _parse_generated_title_and_body(output_text: str) -> tuple[str, str]:
     title_and_body = parts[1]
     if "正文：" in title_and_body:
         title_parts = title_and_body.split("正文：", 1)
-        return title_parts[0].strip(), title_parts[1].strip()
-    return title_and_body.strip(), ""
+        return normalize_xiaohongshu_title(title_parts[0].strip()), normalize_xiaohongshu_body(title_parts[1].strip())
+    return normalize_xiaohongshu_title(title_and_body.strip()), ""

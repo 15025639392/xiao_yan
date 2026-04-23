@@ -259,11 +259,6 @@ def build_runtime_router() -> APIRouter:
                     domain.state.blocked_at.isoformat() if domain.state.blocked_at else None
                 ),
                 "blocked_reason": domain.state.blocked_reason,
-                "idle_reviewing_entered_at": (
-                    domain.state.idle_reviewing_entered_at.isoformat()
-                    if domain.state.idle_reviewing_entered_at
-                    else None
-                ),
             },
             "goals": {
                 "north_star": domain.goals.north_star,

@@ -86,7 +86,6 @@ from dataclasses import dataclass, field
 
 class XhsWorkStatus(str, Enum):
     IDLE = "idle"
-    IDLE_REVIEWING = "idle_reviewing"  # published, images pending
     SCOUTING = "scouting"
     DRAFTING = "drafting"
     PUBLISHING = "publishing"
@@ -130,9 +129,9 @@ class XhsWorkPolicy(BaseModel):
 class XhsWorkProfile(BaseModel):
     work_type: str = "xiaohongshu_operations"
     account_name: str = ""
-    account_positioning: str = ""
-    target_audience: str = ""
-    expression_style: str = ""
+    account_positioning: str = "数字生命式情绪关系轻科普"
+    target_audience: str = "在情绪、关系和自我认知里需要被理解与陪伴的年轻用户"
+    expression_style: str = "像小晏一样温和、具体、先接住再解释，少说教，适合低图片依赖的文字卡内容"
     scouting_interval_hours: float = 1.0  # hours between scouting cycles
     publish_mode: XhsPublishMode = XhsPublishMode.REVIEW_BEFORE_PUBLISH
     auto_publish_selector: str = ""  # CSS selector for publish button; empty = auto-discover
@@ -154,7 +153,6 @@ class XhsWorkState(BaseModel):
     last_scouting_data: dict = Field(default_factory=dict)
     blocked_at: datetime | None = None
     blocked_reason: str = ""
-    idle_reviewing_entered_at: datetime | None = None
 
 
 class XhsWorkGoals(BaseModel):
@@ -178,7 +176,6 @@ class XhsTaskKind(str, Enum):
     SCOUTING = "scouting"
     DRAFTING = "drafting"
     PUBLISHING = "publishing"
-    IDLE_REVIEWING = "idle_reviewing"
     REVIEWING = "reviewing"
     BLOCKED = "blocked"
 
@@ -227,7 +224,6 @@ _DEFAULT_XHS_TASK_CHAIN = (
     XhsTaskStep(kind=XhsTaskKind.DRAFTING, label="生成草稿", can_skip=False, max_retries=0),
     XhsTaskStep(kind=XhsTaskKind.PUBLISHING, label="发布", can_skip=False, max_retries=0,
                 retryable_blockages=("发布失败",)),
-    XhsTaskStep(kind=XhsTaskKind.IDLE_REVIEWING, label="补图", can_skip=False, max_retries=0),
     XhsTaskStep(kind=XhsTaskKind.REVIEWING, label="人工确认发布", can_skip=False, max_retries=0),
     XhsTaskStep(kind=XhsTaskKind.BLOCKED, label="阻塞", can_skip=False, max_retries=3,
                 retryable_blockages=(

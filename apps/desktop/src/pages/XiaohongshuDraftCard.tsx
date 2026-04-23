@@ -6,7 +6,6 @@ import type {
   XiaohongshuLeadCaptureResponse,
   XiaohongshuPublishAutofillResponse,
   XiaohongshuPublishViaMcpResponse,
-  XiaohongshuTextImageAutofillResponse,
 } from "../lib/api";
 import { previewXiaohongshuCover } from "../lib/api";
 import { Button } from "../components/ui";
@@ -32,11 +31,9 @@ type XiaohongshuDraftCardProps = {
   leadReplyPlan?: XiaohongshuLeadReplyPlan;
   autofillResult?: XiaohongshuPublishAutofillResponse;
   publishViaMcpResult?: XiaohongshuPublishViaMcpResponse;
-  textImageResult?: XiaohongshuTextImageAutofillResponse;
   autofilling: boolean;
   autoPublishing: boolean;
   publishViaMcpPending: boolean;
-  textImageFilling: boolean;
   leadCapturing: boolean;
   imagePathsText: string;
   onExpand: () => void;
@@ -44,7 +41,6 @@ type XiaohongshuDraftCardProps = {
   onAutoPublish: () => void;
   onImagePathsChange: (value: string) => void;
   onPublishViaMcp: () => void;
-  onTextImageAutofill: () => void;
   onLeadCapture: () => void;
 };
 
@@ -66,11 +62,9 @@ export function XiaohongshuDraftCard({
   leadReplyPlan,
   autofillResult,
   publishViaMcpResult,
-  textImageResult,
   autofilling,
   autoPublishing,
   publishViaMcpPending,
-  textImageFilling,
   leadCapturing,
   imagePathsText,
   onExpand,
@@ -78,7 +72,6 @@ export function XiaohongshuDraftCard({
   onAutoPublish,
   onImagePathsChange,
   onPublishViaMcp,
-  onTextImageAutofill,
   onLeadCapture,
 }: XiaohongshuDraftCardProps) {
   const [coverPreview, setCoverPreview] = useState<XiaohongshuCoverPreviewResponse | null>(null);
@@ -86,12 +79,6 @@ export function XiaohongshuDraftCard({
   const [coverPreviewError, setCoverPreviewError] = useState("");
   const action = item.platform_result.actions[0];
   const lead = item.lead_assessment;
-  const textImageButtonLabel =
-    textImageResult?.status === "needs_manual_expand"
-      ? "我已点再写一张，继续填正文页"
-      : textImageFilling
-        ? "生成图卡中..."
-        : "生成3张图卡并尝试填入";
 
   useEffect(() => {
     let cancelled = false;
@@ -171,9 +158,6 @@ export function XiaohongshuDraftCard({
         <Button type="button" variant="secondary" onClick={onPublishViaMcp} disabled={publishViaMcpPending}>
           {publishViaMcpPending ? "MCP 发布中..." : "用 MCP 发布图文"}
         </Button>
-        <Button type="button" variant="secondary" onClick={onTextImageAutofill} disabled={textImageFilling}>
-          {textImageButtonLabel}
-        </Button>
       </div>
       {draft ? (
         <div className="xhs-result-card__expanded">
@@ -229,18 +213,6 @@ export function XiaohongshuDraftCard({
             >
               复制图卡文案
             </Button>
-            {textImageResult?.status === "needs_manual_expand" ? (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  const nextIndex = Math.min(textImageResult.filled_cards, imageDraft.cards.length - 1);
-                  void navigator.clipboard.writeText(imageDraft.cards[nextIndex] || imageDraft.cards[imageDraft.cards.length - 1]);
-                }}
-              >
-                复制下一张图卡
-              </Button>
-            ) : null}
           </div>
           <pre>{imageDraft.fullText}</pre>
         </div>
@@ -336,7 +308,6 @@ export function XiaohongshuDraftCard({
           {publishViaMcpResult.post_url ? ` ${publishViaMcpResult.post_url}` : ""}
         </p>
       ) : null}
-      {textImageResult ? <p className="xhs-result-card__hint">图卡状态：{textImageResult.message}</p> : null}
       {leadCaptureResult ? <p className="xhs-result-card__hint">线索提取：{leadCaptureResult.message}</p> : null}
       {lead?.follow_up_hint ? <p className="xhs-result-card__hint">经营建议：{lead.follow_up_hint}</p> : null}
     </article>

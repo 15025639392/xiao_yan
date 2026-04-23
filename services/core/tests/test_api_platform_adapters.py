@@ -14,7 +14,6 @@ from app.usecases import xiaohongshu_creator_home_capture as creator_home_captur
 from app.usecases import xiaohongshu_lead_capture as lead_capture
 from app.usecases import xiaohongshu_publish_autofill as publish_autofill
 from app.usecases import xiaohongshu_publish_via_mcp as publish_via_mcp
-from app.usecases import xiaohongshu_text_image_autofill as text_image_autofill
 
 
 class _PlatformPreviewStubGateway:
@@ -655,38 +654,6 @@ def test_xiaohongshu_publish_autofill_endpoint_returns_fill_status(monkeypatch):
     assert body["status"] == "filled"
     assert body["filled_title"] is True
     assert body["filled_body"] is True
-
-
-def test_xiaohongshu_text_image_autofill_endpoint_returns_fill_status(monkeypatch):
-    monkeypatch.setattr(
-        xiaohongshu_handlers,
-        "autofill_xiaohongshu_text_image_cards",
-        lambda *, cards, trigger_generate: text_image_autofill.XiaohongshuTextImageAutofillResponse(
-            status="submitted_generation",
-            publish_url="https://creator.xiaohongshu.com/publish/publish?from=xiao_yan&target=image",
-            cards=cards,
-            filled_cards=len(cards),
-            clicked_generate=trigger_generate,
-            message="已把 3/3 张图卡文案填进文字配图，并触发了生成图片。",
-        ),
-    )
-
-    client = TestClient(app)
-    response = client.post(
-        "/platform-adapters/xiaohongshu/text-image-autofill",
-        json={
-            "cards": ["封面图卡", "中间图卡", "结尾图卡"],
-            "trigger_generate": True,
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "submitted_generation"
-    assert body["filled_cards"] == 3
-    assert body["clicked_generate"] is True
-
-
 def test_xiaohongshu_publish_via_mcp_endpoint_returns_publish_status(monkeypatch, tmp_path):
     cover = tmp_path / "cover.png"
     cover.write_bytes(b"cover")

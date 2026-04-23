@@ -756,7 +756,7 @@ class DriverDaemon:
                     body_text = page.inner_text("body", timeout=3000).lower()
                     # Check if upload prompts are gone (form state reached)
                     upload_prompts = any(
-                        kw in body_text for kw in ["上传图片", "上传视频", "文字配图", "上传图文", "选择文件", "拖拽上传"]
+                        kw in body_text for kw in ["上传图片", "上传视频", "上传图文", "选择文件", "拖拽上传"]
                     )
                     if not upload_prompts:
                         _log(f"form ready after {poll + 1} polls (upload prompts gone)")

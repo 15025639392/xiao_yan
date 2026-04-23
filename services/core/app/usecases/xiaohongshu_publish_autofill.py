@@ -111,7 +111,6 @@ def _build_fill_script(*, title: str, body: str) -> str:
   const uploadPrompt =
     pageText.includes("上传图片") ||
     pageText.includes("上传视频") ||
-    pageText.includes("文字配图") ||
     pageText.includes("上传图文") ||
     pageText.includes("选择文件");
   let filledTitle = false;

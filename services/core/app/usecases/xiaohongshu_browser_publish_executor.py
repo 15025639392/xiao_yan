@@ -9,7 +9,6 @@ from app.api.tool_capability_bridge import BrowserCapabilityError, BrowserOrganU
 @dataclass(frozen=True)
 class XiaohongshuPublishSelectorResolution:
     selector: str = ""
-    text_image_result: dict[str, str] | None = None
     blocked_reason: str = ""
 
 
@@ -21,12 +20,21 @@ class XiaohongshuBrowserPublishExecution:
     error: str = ""
 
 
+def _map_browser_publish_error(error: str, *, phase: str) -> tuple[str, str]:
+    normalized = error.strip()
+    if "reusable cdp endpoint" in normalized or "cdp endpoint" in normalized:
+        return (
+            "浏览器器官未暴露可复用调试端口",
+            f"{phase}失败: 浏览器器官未暴露可复用调试端口",
+        )
+    return (f"{phase}失败: {normalized}", normalized)
+
+
 def resolve_xiaohongshu_publish_selector(
     *,
     requires_manual_review: bool,
     auto_publish_selector: str,
     find_publish_button: Callable[[], str | None],
-    prepare_text_image_cards: Callable[[], dict[str, str] | None],
 ) -> XiaohongshuPublishSelectorResolution:
     if requires_manual_review:
         return XiaohongshuPublishSelectorResolution()
@@ -38,10 +46,6 @@ def resolve_xiaohongshu_publish_selector(
     selector = find_publish_button() or ""
     if selector:
         return XiaohongshuPublishSelectorResolution(selector=selector)
-
-    text_image_result = prepare_text_image_cards()
-    if text_image_result is not None:
-        return XiaohongshuPublishSelectorResolution(text_image_result=text_image_result)
 
     return XiaohongshuPublishSelectorResolution(blocked_reason="找不到发布按钮")
 
@@ -59,6 +63,9 @@ def execute_xiaohongshu_browser_publish(
         open_result = open_publish_page()
     except BrowserOrganUnavailable:
         return XiaohongshuBrowserPublishExecution(blocked_reason="浏览器器官不可用", error="browser organ unavailable")
+    except BrowserCapabilityError as exc:
+        blocked_reason, error = _map_browser_publish_error(str(exc), phase="打开发布页")
+        return XiaohongshuBrowserPublishExecution(blocked_reason=blocked_reason, error=error)
 
     session_id = str(open_result.get("session_id") or "").strip()
     if not session_id:
@@ -67,10 +74,11 @@ def execute_xiaohongshu_browser_publish(
     try:
         publish_result = publish_to_page(session_id, title, body, selector, image_paths)
     except BrowserCapabilityError as exc:
+        blocked_reason, error = _map_browser_publish_error(str(exc), phase="发布")
         return XiaohongshuBrowserPublishExecution(
             session_id=session_id,
-            blocked_reason=f"发布失败: {exc}",
-            error=str(exc),
+            blocked_reason=blocked_reason,
+            error=error,
         )
 
     return XiaohongshuBrowserPublishExecution(

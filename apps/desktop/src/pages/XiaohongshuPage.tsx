@@ -6,21 +6,16 @@ import { browserOpen } from "../lib/tauri/fsAccess";
 import { Button } from "../components/ui";
 import { XiaohongshuConfigPanel } from "./XiaohongshuConfigPanel";
 import { XiaohongshuLoginGuidance } from "./XiaohongshuLoginGuidance";
+import { XiaohongshuPendingDraftList } from "./XiaohongshuPendingDraftList";
 
 type XiaohongshuPageProps = {
   assistantName: string;
 };
 
 const XHS_LOGIN_SESSION_ID = "xhs-login";
-const COVER_TEMPLATE_LABELS: Record<string, string> = {
-  warm_story: "故事感",
-  expert_clean: "专业感",
-  bold_hook: "强钩子",
-};
 
 const STATUS_LABELS: Record<string, string> = {
   idle: "空闲",
-  idle_reviewing: "待补图",
   scouting: "侦察中",
   drafting: "生成草稿中",
   publishing: "发布中",
@@ -28,7 +23,7 @@ const STATUS_LABELS: Record<string, string> = {
   blocked: "已阻塞",
 };
 
-const STATUS_STEPS = ["idle", "scouting", "drafting", "publishing", "idle_reviewing", "reviewing"];
+const STATUS_STEPS = ["idle", "scouting", "drafting", "publishing", "reviewing"];
 
 function getStepIndex(status: string): number {
   if (status === "blocked") return -1;
@@ -296,17 +291,55 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     if (!workDomain?.state?.pending_drafts) return;
     const remaining = workDomain.state.pending_drafts.filter((d) => d.draft_id !== draftId);
     const newBacklog = remaining.length;
-    const currentStatus = workDomain.state?.status || "idle";
     try {
       await updateXhsWorkDomain({
         pending_drafts: remaining,
         backlog_count: newBacklog,
-        ...(currentStatus === "idle_reviewing" && remaining.length === 0 ? { status: "idle" } : {}),
       });
       setDraftEdits((prev) => {
         const next = { ...prev };
         delete next[draftId];
         return next;
+      });
+      loadDomain();
+    } catch {
+      // ignore
+    }
+  }
+
+  function handleDraftEditChange(draftId: string, patch: Partial<{ title: string; body: string }>) {
+    setDraftEdits((prev) => ({
+      ...prev,
+      [draftId]: {
+        ...prev[draftId],
+        ...patch,
+      },
+    }));
+  }
+
+  async function handlePublishDraft(draftId: string) {
+    if (!workDomain?.state?.pending_drafts) return;
+    const orderedDrafts = workDomain.state.pending_drafts.map((d) => ({
+      ...d,
+      title: draftEdits[d.draft_id]?.title ?? d.title,
+      body: draftEdits[d.draft_id]?.body ?? d.body,
+    }));
+    const targetDraft = orderedDrafts.find((d) => d.draft_id === draftId);
+    if (!targetDraft) return;
+
+    const reorderedDrafts = [
+      targetDraft,
+      ...orderedDrafts.filter((d) => d.draft_id !== draftId),
+    ];
+
+    try {
+      await updateXhsWorkDomain({
+        pending_drafts: reorderedDrafts,
+        backlog_count: reorderedDrafts.length,
+        status: "publishing",
+        current_focus: `已选择优先发布：${targetDraft.title || "(无标题)"}`,
+        current_bottleneck: "",
+        next_recommended_action: "",
       });
       loadDomain();
     } catch {
@@ -446,91 +479,29 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
           <PublishedHistory history={state?.published_history || []} />
         </div>
 
-        {state?.pending_drafts && state.pending_drafts.length > 0 && (
-          <div className="xhs-page__pending-section">
-            <h4 className="xhs-section-title">待发布草稿</h4>
-            <ul className="xhs-pending-list">
-              {state.pending_drafts.map((draft) => (
-                <li key={draft.draft_id} className="xhs-pending-item xhs-pending-item--editable">
-                  <input
-                    className="xhs-pending-item__title-input"
-                    type="text"
-                    value={draftEdits[draft.draft_id]?.title ?? draft.title}
-                    onChange={(e) =>
-                      setDraftEdits((prev) => ({
-                        ...prev,
-                        [draft.draft_id]: {
-                          ...prev[draft.draft_id],
-                          title: e.target.value,
-                        },
-                      }))
-                    }
-                  />
-                  <textarea
-                    className="xhs-pending-item__body-input"
-                    rows={3}
-                    value={draftEdits[draft.draft_id]?.body ?? draft.body}
-                    onChange={(e) =>
-                      setDraftEdits((prev) => ({
-                        ...prev,
-                        [draft.draft_id]: {
-                          ...prev[draft.draft_id],
-                          body: e.target.value,
-                        },
-                      }))
-                    }
-                  />
-                  <div className="xhs-pending-item__cover">
-                    <div className="xhs-pending-item__cover-header">
-                      <strong>封面模板预览</strong>
-                      <div className="xhs-pending-item__cover-actions">
-                        {(draftCoverPreviews[draft.draft_id]?.available_templates || Object.keys(COVER_TEMPLATE_LABELS)).map((templateName) => (
-                          <Button
-                            key={templateName}
-                            variant={draftCoverPreviews[draft.draft_id]?.template_name === templateName ? "default" : "secondary"}
-                            onClick={() => {
-                              void handleSwitchDraftCoverTemplate(draft.draft_id, templateName);
-                            }}
-                            disabled={draftCoverLoading[draft.draft_id]}
-                          >
-                            {COVER_TEMPLATE_LABELS[templateName] || templateName}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                    {draftCoverLoading[draft.draft_id] ? <p className="xhs-history-empty">封面预览生成中...</p> : null}
-                    {draftCoverErrors[draft.draft_id] ? <p className="xhs-history-empty">{draftCoverErrors[draft.draft_id]}</p> : null}
-                    {draftCoverPreviews[draft.draft_id] ? (
-                      <div className="xhs-cover-preview">
-                        <img
-                          className="xhs-cover-preview__image"
-                          src={draftCoverPreviews[draft.draft_id]?.image_data_url}
-                          alt={`待发布草稿封面-${draftCoverPreviews[draft.draft_id]?.template_name}`}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="xhs-pending-item__actions">
-                    <span className="xhs-pending-item__status">{draft.status}</span>
-                    <Button variant="outline" onClick={handleSaveDrafts}>
-                      保存修改
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={() => {
-                        if (window.confirm("确定删除这条草稿？")) {
-                          void handleDeleteDraft(draft.draft_id);
-                        }
-                      }}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {state?.pending_drafts && state.pending_drafts.length > 0 ? (
+          <XiaohongshuPendingDraftList
+            drafts={state.pending_drafts}
+            status={status}
+            draftEdits={draftEdits}
+            draftCoverPreviews={draftCoverPreviews}
+            draftCoverLoading={draftCoverLoading}
+            draftCoverErrors={draftCoverErrors}
+            onDraftEditChange={handleDraftEditChange}
+            onSwitchDraftCoverTemplate={(draftId, templateName) => {
+              void handleSwitchDraftCoverTemplate(draftId, templateName);
+            }}
+            onSaveDrafts={() => {
+              void handleSaveDrafts();
+            }}
+            onPublishDraft={(draftId) => {
+              void handlePublishDraft(draftId);
+            }}
+            onDeleteDraft={(draftId) => {
+              void handleDeleteDraft(draftId);
+            }}
+          />
+        ) : null}
       </section>
     </div>
   );

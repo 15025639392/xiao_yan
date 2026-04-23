@@ -10,11 +10,9 @@ def test_resolve_publish_selector_returns_empty_for_manual_review():
         requires_manual_review=True,
         auto_publish_selector="button[type='submit']",
         find_publish_button=lambda: "button[type='submit']",
-        prepare_text_image_cards=lambda: {"status": "submitted_generation"},
     )
 
     assert result.selector == ""
-    assert result.text_image_result is None
     assert result.blocked_reason == ""
 
 
@@ -23,12 +21,10 @@ def test_resolve_publish_selector_returns_text_image_result_when_button_missing(
         requires_manual_review=False,
         auto_publish_selector="",
         find_publish_button=lambda: None,
-        prepare_text_image_cards=lambda: {"status": "submitted_generation", "message": "ok"},
     )
 
     assert result.selector == ""
-    assert result.text_image_result == {"status": "submitted_generation", "message": "ok"}
-    assert result.blocked_reason == ""
+    assert result.blocked_reason == "找不到发布按钮"
 
 
 def test_execute_browser_publish_returns_blocked_when_open_fails():
@@ -85,3 +81,41 @@ def test_execute_browser_publish_returns_error_when_publish_capability_fails():
     assert result.publish_result is None
     assert result.blocked_reason == "发布失败: driver error"
     assert result.error == "driver error"
+
+
+def test_execute_browser_publish_maps_missing_reusable_cdp_endpoint_on_open():
+    result = execute_xiaohongshu_browser_publish(
+        title="标题",
+        body="正文",
+        selector="button[type='submit']",
+        image_paths=[],
+        open_publish_page=lambda: (_ for _ in ()).throw(
+            BrowserCapabilityError('driver error: {"error": "browser organ chrome did not expose a reusable cdp endpoint"}')
+        ),
+        publish_to_page=lambda session_id, title, body, selector, image_paths: {},
+    )
+
+    assert result.session_id == ""
+    assert result.publish_result is None
+    assert result.blocked_reason == "浏览器器官未暴露可复用调试端口"
+    assert result.error == "打开发布页失败: 浏览器器官未暴露可复用调试端口"
+
+
+def test_execute_browser_publish_maps_missing_reusable_cdp_endpoint_on_publish():
+    result = execute_xiaohongshu_browser_publish(
+        title="标题",
+        body="正文",
+        selector="button[type='submit']",
+        image_paths=[],
+        open_publish_page=lambda: {"session_id": "publish-session"},
+        publish_to_page=lambda session_id, title, body, selector, image_paths: (
+            (_ for _ in ()).throw(
+                BrowserCapabilityError('driver error: {"error": "browser organ chrome did not expose a reusable cdp endpoint"}')
+            )
+        ),
+    )
+
+    assert result.session_id == "publish-session"
+    assert result.publish_result is None
+    assert result.blocked_reason == "浏览器器官未暴露可复用调试端口"
+    assert result.error == "发布失败: 浏览器器官未暴露可复用调试端口"

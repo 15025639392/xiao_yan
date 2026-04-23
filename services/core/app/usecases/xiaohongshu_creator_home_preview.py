@@ -8,6 +8,7 @@ from app.api.platform_route_models import (
     XiaohongshuImportPreviewRequest,
     XiaohongshuNoteSnapshot,
 )
+from app.usecases.xiaohongshu_content_strategy import build_xiaohongshu_creator_home_note_text
 
 
 class XiaohongshuCreatorOpportunityItem(BaseModel):
@@ -33,13 +34,12 @@ def build_xiaohongshu_creator_home_preview_items(
             ]
             if part
         ).strip()
-        note_text = (
-            f"这是{account_name}在小红书创作首页看到的创作话题机会。\n"
-            f"推荐话题：{title}\n"
-            f"{summary}\n"
-            "请围绕这个话题生成一篇适合冷启动账号的赚钱导向笔记草稿，"
-            "优先突出真实问题、可执行方法和轻量转化引导。"
-        ).strip()
+        note_text = build_xiaohongshu_creator_home_note_text(
+            source_kind="topic",
+            account_name=account_name,
+            title=title,
+            summary=summary,
+        )
         items.append(
             XiaohongshuCreatorOpportunityItem(
                 source_kind="topic",
@@ -65,12 +65,12 @@ def build_xiaohongshu_creator_home_preview_items(
             ]
             if part
         ).strip()
-        note_text = (
-            f"这是{account_name}在小红书创作首页看到的官方活动机会。\n"
-            f"活动名称：{title}\n"
-            f"{summary}\n"
-            "请围绕这个活动生成一篇适合冷启动账号参与、同时能服务后续成交经营的笔记草稿。"
-        ).strip()
+        note_text = build_xiaohongshu_creator_home_note_text(
+            source_kind="activity",
+            account_name=account_name,
+            title=title,
+            summary=summary,
+        )
         items.append(
             XiaohongshuCreatorOpportunityItem(
                 source_kind="activity",

@@ -26,19 +26,15 @@ from app.usecases.xiaohongshu_publish_orchestration import (
     mark_xiaohongshu_mcp_publish_success,
     mark_xiaohongshu_publish_blocked,
     mark_xiaohongshu_publish_review_ready,
-    mark_xiaohongshu_text_image_review,
 )
 from app.usecases.xiaohongshu_publish_preparation import (
     build_xiaohongshu_browser_publish_image_paths,
     find_xiaohongshu_publish_button,
-    prepare_xiaohongshu_text_image_cards_for_draft,
+    prepare_xiaohongshu_publish_draft,
 )
 from app.usecases.xiaohongshu_publish_via_mcp import (
     XiaohongshuPublishViaMcpResponse,
     publish_xiaohongshu_image_post_via_mcp,
-)
-from app.usecases.xiaohongshu_text_image_autofill import (
-    autofill_xiaohongshu_text_image_cards,
 )
 
 
@@ -68,24 +64,25 @@ def run_xiaohongshu_publish_pipeline(
     call_browser_capability: Callable[..., dict[str, Any]],
     close_session: Callable[[str], None],
 ) -> XiaohongshuPublishPipelineResult:
-    mcp_result = None if requires_manual_review else _try_mcp_publish(draft, mcp_client)
+    prepared_draft = prepare_xiaohongshu_publish_draft(draft)
+    mcp_result = None if requires_manual_review else _try_mcp_publish(prepared_draft, mcp_client)
     if mcp_result is not None and mcp_result.status not in _MCP_FAILURE_STATUSES:
         return XiaohongshuPublishPipelineResult(
             transition=mark_xiaohongshu_mcp_publish_success(
                 domain,
                 drafts=drafts,
-                draft=draft,
+                draft=prepared_draft,
                 post_url=mcp_result.post_url or publish_url,
                 message=mcp_result.message,
                 image_paths=mcp_result.image_paths,
             ),
         )
 
-    image_paths = _prepare_browser_image_paths(draft, mcp_result)
+    image_paths = _prepare_browser_image_paths(prepared_draft, mcp_result)
     return _run_browser_publish_path(
         domain=domain,
         drafts=drafts,
-        draft=draft,
+        draft=prepared_draft,
         image_paths=image_paths,
         requires_manual_review=requires_manual_review,
         publish_url=publish_url,
@@ -136,6 +133,16 @@ def _run_browser_publish_path(
     call_browser_capability: Callable[..., dict[str, Any]],
     close_session: Callable[[str], None],
 ) -> XiaohongshuPublishPipelineResult:
+    if not image_paths:
+        return XiaohongshuPublishPipelineResult(
+            transition=mark_xiaohongshu_publish_blocked(
+                domain,
+                bottleneck="缺少可上传封面",
+                title="发布失败",
+                data={"error": "missing cover image"},
+            ),
+        )
+
     selector_resolution = resolve_xiaohongshu_publish_selector(
         requires_manual_review=requires_manual_review,
         auto_publish_selector=domain.profile.auto_publish_selector,
@@ -144,16 +151,7 @@ def _run_browser_publish_path(
             call_browser_capability=call_browser_capability,
             close_session=close_session,
         ),
-        prepare_text_image_cards=lambda: prepare_xiaohongshu_text_image_cards_for_draft(
-            draft,
-            autofill_cards=autofill_xiaohongshu_text_image_cards,
-        ),
     )
-
-    if selector_resolution.text_image_result is not None:
-        return _handle_text_image_result(
-            domain, selector_resolution.text_image_result, close_session
-        )
 
     if selector_resolution.blocked_reason:
         return XiaohongshuPublishPipelineResult(
@@ -209,34 +207,6 @@ def _run_browser_publish_path(
         updated_selector=updated_selector or result.updated_selector,
     )
     return result
-
-
-def _handle_text_image_result(
-    domain: XhsWorkDomainState,
-    text_image_result: dict[str, str],
-    close_session: Callable[[str], None],
-) -> XiaohongshuPublishPipelineResult:
-    status = text_image_result.get("status", "missing_editor")
-    if status == "browser_unavailable":
-        return XiaohongshuPublishPipelineResult(
-            transition=mark_xiaohongshu_publish_blocked(
-                domain,
-                bottleneck="浏览器器官不可用",
-                title="发布失败",
-                data={"error": "browser organ unavailable"},
-            ),
-        )
-    return XiaohongshuPublishPipelineResult(
-        transition=mark_xiaohongshu_text_image_review(
-            domain,
-            focus=str(
-                text_image_result.get("focus")
-                or "已进入补图阶段，等待图片生成后再继续发布"
-            ),
-            status=status,
-            message=text_image_result.get("message", ""),
-        ),
-    )
 
 
 def _handle_execution_result(
@@ -326,30 +296,13 @@ def _handle_review_path(
     close_session: Callable[[str], None],
 ) -> XiaohongshuPublishTransition:
     if status == "awaiting_image_upload" and not image_paths:
-        text_image_result = prepare_xiaohongshu_text_image_cards_for_draft(
-            draft,
-            autofill_cards=autofill_xiaohongshu_text_image_cards,
+        close_session(session_id)
+        return mark_xiaohongshu_publish_blocked(
+            domain,
+            bottleneck="缺少可上传封面",
+            title="发布失败",
+            data={"error": "missing cover image"},
         )
-        if text_image_result is not None:
-            review_status = text_image_result.get("status", "missing_editor")
-            if review_status == "browser_unavailable":
-                close_session(session_id)
-                return mark_xiaohongshu_publish_blocked(
-                    domain,
-                    bottleneck="浏览器器官不可用",
-                    title="发布失败",
-                    data={"error": "browser organ unavailable"},
-                )
-            close_session(session_id)
-            return mark_xiaohongshu_text_image_review(
-                domain,
-                focus=str(
-                    text_image_result.get("focus")
-                    or "已进入补图阶段，等待图片生成后再继续发布"
-                ),
-                status=review_status,
-                message=text_image_result.get("message", ""),
-            )
 
     review_preparation = evaluate_xiaohongshu_browser_review_preparation(
         publish_result=publish_result,

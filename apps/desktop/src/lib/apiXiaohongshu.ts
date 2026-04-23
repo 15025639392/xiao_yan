@@ -75,20 +75,6 @@ export type XiaohongshuCoverPreviewResponse = {
   image_data_url: string;
 };
 
-export type XiaohongshuTextImageAutofillRequest = {
-  cards: string[];
-  trigger_generate?: boolean;
-};
-
-export type XiaohongshuTextImageAutofillResponse = {
-  status: string;
-  publish_url: string;
-  cards: string[];
-  filled_cards: number;
-  clicked_generate: boolean;
-  message: string;
-};
-
 export type XiaohongshuLeadCaptureRequest = {
   title_hint?: string | null;
 };
@@ -181,12 +167,6 @@ export function previewXiaohongshuCover(
   body: XiaohongshuCoverPreviewRequest,
 ): Promise<XiaohongshuCoverPreviewResponse> {
   return post<XiaohongshuCoverPreviewResponse>("/platform-adapters/xiaohongshu/cover-preview", body);
-}
-
-export function autofillXiaohongshuTextImageCards(
-  body: XiaohongshuTextImageAutofillRequest,
-): Promise<XiaohongshuTextImageAutofillResponse> {
-  return post<XiaohongshuTextImageAutofillResponse>("/platform-adapters/xiaohongshu/text-image-autofill", body);
 }
 
 export function captureXiaohongshuLeadSignals(

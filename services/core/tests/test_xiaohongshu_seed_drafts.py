@@ -17,5 +17,7 @@ def test_build_seed_drafts_from_creator_opportunities():
     assert len(drafts) == 2
     assert drafts[0].source_kind == "topic"
     assert "#早餐吃什么" in drafts[0].draft_title
+    assert "情绪和关系瞬间" in drafts[0].opening
     assert drafts[1].source_kind == "activity"
     assert "RED新生代创作大赛" in drafts[1].opening
+    assert "小晏可以继续陪你慢慢看" in drafts[1].body_points[2]

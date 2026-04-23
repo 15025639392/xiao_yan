@@ -27,7 +27,6 @@ from app.api.xiaohongshu_handlers import (
     handle_xiaohongshu_notification_preview,
     handle_xiaohongshu_publish_autofill,
     handle_xiaohongshu_publish_via_mcp,
-    handle_xiaohongshu_text_image_autofill,
 )
 from app.api.platform_route_models import (
     ChatSubmissionPreviewRequest,
@@ -49,8 +48,6 @@ from app.api.platform_route_models import (
     XiaohongshuPublishAutofillResponse,
     XiaohongshuPublishViaMcpRequest,
     XiaohongshuPublishViaMcpResponse,
-    XiaohongshuTextImageAutofillRequest,
-    XiaohongshuTextImageAutofillResponse,
 )
 from app.external_executors.xiaohongshu_mcp_client import XiaohongshuMcpClient
 from app.llm.gateway import ChatGateway
@@ -247,17 +244,6 @@ def build_platform_router() -> APIRouter:
             title=request_body.title,
             body=request_body.body,
             template_name=request_body.template_name,
-            service=service,
-        )
-
-    @router.post("/xiaohongshu/text-image-autofill", response_model=XiaohongshuTextImageAutofillResponse)
-    def autofill_xiaohongshu_text_image_cards_route(
-        request_body: XiaohongshuTextImageAutofillRequest,
-        service: PlatformAdapterService = Depends(get_platform_adapter_service),
-    ) -> XiaohongshuTextImageAutofillResponse:
-        return handle_xiaohongshu_text_image_autofill(
-            cards=request_body.cards,
-            trigger_generate=request_body.trigger_generate,
             service=service,
         )
 

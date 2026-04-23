@@ -29,7 +29,6 @@ from app.usecases.xiaohongshu_lead_capture import capture_xiaohongshu_lead_signa
 from app.usecases.xiaohongshu_notification_preview import build_xiaohongshu_notification_preview_items
 from app.usecases.xiaohongshu_publish_autofill import autofill_xiaohongshu_publish_page
 from app.usecases.xiaohongshu_publish_via_mcp import publish_xiaohongshu_image_post_via_mcp
-from app.usecases.xiaohongshu_text_image_autofill import autofill_xiaohongshu_text_image_cards
 
 
 def handle_xiaohongshu_import_preview(
@@ -157,20 +156,6 @@ def handle_xiaohongshu_publish_autofill(
             title=title, body=body, auto_publish=auto_publish, publish_selector=publish_selector
         ),
     )
-
-
-def handle_xiaohongshu_text_image_autofill(
-    *,
-    cards: list[str],
-    trigger_generate: bool,
-    service: PlatformAdapterService,
-):
-    return _wrap_platform_errors(
-        service,
-        lambda: autofill_xiaohongshu_text_image_cards(cards=cards, trigger_generate=trigger_generate),
-    )
-
-
 def handle_xiaohongshu_publish_via_mcp(
     *,
     title: str,

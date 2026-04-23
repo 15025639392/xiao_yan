@@ -1,8 +1,8 @@
-from app.api.tool_capability_bridge import BrowserCapabilityError, BrowserOrganUnavailable
+from app.api.tool_capability_bridge import BrowserOrganUnavailable
 from app.usecases.xiaohongshu_publish_preparation import (
     build_xiaohongshu_browser_publish_image_paths,
     find_xiaohongshu_publish_button,
-    prepare_xiaohongshu_text_image_cards_for_draft,
+    prepare_xiaohongshu_publish_draft,
 )
 
 
@@ -22,6 +22,21 @@ def test_build_browser_publish_image_paths_generates_cover_when_missing():
     )
 
     assert result == ["/tmp/generated-cover.png"]
+
+
+def test_prepare_publish_draft_backfills_light_science_body_when_missing():
+    result = prepare_xiaohongshu_publish_draft(
+        {
+            "draft_id": "draft-1",
+            "title": "收到礼物却有点失落",
+            "body": "",
+            "opportunity_title": "#高颜值巧克力",
+        }
+    )
+
+    assert result["title"] == "收到礼物却有点失落"
+    assert "看到 #高颜值巧克力 的时候" in result["body"]
+    assert "不是你太敏感" in result["body"]
 
 
 def test_find_publish_button_returns_selector_and_closes_session():
@@ -55,33 +70,3 @@ def test_find_publish_button_returns_none_when_browser_unavailable():
     )
 
     assert result is None
-
-
-def test_prepare_text_image_cards_for_draft_returns_browser_unavailable_message():
-    result = prepare_xiaohongshu_text_image_cards_for_draft(
-        {"title": "标题", "body": "正文"},
-        autofill_cards=lambda **kwargs: (_ for _ in ()).throw(BrowserCapabilityError("driver error")),
-    )
-
-    assert result is not None
-    assert result["status"] == "browser_unavailable"
-    assert "浏览器器官不可用" in result["message"]
-
-
-def test_prepare_text_image_cards_for_draft_returns_focus_for_generation():
-    result = prepare_xiaohongshu_text_image_cards_for_draft(
-        {"title": "标题", "body": "第一段\n\n第二段"},
-        autofill_cards=lambda **kwargs: type(
-            "StubResult",
-            (),
-            {
-                "status": "submitted_generation",
-                "filled_cards": 3,
-                "message": "ok",
-            },
-        )(),
-    )
-
-    assert result is not None
-    assert result["status"] == "submitted_generation"
-    assert "触发生成图片" in result["focus"]

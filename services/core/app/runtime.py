@@ -1,11 +1,14 @@
 from pathlib import Path
 from threading import Lock
 from typing import Callable
+from logging import getLogger
 
 from app.domain.models import BeingState
 from app.memory.repository import MemoryRepository
 from app.utils.file_utils import read_json_file, write_json_file
 from app.usecases.lifecycle import go_to_sleep, wake_up
+
+logger = getLogger(__name__)
 
 
 class StateStore:
@@ -51,8 +54,18 @@ class StateStore:
 
     def _load_state(self, initial_state: BeingState | None) -> BeingState:
         if self._storage_path is not None and self._storage_path.exists():
-            data = read_json_file(self._storage_path)
-            return self._normalize_state(BeingState.model_validate(data))
+            try:
+                data = read_json_file(self._storage_path)
+                return self._normalize_state(BeingState.model_validate(data))
+            except Exception as exc:
+                logger.warning(
+                    "Discarding invalid persisted state at %s: %s",
+                    self._storage_path,
+                    exc,
+                )
+                fallback_state = self._normalize_state(initial_state or BeingState.default())
+                self._persist_state(fallback_state)
+                return fallback_state
         return self._normalize_state(initial_state or BeingState.default())
 
     def _persist_state(self, state: BeingState) -> None:

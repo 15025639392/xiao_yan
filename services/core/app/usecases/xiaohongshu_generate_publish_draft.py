@@ -17,6 +17,12 @@ from app.persona.service import PersonaService
 from app.runtime import StateStore
 from app.runtime_ext.runtime_config import RuntimeConfig
 from app.usecases.platform_preview import PlatformChatPreviewResult
+from app.usecases.xiaohongshu_content_strategy import (
+    build_xiaohongshu_creator_home_prompt as build_creator_home_publish_prompt,
+    collapse_xiaohongshu_body_sections,
+    normalize_xiaohongshu_body,
+    normalize_xiaohongshu_title,
+)
 from app.usecases.xiaohongshu_creator_home_preview import XiaohongshuCreatorOpportunityItem
 
 
@@ -82,40 +88,11 @@ def run_xiaohongshu_creator_home_publish_draft(
 
 
 def build_xiaohongshu_creator_home_prompt(opportunity: XiaohongshuCreatorOpportunityItem) -> str:
-    return (
-        "你现在不是在写运营建议，也不是在写方法论说明，而是在直接写一篇可以人工确认后发布的小红书图文稿。\n"
-        "要求：\n"
-        "1. 语言像真人发笔记，少抽象词，少空话。\n"
-        "2. 必须写出一个明确场景、一个明确问题、一个明确动作。\n"
-        "3. 禁止出现“最小闭环”“验证反馈”“轻量转化”“先跑通”这类产品黑话。\n"
-        "4. 不要写成课程大纲，不要写成写作指导。\n"
-        "5. 输出必须严格使用下面格式。\n\n"
-        f"机会来源：{opportunity.source_kind}\n"
-        f"机会标题：{opportunity.title}\n"
-        f"补充信息：{opportunity.summary or '无'}\n"
-        f"原始素材：{opportunity.request.note.note_text if opportunity.request.note is not None else ''}\n\n"
-        "请严格输出：\n"
-        "【标题】\n"
-        "...\n"
-        "【开头】\n"
-        "...\n"
-        "【正文】\n"
-        "- ...\n"
-        "- ...\n"
-        "- ...\n"
-        "【结尾】\n"
-        "...\n"
-        "【首评】\n"
-        "...\n"
-        "【图卡1】\n"
-        "标题：...\n"
-        "内容：...\n"
-        "【图卡2】\n"
-        "标题：...\n"
-        "内容：...\n"
-        "【图卡3】\n"
-        "标题：...\n"
-        "内容：..."
+    return build_creator_home_publish_prompt(
+        source_kind=opportunity.source_kind,
+        source_title=opportunity.title,
+        source_summary=opportunity.summary,
+        raw_material=opportunity.request.note.note_text if opportunity.request.note is not None else "",
     )
 
 
@@ -138,14 +115,15 @@ def parse_xiaohongshu_publish_draft(
         if line
     ]
     closing_cta = _extract_section(output_text, "结尾") or "如果你也在做这一类内容，可以直接从最具体的那一个场景开始写。"
-    first_comment = _extract_section(output_text, "首评") or "如果你想看我把这条拆成更具体的标题和配图版本，可以留言，我继续补。"
+    first_comment = _extract_section(output_text, "首评") or "如果你愿意，小晏可以继续陪你慢慢看这件事。"
     image_cards = _extract_image_cards(output_text, title=title, opening=opening, body_sections=body_sections, closing_cta=closing_cta)
+    normalized_body_sections = collapse_xiaohongshu_body_sections(body_sections)
     return XiaohongshuStructuredPublishDraft(
-        title=title.strip(),
-        opening=opening.strip(),
-        body_sections=[section.strip() for section in body_sections if section.strip()],
-        closing_cta=closing_cta.strip(),
-        first_comment=first_comment.strip(),
+        title=normalize_xiaohongshu_title(title, fallback=_fallback_title(source_title)),
+        opening=normalize_xiaohongshu_body(opening),
+        body_sections=normalized_body_sections,
+        closing_cta=normalize_xiaohongshu_body(closing_cta),
+        first_comment=normalize_xiaohongshu_body(first_comment),
         image_cards=image_cards,
     )
 
@@ -196,9 +174,9 @@ def _extract_image_cards(
         for line in block.splitlines():
             text = line.strip()
             if text.startswith("标题："):
-                card_title = text.removeprefix("标题：").strip()
+                card_title = normalize_xiaohongshu_title(text.removeprefix("标题：").strip(), fallback=title)
             elif text.startswith("内容："):
-                card_body = text.removeprefix("内容：").strip()
+                card_body = normalize_xiaohongshu_body(text.removeprefix("内容：").strip())
         if card_title and card_body:
             cards.append(XiaohongshuImageCardDraftItem(title=card_title, body=card_body))
     if cards:
@@ -218,7 +196,7 @@ def _extract_image_cards(
 def _fallback_title(source_title: str) -> str:
     normalized = source_title.strip()
     if not normalized:
-        return "这条内容我会这样写"
+        return "小晏先讲这个瞬间"
     if normalized.startswith("#"):
-        return f"{normalized} 这个话题，别再空讲了，直接这样写"
-    return f"{normalized} 这件事，我会先这样发第一条"
+        return normalize_xiaohongshu_title(f"{normalized}：小晏先讲这个瞬间", fallback="小晏先讲这个瞬间")
+    return normalize_xiaohongshu_title(f"{normalized}：小晏慢慢讲清楚", fallback="小晏先讲这个瞬间")

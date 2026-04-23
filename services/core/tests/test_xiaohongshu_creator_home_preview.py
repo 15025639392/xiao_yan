@@ -30,8 +30,10 @@ def test_build_xiaohongshu_creator_home_preview_items_maps_topics_and_activities
     assert items[0].request.item_type == "note"
     assert items[0].request.note is not None
     assert "#高颜值巧克力" in items[0].request.note.note_text
+    assert "数字生命账号经营的轻科普笔记草稿" in items[0].request.note.note_text
     assert items[1].source_kind == "activity"
     assert "RED新生代创作大赛" in items[1].request.note.note_text
+    assert "轻科普或观察型笔记草稿" in items[1].request.note.note_text
 
 
 def test_build_xiaohongshu_creator_home_preview_items_rejects_empty_opportunities():

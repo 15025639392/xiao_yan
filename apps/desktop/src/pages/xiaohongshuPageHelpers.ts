@@ -36,6 +36,55 @@ export type XiaohongshuLeadCaptureTemplate = {
   reviewQuestions: string[];
 };
 
+function clampPublishTitle(value: string): string {
+  const trimmed = value.replace(/\s+/g, " ").trim().replace(/^[【\[]?标题[】\]]?[：:]\s*/, "").replace(/[，。！？；：\s]+$/g, "");
+  const fallback = "小晏先讲这个瞬间";
+  if (!trimmed) return fallback;
+  if (trimmed.length <= 20) return trimmed;
+  return trimmed.slice(0, 20).replace(/[，。！？；：\s]+$/g, "") || fallback;
+}
+
+function splitShortParagraphs(value: string): string[] {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  const sentences = normalized.split(/(?<=[。！？!?；;])\s*/).map((part) => part.trim()).filter(Boolean);
+  if (sentences.length <= 1) return [normalized];
+
+  const paragraphs: string[] = [];
+  let buffer = "";
+  for (const sentence of sentences) {
+    const candidate = `${buffer}${sentence}`.trim();
+    const punctuationCount = (candidate.match(/[。！？!?；;]/g) || []).length;
+    if (buffer && (candidate.length > 36 || punctuationCount >= 2)) {
+      paragraphs.push(buffer.trim());
+      buffer = sentence;
+    } else {
+      buffer = candidate;
+    }
+  }
+  if (buffer) paragraphs.push(buffer.trim());
+  return paragraphs;
+}
+
+function normalizePublishBody(value: string): string {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^正文[：:]\s*/, "")
+        .replace(/^【正文】\s*/, "")
+        .replace(/^[\-*•]\s*/, "")
+        .replace(/^\d+[\.、]\s*/, "")
+        .replace(/^(开头|正文|结尾|首评)[：:]\s*/, ""),
+    )
+    .filter(Boolean)
+    .flatMap((line) => splitShortParagraphs(line))
+    .join("\n\n");
+}
+
 export function parseImagePaths(value: string): string[] {
   return value
     .split("\n")
@@ -130,9 +179,9 @@ export function buildPublishDraft(item: XiaohongshuCreatorPreviewItem): Xiaohong
   }
   const sourceText = item.platform_result.event.text.trim();
   const action = item.platform_result.actions[0];
-  const draftBody = (action?.content || item.output_text || "").trim();
-  const title = buildExpandedTitle(sourceText);
-  const body = draftBody || sourceText || "先把这条内容改成一个明确场景，再决定要不要发。";
+  const draftBody = normalizePublishBody(action?.content || item.output_text || "");
+  const title = clampPublishTitle(buildExpandedTitle(sourceText));
+  const body = draftBody || normalizePublishBody(sourceText) || "先把这条内容改成一个明确场景，再决定要不要发。";
   const fullText = [`标题：${title}`, "", "正文：", body].join("\n");
 
   return {
@@ -167,16 +216,16 @@ export function buildPublishChecklist(item: XiaohongshuCreatorPreviewItem): Xiao
   const draft = buildPublishDraft(item);
   const firstComment = item.publish_draft?.first_comment?.trim() || "首评补一句最想接住的评论方向。";
   const preflightChecks = [
-    "确认标题保留了真实问题，不要写成泛泛鸡汤。",
-    "确认封面第一屏能一眼看懂主题，避免字太多。",
-    "确认正文第一页是方法或步骤，不要重复封面。",
-    "确认正文里保留了一个互动动作，引导评论、收藏或私信。",
+    "确认标题保留了具体情绪或关系场景，不要写成泛泛鸡汤。",
+    "确认封面第一屏能一眼看懂主题，允许纯文字卡，不必强依赖图片。",
+    "确认正文第一页先接住感受，再慢慢解释，不要一上来讲道理。",
+    "确认正文里保留了一个互动动作，引导评论、收藏或关注，而不是硬推私信。",
     "确认发布页里的标题、正文、图卡顺序已经对齐。",
   ];
   const postPublishActions = [
     "发布后 5 分钟内补上首评，并盯第一波评论。",
-    "有明确咨询意向的评论，优先引导到私信或微信人工承接。",
-    "记录这条内容的进线词、收藏词和成交前置信号，准备下一轮放大。",
+    "优先记录用户更吃“关系”“情绪”还是“数字生命观察”哪一类角度。",
+    "记录这条内容的评论词、收藏词和关注转化，准备下一轮放大。",
   ];
   const publishPacketText = [
     `标题：${draft.title}`,
@@ -289,18 +338,18 @@ function buildExpandedTitle(sourceText: string): string {
     lines.find((line) => line.startsWith("#")) ||
     lines.find((line) => line.includes("推荐话题：#"));
   if (topicLine?.startsWith("#")) {
-    return `${topicLine}能不能带来真实反馈？我用这套冷启动写法先跑一轮`;
+    return `${topicLine}: 小晏先讲这个瞬间`;
   }
   if (topicLine?.includes("推荐话题：#")) {
     const topic = topicLine.split("推荐话题：")[1]?.trim() || topicLine;
-    return `${topic}能不能带来真实反馈？我用这套冷启动写法先跑一轮`;
+    return `${topic}: 小晏先讲这个瞬间`;
   }
   const sourceLine = lines.find((line) => line.includes("活动名称："));
   if (sourceLine?.includes("活动名称：")) {
     const title = sourceLine.replace("活动名称：", "").trim();
-    return `${title}值不值得跟？我会这样把活动流量写成后续可承接内容`;
+    return `${title}: 小晏这样写`;
   }
-  return "我会这样把当前机会写成一条可验证的小红书内容";
+  return "小晏先讲这个瞬间";
 }
 
 function isTopicLine(value: string): boolean {
@@ -335,12 +384,12 @@ function matchActivityLine(value: string): { title: string; dateRange?: string }
 
 function buildPublishDraftFromStructured(structured: XiaohongshuStructuredPublishDraft): XiaohongshuPublishDraft {
   const body = [structured.opening, ...structured.body_sections, structured.closing_cta]
-    .map((part) => part.trim())
+    .map((part) => normalizePublishBody(part))
     .filter(Boolean)
     .join("\n\n");
   return {
-    title: structured.title.trim(),
+    title: clampPublishTitle(structured.title.trim()),
     body,
-    fullText: [`标题：${structured.title.trim()}`, "", "正文：", body, "", "首评：", structured.first_comment.trim()].join("\n"),
+    fullText: [`标题：${clampPublishTitle(structured.title.trim())}`, "", "正文：", body, "", "首评：", normalizePublishBody(structured.first_comment.trim())].join("\n"),
   };
 }

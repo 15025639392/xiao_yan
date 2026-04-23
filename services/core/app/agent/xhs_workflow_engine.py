@@ -17,6 +17,9 @@ from app.usecases.xiaohongshu_draft_generation import (
     build_xiaohongshu_opportunity_items,
     generate_xiaohongshu_draft_from_opportunity,
 )
+from app.usecases.xiaohongshu_content_strategy import (
+    build_xiaohongshu_creator_home_prompt as build_creator_home_content_prompt,
+)
 from app.usecases.xiaohongshu_publish_orchestration import (
     XiaohongshuPublishTransition,
     reset_xiaohongshu_publish_to_idle,
@@ -43,7 +46,6 @@ _PUBLISH_URL = "https://creator.xiaohongshu.com/publish/publish?from=xiao_yan&ta
 _CREATOR_HOME_SESSION_ID = "xhs-login"
 
 _BLOCKED_RETRY_SECONDS = 300
-_MIN_IDLE_REVIEWING_SECONDS = 60
 _MIN_PUBLISH_INTERVAL_SECONDS = 300
 _MAX_DRAFTS_PER_SCOUTING = 2
 _MAX_DRAFT_QUEUE_SIZE = 3
@@ -136,7 +138,6 @@ class XhsWorkDomainEngine:
             XhsTaskKind.SCOUTING: self._do_scouting,
             XhsTaskKind.DRAFTING: self._do_drafting,
             XhsTaskKind.PUBLISHING: self._do_publishing,
-            XhsTaskKind.IDLE_REVIEWING: self._do_idle_reviewing,
             XhsTaskKind.REVIEWING: self._do_reviewing,
             XhsTaskKind.BLOCKED: lambda _: None,
             XhsTaskKind.IDLE: lambda _: None,
@@ -407,29 +408,6 @@ class XhsWorkDomainEngine:
 
         return self._commit_publish_transition(domain, result.transition)
 
-    def _do_idle_reviewing(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction | None:
-        entered_at = domain.state.idle_reviewing_entered_at
-        if entered_at and (datetime.now(timezone.utc) - entered_at).total_seconds() < _MIN_IDLE_REVIEWING_SECONDS:
-            return None
-
-        drafts = domain.state.pending_drafts
-        if not drafts:
-            domain.state.status = XhsWorkStatus.IDLE
-            domain.state.current_focus = "补图阶段已结束"
-            domain.state.current_bottleneck = ""
-            domain.state.next_recommended_action = ""
-            domain.state.idle_reviewing_entered_at = None
-            self._save(domain)
-            return XhsWorkDomainAction(kind="idle", title="补图完成", data={})
-
-        domain.state.status = XhsWorkStatus.PUBLISHING
-        domain.state.current_focus = "检测到仍有待发草稿，继续完成发布"
-        domain.state.current_bottleneck = ""
-        domain.state.next_recommended_action = ""
-        domain.state.idle_reviewing_entered_at = None
-        self._save(domain)
-        return self._do_publishing(domain)
-
     def _do_reviewing(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction | None:
         """Handle REVIEWING: check for review timeout and auto-continue."""
         if not domain.state.review_session_id:
@@ -550,22 +528,14 @@ class XhsWorkDomainEngine:
             )
         memory_section = "\n".join(memory_lines)
         if memory_section:
-            memory_section = "\n" + memory_section + "\n"
-        return (
-            "你现在不是在写运营建议，也不是在写方法论说明，而是在直接写一篇可以人工确认后发布的小红书图文稿。\n"
-            "要求：\n"
-            "1. 语言像真人发笔记，少抽象词，少空话。\n"
-            "2. 必须写出一个明确场景、一个明确问题、一个明确动作。\n"
-            '3. 禁止出现"最小闭环""验证反馈""轻量转化""先跑通"这类产品黑话。\n'
-            "4. 不要写成课程大纲，不要写成写作指导。\n"
-            "5. 输出必须严格使用下面格式。\n"
-            f"{persona_section}"
-            f"{memory_section}"
-            f"\n机会来源：{source_kind}\n"
-            f"机会标题：{title}\n"
-            f"补充信息：{summary}\n\n"
-            "请严格输出：\n"
-            "标题：...\n\n正文：...\n"
+            memory_section = memory_section + "\n"
+        return build_creator_home_content_prompt(
+            source_kind=source_kind,
+            source_title=title,
+            source_summary=summary,
+            persona_section=persona_section,
+            memory_section=memory_section,
+            structured_output=False,
         )
 
     def _extract_topics_and_activities(self, text: str) -> tuple[list[str], list[str]]:

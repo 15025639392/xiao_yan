@@ -140,11 +140,37 @@ def test_get_xhs_work_domain_exposes_last_scouting_data():
         app.dependency_overrides.clear()
 
 
-def test_get_xhs_work_domain_exposes_blocked_and_idle_reviewing_fields():
+def test_get_xhs_work_domain_initializes_light_science_defaults():
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            focus_mode=FocusMode.AUTONOMY,
+            xhs_work_domain=XhsWorkDomainState(),
+        )
+    )
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.get("/xhs-work-domain")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["profile"]["account_positioning"] == "数字生命式情绪关系轻科普"
+        assert "情绪、关系和自我认知" in body["profile"]["target_audience"]
+        assert "先接住再解释" in body["profile"]["expression_style"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_xhs_work_domain_exposes_blocked_fields():
     from datetime import datetime, timezone
 
     blocked_at = datetime.now(timezone.utc)
-    idle_reviewing_at = datetime.now(timezone.utc)
     state_store = StateStore(
         BeingState(
             mode=WakeMode.AWAKE,
@@ -156,7 +182,6 @@ def test_get_xhs_work_domain_exposes_blocked_and_idle_reviewing_fields():
                     "published_history": [],
                     "blocked_at": blocked_at.isoformat(),
                     "blocked_reason": "浏览器器官不可用",
-                    "idle_reviewing_entered_at": idle_reviewing_at.isoformat(),
                 }
             ),
         )
@@ -176,7 +201,6 @@ def test_get_xhs_work_domain_exposes_blocked_and_idle_reviewing_fields():
         assert body["available"] is True
         assert body["state"]["blocked_reason"] == "浏览器器官不可用"
         assert body["state"]["blocked_at"] == blocked_at.isoformat()
-        assert body["state"]["idle_reviewing_entered_at"] == idle_reviewing_at.isoformat()
     finally:
         app.dependency_overrides.clear()
 

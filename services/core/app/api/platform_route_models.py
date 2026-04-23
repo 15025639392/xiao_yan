@@ -208,20 +208,6 @@ class XiaohongshuCoverPreviewResponse(BaseModel):
     image_data_url: str
 
 
-class XiaohongshuTextImageAutofillRequest(BaseModel):
-    cards: list[str] = Field(default_factory=list)
-    trigger_generate: bool = True
-
-
-class XiaohongshuTextImageAutofillResponse(BaseModel):
-    status: str
-    publish_url: str
-    cards: list[str] = Field(default_factory=list)
-    filled_cards: int = 0
-    clicked_generate: bool = False
-    message: str
-
-
 class XiaohongshuLeadCaptureRequest(BaseModel):
     title_hint: str | None = None
 

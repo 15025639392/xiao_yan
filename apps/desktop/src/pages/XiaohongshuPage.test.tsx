@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
-import { previewXiaohongshuCover } from "../lib/api";
+import { fetchXhsWorkDomain, previewXiaohongshuCover, updateXhsWorkDomain, wakeLifecycle } from "../lib/api";
 
 import { XiaohongshuPage } from "./XiaohongshuPage";
 import {
@@ -17,10 +17,21 @@ import {
 import { XiaohongshuDraftCard } from "./XiaohongshuDraftCard";
 import { buildLeadReplyPlan } from "./xiaohongshuLeadReplyHelpers";
 
+vi.mock("../lib/tauri/fsAccess", () => ({
+  browserOpen: vi.fn(),
+}));
+
 vi.mock("../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
   return {
     ...actual,
+    fetchXhsWorkDomain: vi.fn(),
+    updateXhsWorkDomain: vi.fn(),
+    wakeLifecycle: vi.fn().mockResolvedValue({
+      mode: "awake",
+      focus_mode: "autonomy",
+      current_thought: null,
+    }),
     previewXiaohongshuCover: vi.fn().mockResolvedValue({
       title: "测试标题",
       body: "测试正文",
@@ -30,6 +41,10 @@ vi.mock("../lib/api", async () => {
       image_data_url: "data:image/png;base64,preview-default",
     }),
   };
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
 });
 
 test("extractCreatorHomeSnapshot pulls topics and activities from raw creator-home text", () => {
@@ -77,7 +92,7 @@ test("expandPreviewIntoPublishDraft builds a publish-ready draft from preview re
     publish_draft: {
       title: "#高颜值巧克力 不是晒图就行，第一条先这样写",
       opening: "很多人发巧克力内容，问题不是图不够好，而是别人看完不知道你到底想帮她解决什么。",
-      body_sections: ["先把人群说清楚。", "再把一个最具体的小技巧讲透。", "最后留一个轻互动口子。"],
+      body_sections: ["先把人群说清楚。\n\n再把一个最具体的小技巧讲透。\n\n最后留一个轻互动口子。"],
       closing_cta: "这条先别写太满，先让人愿意看完并评论。",
       first_comment: "如果你想看我把这条拆成封面和配图版本，可以留言。",
       image_cards: [
@@ -110,7 +125,7 @@ test("expandPreviewIntoPublishDraft builds a publish-ready draft from preview re
   const expanded = expandPreviewIntoPublishDraft(previewItem);
   const draft = buildPublishDraft(previewItem);
 
-  expect(expanded).toContain("标题：#高颜值巧克力 不是晒图就行，第一条先这样写");
+  expect(expanded).toContain("标题：#高颜值巧克力 不是晒图就行，第一条先这");
   expect(expanded).toContain("首评：");
   expect(draft.title).toContain("#高颜值巧克力");
   expect(draft.body).toContain("先把人群说清楚");
@@ -122,7 +137,7 @@ test("buildImageCardDraft builds three practical image cards from preview result
     publish_draft: {
       title: "#早餐吃什么 别上来就堆做法",
       opening: "早餐内容最容易写空，因为大家都在堆食谱，却没先讲清楚适合谁。",
-      body_sections: ["先讲一个真实早晨场景。", "再给一个能立刻照着做的动作。", "最后再补一句为什么值得保存。"],
+      body_sections: ["先讲一个真实早晨场景。\n\n再给一个能立刻照着做的动作。\n\n最后再补一句为什么值得保存。"],
       closing_cta: "这样更像真人经验，不像食谱搬运。",
       first_comment: "想看我继续拆成封面文案，可以留言。",
       image_cards: [
@@ -160,7 +175,7 @@ test("buildPublishChecklist builds a publish packet for manual release work", ()
     publish_draft: {
       title: "#早餐吃什么 别上来就堆做法",
       opening: "早餐内容最容易写空，因为大家都在堆食谱，却没先讲清楚适合谁。",
-      body_sections: ["先讲一个真实早晨场景。", "再给一个能立刻照着做的动作。", "最后再补一句为什么值得保存。"],
+      body_sections: ["先讲一个真实早晨场景。\n\n再给一个能立刻照着做的动作。\n\n最后再补一句为什么值得保存。"],
       closing_cta: "这样更像真人经验，不像食谱搬运。",
       first_comment: "如果你想看我把这条继续拆成封面文案，可以留言。",
       image_cards: [
@@ -189,6 +204,8 @@ test("buildPublishChecklist builds a publish packet for manual release work", ()
   expect(checklist.firstComment).toContain("封面文案");
   expect(checklist.preflightChecks).toHaveLength(5);
   expect(checklist.postPublishActions).toHaveLength(3);
+  expect(checklist.preflightChecks[1]).toContain("纯文字卡");
+  expect(checklist.postPublishActions[1]).toContain("数字生命观察");
   expect(checklist.publishPacketText).toContain("发布前检查：");
   expect(checklist.publishPacketText).toContain("发布后动作：");
 });
@@ -253,6 +270,57 @@ test("buildLeadCaptureTemplate builds a reusable lead tracking template", () => 
   expect(template.trackingTemplate).toContain("复盘问题：");
 });
 
+test("buildPublishDraft fallback title matches digital-being light-science direction", () => {
+  const previewItem = {
+    output_text: "",
+    platform_result: {
+      event: {
+        event_type: "post",
+        text: "这是小红薯66661C17在小红书创作首页看到的创作话题机会。\n推荐话题：#早餐吃什么",
+      },
+      actions: [],
+    },
+  };
+
+  const draft = buildPublishDraft(previewItem);
+
+  expect(draft.title).toBe("#早餐吃什么: 小晏先讲这个瞬间");
+});
+
+test("buildPublishDraft normalizes body into readable paragraphs", () => {
+  const previewItem = {
+    output_text: "正文：1. 先接住你\n2. 再解释原因\n3. 最后留一句收束",
+    platform_result: {
+      event: {
+        event_type: "post",
+        text: "这是小红薯66661C17在小红书创作首页看到的创作话题机会。\n推荐话题：#早餐吃什么",
+      },
+      actions: [],
+    },
+  };
+
+  const draft = buildPublishDraft(previewItem);
+
+  expect(draft.body).toBe("先接住你\n\n再解释原因\n\n最后留一句收束");
+});
+
+test("buildPublishDraft splits long light-science copy into short paragraphs", () => {
+  const previewItem = {
+    output_text: "你不是不难过，你只是太习惯先把别人安顿好。等你终于停下来，那些委屈才会一起上来。",
+    platform_result: {
+      event: {
+        event_type: "post",
+        text: "这是小红薯66661C17在小红书创作首页看到的创作话题机会。\n推荐话题：#情绪总是晚到一步",
+      },
+      actions: [],
+    },
+  };
+
+  const draft = buildPublishDraft(previewItem);
+
+  expect(draft.body).toBe("你不是不难过，你只是太习惯先把别人安顿好。\n\n等你终于停下来，那些委屈才会一起上来。");
+});
+
 test("parseImagePaths keeps non-empty path lines", () => {
   expect(parseImagePaths(" /tmp/a.png \n\n /tmp/b.png ")).toEqual(["/tmp/a.png", "/tmp/b.png"]);
 });
@@ -300,7 +368,7 @@ test("buildLeadReplyPlan ranks high-intent comments into a practical reply order
   expect(replyPlan.summary).toContain("3 条");
 });
 
-test("draft card switches text-image button label after manual expand is needed", () => {
+test("draft card keeps publish and lead actions without text-image branch", () => {
   render(
     <XiaohongshuDraftCard
       item={{
@@ -344,14 +412,6 @@ test("draft card switches text-image button label after manual expand is needed"
         ],
         fullText: "高意向评论优先回复：\n1. 优先级 P1：马上承接并尽快导到微信",
       }}
-      textImageResult={{
-        status: "needs_manual_expand",
-        publish_url: "https://creator.xiaohongshu.com/publish/publish?from=xiao_yan&target=image",
-        cards: ["封面", "正文1", "正文2"],
-        filled_cards: 1,
-        clicked_generate: false,
-        message: "已先填入 1/3 张图卡文案。请先在小红书页面点一次“再写一张”，再回到小晏点“继续填正文页”。",
-      }}
       publishViaMcpResult={{
         status: "submitted",
         message: "MCP 发布结果：已提交图文发布",
@@ -364,7 +424,6 @@ test("draft card switches text-image button label after manual expand is needed"
       autofilling={false}
       autoPublishing={false}
       publishViaMcpPending={false}
-      textImageFilling={false}
       leadCapturing={false}
       imagePathsText={"/tmp/cover.png\n/tmp/page2.png"}
       onExpand={() => {}}
@@ -372,15 +431,12 @@ test("draft card switches text-image button label after manual expand is needed"
       onAutoPublish={() => {}}
       onImagePathsChange={() => {}}
       onPublishViaMcp={() => {}}
-      onTextImageAutofill={() => {}}
       onLeadCapture={() => {}}
     />,
   );
 
   expect(screen.getByRole("button", { name: "从当前页自动提取" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "用 MCP 发布图文" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "我已点再写一张，继续填正文页" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "复制下一张图卡" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "复制首评" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "复制发布清单" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "复制评论回复" })).toBeInTheDocument();
@@ -438,7 +494,6 @@ test("draft card can preview and switch xiaohongshu cover templates", async () =
       autofilling={false}
       autoPublishing={false}
       publishViaMcpPending={false}
-      textImageFilling={false}
       leadCapturing={false}
       imagePathsText=""
       onExpand={() => {}}
@@ -446,7 +501,6 @@ test("draft card can preview and switch xiaohongshu cover templates", async () =
       onAutoPublish={() => {}}
       onImagePathsChange={() => {}}
       onPublishViaMcp={() => {}}
-      onTextImageAutofill={() => {}}
       onLeadCapture={() => {}}
     />,
   );
@@ -465,6 +519,88 @@ test("draft card can preview and switch xiaohongshu cover templates", async () =
     title: "测试标题",
     body: "测试正文",
     template_name: "bold_hook",
+  });
+});
+
+test("xiaohongshu page can prioritize and publish a non-first pending draft", async () => {
+  const fetchDomainMock = vi.mocked(fetchXhsWorkDomain);
+  const updateDomainMock = vi.mocked(updateXhsWorkDomain);
+  const wakeLifecycleMock = vi.mocked(wakeLifecycle);
+
+  wakeLifecycleMock.mockResolvedValue({
+    mode: "awake",
+    focus_mode: "autonomy",
+    current_thought: null,
+  } as Awaited<ReturnType<typeof wakeLifecycle>>);
+
+  fetchDomainMock.mockResolvedValue({
+    available: true,
+    profile: {
+      work_type: "xiaohongshu_operations",
+      account_name: "已登录账号",
+      account_positioning: "数字生命式情绪关系轻科普",
+      target_audience: "需要被理解的人",
+      expression_style: "先接住再解释",
+      scouting_interval_hours: 1,
+      publish_mode: "review_before_publish",
+      auto_publish_selector: "",
+    },
+    state: {
+      status: "idle",
+      current_focus: "",
+      backlog_count: 2,
+      active_task_ids: [],
+      last_published_at: null,
+      last_scouting_at: null,
+      current_bottleneck: "",
+      next_recommended_action: "",
+      review_session_id: "",
+      pending_drafts: [
+        {
+          draft_id: "draft-1",
+          title: "第一条草稿",
+          body: "第一条正文",
+          generated_at: "2026-04-23T00:00:00Z",
+          status: "pending",
+        },
+        {
+          draft_id: "draft-2",
+          title: "第二条草稿",
+          body: "第二条正文",
+          generated_at: "2026-04-23T00:01:00Z",
+          status: "pending",
+        },
+      ],
+      published_history: [],
+    },
+    goals: {
+      north_star: "",
+      weekly_goals: [],
+      monthly_content_target: 0,
+    },
+  });
+  updateDomainMock.mockResolvedValue({ ok: true });
+
+  render(<XiaohongshuPage assistantName="小晏" />);
+
+  await waitFor(() => {
+    expect(screen.getByDisplayValue("第一条草稿")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("第二条草稿")).toBeInTheDocument();
+  });
+
+  fireEvent.click(screen.getAllByRole("button", { name: "发布这条" })[1]!);
+
+  await waitFor(() => {
+    expect(updateDomainMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "publishing",
+        backlog_count: 2,
+        pending_drafts: [
+          expect.objectContaining({ draft_id: "draft-2", title: "第二条草稿", body: "第二条正文" }),
+          expect.objectContaining({ draft_id: "draft-1", title: "第一条草稿", body: "第一条正文" }),
+        ],
+      }),
+    );
   });
 });
 
@@ -494,7 +630,6 @@ test("lead queue can advance a suggestion from pending to dm follow-up", () => {
       autofilling={false}
       autoPublishing={false}
       publishViaMcpPending={false}
-      textImageFilling={false}
       leadCapturing={false}
       imagePathsText=""
       onExpand={() => {}}
@@ -502,7 +637,6 @@ test("lead queue can advance a suggestion from pending to dm follow-up", () => {
       onAutoPublish={() => {}}
       onImagePathsChange={() => {}}
       onPublishViaMcp={() => {}}
-      onTextImageAutofill={() => {}}
       onLeadCapture={() => {}}
     />,
   );
@@ -542,7 +676,6 @@ test("lead queue note can raise qualification hint when budget and schedule appe
       autofilling={false}
       autoPublishing={false}
       publishViaMcpPending={false}
-      textImageFilling={false}
       leadCapturing={false}
       imagePathsText=""
       onExpand={() => {}}
@@ -550,7 +683,6 @@ test("lead queue note can raise qualification hint when budget and schedule appe
       onAutoPublish={() => {}}
       onImagePathsChange={() => {}}
       onPublishViaMcp={() => {}}
-      onTextImageAutofill={() => {}}
       onLeadCapture={() => {}}
     />,
   );

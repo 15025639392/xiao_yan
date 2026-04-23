@@ -37,26 +37,6 @@ def mark_xiaohongshu_publish_blocked(
     return XiaohongshuPublishTransition(kind="publishing", title=title, data=data)
 
 
-def mark_xiaohongshu_text_image_review(
-    domain: XhsWorkDomainState,
-    *,
-    focus: str,
-    status: str,
-    message: str,
-) -> XiaohongshuPublishTransition:
-    now = datetime.now(timezone.utc)
-    domain.state.status = XhsWorkStatus.IDLE_REVIEWING
-    domain.state.current_bottleneck = ""
-    domain.state.current_focus = focus
-    domain.state.next_recommended_action = ""
-    domain.state.idle_reviewing_entered_at = now
-    return XiaohongshuPublishTransition(
-        kind="publishing",
-        title="已进入补图阶段",
-        data={"status": status, "message": message},
-    )
-
-
 def mark_xiaohongshu_publish_review_ready(
     domain: XhsWorkDomainState,
     *,

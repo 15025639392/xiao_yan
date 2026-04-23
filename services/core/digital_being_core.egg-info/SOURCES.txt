@@ -191,8 +191,6 @@ app/usecases/xiaohongshu_publish_preparation.py
 app/usecases/xiaohongshu_publish_via_mcp.py
 app/usecases/xiaohongshu_scouting_orchestration.py
 app/usecases/xiaohongshu_seed_drafts.py
-app/usecases/xiaohongshu_text_image_autofill.py
-app/usecases/xiaohongshu_text_image_script.py
 app/utils/file_utils.py
 app/utils/local_time.py
 app/utils/process_utils.py

@@ -113,3 +113,16 @@ def test_state_store_ignores_removed_legacy_orchestrator_session_field(tmp_path:
 
     assert reloaded.get().mode == WakeMode.AWAKE
     assert reloaded.get().focus_mode == FocusMode.AUTONOMY
+
+
+def test_state_store_discards_invalid_persisted_state_and_rewrites_default(tmp_path: Path):
+    storage_path = tmp_path / "state.json"
+    storage_path.write_text(
+        '{"mode":"awake","focus_mode":"autonomy","xhs_work_domain":{"state":{"status":"idle_reviewing"}}}',
+        encoding="utf-8",
+    )
+
+    reloaded = StateStore(storage_path=storage_path)
+
+    assert reloaded.get() == StateStore().get()
+    assert '"status": "idle_reviewing"' not in storage_path.read_text(encoding="utf-8")
