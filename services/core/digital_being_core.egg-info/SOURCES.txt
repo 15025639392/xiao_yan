@@ -66,7 +66,6 @@ app/chat/emotion_handler.py
 app/chat/persona_injector.py
 app/domain/models.py
 app/external_executors/__init__.py
-app/external_executors/xiaohongshu_mcp_client.py
 app/focus/context.py
 app/focus/effort.py
 app/focus/models.py
@@ -184,11 +183,9 @@ app/usecases/xiaohongshu_lead_capture.py
 app/usecases/xiaohongshu_metrics_capture.py
 app/usecases/xiaohongshu_notification_preview.py
 app/usecases/xiaohongshu_policy.py
-app/usecases/xiaohongshu_publish_autofill.py
 app/usecases/xiaohongshu_publish_orchestration.py
 app/usecases/xiaohongshu_publish_pipeline.py
 app/usecases/xiaohongshu_publish_preparation.py
-app/usecases/xiaohongshu_publish_via_mcp.py
 app/usecases/xiaohongshu_scouting_orchestration.py
 app/usecases/xiaohongshu_seed_drafts.py
 app/utils/file_utils.py
@@ -275,9 +272,7 @@ tests/test_xiaohongshu_lead_assessment.py
 tests/test_xiaohongshu_metrics_capture.py
 tests/test_xiaohongshu_notification_preview.py
 tests/test_xiaohongshu_policy.py
-tests/test_xiaohongshu_publish_autofill.py
 tests/test_xiaohongshu_publish_orchestration.py
 tests/test_xiaohongshu_publish_preparation.py
-tests/test_xiaohongshu_publish_via_mcp.py
 tests/test_xiaohongshu_scouting_orchestration.py
 tests/test_xiaohongshu_seed_drafts.py

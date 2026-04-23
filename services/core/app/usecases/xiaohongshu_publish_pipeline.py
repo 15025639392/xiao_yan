@@ -3,16 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from app.api.tool_capability_bridge import (
-    BrowserCapabilityError,
-    BrowserOrganUnavailable,
-)
-from app.domain.models import XhsWorkDomainState, XhsWorkStatus
-from app.external_executors.xiaohongshu_mcp_client import XiaohongshuMcpClient
+from app.domain.models import XhsPublishMode, XhsWorkDomainState
 from app.usecases.xiaohongshu_browser_publish_executor import (
     XiaohongshuBrowserPublishExecution,
     execute_xiaohongshu_browser_publish,
-    resolve_xiaohongshu_publish_selector,
 )
 from app.usecases.xiaohongshu_browser_publish_review import (
     evaluate_xiaohongshu_browser_review_preparation,
@@ -22,35 +16,20 @@ from app.usecases.xiaohongshu_cover_image import (
 )
 from app.usecases.xiaohongshu_publish_orchestration import (
     XiaohongshuPublishTransition,
-    mark_xiaohongshu_browser_publish_success,
-    mark_xiaohongshu_mcp_publish_success,
     mark_xiaohongshu_publish_blocked,
     mark_xiaohongshu_publish_review_ready,
+    mark_xiaohongshu_browser_publish_success,
 )
 from app.usecases.xiaohongshu_publish_preparation import (
     build_xiaohongshu_browser_publish_image_paths,
     find_xiaohongshu_publish_button,
     prepare_xiaohongshu_publish_draft,
 )
-from app.usecases.xiaohongshu_publish_via_mcp import (
-    XiaohongshuPublishViaMcpResponse,
-    publish_xiaohongshu_image_post_via_mcp,
-)
 
 
 @dataclass(frozen=True)
 class XiaohongshuPublishPipelineResult:
     transition: XiaohongshuPublishTransition
-    updated_selector: str | None = None
-
-
-_MCP_FAILURE_STATUSES = {
-    "publisher_disabled",
-    "service_unreachable",
-    "publish_failed",
-    "cover_generation_failed",
-    "cover_generation_unavailable",
-}
 
 
 def run_xiaohongshu_publish_pipeline(
@@ -58,68 +37,66 @@ def run_xiaohongshu_publish_pipeline(
     domain: XhsWorkDomainState,
     drafts: list[dict[str, Any]],
     draft: dict[str, Any],
-    mcp_client: XiaohongshuMcpClient,
-    requires_manual_review: bool,
+    publish_mode: XhsPublishMode,
     publish_url: str,
     call_browser_capability: Callable[..., dict[str, Any]],
     close_session: Callable[[str], None],
 ) -> XiaohongshuPublishPipelineResult:
     prepared_draft = prepare_xiaohongshu_publish_draft(draft)
-    mcp_result = None if requires_manual_review else _try_mcp_publish(prepared_draft, mcp_client)
-    if mcp_result is not None and mcp_result.status not in _MCP_FAILURE_STATUSES:
+    image_paths = _prepare_browser_image_paths(prepared_draft)
+    publish_selector = _resolve_publish_selector(
+        publish_mode=publish_mode,
+        publish_url=publish_url,
+        call_browser_capability=call_browser_capability,
+        close_session=close_session,
+    )
+    if publish_mode == XhsPublishMode.AUTO and not publish_selector:
         return XiaohongshuPublishPipelineResult(
-            transition=mark_xiaohongshu_mcp_publish_success(
+            transition=mark_xiaohongshu_publish_blocked(
                 domain,
-                drafts=drafts,
-                draft=prepared_draft,
-                post_url=mcp_result.post_url or publish_url,
-                message=mcp_result.message,
-                image_paths=mcp_result.image_paths,
+                bottleneck="找不到发布按钮",
+                title="自动发布失败",
+                data={"error": "publish button not found"},
             ),
         )
-
-    image_paths = _prepare_browser_image_paths(prepared_draft, mcp_result)
     return _run_browser_publish_path(
         domain=domain,
         drafts=drafts,
         draft=prepared_draft,
         image_paths=image_paths,
-        requires_manual_review=requires_manual_review,
+        publish_mode=publish_mode,
+        publish_selector=publish_selector,
         publish_url=publish_url,
         call_browser_capability=call_browser_capability,
         close_session=close_session,
     )
 
 
-def _try_mcp_publish(
-    draft: dict[str, Any],
-    mcp_client: XiaohongshuMcpClient,
-) -> XiaohongshuPublishViaMcpResponse | None:
-    title = str(draft.get("title", "")).strip()
-    body = str(draft.get("body", "")).strip()
-    if not title or not body:
-        return None
-    raw_image_paths = draft.get("image_paths")
-    image_paths = raw_image_paths if isinstance(raw_image_paths, list) else []
-    return publish_xiaohongshu_image_post_via_mcp(
-        title=title,
-        body=body,
-        image_paths=image_paths,
-        client=mcp_client,
-    )
-
-
 def _prepare_browser_image_paths(
     draft: dict[str, Any],
-    mcp_result: XiaohongshuPublishViaMcpResponse | None,
 ) -> list[str]:
-    if mcp_result is not None:
-        paths = [str(item).strip() for item in mcp_result.image_paths if str(item).strip()]
-        if paths:
-            return paths
     return build_xiaohongshu_browser_publish_image_paths(
         draft,
         generate_cover_image=generate_xiaohongshu_cover_image,
+    )
+
+
+def _resolve_publish_selector(
+    *,
+    publish_mode: XhsPublishMode,
+    publish_url: str,
+    call_browser_capability: Callable[..., dict[str, Any]],
+    close_session: Callable[[str], None],
+) -> str:
+    if publish_mode != XhsPublishMode.AUTO:
+        return ""
+    return (
+        find_xiaohongshu_publish_button(
+            publish_url=publish_url,
+            call_browser_capability=call_browser_capability,
+            close_session=close_session,
+        )
+        or ""
     )
 
 
@@ -128,7 +105,8 @@ def _run_browser_publish_path(
     drafts: list[dict[str, Any]],
     draft: dict[str, Any],
     image_paths: list[str],
-    requires_manual_review: bool,
+    publish_mode: XhsPublishMode,
+    publish_selector: str,
     publish_url: str,
     call_browser_capability: Callable[..., dict[str, Any]],
     close_session: Callable[[str], None],
@@ -143,35 +121,10 @@ def _run_browser_publish_path(
             ),
         )
 
-    selector_resolution = resolve_xiaohongshu_publish_selector(
-        requires_manual_review=requires_manual_review,
-        auto_publish_selector=domain.profile.auto_publish_selector,
-        find_publish_button=lambda: find_xiaohongshu_publish_button(
-            publish_url=publish_url,
-            call_browser_capability=call_browser_capability,
-            close_session=close_session,
-        ),
-    )
-
-    if selector_resolution.blocked_reason:
-        return XiaohongshuPublishPipelineResult(
-            transition=mark_xiaohongshu_publish_blocked(
-                domain,
-                bottleneck=selector_resolution.blocked_reason,
-                title="发布失败",
-                data={"error": "publish button not found"},
-            ),
-        )
-
-    selector = selector_resolution.selector
-    updated_selector: str | None = None
-    if selector and selector != domain.profile.auto_publish_selector and not requires_manual_review:
-        updated_selector = selector
-
     execution = execute_xiaohongshu_browser_publish(
         title=str(draft.get("title", "")),
         body=str(draft.get("body", "")),
-        selector=selector,
+        selector=publish_selector,
         image_paths=image_paths,
         open_publish_page=lambda: call_browser_capability(
             "browser.open",
@@ -197,14 +150,10 @@ def _run_browser_publish_path(
         draft=draft,
         execution=execution,
         image_paths=image_paths,
-        requires_manual_review=requires_manual_review,
+        publish_mode=publish_mode,
         publish_url=publish_url,
         call_browser_capability=call_browser_capability,
         close_session=close_session,
-    )
-    result = XiaohongshuPublishPipelineResult(
-        transition=result.transition,
-        updated_selector=updated_selector or result.updated_selector,
     )
     return result
 
@@ -215,7 +164,7 @@ def _handle_execution_result(
     draft: dict[str, Any],
     execution: XiaohongshuBrowserPublishExecution,
     image_paths: list[str],
-    requires_manual_review: bool,
+    publish_mode: XhsPublishMode,
     publish_url: str,
     call_browser_capability: Callable[..., dict[str, Any]],
     close_session: Callable[[str], None],
@@ -244,10 +193,21 @@ def _handle_execution_result(
         )
 
     publish_result = execution.publish_result or {}
-    publish_clicked = publish_result.get("publish_clicked", False)
     status = publish_result.get("status", "unknown")
 
-    if requires_manual_review:
+    if publish_mode == XhsPublishMode.AUTO:
+        transition = _handle_auto_publish_path(
+            domain=domain,
+            drafts=drafts,
+            draft=draft,
+            session_id=session_id,
+            publish_result=publish_result,
+            status=status,
+            image_paths=image_paths,
+            publish_url=publish_url,
+            close_session=close_session,
+        )
+    else:
         transition = _handle_review_path(
             domain=domain,
             draft=draft,
@@ -259,28 +219,63 @@ def _handle_execution_result(
             call_browser_capability=call_browser_capability,
             close_session=close_session,
         )
-        return XiaohongshuPublishPipelineResult(transition=transition)
+    return XiaohongshuPublishPipelineResult(transition=transition)
 
-    if publish_clicked:
+
+def _handle_auto_publish_path(
+    *,
+    domain: XhsWorkDomainState,
+    drafts: list[dict[str, Any]],
+    draft: dict[str, Any],
+    session_id: str,
+    publish_result: dict[str, Any],
+    status: str,
+    image_paths: list[str],
+    publish_url: str,
+    close_session: Callable[[str], None],
+) -> XiaohongshuPublishTransition:
+    review_preparation = evaluate_xiaohongshu_browser_review_preparation(
+        publish_result=publish_result,
+        requested_image_paths=image_paths,
+    )
+    click_error = str(publish_result.get("click_error", "") or "").strip()
+    publish_clicked = bool(publish_result.get("publish_clicked", False))
+
+    if click_error:
         close_session(session_id)
-        return XiaohongshuPublishPipelineResult(
-            transition=mark_xiaohongshu_browser_publish_success(
-                domain,
-                drafts=drafts,
-                draft=draft,
-                post_url=publish_url,
-                current_focus="已自动补封面并发布成功" if image_paths else "已完成补图并发布成功",
-            ),
+        return mark_xiaohongshu_publish_blocked(
+            domain,
+            bottleneck="无法点击发布按钮",
+            title="自动发布失败",
+            data={"error": click_error},
+        )
+
+    if not review_preparation.ready:
+        close_session(session_id)
+        return mark_xiaohongshu_publish_blocked(
+            domain,
+            bottleneck=review_preparation.blocking_reason or "还没准备到可发布状态",
+            title="自动发布失败",
+            data={"status": status},
+        )
+
+    if not publish_clicked:
+        close_session(session_id)
+        return mark_xiaohongshu_publish_blocked(
+            domain,
+            bottleneck="无法点击发布按钮",
+            title="自动发布失败",
+            data={"status": status},
         )
 
     close_session(session_id)
-    return XiaohongshuPublishPipelineResult(
-        transition=mark_xiaohongshu_publish_blocked(
-            domain,
-            bottleneck=f"无法点击发布按钮（status={status}）",
-            title="发布未完成",
-            data={"status": status},
-        ),
+    return mark_xiaohongshu_browser_publish_success(
+        domain,
+        drafts=drafts,
+        draft=draft,
+        post_url=publish_url,
+        current_focus="已自动发布到小红书",
+        continue_publishing=True,
     )
 
 

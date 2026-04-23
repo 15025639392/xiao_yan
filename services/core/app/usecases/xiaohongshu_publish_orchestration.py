@@ -62,30 +62,6 @@ def mark_xiaohongshu_publish_review_ready(
     )
 
 
-def mark_xiaohongshu_mcp_publish_success(
-    domain: XhsWorkDomainState,
-    *,
-    drafts: list[dict[str, Any]],
-    draft: dict[str, Any],
-    post_url: str,
-    message: str,
-    image_paths: list[str],
-) -> XiaohongshuPublishTransition:
-    published_entry = _consume_pending_draft(domain, drafts=drafts, draft=draft, post_url=post_url)
-    domain.state.current_bottleneck = ""
-    domain.state.current_focus = "已通过 MCP 自动生成封面并发布图文"
-    domain.state.next_recommended_action = ""
-    return XiaohongshuPublishTransition(
-        kind="publishing",
-        title=f"MCP 发布成功：{str(draft.get('title', ''))[:20]}",
-        data={
-            "published": published_entry,
-            "message": message,
-            "image_paths": image_paths,
-        },
-    )
-
-
 def mark_xiaohongshu_browser_publish_success(
     domain: XhsWorkDomainState,
     *,
@@ -93,9 +69,14 @@ def mark_xiaohongshu_browser_publish_success(
     draft: dict[str, Any],
     post_url: str,
     current_focus: str,
+    continue_publishing: bool = False,
 ) -> XiaohongshuPublishTransition:
     published_entry = _consume_pending_draft(domain, drafts=drafts, draft=draft, post_url=post_url)
-    domain.state.current_focus = current_focus
+    if continue_publishing and domain.state.pending_drafts:
+        domain.state.status = XhsWorkStatus.PUBLISHING
+        domain.state.current_focus = "已自动发布，继续处理下一条草稿"
+    else:
+        domain.state.current_focus = current_focus
     domain.state.next_recommended_action = ""
     return XiaohongshuPublishTransition(
         kind="publishing",

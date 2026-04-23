@@ -160,39 +160,6 @@ class XiaohongshuStructuredPublishDraft(BaseModel):
     image_cards: list[XiaohongshuImageCardDraftItem] = Field(default_factory=list)
 
 
-class XiaohongshuPublishAutofillRequest(BaseModel):
-    title: str
-    body: str
-    auto_publish: bool = False
-    publish_selector: str = ""
-
-
-class XiaohongshuPublishAutofillResponse(BaseModel):
-    status: str
-    publish_url: str
-    title: str
-    body: str
-    filled_title: bool = False
-    filled_body: bool = False
-    message: str
-
-
-class XiaohongshuPublishViaMcpRequest(BaseModel):
-    title: str
-    body: str
-    image_paths: list[str] = Field(default_factory=list)
-
-
-class XiaohongshuPublishViaMcpResponse(BaseModel):
-    status: str
-    message: str
-    published_title: str
-    image_count: int
-    image_paths: list[str] = Field(default_factory=list)
-    post_url: str | None = None
-    platform_post_id: str | None = None
-
-
 class XiaohongshuCoverPreviewRequest(BaseModel):
     title: str
     body: str

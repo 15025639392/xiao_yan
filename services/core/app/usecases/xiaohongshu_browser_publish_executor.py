@@ -7,12 +7,6 @@ from app.api.tool_capability_bridge import BrowserCapabilityError, BrowserOrganU
 
 
 @dataclass(frozen=True)
-class XiaohongshuPublishSelectorResolution:
-    selector: str = ""
-    blocked_reason: str = ""
-
-
-@dataclass(frozen=True)
 class XiaohongshuBrowserPublishExecution:
     session_id: str = ""
     publish_result: dict[str, Any] | None = None
@@ -28,26 +22,6 @@ def _map_browser_publish_error(error: str, *, phase: str) -> tuple[str, str]:
             f"{phase}失败: 浏览器器官未暴露可复用调试端口",
         )
     return (f"{phase}失败: {normalized}", normalized)
-
-
-def resolve_xiaohongshu_publish_selector(
-    *,
-    requires_manual_review: bool,
-    auto_publish_selector: str,
-    find_publish_button: Callable[[], str | None],
-) -> XiaohongshuPublishSelectorResolution:
-    if requires_manual_review:
-        return XiaohongshuPublishSelectorResolution()
-
-    selector = auto_publish_selector.strip()
-    if selector:
-        return XiaohongshuPublishSelectorResolution(selector=selector)
-
-    selector = find_publish_button() or ""
-    if selector:
-        return XiaohongshuPublishSelectorResolution(selector=selector)
-
-    return XiaohongshuPublishSelectorResolution(blocked_reason="找不到发布按钮")
 
 
 def execute_xiaohongshu_browser_publish(

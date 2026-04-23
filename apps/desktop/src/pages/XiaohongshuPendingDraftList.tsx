@@ -10,6 +10,7 @@ type DraftEdit = {
 type XiaohongshuPendingDraftListProps = {
   drafts: XhsWorkDomainState["pending_drafts"];
   status: string;
+  publishMode: "manual" | "auto";
   draftEdits: Record<string, DraftEdit>;
   draftCoverPreviews: Record<string, XiaohongshuCoverPreviewResponse | null>;
   draftCoverLoading: Record<string, boolean>;
@@ -30,6 +31,7 @@ const COVER_TEMPLATE_LABELS: Record<string, string> = {
 export function XiaohongshuPendingDraftList({
   drafts,
   status,
+  publishMode,
   draftEdits,
   draftCoverPreviews,
   draftCoverLoading,
@@ -109,7 +111,7 @@ export function XiaohongshuPendingDraftList({
                 }}
                 disabled={status === "reviewing"}
               >
-                发布这条
+                {publishMode === "auto" ? "优先自动发布" : "发布这条"}
               </Button>
               <Button
                 variant="destructive"

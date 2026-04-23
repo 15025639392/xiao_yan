@@ -323,7 +323,7 @@ describe("persona api methods", () => {
 
     await updateXhsWorkDomain({
       current_focus: "补封面并完成发布前编排",
-      publish_mode: "review_before_publish",
+      scouting_interval_hours: 1,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -332,7 +332,7 @@ describe("persona api methods", () => {
         method: "PATCH",
         body: JSON.stringify({
           current_focus: "补封面并完成发布前编排",
-          publish_mode: "review_before_publish",
+          scouting_interval_hours: 1,
         }),
       }),
     );

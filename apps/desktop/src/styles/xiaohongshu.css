@@ -472,7 +472,7 @@
   height: auto;
 }
 
-/* ===== Result Card (XiaohongshuDraftCard) ===== */
+/* ===== Result Card ===== */
 .xhs-result-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-default);

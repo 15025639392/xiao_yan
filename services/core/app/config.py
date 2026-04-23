@@ -114,18 +114,6 @@ def get_chat_read_timeout_seconds() -> int:
     return 180
 
 
-def get_xiaohongshu_mcp_publish_enabled() -> bool:
-    load_local_env()
-    raw = os.getenv("XIAOHONGSHU_MCP_PUBLISH_ENABLED", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
-def get_xiaohongshu_mcp_publish_endpoint() -> str | None:
-    load_local_env()
-    configured = os.getenv("XIAOHONGSHU_MCP_PUBLISH_ENDPOINT", "").strip()
-    return configured or None
-
-
 def get_mempalace_palace_path() -> str:
     load_local_env()
     service_root = Path(__file__).resolve().parents[1]

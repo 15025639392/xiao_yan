@@ -5,7 +5,6 @@ import pytest
 from app.domain.models import XhsWorkDomainState, XhsWorkMemory, XhsWorkStatus
 from app.usecases.xiaohongshu_publish_orchestration import (
     mark_xiaohongshu_browser_publish_success,
-    mark_xiaohongshu_mcp_publish_success,
 )
 
 
@@ -13,7 +12,7 @@ def _make_domain() -> XhsWorkDomainState:
     return XhsWorkDomainState(memory=XhsWorkMemory())
 
 
-def test_mcp_publish_success_updates_work_memory():
+def test_publish_success_updates_work_memory():
     domain = _make_domain()
     draft = {
         "draft_id": "d1",
@@ -24,13 +23,12 @@ def test_mcp_publish_success_updates_work_memory():
     domain.state.pending_drafts = [draft]
     domain.state.backlog_count = 1
 
-    transition = mark_xiaohongshu_mcp_publish_success(
+    transition = mark_xiaohongshu_browser_publish_success(
         domain,
         drafts=domain.state.pending_drafts,
         draft=draft,
         post_url="https://example.com/p1",
-        message="ok",
-        image_paths=["img1.png"],
+        current_focus="已完成发布",
     )
 
     assert transition.kind == "publishing"
@@ -39,31 +37,6 @@ def test_mcp_publish_success_updates_work_memory():
     assert domain.memory.recent_draft_titles == ["高颜值巧克力"]
     assert domain.memory.successful_topic_titles == ["巧克力测评"]
     assert domain.memory.last_source_kind == "topic"
-
-
-def test_browser_publish_success_updates_work_memory():
-    domain = _make_domain()
-    draft = {
-        "draft_id": "d2",
-        "title": "春日穿搭",
-        "opportunity_title": "OOTD活动",
-        "source_kind": "activity",
-    }
-    domain.state.pending_drafts = [draft]
-    domain.state.backlog_count = 1
-
-    transition = mark_xiaohongshu_browser_publish_success(
-        domain,
-        drafts=domain.state.pending_drafts,
-        draft=draft,
-        post_url="https://example.com/p2",
-        current_focus="browser ok",
-    )
-
-    assert transition.kind == "publishing"
-    assert domain.memory.recent_draft_titles == ["春日穿搭"]
-    assert domain.memory.successful_topic_titles == ["OOTD活动"]
-    assert domain.memory.last_source_kind == "activity"
 
 
 def test_publish_success_caps_memory_at_10_entries():
@@ -80,13 +53,12 @@ def test_publish_success_caps_memory_at_10_entries():
     domain.state.pending_drafts = [draft]
     domain.state.backlog_count = 1
 
-    mark_xiaohongshu_mcp_publish_success(
+    mark_xiaohongshu_browser_publish_success(
         domain,
         drafts=domain.state.pending_drafts,
         draft=draft,
         post_url="https://example.com/p3",
-        message="ok",
-        image_paths=[],
+        current_focus="已完成发布",
     )
 
     assert domain.memory.recent_draft_titles == [f"title-{i}" for i in range(1, 10)] + ["new-title"]
@@ -104,13 +76,12 @@ def test_publish_success_ignores_empty_draft_fields():
     domain.state.pending_drafts = [draft]
     domain.state.backlog_count = 1
 
-    mark_xiaohongshu_mcp_publish_success(
+    mark_xiaohongshu_browser_publish_success(
         domain,
         drafts=domain.state.pending_drafts,
         draft=draft,
         post_url="https://example.com/p4",
-        message="ok",
-        image_paths=[],
+        current_focus="已完成发布",
     )
 
     assert domain.memory.recent_draft_titles == []

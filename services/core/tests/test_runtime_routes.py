@@ -163,6 +163,7 @@ def test_get_xhs_work_domain_initializes_light_science_defaults():
         assert body["profile"]["account_positioning"] == "数字生命式情绪关系轻科普"
         assert "情绪、关系和自我认知" in body["profile"]["target_audience"]
         assert "先接住再解释" in body["profile"]["expression_style"]
+        assert body["profile"]["publish_mode"] == "manual"
     finally:
         app.dependency_overrides.clear()
 
@@ -256,5 +257,34 @@ def test_patch_xhs_work_domain_updates_pending_drafts():
         assert len(domain.state.pending_drafts) == 1
         assert domain.state.pending_drafts[0]["title"] == "新标题"
         assert domain.state.pending_drafts[0]["body"] == "新正文"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_xhs_work_domain_updates_publish_mode():
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.AWAKE,
+            focus_mode=FocusMode.AUTONOMY,
+            xhs_work_domain=XhsWorkDomainState(),
+        )
+    )
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            "/xhs-work-domain",
+            json={"publish_mode": "auto"},
+        )
+
+        assert response.status_code == 200
+        domain = state_store.get().xhs_work_domain
+        assert domain is not None
+        assert domain.profile.publish_mode.value == "auto"
     finally:
         app.dependency_overrides.clear()

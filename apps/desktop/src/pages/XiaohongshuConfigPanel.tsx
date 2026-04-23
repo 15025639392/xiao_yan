@@ -5,10 +5,8 @@ type XiaohongshuConfigPanelProps = {
   onAccountNameChange: (value: string) => void;
   scoutingInterval: number;
   onScoutingIntervalChange: (value: number) => void;
-  publishMode: "review_before_publish" | "direct_publish";
-  onPublishModeChange: (value: "review_before_publish" | "direct_publish") => void;
-  autoPublishSelector: string;
-  onAutoPublishSelectorChange: (value: string) => void;
+  publishMode: "manual" | "auto";
+  onPublishModeChange: (value: "manual" | "auto") => void;
   onSave: () => void;
   onCancel: () => void;
   saving: boolean;
@@ -21,8 +19,6 @@ export function XiaohongshuConfigPanel({
   onScoutingIntervalChange,
   publishMode,
   onPublishModeChange,
-  autoPublishSelector,
-  onAutoPublishSelectorChange,
   onSave,
   onCancel,
   saving,
@@ -58,21 +54,11 @@ export function XiaohongshuConfigPanel({
           <select
             className="xhs-config-field__input"
             value={publishMode}
-            onChange={(e) => onPublishModeChange(e.target.value as "review_before_publish" | "direct_publish")}
+            onChange={(e) => onPublishModeChange(e.target.value === "auto" ? "auto" : "manual")}
           >
-            <option value="review_before_publish">准备到发布前，人工确认</option>
-            <option value="direct_publish">自动直发</option>
+            <option value="manual">手动发布</option>
+            <option value="auto">自动发布</option>
           </select>
-        </label>
-        <label className="xhs-config-field">
-          <span className="xhs-config-field__label">发布按钮 Selector</span>
-          <input
-            type="text"
-            className="xhs-config-field__input"
-            value={autoPublishSelector}
-            placeholder={publishMode === "direct_publish" ? "自动发现（留空）" : "仅直发模式需要"}
-            onChange={(e) => onAutoPublishSelectorChange(e.target.value)}
-          />
         </label>
       </div>
       <div className="xhs-config-panel__actions">

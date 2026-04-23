@@ -94,21 +94,15 @@ class XhsWorkStatus(str, Enum):
 
 
 class XhsPublishMode(str, Enum):
-    REVIEW_BEFORE_PUBLISH = "review_before_publish"
-    DIRECT_PUBLISH = "direct_publish"
+    MANUAL = "manual"
+    AUTO = "auto"
 
 
 # ── Work Policy ────────────────────────────────────────────────────────────────
 
 
 class XhsWorkPolicy(BaseModel):
-    """Content and operational constraints for the XHS work domain.
-
-    This is the authoritative policy document consulted at each step of the
-    task chain. Unlike publish_mode (a single gate), policy covers multiple
-    dimensions: what content is allowed, how often to post, how long to wait
-    for human review, and when to retry automatically.
-    """
+    """Content and operational constraints for the XHS work domain."""
 
     # Content constraints
     forbidden_keywords: list[str] = Field(default_factory=list)  # draft blocked if any appear
@@ -133,8 +127,7 @@ class XhsWorkProfile(BaseModel):
     target_audience: str = "在情绪、关系和自我认知里需要被理解与陪伴的年轻用户"
     expression_style: str = "像小晏一样温和、具体、先接住再解释，少说教，适合低图片依赖的文字卡内容"
     scouting_interval_hours: float = 1.0  # hours between scouting cycles
-    publish_mode: XhsPublishMode = XhsPublishMode.REVIEW_BEFORE_PUBLISH
-    auto_publish_selector: str = ""  # CSS selector for publish button; empty = auto-discover
+    publish_mode: XhsPublishMode = XhsPublishMode.MANUAL
 
 
 class XhsWorkState(BaseModel):

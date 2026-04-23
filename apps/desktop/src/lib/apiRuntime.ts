@@ -29,8 +29,7 @@ export type XhsWorkDomainProfile = {
   target_audience: string;
   expression_style: string;
   scouting_interval_hours: number;
-  publish_mode: "review_before_publish" | "direct_publish";
-  auto_publish_selector: string;
+  publish_mode: "manual" | "auto";
 };
 
 export type XhsWorkDomainState = {
@@ -84,8 +83,7 @@ export type XhsWorkDomainUpdate = {
   target_audience?: string;
   expression_style?: string;
   scouting_interval_hours?: number;
-  publish_mode?: "review_before_publish" | "direct_publish";
-  auto_publish_selector?: string;
+  publish_mode?: "manual" | "auto";
   north_star?: string;
   weekly_goals?: string[];
   monthly_content_target?: number;

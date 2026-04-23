@@ -8,9 +8,14 @@ from app.api.tool_capability_bridge import (
     BrowserOrganUnavailable,
     call_browser_capability,
 )
-from app.config import get_xiaohongshu_mcp_publish_enabled, get_xiaohongshu_mcp_publish_endpoint
-from app.domain.models import XhsPublishMode, XhsTaskChain, XhsTaskKind, XhsTaskStep, XhsWorkDomainState, XhsWorkStatus
-from app.external_executors.xiaohongshu_mcp_client import XiaohongshuMcpClient
+from app.domain.models import (
+    XhsPublishMode,
+    XhsTaskChain,
+    XhsTaskKind,
+    XhsTaskStep,
+    XhsWorkDomainState,
+    XhsWorkStatus,
+)
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
 from app.usecases.xiaohongshu_draft_generation import (
@@ -60,15 +65,10 @@ class XhsWorkDomainEngine:
         state_store: StateStore,
         memory_repository: MemoryRepository,
         gateway=None,  # ChatGateway, optional for now
-        mcp_client: XiaohongshuMcpClient | None = None,
     ):
         self.state_store = state_store
         self.memory_repository = memory_repository
         self.gateway = gateway
-        self.mcp_client = mcp_client or XiaohongshuMcpClient(
-            enabled=get_xiaohongshu_mcp_publish_enabled(),
-            endpoint=get_xiaohongshu_mcp_publish_endpoint(),
-        )
         # Skip timer on first tick to avoid triggering on service startup
         self._is_first_tick = True
 
@@ -107,7 +107,7 @@ class XhsWorkDomainEngine:
         if domain.state.status != XhsWorkStatus.IDLE:
             return  # 已经在流程中，不重复触发
         # Fast-track to publishing if there are queued drafts and enough time has passed
-        if domain.state.pending_drafts:
+        if domain.profile.publish_mode == XhsPublishMode.AUTO and domain.state.pending_drafts:
             last_published = domain.state.last_published_at
             if last_published is None or (now - last_published).total_seconds() >= _MIN_PUBLISH_INTERVAL_SECONDS:
                 domain.state.status = XhsWorkStatus.PUBLISHING
@@ -331,8 +331,15 @@ class XhsWorkDomainEngine:
             titles.append(draft_outcome.action_title)
 
         domain.state.pending_drafts = current_drafts + new_drafts
-        domain.state.status = XhsWorkStatus.PUBLISHING
         domain.state.backlog_count = len(domain.state.pending_drafts)
+        if domain.profile.publish_mode == XhsPublishMode.AUTO:
+            domain.state.status = XhsWorkStatus.PUBLISHING
+            domain.state.current_focus = "草稿已生成，开始自动发布"
+            domain.state.next_recommended_action = ""
+        else:
+            domain.state.status = XhsWorkStatus.IDLE
+            domain.state.current_focus = f"已生成 {len(new_drafts)} 条草稿，等待手动发布"
+            domain.state.next_recommended_action = "请在待发草稿列表中选择一条并点击发布。"
         self._save(domain)
 
         return XhsWorkDomainAction(
@@ -346,7 +353,7 @@ class XhsWorkDomainEngine:
         )
 
     def _do_publishing(self, domain: XhsWorkDomainState) -> XhsWorkDomainAction:
-        """从队列取草稿，通过发布管道完成 MCP 或浏览器发布。"""
+        """从队列取草稿，通过标准人工确认发布链完成发布前准备。"""
         drafts = domain.state.pending_drafts
         if not drafts:
             self._clear_review_session(domain)
@@ -376,15 +383,13 @@ class XhsWorkDomainEngine:
 
         self._clear_review_session(domain)
         draft = drafts[0]
-        requires_manual_review = self._requires_manual_publish_review(domain)
 
         try:
             result = run_xiaohongshu_publish_pipeline(
                 domain=domain,
                 drafts=drafts,
                 draft=draft,
-                mcp_client=self.mcp_client,
-                requires_manual_review=requires_manual_review,
+                publish_mode=domain.profile.publish_mode,
                 publish_url=_PUBLISH_URL,
                 call_browser_capability=call_browser_capability,
                 close_session=self._close_session,
@@ -401,10 +406,6 @@ class XhsWorkDomainEngine:
                 title="发布管道异常",
                 data={"error": str(exc)},
             )
-
-        if result.updated_selector:
-            domain.profile.auto_publish_selector = result.updated_selector
-            self._save(domain)
 
         return self._commit_publish_transition(domain, result.transition)
 
@@ -497,9 +498,6 @@ class XhsWorkDomainEngine:
         domain.state.review_session_id = ""
         domain.state.review_started_at = None
         self._close_session(session_id)
-
-    def _requires_manual_publish_review(self, domain: XhsWorkDomainState) -> bool:
-        return domain.profile.publish_mode == XhsPublishMode.REVIEW_BEFORE_PUBLISH
 
     def _build_draft_prompt(self, opportunity: dict) -> str:
         title = opportunity.get("title", "")

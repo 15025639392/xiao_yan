@@ -80,13 +80,16 @@ function PublishedHistory({ history }: { history: Array<{ draft_id: string; titl
   );
 }
 
+function getPublishModeLabel(publishMode: string | undefined): string {
+  return publishMode === "auto" ? "自动发布" : "手动发布";
+}
+
 export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
   const [workDomain, setWorkDomain] = useState<XhsWorkDomainResponse | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [accountName, setAccountName] = useState("");
   const [scoutingInterval, setScoutingInterval] = useState(1.0);
-  const [publishMode, setPublishMode] = useState<"review_before_publish" | "direct_publish">("review_before_publish");
-  const [autoPublishSelector, setAutoPublishSelector] = useState("");
+  const [publishMode, setPublishMode] = useState<"manual" | "auto">("manual");
   const [saving, setSaving] = useState(false);
   const [openingLogin, setOpeningLogin] = useState(false);
   const [draftEdits, setDraftEdits] = useState<Record<string, { title: string; body: string }>>({});
@@ -128,8 +131,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     if (workDomain?.profile) {
       setAccountName(workDomain.profile.account_name || "");
       setScoutingInterval(workDomain.profile.scouting_interval_hours || 1.0);
-      setPublishMode(workDomain.profile.publish_mode || "review_before_publish");
-      setAutoPublishSelector(workDomain.profile.auto_publish_selector || "");
+      setPublishMode(workDomain.profile.publish_mode || "manual");
     }
   }, [workDomain?.profile]);
 
@@ -226,7 +228,6 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
         account_name: accountName,
         scouting_interval_hours: scoutingInterval,
         publish_mode: publishMode,
-        auto_publish_selector: autoPublishSelector,
       });
       loadDomain();
       setConfigOpen(false);
@@ -351,6 +352,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
   const profile = workDomain?.profile;
   const status = state?.status || "idle";
   const isRunning = status !== "idle" && status !== "blocked";
+  const publishModeLabel = getPublishModeLabel(profile?.publish_mode);
 
   const showLoginGuidance =
     (!(profile?.account_name && profile.account_name !== "当前账号" && profile.account_name.trim() !== "" && profile.account_name !== "已登录账号") ||
@@ -362,7 +364,9 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
         <div>
           <h2 className="xhs-page__title">小红书经营闭环</h2>
           <p className="xhs-page__subtitle">
-            {assistantName} 全自动管理小红书账号：自动侦察 → AI生成草稿 → 自动发布 → 循环继续。
+            {profile?.publish_mode === "auto"
+              ? `${assistantName} 会自动侦察、生成轻科普草稿，并把待发草稿依次自动发布到小红书。`
+              : `${assistantName} 会先自动侦察并生成轻科普草稿，等你选中草稿后再打开小红书发布。`}
           </p>
         </div>
         <div className="xhs-page__header-actions">
@@ -391,8 +395,6 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
           onScoutingIntervalChange={setScoutingInterval}
           publishMode={publishMode}
           onPublishModeChange={setPublishMode}
-          autoPublishSelector={autoPublishSelector}
-          onAutoPublishSelectorChange={setAutoPublishSelector}
           onSave={handleSaveConfig}
           onCancel={() => setConfigOpen(false)}
           saving={saving}
@@ -444,9 +446,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
           </div>
           <div className="xhs-info-card">
             <h4 className="xhs-info-card__title">发布模式</h4>
-            <p className="xhs-info-card__value">
-              {profile?.publish_mode === "direct_publish" ? "自动直发" : "待确认发布"}
-            </p>
+            <p className="xhs-info-card__value">{publishModeLabel}</p>
           </div>
           <div className="xhs-info-card">
             <h4 className="xhs-info-card__title">上次侦察</h4>
@@ -483,6 +483,7 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
           <XiaohongshuPendingDraftList
             drafts={state.pending_drafts}
             status={status}
+            publishMode={publishMode}
             draftEdits={draftEdits}
             draftCoverPreviews={draftCoverPreviews}
             draftCoverLoading={draftCoverLoading}

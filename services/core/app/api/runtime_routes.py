@@ -66,7 +66,6 @@ class XhsWorkDomainUpdateRequest(BaseModel):
     expression_style: str | None = None
     scouting_interval_hours: float | None = None
     publish_mode: str | None = None
-    auto_publish_selector: str | None = None
     work_memory: dict[str, Any] | None = None
     pending_drafts: list[dict[str, Any]] | None = None
     north_star: str | None = None
@@ -236,7 +235,6 @@ def build_runtime_router() -> APIRouter:
                 "expression_style": domain.profile.expression_style,
                 "scouting_interval_hours": domain.profile.scouting_interval_hours,
                 "publish_mode": domain.profile.publish_mode.value,
-                "auto_publish_selector": domain.profile.auto_publish_selector,
             },
             "state": {
                 "status": domain.state.status.value,
@@ -334,8 +332,6 @@ def build_runtime_router() -> APIRouter:
             domain.profile.scouting_interval_hours = update_req.scouting_interval_hours
         if update_req.publish_mode is not None:
             domain.profile.publish_mode = XhsPublishMode(update_req.publish_mode)
-        if update_req.auto_publish_selector is not None:
-            domain.profile.auto_publish_selector = update_req.auto_publish_selector
         if update_req.work_memory is not None:
             wm = update_req.work_memory
             if "recent_draft_titles" in wm:
