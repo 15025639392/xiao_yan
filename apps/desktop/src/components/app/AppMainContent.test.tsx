@@ -1,0 +1,110 @@
+import { render, screen } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
+
+import type { BeingState, PersonaProfile } from "../../lib/api";
+import { AppMainContent } from "./AppMainContent";
+
+vi.mock("../PersonaPanel", () => ({
+  PersonaPanel: ({ avatarEnabled }: { avatarEnabled: boolean }) => (
+    <div data-testid="persona-props">avatar:{avatarEnabled ? "enabled" : "disabled"}</div>
+  ),
+}));
+
+vi.mock("../ChatPanel", () => ({
+  ChatPanel: () => <div>chat</div>,
+}));
+vi.mock("../ToolPanel", () => ({
+  ToolPanel: () => <div>tools</div>,
+}));
+vi.mock("../../pages/MemoryPage", () => ({
+  MemoryPage: () => <div>memory</div>,
+}));
+vi.mock("../../pages/XiaohongshuPage", () => ({
+  XiaohongshuPage: () => <div>xiaohongshu</div>,
+}));
+vi.mock("../../pages/VrmGenerationPage", () => ({
+  VrmGenerationPage: () => <div>vrm-generation</div>,
+}));
+
+const state: BeingState = {
+  mode: "awake",
+  focus_mode: "autonomy",
+  current_thought: null,
+  active_goal_ids: [],
+};
+
+const persona = {
+  name: "小晏",
+  features: { avatar_enabled: true },
+} as PersonaProfile;
+
+function renderPersonaRoute() {
+  render(
+    <AppMainContent
+      assistantName="小晏"
+      attachedFiles={[]}
+      attachedFolders={[]}
+      attachedImages={[]}
+      draft=""
+      focusGoalTitle={null}
+      focusContext={null}
+      isSending={false}
+      messages={[]}
+      persona={persona}
+      route="persona"
+      state={state}
+      onDraftChange={() => undefined}
+      onPersonaUpdated={() => undefined}
+      onPickFile={() => undefined}
+      onPickFolder={() => undefined}
+      onPickImage={() => undefined}
+      onRemoveAttachedFile={() => undefined}
+      onRemoveAttachedFolder={() => undefined}
+      onRemoveAttachedImage={() => undefined}
+      onResume={() => undefined}
+      onRetry={() => undefined}
+      onSend={() => undefined}
+      onSetAvatarEnabled={() => undefined}
+    />,
+  );
+}
+
+test("passes avatar feature flag into persona panel", () => {
+  renderPersonaRoute();
+
+  expect(screen.getByTestId("persona-props")).toHaveTextContent("avatar:enabled");
+});
+
+
+test("renders VRM generation route", () => {
+  render(
+    <AppMainContent
+      assistantName="小晏"
+      attachedFiles={[]}
+      attachedFolders={[]}
+      attachedImages={[]}
+      draft=""
+      focusGoalTitle={null}
+      focusContext={null}
+      isSending={false}
+      messages={[]}
+      persona={persona}
+      route="vrm-generation"
+      state={state}
+      onDraftChange={() => undefined}
+      onPersonaUpdated={() => undefined}
+      onPickFile={() => undefined}
+      onPickFolder={() => undefined}
+      onPickImage={() => undefined}
+      onRemoveAttachedFile={() => undefined}
+      onRemoveAttachedFolder={() => undefined}
+      onRemoveAttachedImage={() => undefined}
+      onResume={() => undefined}
+      onRetry={() => undefined}
+      onSend={() => undefined}
+      onSetAvatarEnabled={() => undefined}
+    />,
+  );
+
+  expect(screen.getByText("vrm-generation")).toBeInTheDocument();
+});

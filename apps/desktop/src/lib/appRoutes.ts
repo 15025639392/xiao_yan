@@ -1,6 +1,7 @@
 export type AppRoute =
   | "chat"
   | "xiaohongshu"
+  | "vrm-generation"
   | "persona"
   | "memory"
   | "tools";
@@ -8,6 +9,7 @@ export type AppRoute =
 export function resolveRoute(hash: string): AppRoute {
   if (hash === "#/chat") return "chat";
   if (hash === "#/xiaohongshu") return "xiaohongshu";
+  if (hash === "#/vrm-generation") return "vrm-generation";
   if (hash === "#/persona") return "persona";
   if (hash === "#/memory") return "memory";
   if (hash === "#/history") return "chat";
@@ -28,6 +30,7 @@ export function normalizeLegacyHash(hash: string): string {
 export function routeToHash(route: AppRoute): string {
   if (route === "chat") return "#/chat";
   if (route === "xiaohongshu") return "#/xiaohongshu";
+  if (route === "vrm-generation") return "#/vrm-generation";
   if (route === "persona") return "#/persona";
   if (route === "memory") return "#/memory";
   if (route === "tools") return "#/tools";

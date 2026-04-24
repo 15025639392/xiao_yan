@@ -5,17 +5,15 @@ import { SurfaceCard } from "./ui";
 type PersonaPanelProps = {
   onPersonaUpdated?: () => void;
   assistantName: string;
-  petEnabled: boolean;
-  petVisible: boolean;
-  onSetPetEnabled: (enabled: boolean) => void;
+  avatarEnabled: boolean;
+  onSetAvatarEnabled: (enabled: boolean) => void;
 };
 
 export function PersonaPanel({
   onPersonaUpdated,
   assistantName,
-  petEnabled,
-  petVisible,
-  onSetPetEnabled,
+  avatarEnabled,
+  onSetAvatarEnabled,
 }: PersonaPanelProps) {
   return (
     <section className="persona-page">
@@ -30,16 +28,16 @@ export function PersonaPanel({
             <SurfaceCard style={{ padding: "var(--space-2) var(--space-3)" }}>
               <div className="persona-feature-toggle">
                 <div className="persona-feature-toggle__meta">
-                  <div className="persona-feature-toggle__title">{assistantName}（小紫人）</div>
+                  <div className="persona-feature-toggle__title">{assistantName}（VRM 外显）</div>
                   <div className="persona-feature-toggle__desc">
-                    {petEnabled ? (petVisible ? "已启用" : "已启用（正在同步…）") : "已禁用（已退出）"}
+                    {avatarEnabled ? "已启用（右下角独立 VRM 窗口）" : "已禁用"}
                   </div>
                 </div>
-                <label className="persona-switch" aria-label="启用数字人形象（小紫人）">
+                <label className="persona-switch" aria-label="启用 VRM 外显模型">
                   <input
                     type="checkbox"
-                    checked={petEnabled}
-                    onChange={(e) => onSetPetEnabled(e.target.checked)}
+                    checked={avatarEnabled}
+                    onChange={(e) => onSetAvatarEnabled(e.target.checked)}
                   />
                   <span className="persona-switch__track" />
                 </label>

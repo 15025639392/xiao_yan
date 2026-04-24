@@ -22,13 +22,13 @@
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "resources": [
-      "pet/**/*",
       "icons/icon.png"
     ],
     "icon": [

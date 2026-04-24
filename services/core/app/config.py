@@ -65,6 +65,40 @@ def get_capability_queue_storage_path() -> Path:
     return get_service_root() / ".data" / "capability_queue.json"
 
 
+def get_vrm_generation_storage_path() -> Path:
+    load_local_env()
+    configured = os.getenv("VRM_GENERATION_STORAGE_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    return get_service_root() / ".data" / "vrm_generation" / "jobs.json"
+
+
+def get_vrm_generation_artifact_dir() -> Path:
+    load_local_env()
+    configured = os.getenv("VRM_GENERATION_ARTIFACT_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return get_service_root() / ".data" / "vrm_generation" / "artifacts"
+
+
+def get_vrm_blender_path() -> Path | None:
+    load_local_env()
+    configured = os.getenv("VRM_BLENDER_PATH", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    default = Path("/Applications/Blender.app/Contents/MacOS/Blender")
+    return default if default.exists() else None
+
+
+def get_vrm_generation_template_path() -> Path | None:
+    load_local_env()
+    configured = os.getenv("VRM_GENERATION_TEMPLATE_PATH", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    default = get_service_root() / ".data" / "vrm_generation" / "templates" / "xiaoyan_base.blend"
+    return default if default.exists() else None
+
+
 def _read_positive_float_env(name: str, default: float, *, minimum: float) -> float:
     load_local_env()
     raw = os.getenv(name, "").strip()

@@ -11,8 +11,6 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use tauri::{Emitter, Manager};
-
 struct FsAccessState {
     allowed_dir: Option<PathBuf>,
     allowed_dir_canonical: Option<PathBuf>,
@@ -1510,137 +1508,6 @@ async fn stop_codex_delegate(
     }
 }
 
-// ===== Pet (Desktop Pet) Commands =====
-
-#[derive(serde::Serialize)]
-struct PetStatusResponse {
-    visible: bool,
-}
-
-#[tauri::command]
-async fn pet_show(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
-    match app.get_webview_window("pet") {
-        Some(win) => {
-            win.show().map_err(|e| format!("show pet: {e}"))?;
-            win.set_focus().map_err(|e| format!("focus pet: {e}"))?;
-        }
-        None => {
-            let mut candidates = Vec::new();
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                candidates.push(resource_dir.join("pet").join("index.html"));
-            }
-            candidates.push(
-                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("pet")
-                    .join("index.html"),
-            );
-
-            let pet_html = candidates.into_iter().find(|p| p.exists()).ok_or_else(|| {
-                "pet page not found (tried resource_dir and CARGO_MANIFEST_DIR)".to_string()
-            })?;
-
-            let url = format!(
-                "file://{}",
-                pet_html
-                    .to_string_lossy()
-                    .replace(' ', "%20")
-                    .replace('#', "%23")
-            );
-
-            let build_result = tauri::WebviewWindowBuilder::new(
-                &app,
-                "pet",
-                tauri::WebviewUrl::External(url.parse().unwrap()),
-            )
-            .title("INTP 小紫人")
-            .inner_size(280.0, 380.0)
-            .decorations(false)
-            .always_on_top(true)
-            .resizable(false)
-            .skip_taskbar(true)
-            .build();
-
-            match build_result {
-                Ok(win) => {
-                    win.show().map_err(|e| format!("show pet: {e}"))?;
-                    win.set_focus().map_err(|e| format!("focus pet: {e}"))?;
-                }
-                Err(err) => {
-                    let err_text = err.to_string();
-                    if err_text.contains("already exists") {
-                        if let Some(win) = app.get_webview_window("pet") {
-                            win.show().map_err(|e| format!("show pet: {e}"))?;
-                            win.set_focus().map_err(|e| format!("focus pet: {e}"))?;
-                            return Ok(PetStatusResponse { visible: true });
-                        }
-                    }
-                    return Err(format!("create pet window: {err}"));
-                }
-            }
-        }
-    }
-    Ok(PetStatusResponse { visible: true })
-}
-
-#[tauri::command]
-async fn pet_hide(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
-    if let Some(win) = app.get_webview_window("pet") {
-        win.hide().map_err(|e| format!("hide pet: {e}"))?;
-    }
-    Ok(PetStatusResponse { visible: false })
-}
-
-#[tauri::command]
-async fn pet_close(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
-    if let Some(win) = app.get_webview_window("pet") {
-        // Best-effort: hide first to ensure it disappears immediately,
-        // then request close to fully exit the window.
-        let _ = win.hide();
-        win.close().map_err(|e| format!("close pet: {e}"))?;
-    }
-    Ok(PetStatusResponse { visible: false })
-}
-
-#[tauri::command]
-async fn pet_is_visible(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
-    let visible = match app.get_webview_window("pet") {
-        Some(win) => win
-            .is_visible()
-            .map_err(|e| format!("check visible: {e}"))?,
-        None => false,
-    };
-    Ok(PetStatusResponse { visible })
-}
-
-#[tauri::command]
-async fn pet_send_message(app: tauri::AppHandle, text: String) -> Result<(), String> {
-    if let Some(pet_win) = app.get_webview_window("pet") {
-        pet_win
-            .emit("pet-message", serde_json::json!({ "text": text }))
-            .map_err(|e| format!("send to pet: {e}"))?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn pet_toggle(app: tauri::AppHandle) -> Result<PetStatusResponse, String> {
-    let currently_visible = match app.get_webview_window("pet") {
-        Some(win) => win
-            .is_visible()
-            .map_err(|e| format!("check visible: {e}"))?,
-        None => false,
-    };
-
-    if currently_visible {
-        if let Some(win) = app.get_webview_window("pet") {
-            win.hide().map_err(|e| format!("hide pet: {e}"))?;
-        }
-        Ok(PetStatusResponse { visible: false })
-    } else {
-        pet_show(app).await
-    }
-}
-
 fn main() {
     augment_process_path_for_gui();
 
@@ -1660,13 +1527,6 @@ fn main() {
             shell_run,
             codex_run_delegate,
             stop_codex_delegate,
-            // Pet commands
-            pet_show,
-            pet_hide,
-            pet_close,
-            pet_is_visible,
-            pet_toggle,
-            pet_send_message,
             // Browser commands
             browser_open,
             browser_snapshot,
