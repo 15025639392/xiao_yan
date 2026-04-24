@@ -41,6 +41,9 @@ DEFAULT_ALLOWED_EXECUTABLES: tuple[str, ...] = (
     "uv",
     "pytest",
     "cargo",
+    "brew",
+    "curl",
+    "bash",
 )
 
 DEFAULT_ALLOWED_GIT_SUBCOMMANDS: tuple[str, ...] = (

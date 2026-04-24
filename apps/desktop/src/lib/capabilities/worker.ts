@@ -13,6 +13,7 @@ import {
   fsGetAllowedDirectory,
   fsListDir,
   fsReadTextFile,
+  fsSetFolderPermissions,
   fsWriteTextFile,
   isTauriRuntime,
   shellRunCommand,
@@ -26,12 +27,18 @@ export type CapabilityWorkerOptions = {
   logger?: Pick<Console, "warn" | "error">;
 };
 
+type EffectiveFolderPermission = {
+  path: string;
+  accessLevel: "read_only" | "full_access";
+};
+
 type EffectiveFilePolicy = {
   maxReadBytes: number;
   maxWriteBytes: number;
   maxSearchResults: number;
   maxListEntries: number;
   allowedSearchFilePatterns: string[];
+  folderPermissions: EffectiveFolderPermission[];
 };
 
 const FALLBACK_FILE_POLICY: EffectiveFilePolicy = {
@@ -61,6 +68,7 @@ const FALLBACK_FILE_POLICY: EffectiveFilePolicy = {
     "*.css",
     "*.html",
   ],
+  folderPermissions: [],
 };
 
 function asString(value: unknown): string | null {
@@ -81,12 +89,29 @@ function extractFilePolicy(args: Record<string, unknown>): EffectiveFilePolicy {
   const patterns = Array.isArray(policy.allowed_search_file_patterns)
     ? policy.allowed_search_file_patterns.filter((item): item is string => typeof item === "string" && item.length > 0)
     : FALLBACK_FILE_POLICY.allowedSearchFilePatterns;
+
+  const folderPermissions: EffectiveFolderPermission[] = [];
+  const rawFolders = args.folder_permissions;
+  if (Array.isArray(rawFolders)) {
+    for (const item of rawFolders) {
+      if (typeof item === "object" && item !== null) {
+        const entry = item as Record<string, unknown>;
+        const path = asString(entry.path);
+        const accessLevel = asString(entry.access_level);
+        if (path && (accessLevel === "read_only" || accessLevel === "full_access")) {
+          folderPermissions.push({ path, accessLevel });
+        }
+      }
+    }
+  }
+
   return {
     maxReadBytes: asPositiveInt(policy.max_read_bytes, FALLBACK_FILE_POLICY.maxReadBytes, 2 * 1024 * 1024),
     maxWriteBytes: asPositiveInt(policy.max_write_bytes, FALLBACK_FILE_POLICY.maxWriteBytes, 2 * 1024 * 1024),
     maxSearchResults: asPositiveInt(policy.max_search_results, FALLBACK_FILE_POLICY.maxSearchResults, 500),
     maxListEntries: asPositiveInt(policy.max_list_entries, FALLBACK_FILE_POLICY.maxListEntries, 2000),
     allowedSearchFilePatterns: patterns.length > 0 ? patterns : FALLBACK_FILE_POLICY.allowedSearchFilePatterns,
+    folderPermissions,
   };
 }
 
@@ -104,29 +129,54 @@ function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("\\\\");
 }
 
-function toRelativePathForTauri(rawPath: string, allowedDir: string | null): { ok: true; path: string } | { ok: false; error: string } {
+function normalizePathSlash(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function resolvePathForTauri(
+  rawPath: string,
+  allowedDir: string | null,
+  folderPermissions: EffectiveFolderPermission[],
+  accessMode: "read" | "write" = "read",
+): { ok: true; path: string } | { ok: false; error: string } {
   const path = rawPath.trim();
   if (!path) {
     return { ok: false, error: "path is empty" };
   }
 
   if (!isAbsolutePath(path)) {
-    return { ok: true, path };
+    if (allowedDir) {
+      return { ok: true, path };
+    }
+    return { ok: false, error: "no allowed directory set for relative path" };
   }
 
-  if (!allowedDir) {
-    return { ok: false, error: "no allowed directory set for absolute path" };
+  const normalizedPath = normalizePathSlash(path);
+
+  // Check primary allowed directory
+  if (allowedDir) {
+    const normalizedAllowed = normalizePathSlash(allowedDir);
+    if (normalizedPath === normalizedAllowed) {
+      return { ok: true, path: "." };
+    }
+    if (normalizedPath.startsWith(`${normalizedAllowed}/`)) {
+      return { ok: true, path: normalizedPath.slice(normalizedAllowed.length + 1) };
+    }
   }
 
-  const normalizedAllowed = allowedDir.replace(/\\/g, "/").replace(/\/+$/, "");
-  const normalizedPath = path.replace(/\\/g, "/");
-  if (normalizedPath === normalizedAllowed) {
-    return { ok: true, path: "." };
+  // Check folder permissions
+  for (const perm of folderPermissions) {
+    const normalizedPerm = normalizePathSlash(perm.path);
+    if (normalizedPath === normalizedPerm || normalizedPath.startsWith(`${normalizedPerm}/`)) {
+      if (accessMode === "write" && perm.accessLevel === "read_only") {
+        return { ok: false, error: `write not allowed in folder: ${path} (permission: read_only)` };
+      }
+      // Pass absolute path to Rust for whitelist validation
+      return { ok: true, path: normalizedPath };
+    }
   }
-  if (!normalizedPath.startsWith(`${normalizedAllowed}/`)) {
-    return { ok: false, error: "absolute path is outside tauri allowed directory" };
-  }
-  return { ok: true, path: normalizedPath.slice(normalizedAllowed.length + 1) };
+
+  return { ok: false, error: `path outside allowed directories: ${path}` };
 }
 
 function globToRegExp(glob: string): RegExp {
@@ -218,13 +268,24 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
   const allowedDir = await fsGetAllowedDirectory().catch(() => null);
   const filePolicy = extractFilePolicy(request.args);
 
+  // Sync folder permissions to Rust layer before executing file capabilities
+  if (filePolicy.folderPermissions.length > 0) {
+    try {
+      await fsSetFolderPermissions(
+        filePolicy.folderPermissions.map((p) => ({ path: p.path, access_level: p.accessLevel })),
+      );
+    } catch {
+      // best-effort: if sync fails, subsequent file ops may still succeed via allowedDir
+    }
+  }
+
   try {
     if (request.capability === "fs.read") {
       const path = asString(request.args.path);
       if (!path) {
         return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.path");
       }
-      const normalized = toRelativePathForTauri(path, allowedDir);
+      const normalized = resolvePathForTauri(path, allowedDir, filePolicy.folderPermissions, "read");
       if (!normalized.ok) {
         return buildResult(request, startedAt, false, undefined, "path_not_allowed", normalized.error);
       }
@@ -243,7 +304,7 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
 
     if (request.capability === "fs.list") {
       const path = asString(request.args.path) ?? ".";
-      const normalized = toRelativePathForTauri(path, allowedDir);
+      const normalized = resolvePathForTauri(path, allowedDir, filePolicy.folderPermissions, "read");
       if (!normalized.ok) {
         return buildResult(request, startedAt, false, undefined, "path_not_allowed", normalized.error);
       }
@@ -262,7 +323,7 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
       if (!path || content === null) {
         return buildResult(request, startedAt, false, undefined, "invalid_args", "missing args.path or args.content");
       }
-      const normalized = toRelativePathForTauri(path, allowedDir);
+      const normalized = resolvePathForTauri(path, allowedDir, filePolicy.folderPermissions, "write");
       if (!normalized.ok) {
         return buildResult(request, startedAt, false, undefined, "path_not_allowed", normalized.error);
       }
@@ -305,7 +366,7 @@ export async function executeCapabilityLocally(request: CapabilityRequest): Prom
         );
       }
 
-      const normalized = toRelativePathForTauri(searchPath, allowedDir);
+      const normalized = resolvePathForTauri(searchPath, allowedDir, filePolicy.folderPermissions, "read");
       if (!normalized.ok) {
         return buildResult(request, startedAt, false, undefined, "path_not_allowed", normalized.error);
       }

@@ -11,9 +11,17 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+#[derive(Clone)]
+struct FolderPermission {
+    path: PathBuf,
+    #[allow(dead_code)]
+    access_level: String,
+}
+
 struct FsAccessState {
     allowed_dir: Option<PathBuf>,
     allowed_dir_canonical: Option<PathBuf>,
+    folder_permissions: Vec<FolderPermission>,
 }
 
 impl Default for FsAccessState {
@@ -22,6 +30,7 @@ impl Default for FsAccessState {
         Self {
             allowed_dir: default_dir.clone(),
             allowed_dir_canonical: default_dir,
+            folder_permissions: Vec::new(),
         }
     }
 }
@@ -787,7 +796,7 @@ fn static_allowed_executables() -> HashSet<&'static str> {
         "pwd", "date", "echo", "whoami", "hostname", "uname", "uptime", "ls", "cat", "head",
         "tail", "wc", "diff", "tree", "file", "du", "df", "stat", "readlink", "basename",
         "dirname", "realpath", "find", "grep", "git", "node", "npm", "npx", "pnpm", "yarn", "bun",
-        "python", "python3", "uv", "pytest", "cargo",
+        "python", "python3", "uv", "pytest", "cargo", "brew", "curl", "bash",
     ])
 }
 
@@ -966,6 +975,30 @@ fn resolve_sandboxed_path(state: &FsAccessState, rel: &str) -> Result<PathBuf, S
         .as_ref()
         .ok_or_else(|| "no allowed directory set".to_string())?;
 
+    let input_path = Path::new(rel);
+
+    // Absolute path: validate against whitelist directly
+    if input_path.is_absolute() {
+        let canonical = input_path
+            .canonicalize()
+            .map_err(|e| format!("failed to resolve path: {e}"))?;
+
+        // Check primary allowed directory
+        if canonical.starts_with(allowed_canonical) {
+            return Ok(canonical);
+        }
+
+        // Check folder permissions
+        for perm in &state.folder_permissions {
+            if canonical.starts_with(&perm.path) {
+                return Ok(canonical);
+            }
+        }
+
+        return Err("path is outside allowed directories".to_string());
+    }
+
+    // Relative path: resolve against primary allowed directory
     let rel_path = normalize_relative_path(rel)?;
     let joined = allowed.join(rel_path);
     let joined_canonical = joined
@@ -1022,9 +1055,39 @@ fn fs_clear_allowed_directory(
     let default_dir = default_allowed_directory();
     guard.allowed_dir = default_dir.clone();
     guard.allowed_dir_canonical = default_dir.clone();
+    guard.folder_permissions.clear();
     Ok(AllowedDirResponse {
         allowed_dir: default_dir.map(|p| p.to_string_lossy().to_string()),
     })
+}
+
+#[derive(serde::Deserialize)]
+struct FolderPermissionPayload {
+    path: String,
+    access_level: String,
+}
+
+#[tauri::command]
+fn fs_set_folder_permissions(
+    state: tauri::State<SharedFsAccessState>,
+    permissions: Vec<FolderPermissionPayload>,
+) -> Result<(), String> {
+    let mut parsed: Vec<FolderPermission> = Vec::new();
+    for item in permissions {
+        let canonical = PathBuf::from(&item.path)
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        if !canonical.is_dir() {
+            return Err(format!("not a directory: {}", item.path));
+        }
+        parsed.push(FolderPermission {
+            path: canonical,
+            access_level: item.access_level,
+        });
+    }
+    let mut guard = state.lock().map_err(|_| "state poisoned".to_string())?;
+    guard.folder_permissions = parsed;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1521,6 +1584,7 @@ fn main() {
             fs_set_allowed_directory,
             fs_get_allowed_directory,
             fs_clear_allowed_directory,
+            fs_set_folder_permissions,
             fs_read_text_file,
             fs_write_text_file,
             fs_list_dir,

@@ -5,4 +5,5 @@ export type ToolTabType =
   | "mcp"
   | "skills"
   | "history"
-  | "status";
+  | "status"
+  | "folder_permissions";

@@ -11,6 +11,7 @@ import { getSuccessRateBadgeStyle } from "./tools/toolUtils";
 import { ToolsBrowseTab } from "./tools/ToolsBrowseTab";
 import { McpManageTab } from "./tools/McpManageTab";
 import { SkillsManageTab } from "./tools/SkillsManageTab";
+import { FolderPermissionsTab } from "./tools/FolderPermissionsTab";
 import { CapabilitiesPage } from "../pages/CapabilitiesPage";
 
 type ToolPanelProps = {
@@ -26,6 +27,7 @@ const SECONDARY_TAB_ACTIONS: Array<{ tab: ToolTabType; label: string }> = [
   { tab: "status", label: "状态概览" },
   { tab: "mcp", label: "MCP 接入" },
   { tab: "skills", label: "技能选择" },
+  { tab: "folder_permissions", label: "目录权限" },
 ];
 
 export function ToolPanel({ initialTab = "files" }: ToolPanelProps) {
@@ -110,6 +112,7 @@ export function ToolPanel({ initialTab = "files" }: ToolPanelProps) {
         {activeTab === "tools" ? <ToolsBrowseTab tools={tools} /> : null}
         {activeTab === "mcp" ? <McpManageTab /> : null}
         {activeTab === "skills" ? <SkillsManageTab /> : null}
+        {activeTab === "folder_permissions" ? <FolderPermissionsTab /> : null}
         {activeTab === "files" ? <FilesTab /> : null}
         {activeTab === "history" ? <HistoryTab /> : null}
         {activeTab === "status" ? (

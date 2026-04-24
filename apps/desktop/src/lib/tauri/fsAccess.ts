@@ -90,6 +90,17 @@ export async function fsClearAllowedDirectory(): Promise<void> {
   }
 }
 
+export async function fsSetFolderPermissions(
+  permissions: Array<{ path: string; access_level: string }>,
+): Promise<void> {
+  ensureTauri();
+  try {
+    await invoke<void>("fs_set_folder_permissions", { permissions });
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
 export async function fsReadTextFile(relPath: string): Promise<string> {
   ensureTauri();
   try {

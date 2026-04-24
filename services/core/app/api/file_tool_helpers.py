@@ -26,4 +26,10 @@ def build_file_tools():
 
 def file_policy_args() -> dict[str, Any]:
     config = get_runtime_config()
-    return {"file_policy": config.get_capability_file_policy()}
+    return {
+        "file_policy": config.get_capability_file_policy(),
+        "folder_permissions": [
+            {"path": path, "access_level": access_level}
+            for path, access_level in config.list_folder_permissions()
+        ],
+    }

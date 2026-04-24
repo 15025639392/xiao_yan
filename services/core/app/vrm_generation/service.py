@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils.file_utils import write_json_file
+from app.vrm_generation.environment_remediation import request_blender_install_remediation
 from app.vrm_generation.executor import BlenderExecutionError, BlenderUnavailableError, BlenderVrmExecutor
 from app.vrm_generation.models import (
     VrmGenerationArtifacts,
@@ -60,7 +61,14 @@ class VrmGenerationService:
         try:
             job = self._run_job(job, request)
         except BlenderUnavailableError as exc:
-            job = job.fail(code="blender_unavailable", message=f"Blender unavailable: {exc}")
+            remediation_request_id = request_blender_install_remediation(job_id=job.job_id)
+            job = job.fail(code="blender_unavailable", message=f"Blender unavailable: {exc}").model_copy(
+                update={
+                    "artifacts": job.artifacts.model_copy(
+                        update={"remediation_capability_request_id": remediation_request_id}
+                    )
+                }
+            )
         except BlenderExecutionError as exc:
             job = job.fail(code="blender_execution_failed", message=str(exc))
         except Exception as exc:

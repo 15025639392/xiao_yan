@@ -198,7 +198,7 @@ def _build_focus_context_guidance(
 
     if source_kind == "focus_trace":
         lines.append("把这个焦点理解为你此刻挂着的一条推进线，而不是把目标名词本身直接复读给用户。")
-    elif reason_kind == "focus_still_active":
+    if reason_kind == "focus_still_active":
         lines.append("只需表达它仍未完成，不要夸大成最高优先级或强行制造紧迫感。")
 
     return lines

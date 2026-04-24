@@ -6,7 +6,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.capabilities.runtime import get_capability_queue, reset_capability_queue_for_tests
 from app.main import app
+from app.vrm_generation import environment_remediation
 
 
 def _fake_blender(path: Path) -> Path:
@@ -94,6 +96,10 @@ def test_vrm_generation_job_runs_fake_blender_and_persists_artifacts(tmp_path, m
 
 
 def test_vrm_generation_missing_blender_fails_without_breaking_api(tmp_path, monkeypatch):
+    reset_capability_queue_for_tests()
+    fake_brew = tmp_path / "brew"
+    fake_brew.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(environment_remediation, "HOMEBREW_CANDIDATES", (fake_brew,))
     input_model = tmp_path / "input.vrm"
     input_model.write_bytes(b"input vrm")
     monkeypatch.setenv("VRM_GENERATION_STORAGE_PATH", str(tmp_path / "jobs.json"))
@@ -114,6 +120,44 @@ def test_vrm_generation_missing_blender_fails_without_breaking_api(tmp_path, mon
     assert failed["status"] == "failed"
     assert failed["error_code"] == "blender_unavailable"
     assert "Blender" in failed["error_message"]
+    remediation_request_id = failed["artifacts"]["remediation_capability_request_id"]
+    assert remediation_request_id
+
+    remediation = get_capability_queue().get(remediation_request_id)
+    assert remediation is not None
+    assert remediation.request.capability == "shell.run"
+    assert remediation.request.args["command"] == "brew install --cask blender"
+    assert remediation.request.requires_approval is True
+    assert remediation.request.approval_status == "pending"
+
+
+def test_vrm_generation_missing_homebrew_requests_package_manager_install(tmp_path, monkeypatch):
+    reset_capability_queue_for_tests()
+    monkeypatch.setattr(environment_remediation, "HOMEBREW_CANDIDATES", (tmp_path / "missing-brew",))
+    input_model = tmp_path / "input.vrm"
+    input_model.write_bytes(b"input vrm")
+    monkeypatch.setenv("VRM_GENERATION_STORAGE_PATH", str(tmp_path / "jobs.json"))
+    monkeypatch.setenv("VRM_GENERATION_ARTIFACT_DIR", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("VRM_BLENDER_PATH", str(tmp_path / "missing_blender"))
+
+    client = TestClient(app)
+    response = client.post(
+        "/vrm-generation/jobs",
+        json={"prompt": "生成小晏 VRM", "input_model_path": str(input_model)},
+    )
+
+    assert response.status_code == 200
+    failed = _wait_for_job(client, response.json()["job_id"])
+    remediation_request_id = failed["artifacts"]["remediation_capability_request_id"]
+    remediation = get_capability_queue().get(remediation_request_id)
+    assert remediation is not None
+    assert remediation.request.args["command"].startswith("curl -fsSL https://raw.githubusercontent.com/Homebrew/install")
+    assert remediation.request.requires_approval is True
+
+    pending = get_capability_queue().list_pending_approvals(limit=5)
+    commands = [item.request.args["command"] for item in pending]
+    assert "bash /tmp/xiaoyan-homebrew-install.sh" in commands
+
 
 def _slow_fake_blender(path: Path) -> Path:
     script = path / "slow_fake_blender.py"

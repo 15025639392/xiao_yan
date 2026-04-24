@@ -328,11 +328,9 @@ ai/
 │       ├── app/
 │       │   ├── agent/     # 自主循环逻辑
 │       │   ├── domain/    # 领域模型
-│       │   ├── goals/     # 目标管理
 │       │   ├── llm/       # LLM 集成
 │       │   ├── memory/    # 记忆系统
 │       │   ├── persona/   # 人格系统
-│       │   ├── planning/  # 计划系统
 │       │   ├── tools/     # 工具执行
 │       │   ├── usecases/  # 用例层
 │       │   ├── world/     # 世界模型

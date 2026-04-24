@@ -28,6 +28,7 @@ class VrmGenerationArtifacts(BaseModel):
     spec_path: str | None = None
     output_vrm_path: str | None = None
     log_path: str | None = None
+    remediation_capability_request_id: str | None = None
 
 
 class VrmGenerationJobList(BaseModel):
@@ -57,4 +58,3 @@ class VrmGenerationJob(BaseModel):
                 "updated_at": datetime.now(timezone.utc),
             }
         )
-

@@ -212,6 +212,12 @@ function JobSummary({ job, onLoadPreview }: { job: VrmGenerationJob; onLoadPrevi
           <dd>{job.artifacts.spec_path}</dd>
         </div>
       ) : null}
+      {job.artifacts.remediation_capability_request_id ? (
+        <div>
+          <dt>环境补全</dt>
+          <dd>已提交待确认请求：{job.artifacts.remediation_capability_request_id}</dd>
+        </div>
+      ) : null}
       {job.error_message ? (
         <div>
           <dt>错误</dt>

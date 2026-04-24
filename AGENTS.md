@@ -14,7 +14,7 @@ If a user request conflicts with these rules, pause and ask for confirmation onl
 
 - **持续存在的人格体**：长期存在的数字伙伴，具备睡眠/苏醒机制
 - **长期记忆系统**：结构化存储关系记忆、情节记忆、语义记忆和情绪记忆
-- **主动行为能力**：自主目标设定、任务规划与执行
+- **主动行为能力**：自主行为习惯与牵挂驱动
 - **多 LLM 集成**：支持 OpenAI、DeepSeek、MiniMax 等 provider
 - **器官化能力模型**：外部工具（如浏览器、文件操作）作为可接入的器官实现，不属于本体组成部分
 
@@ -115,7 +115,6 @@ xiao_yan/
 │   │   │   ├── chat/           # 聊天相关组件
 │   │   │   ├── memory/         # 记忆面板组件
 │   │   │   ├── persona/        # 人格面板组件
-│   │   │   ├── goals/          # 目标组件
 │   │   │   ├── tools/          # 工具箱组件
 │   │   │   ├── world/          # 世界事件组件
 │   │   │   ├── status/         # 状态组件
@@ -143,19 +142,15 @@ xiao_yan/
 │   │   ├── domain/             # 核心领域模型（保持纯净，不依赖 FastAPI/外部 HTTP）
 │   │   ├── agent/              # 自主循环逻辑
 │   │   ├── chat/               # 对话系统
-│   │   ├── goals/              # 目标管理
 │   │   ├── memory/             # 记忆系统（含可选 mempalace/chromadb 适配）
 │   │   ├── persona/            # 人格系统
-│   │   ├── planning/           # 计划系统
 │   │   ├── world/              # 世界模型
-│   │   ├── orchestrator/       # 调度编排
 │   │   ├── tools/              # 工具执行与沙箱
 │   │   ├── capabilities/       # 能力队列与运行时
 │   │   ├── mcp/                # MCP 服务集成
 │   │   ├── platform_adapters/  # 平台适配器（小红书等）
 │   │   ├── channels/           # 外部渠道桥接（微信等）
 │   │   ├── safety/             # 安全边界
-│   │   ├── self_programming/   # 自我编程
 │   │   ├── llm/                # LLM 网关与多 provider 适配
 │   │   ├── runtime_ext/        # 运行时扩展与启动引导
 │   │   ├── external_executors/ # 外部执行器
@@ -166,6 +161,14 @@ xiao_yan/
 │   ├── scripts/                # 启动与工具脚本
 │   ├── pyproject.toml          # Python 项目配置
 │   └── uv.lock                 # uv 锁文件
+│
+> **注**：以下目录已被移除，不再属于当前架构：
+> - `goals/` — 通用目标管理系统与"人格优先"的架构信条冲突。小晏的自主行为由`focus/`（牵挂）和领域特定习惯流驱动，而非外部或系统生成的目标树。
+> - `planning/` — 动态计划生成会把小晏退化为工具平台。当前采用领域特定的习惯链（如`XhsTaskChain`），由状态机和时间节律驱动。
+> - `orchestrator/` — 调度编排已内聚于`agent/loop.py`的生命节律中，无需独立的中心化调度层。
+> - `self_programming/` — 自我调整通过记忆系统（提取、衰减、习惯参数微调）实现，而非直接修改代码。
+>
+> 相关历史设计文档仍保留在 `docs/plans/` 和 `docs/runbooks/` 中作为档案，但当前运行时不再依赖这些模块。
 │
 ├── docs/                       # 项目文档
 │   ├── plans/                  # 设计文档与方案
@@ -378,7 +381,7 @@ CI 在 PR 和 push 到 main/master/codex/** 分支时会自动对变更文件执
 
 - If a module, service, function, or component starts handling more than one clear responsibility, split it.
 - Split by responsibility first: protocol, orchestration, storage, transformation, rendering.
-- Split by domain second: chat, memory, goals, orchestrator, persona, tools.
+- Split by domain second: chat, memory, persona, tools, focus.
 - Only move logic into `utils` when it is genuinely generic and not domain behavior in disguise.
 - If touching an oversized file, prefer extracting one small layer instead of adding more logic into it.
 

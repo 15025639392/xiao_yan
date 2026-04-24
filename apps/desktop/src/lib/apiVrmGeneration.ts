@@ -13,6 +13,7 @@ export type VrmGenerationArtifacts = {
   spec_path?: string | null;
   output_vrm_path?: string | null;
   log_path?: string | null;
+  remediation_capability_request_id?: string | null;
 };
 
 export type VrmGenerationJob = {
