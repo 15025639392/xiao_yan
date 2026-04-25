@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 
-import { fetchXhsWorkDomain, updateXhsWorkDomain, wakeLifecycle, type XhsWorkDomainResponse } from "../lib/api";
+import { fetchXhsWorkDomain, updateXhsWorkDomain, type XhsWorkDomainResponse } from "../lib/api";
+import { regenerateDraft } from "../lib/apiRuntime";
 import { previewXiaohongshuCover, type XiaohongshuCoverPreviewResponse } from "../lib/apiXiaohongshu";
 import { browserOpen } from "../lib/tauri/fsAccess";
 import { Button } from "../components/ui";
+import { formatRelativeTimeZh, formatTimeInfo } from "../lib/utils/time";
 import { XiaohongshuConfigPanel } from "./XiaohongshuConfigPanel";
 import { XiaohongshuLoginGuidance } from "./XiaohongshuLoginGuidance";
 import { XiaohongshuPendingDraftList } from "./XiaohongshuPendingDraftList";
@@ -23,45 +25,6 @@ const STATUS_LABELS: Record<string, string> = {
   blocked: "已阻塞",
 };
 
-const STATUS_STEPS = ["idle", "scouting", "drafting", "publishing", "reviewing"];
-
-function getStepIndex(status: string): number {
-  if (status === "blocked") return -1;
-  return STATUS_STEPS.indexOf(status);
-}
-
-function LoopProgress({ status }: { status: string }) {
-  const current = getStepIndex(status);
-  const isBlocked = status === "blocked";
-
-  return (
-    <div className="xhs-loop-progress">
-      {STATUS_STEPS.map((step, i) => {
-        const isActive = i === current;
-        const isDone = i < current;
-        const isPending = i > current;
-        return (
-          <div key={step} className={`xhs-loop-step ${isDone ? "done" : ""} ${isActive ? "active" : ""} ${isPending ? "pending" : ""}`}>
-            <div className="xhs-loop-step__dot">
-              {isDone ? "✓" : isActive ? "●" : "○"}
-            </div>
-            <div className="xhs-loop-step__label">{STATUS_LABELS[step]}</div>
-            {i < STATUS_STEPS.length - 1 && (
-              <div className={`xhs-loop-step__line ${isDone ? "done" : ""}`} />
-            )}
-          </div>
-        );
-      })}
-      {isBlocked && (
-        <div className="xhs-loop-step xhs-loop-step--blocked">
-          <div className="xhs-loop-step__dot">!</div>
-          <div className="xhs-loop-step__label">阻塞</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function PublishedHistory({ history }: { history: Array<{ draft_id: string; title: string; published_at: string; post_url: string }> }) {
   if (!history || history.length === 0) {
     return <p className="xhs-history-empty">暂无发布记录</p>;
@@ -72,7 +35,7 @@ function PublishedHistory({ history }: { history: Array<{ draft_id: string; titl
         <li key={entry.draft_id} className="xhs-history-item">
           <span className="xhs-history-item__title">{entry.title || "(无标题)"}</span>
           <span className="xhs-history-item__time">
-            {new Date(entry.published_at).toLocaleString()}
+            {formatRelativeTimeZh(entry.published_at)}
           </span>
         </li>
       ))}
@@ -103,29 +66,11 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
       .catch(() => setWorkDomain(null));
   }, []);
 
-  // Ref to track whether login guidance is showing (avoids interval reset on state change)
-  const loginGuidanceShownRef = useRef(false);
-
   useEffect(() => {
     loadDomain();
-    const interval = setInterval(() => {
-      // Auto-retry scouting while login guidance is shown
-      if (loginGuidanceShownRef.current) {
-        updateXhsWorkDomain({ status: "scouting" }).then(loadDomain);
-      } else {
-        loadDomain();
-      }
-    }, 5000);
+    const interval = setInterval(loadDomain, 5000);
     return () => clearInterval(interval);
   }, [loadDomain]);
-
-  // Keep ref in sync with whether login guidance should be shown
-  useEffect(() => {
-    const name = profile?.account_name || "";
-    loginGuidanceShownRef.current =
-      (name === "" || name === "当前账号" || state?.current_bottleneck === "需要登录小红书账号") &&
-      name !== "已登录账号";
-  });
 
   useEffect(() => {
     if (workDomain?.profile) {
@@ -252,20 +197,13 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
     }
   }
 
-  async function handleToggleLoop() {
-    if (isRunning) {
-      await updateXhsWorkDomain({ status: "idle" });
-      loadDomain();
-      return;
-    }
-
+  async function handleRegenerateDraft() {
     try {
-      await wakeLifecycle();
+      await regenerateDraft();
+      loadDomain();
     } catch {
-      // ignore wake failure and still try to start xhs loop state
+      // ignore
     }
-    await updateXhsWorkDomain({ status: "scouting" });
-    loadDomain();
   }
 
   async function handleSaveDrafts() {
@@ -346,7 +284,6 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
   const state = workDomain?.state;
   const profile = workDomain?.profile;
   const status = state?.status || "idle";
-  const isRunning = status !== "idle" && status !== "blocked";
   const publishModeLabel = getPublishModeLabel(profile?.publish_mode);
 
   const showLoginGuidance =
@@ -372,12 +309,12 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
             {configOpen ? "收起配置" : "配置"}
           </Button>
           <Button
-            variant={isRunning ? "destructive" : "default"}
+            variant="default"
             onClick={() => {
-              void handleToggleLoop();
+              void handleRegenerateDraft();
             }}
           >
-            {isRunning ? "暂停闭环" : "启动闭环"}
+            重新生成草稿
           </Button>
         </div>
       </header>
@@ -409,22 +346,25 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
         </div>
       )}
 
-      <section className="xhs-status-bar">
+      <section className={`xhs-status-bar${status === "scouting" || status === "drafting" || status === "publishing" ? " xhs-status-bar--active" : ""}${status === "reviewing" ? " xhs-status-bar--reviewing" : ""}${status === "blocked" ? " xhs-status-bar--blocked" : ""}`}>
         <div className={`xhs-status-badge xhs-status-badge--${status}`}>
           {STATUS_LABELS[status] || status}
         </div>
-        {state?.current_focus && (
-          <span className="xhs-status-bar__focus">{state.current_focus}</span>
-        )}
-        {state?.next_recommended_action && (
-          <span className="xhs-status-bar__next">{state.next_recommended_action}</span>
-        )}
-        {state?.current_bottleneck && (
-          <span className="xhs-status-bar__bottleneck">⛔ {state.current_bottleneck}</span>
-        )}
+        <div className="xhs-status-bar__body">
+          {state?.current_focus && (
+            <span className="xhs-status-bar__focus">{state.current_focus}</span>
+          )}
+          {state?.next_recommended_action && (
+            <span className="xhs-status-bar__next">{state.next_recommended_action}</span>
+          )}
+          {state?.current_bottleneck && (
+            <span className="xhs-status-bar__bottleneck">{state.current_bottleneck}</span>
+          )}
+        </div>
+        <span className="xhs-status-bar__updated">
+          状态更新 {formatRelativeTimeZh(state?.last_scouting_at ?? state?.last_published_at)}
+        </span>
       </section>
-
-      <LoopProgress status={status} />
 
       <section className="xhs-page__body">
         <div className="xhs-page__info-grid">
@@ -442,19 +382,33 @@ export function XiaohongshuPage({ assistantName }: XiaohongshuPageProps) {
           </div>
           <div className="xhs-info-card">
             <h4 className="xhs-info-card__title">上次侦察</h4>
-            <p className="xhs-info-card__value">
-              {state?.last_scouting_at
-                ? new Date(state.last_scouting_at).toLocaleString()
-                : "—"}
-            </p>
+            {state?.last_scouting_at ? (
+              <div className="xhs-info-card__value xhs-info-card__value--time">
+                <span className="xhs-info-card__value-relative">
+                  {formatTimeInfo(state.last_scouting_at)?.relative}
+                </span>
+                <span className="xhs-info-card__value-absolute">
+                  {formatTimeInfo(state.last_scouting_at)?.absolute}
+                </span>
+              </div>
+            ) : (
+              <p className="xhs-info-card__value">—</p>
+            )}
           </div>
           <div className="xhs-info-card">
             <h4 className="xhs-info-card__title">上次发布</h4>
-            <p className="xhs-info-card__value">
-              {state?.last_published_at
-                ? new Date(state.last_published_at).toLocaleString()
-                : "—"}
-            </p>
+            {state?.last_published_at ? (
+              <div className="xhs-info-card__value xhs-info-card__value--time">
+                <span className="xhs-info-card__value-relative">
+                  {formatTimeInfo(state.last_published_at)?.relative}
+                </span>
+                <span className="xhs-info-card__value-absolute">
+                  {formatTimeInfo(state.last_published_at)?.absolute}
+                </span>
+              </div>
+            ) : (
+              <p className="xhs-info-card__value">—</p>
+            )}
           </div>
           <div className="xhs-info-card">
             <h4 className="xhs-info-card__title">待发草稿</h4>

@@ -11,7 +11,6 @@ import { useAppStateMutations } from "./components/app/useAppStateMutations";
 import { useChatAttachments } from "./components/app/useChatAttachments";
 import { useChatComposer } from "./components/app/useChatComposer";
 import { useChatRouteMessages } from "./components/app/useChatRouteMessages";
-import { useVrmAvatarFeature } from "./components/app/useVrmAvatarFeature";
 import { useFocusPresentation } from "./components/app/useFocusPresentation";
 import type { BeingState, PersonaProfile } from "./lib/api";
 import { upsertChatFolderPermission } from "./lib/api";
@@ -96,10 +95,6 @@ export default function App() {
     setError,
     setIsSending,
     setMessages,
-  });
-  const { handleAvatarEnabledChange } = useVrmAvatarFeature({
-    onError: setError,
-    onPersonaChange: setPersona,
   });
   const {
     focusContext,
@@ -203,7 +198,6 @@ export default function App() {
           onResume={handleResume}
           onRetry={handleRetry}
           onSend={handleSend}
-          onSetAvatarEnabled={handleAvatarEnabledChange}
         />
 
         <AboutDialog

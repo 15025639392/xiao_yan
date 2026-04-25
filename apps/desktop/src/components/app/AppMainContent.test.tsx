@@ -5,9 +5,7 @@ import type { BeingState, PersonaProfile } from "../../lib/api";
 import { AppMainContent } from "./AppMainContent";
 
 vi.mock("../PersonaPanel", () => ({
-  PersonaPanel: ({ avatarEnabled }: { avatarEnabled: boolean }) => (
-    <div data-testid="persona-props">avatar:{avatarEnabled ? "enabled" : "disabled"}</div>
-  ),
+  PersonaPanel: () => <div data-testid="persona-panel">persona</div>,
 }));
 
 vi.mock("../ChatPanel", () => ({
@@ -22,9 +20,6 @@ vi.mock("../../pages/MemoryPage", () => ({
 vi.mock("../../pages/XiaohongshuPage", () => ({
   XiaohongshuPage: () => <div>xiaohongshu</div>,
 }));
-vi.mock("../../pages/VrmGenerationPage", () => ({
-  VrmGenerationPage: () => <div>vrm-generation</div>,
-}));
 
 const state: BeingState = {
   mode: "awake",
@@ -35,10 +30,9 @@ const state: BeingState = {
 
 const persona = {
   name: "小晏",
-  features: { avatar_enabled: true },
 } as PersonaProfile;
 
-function renderPersonaRoute() {
+test("renders persona panel for persona route", () => {
   render(
     <AppMainContent
       assistantName="小晏"
@@ -64,47 +58,8 @@ function renderPersonaRoute() {
       onResume={() => undefined}
       onRetry={() => undefined}
       onSend={() => undefined}
-      onSetAvatarEnabled={() => undefined}
-    />,
-  );
-}
-
-test("passes avatar feature flag into persona panel", () => {
-  renderPersonaRoute();
-
-  expect(screen.getByTestId("persona-props")).toHaveTextContent("avatar:enabled");
-});
-
-
-test("renders VRM generation route", () => {
-  render(
-    <AppMainContent
-      assistantName="小晏"
-      attachedFiles={[]}
-      attachedFolders={[]}
-      attachedImages={[]}
-      draft=""
-      focusGoalTitle={null}
-      focusContext={null}
-      isSending={false}
-      messages={[]}
-      persona={persona}
-      route="vrm-generation"
-      state={state}
-      onDraftChange={() => undefined}
-      onPersonaUpdated={() => undefined}
-      onPickFile={() => undefined}
-      onPickFolder={() => undefined}
-      onPickImage={() => undefined}
-      onRemoveAttachedFile={() => undefined}
-      onRemoveAttachedFolder={() => undefined}
-      onRemoveAttachedImage={() => undefined}
-      onResume={() => undefined}
-      onRetry={() => undefined}
-      onSend={() => undefined}
-      onSetAvatarEnabled={() => undefined}
     />,
   );
 
-  expect(screen.getByText("vrm-generation")).toBeInTheDocument();
+  expect(screen.getByTestId("persona-panel")).toBeInTheDocument();
 });

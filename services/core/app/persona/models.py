@@ -13,7 +13,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
-from pydantic.aliases import AliasChoices
 
 from app.persona.emotion_models import (
     EmotionEntry,
@@ -101,19 +100,6 @@ class PersonalityDimensions(BaseModel):
 # ── 完整人格档案 ────────────────────────────────────────────
 
 
-class PersonaFeatures(BaseModel):
-    """人格内功能开关
-
-    这些开关属于数字人本体能力，应该跟随 PersonaProfile 持久化。
-    """
-
-    avatar_enabled: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("avatar_enabled", "desktop_pet_enabled"),
-        description="是否启用数字人形象（小紫人）",
-    )
-
-
 class PersonaProfile(BaseModel):
     """完整人格档案 — 数字人的「灵魂定义」
 
@@ -137,11 +123,6 @@ class PersonaProfile(BaseModel):
 
     # ── 当前情绪状态（动态）──
     emotion: EmotionalState = Field(default_factory=EmotionalState)
-
-    # ── 功能开关（人格的一部分）──
-    # 用于承载“数字人本体”相关的可选能力（例如桌面宠物）。
-    # 注意：这些开关会影响桌面端行为，但仍应作为人格档案持久化，便于跨会话一致。
-    features: PersonaFeatures = Field(default_factory=PersonaFeatures)
 
     # ─ 版本号（用于追踪人格演化）──
     version: int = 1

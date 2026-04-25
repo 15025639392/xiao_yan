@@ -21,6 +21,15 @@ from app.agent.loop_helpers import (
     find_latest_user_event as _find_latest_user_event,
     next_focus_mode as _next_focus_mode,
 )
+from app.upgrade_proposal.generator import (
+    build_upgrade_proposal,
+    detect_upgrade_signal,
+)
+from app.upgrade_proposal.helpers import (
+    build_deferred_upgrade_thought,
+    build_upgrade_proposal_thought,
+)
+from app.upgrade_proposal.models import UpgradeProposalStore
 from app.agent.xhs_workflow_engine import XhsWorkDomainEngine
 from app.domain.models import FocusSubject, WakeMode
 from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
@@ -53,6 +62,7 @@ class AutonomyLoop:
         )
         self.gateway = gateway
         self.xhs_engine = XhsWorkDomainEngine(state_store, memory_repository, gateway)
+        self.upgrade_store = UpgradeProposalStore(state_store)
 
     def tick_once(self):
         state = self.state_store.get()
@@ -79,6 +89,9 @@ class AutonomyLoop:
         world_state = self._world_state_for(state, now)
         self._maybe_record_inner_stage_memory(state, recent_events, world_state, now)
         self._maybe_record_autobio_memory()
+
+        # 尝试生成升级计划书（在 reflect 之前，作为更高优先级的自主行为）
+        self._maybe_generate_upgrade_proposal(state, recent_events, world_state, now)
 
         cooldown_ready = (
             state.last_proactive_at is None
@@ -255,6 +268,74 @@ class AutonomyLoop:
             source_context="autobio",
         )
         self.memory_repository.save_event(MemoryEvent.from_entry(entry))
+
+    def _maybe_generate_upgrade_proposal(
+        self,
+        state: BeingState,
+        recent_events: list[MemoryEvent],
+        world_state,
+        now: datetime,
+    ) -> None:
+        """尝试生成自我升级计划书。
+
+        如果检测到升级信号且通过防重复检查，生成 plan 并保存。
+        如果被阻止，生成一条 inner memory 表达她知道这个问题。
+        """
+        should_upgrade, motivation, pain_points, observed_data = detect_upgrade_signal(
+            state, recent_events, now
+        )
+        if not should_upgrade:
+            return
+
+        proposal = build_upgrade_proposal(
+            motivation=motivation,
+            pain_points=pain_points,
+            observed_data=observed_data,
+            store=self.upgrade_store,
+            now=now,
+        )
+
+        if proposal is None:
+            # 被防重复机制阻止，生成替代 inner memory
+            category, target_domain = detect_upgrade_signal(state, recent_events, now)[1:3]
+            # 重新计算分类
+            from app.upgrade_proposal.generator import classify_upgrade_proposal
+            category_obj, target_domain = classify_upgrade_proposal(motivation, pain_points, observed_data)
+            # 获取阻止原因
+            from app.upgrade_proposal.generator import check_all_duplicate_gates
+            _, reason = check_all_duplicate_gates(
+                category_obj, target_domain, pain_points, self.upgrade_store, now
+            )
+            thought = build_deferred_upgrade_thought(
+                category_obj.value, target_domain, reason, now, world_state
+            )
+            entry = MemoryEntry.create(
+                kind=MemoryKind.EPISODIC,
+                content=thought,
+                source_context="inner",
+            )
+            self.memory_repository.save_event(MemoryEvent.from_entry(entry))
+            return
+
+        # 保存 plan
+        self.upgrade_store.save(proposal)
+
+        # 生成 inner memory 记录她提出了 plan
+        thought = build_upgrade_proposal_thought(proposal, now, world_state)
+        entry = MemoryEntry.create(
+            kind=MemoryKind.EPISODIC,
+            content=thought,
+            source_context="inner",
+        )
+        self.memory_repository.save_event(MemoryEvent.from_entry(entry))
+
+        # 将 plan 设为 focus_subject（她会"惦记着"这件事）
+        state.focus_subject = FocusSubject(
+            kind="upgrade_proposal",
+            title=f"升级计划：{proposal.her_voice[:24]}...",
+            why_now=f"等待审批：{proposal.proposal_id}",
+        )
+        self.state_store.set(state)
 
 
 def _resolve_focus_title(state) -> str | None:

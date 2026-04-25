@@ -19,7 +19,6 @@ from app.persona.models import (
     ExpressionHabit,
     FormalLevel,
     PersonalityDimensions,
-    PersonaFeatures,
     PersonaProfile,
     SentenceStyle,
     SpeakingStyle,
@@ -64,11 +63,6 @@ class TestPersonaProfile:
         top_value_names = [item.name for item in p.values.get_top_values(5)]
         assert "尊重" in top_value_names
         assert "求真" in top_value_names
-
-    def test_default_persona_has_features(self):
-        p = default_persona()
-        assert isinstance(p.features, PersonaFeatures)
-        assert p.features.avatar_enabled is False
 
     def test_version_increments_on_update(self):
         p = default_persona()

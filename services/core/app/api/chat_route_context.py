@@ -21,6 +21,7 @@ from app.api.chat_context import (
 )
 from app.api.chat_runtime_helpers import get_observability_tracker
 from app.api.chat_skills import append_skill_context
+from app.domain.models import BeingState, WakeMode
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import ChatMessage
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
@@ -42,6 +43,13 @@ class PreparedRouteChatContext:
     effective_user_message: str
 
 
+def wake_sleeping_state_for_incoming_chat(state_store: StateStore) -> BeingState:
+    state = state_store.get()
+    if state.mode != WakeMode.SLEEPING:
+        return state
+    return state_store.wake()
+
+
 def prepare_route_chat_context(
     *,
     request: Request,
@@ -52,7 +60,7 @@ def prepare_route_chat_context(
     chat_memory_runtime: ChatMemoryRuntime,
     config: RuntimeConfig,
 ) -> PreparedRouteChatContext:
-    state = state_store.get()
+    state = wake_sleeping_state_for_incoming_chat(state_store)
     gateway.model = config.chat_model
     prepared_context = prepare_chat_context(
         chat_memory_runtime=chat_memory_runtime,

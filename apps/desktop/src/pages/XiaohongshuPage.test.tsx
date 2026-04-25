@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
-import { fetchXhsWorkDomain, updateXhsWorkDomain, wakeLifecycle } from "../lib/api";
+import { fetchXhsWorkDomain, updateXhsWorkDomain } from "../lib/api";
 import { previewXiaohongshuCover } from "../lib/apiXiaohongshu";
 import { XiaohongshuPage } from "./XiaohongshuPage";
 
@@ -15,11 +15,6 @@ vi.mock("../lib/api", async () => {
     ...actual,
     fetchXhsWorkDomain: vi.fn(),
     updateXhsWorkDomain: vi.fn(),
-    wakeLifecycle: vi.fn().mockResolvedValue({
-      mode: "awake",
-      focus_mode: "autonomy",
-      current_thought: null,
-    }),
   };
 });
 
@@ -267,9 +262,7 @@ test("xiaohongshu page saves publish mode from config panel", async () => {
   });
 
   fireEvent.click(screen.getByRole("button", { name: "配置" }));
-  fireEvent.change(screen.getByDisplayValue("手动发布"), {
-    target: { value: "auto" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: "自动发布" }));
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
   await waitFor(() => {

@@ -18,6 +18,22 @@ function parseDate(dateLike: string | Date | null | undefined): Date | null {
   return date;
 }
 
+function isYesterday(date: Date): boolean {
+  const now = new Date();
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  return (
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate()
+  );
+}
+
+function shortDateTime(date: Date): string {
+  return date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" }) +
+    " " +
+    date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+}
+
 export function formatRelativeTimeZh(
   dateLike: string | Date | null | undefined,
   options: FormatRelativeTimeZhOptions = {},
@@ -41,7 +57,12 @@ export function formatRelativeTimeZh(
   if (diffHr < 24) return spacing === "spaced" ? `${diffHr} 小时前` : `${diffHr}小时前`;
 
   const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < maxRelativeDays) {
+
+  if (isYesterday(date)) {
+    return "昨天 " + date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  if (diffDay <= 7 && diffDay < maxRelativeDays) {
     return spacing === "spaced" ? `${diffDay} 天前` : `${diffDay}天前`;
   }
 
@@ -52,7 +73,20 @@ export function formatRelativeTimeZh(
     return date.toLocaleDateString("zh-CN");
   }
 
-  return spacing === "spaced" ? `${diffDay} 天前` : `${diffDay}天前`;
+  return shortDateTime(date);
+}
+
+export function formatTimeInfo(
+  dateLike: string | Date | null | undefined,
+): { relative: string; absolute: string } | null {
+  const date = parseDate(dateLike);
+  if (!date) return null;
+  return {
+    relative: formatRelativeTimeZh(date),
+    absolute: date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" }) +
+      " " +
+      date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+  };
 }
 
 export function formatDurationBetween(startLike: string | Date, endLike: string | Date): string {

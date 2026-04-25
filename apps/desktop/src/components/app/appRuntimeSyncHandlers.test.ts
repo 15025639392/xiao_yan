@@ -114,7 +114,6 @@ describe("appRuntimeSyncHandlers", () => {
       name: "小晏",
       identity: "AI Agent Desktop",
       tone: "calm",
-      features: { avatar_enabled: false },
     });
 
     expect(handlePersonaRealtimeEvent({ type: "persona_updated", payload: {} }, { setPersona })).toBe(true);
@@ -122,7 +121,6 @@ describe("appRuntimeSyncHandlers", () => {
       name: "小晏",
       identity: "AI Agent Desktop",
       tone: "calm",
-      features: { avatar_enabled: false },
     });
   });
 });

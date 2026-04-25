@@ -17,9 +17,6 @@ export type PersonaProfile = {
   name: string;
   identity: string;
   origin_story: string;
-  features: {
-    avatar_enabled: boolean;
-  };
   personality: {
     openness: number;
     conscientiousness: number;
@@ -112,12 +109,6 @@ export function updateSpeakingStyle(data: {
   response_length?: string;
 }): Promise<{ success: boolean; profile: PersonaProfile }> {
   return put<{ success: boolean; profile: PersonaProfile }>("/persona/speaking-style", data);
-}
-
-export function updatePersonaFeatures(data: {
-  avatar_enabled?: boolean;
-}): Promise<{ success: boolean; profile: PersonaProfile }> {
-  return put<{ success: boolean; profile: PersonaProfile }>("/persona/features", data);
 }
 
 export function resetPersona(): Promise<{ success: boolean; profile: PersonaProfile }> {

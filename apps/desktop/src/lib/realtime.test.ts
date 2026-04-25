@@ -99,9 +99,6 @@ describe("app realtime client", () => {
             name: "小晏",
             identity: "数字人",
             origin_story: "",
-            features: {
-              avatar_enabled: true,
-            },
             personality: {
               openness: 72,
               conscientiousness: 60,

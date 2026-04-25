@@ -122,7 +122,6 @@ describe("useAppRuntimeSync", () => {
       name: "小晏",
       identity: "AI Agent Desktop",
       tone: "calm",
-      features: { avatar_enabled: false },
     });
 
     const messagesRef = { current: [] as any[] };
@@ -165,7 +164,6 @@ describe("useAppRuntimeSync", () => {
       name: "小晏",
       identity: "AI Agent Desktop",
       tone: "calm",
-      features: { avatar_enabled: false },
     });
     expect(setError).toHaveBeenCalled();
   });

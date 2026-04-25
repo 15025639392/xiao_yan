@@ -50,9 +50,6 @@ describe("runtimeRealtimeUpdates", () => {
               name: "小晏",
               identity: "AI Agent Desktop",
               tone: "calm",
-              features: {
-                avatar_enabled: false,
-              },
             },
             emotion: {
               primary_emotion: "calm",

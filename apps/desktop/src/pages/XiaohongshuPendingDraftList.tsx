@@ -1,6 +1,7 @@
 import type { XhsWorkDomainState } from "../lib/apiRuntime";
 import type { XiaohongshuCoverPreviewResponse } from "../lib/apiXiaohongshu";
 import { Button } from "../components/ui";
+import { formatRelativeTimeZh } from "../lib/utils/time";
 
 type DraftEdit = {
   title: string;
@@ -28,6 +29,10 @@ const COVER_TEMPLATE_LABELS: Record<string, string> = {
   bold_hook: "强钩子",
 };
 
+function getTemplateLabel(templateName: string): string {
+  return COVER_TEMPLATE_LABELS[templateName] || templateName;
+}
+
 export function XiaohongshuPendingDraftList({
   drafts,
   status,
@@ -50,62 +55,92 @@ export function XiaohongshuPendingDraftList({
     <div className="xhs-page__pending-section">
       <h4 className="xhs-section-title">待发布草稿</h4>
       <ul className="xhs-pending-list">
-        {drafts.map((draft) => (
-          <li key={draft.draft_id} className="xhs-pending-item xhs-pending-item--editable">
-            <div className="xhs-pending-item__actions">
+        {drafts.map((draft) => {
+          const coverPreview = draftCoverPreviews[draft.draft_id];
+          const coverLoading = draftCoverLoading[draft.draft_id];
+          const coverError = draftCoverErrors[draft.draft_id];
+          const activeTemplate = coverPreview?.template_name;
+          const availableTemplates = coverPreview?.available_templates;
+          const isNext = drafts[0]?.draft_id === draft.draft_id;
+
+          return (
+          <li key={draft.draft_id} className="xhs-pending-item">
+            {/* Status badges */}
+            <div className="xhs-pending-item__status-row">
               <span className="xhs-pending-item__status">{draft.status}</span>
-              {drafts[0]?.draft_id === draft.draft_id ? (
-                <span className="xhs-pending-item__status">下一条发布</span>
+              {isNext ? (
+                <span className="xhs-pending-item__status xhs-pending-item__status--next">下一条发布</span>
+              ) : null}
+              {draft.generated_at ? (
+                <span className="xhs-pending-item__time">{formatRelativeTimeZh(draft.generated_at)}</span>
               ) : null}
             </div>
+
+            {/* Cover image — hero element */}
+            <div className="xhs-pending-item__cover">
+              {coverLoading ? <div className="xhs-cover-loading" /> : null}
+              {coverError ? <div className="xhs-cover-error">{coverError}</div> : null}
+              {coverPreview ? (
+                <>
+                  <div className="xhs-cover-preview">
+                    <img
+                      className="xhs-cover-preview__image"
+                      src={coverPreview.image_data_url}
+                      alt={`待发布草稿封面-${coverPreview.template_name}`}
+                    />
+                  </div>
+                  <p className="xhs-cover-preview__label">
+                    {getTemplateLabel(coverPreview.template_name)} 模板
+                  </p>
+                </>
+              ) : null}
+            </div>
+
+            {/* Template switcher pills */}
+            {availableTemplates && availableTemplates.length > 0 ? (
+              <div className="xhs-cover-template-pills">
+                {availableTemplates.map((templateName) => (
+                  <Button
+                    key={templateName}
+                    variant={activeTemplate === templateName ? "default" : "secondary"}
+                    size="sm"
+                    onClick={() => {
+                      onSwitchDraftCoverTemplate(draft.draft_id, templateName);
+                    }}
+                    disabled={coverLoading}
+                  >
+                    {getTemplateLabel(templateName)}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+
+            <hr className="xhs-pending-item__divider" />
+
+            {/* Editable title + body */}
             <input
               className="xhs-pending-item__title-input"
               type="text"
+              placeholder="标题"
               value={draftEdits[draft.draft_id]?.title ?? draft.title}
               onChange={(e) => onDraftEditChange(draft.draft_id, { title: e.target.value })}
             />
             <textarea
               className="xhs-pending-item__body-input"
-              rows={3}
+              rows={4}
+              placeholder="正文内容..."
               value={draftEdits[draft.draft_id]?.body ?? draft.body}
               onChange={(e) => onDraftEditChange(draft.draft_id, { body: e.target.value })}
             />
-            <div className="xhs-pending-item__cover">
-              <div className="xhs-pending-item__cover-header">
-                <strong>封面模板预览</strong>
-                <div className="xhs-pending-item__cover-actions">
-                  {(draftCoverPreviews[draft.draft_id]?.available_templates || Object.keys(COVER_TEMPLATE_LABELS)).map((templateName) => (
-                    <Button
-                      key={templateName}
-                      variant={draftCoverPreviews[draft.draft_id]?.template_name === templateName ? "default" : "secondary"}
-                      onClick={() => {
-                        onSwitchDraftCoverTemplate(draft.draft_id, templateName);
-                      }}
-                      disabled={draftCoverLoading[draft.draft_id]}
-                    >
-                      {COVER_TEMPLATE_LABELS[templateName] || templateName}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              {draftCoverLoading[draft.draft_id] ? <p className="xhs-history-empty">封面预览生成中...</p> : null}
-              {draftCoverErrors[draft.draft_id] ? <p className="xhs-history-empty">{draftCoverErrors[draft.draft_id]}</p> : null}
-              {draftCoverPreviews[draft.draft_id] ? (
-                <div className="xhs-cover-preview">
-                  <img
-                    className="xhs-cover-preview__image"
-                    src={draftCoverPreviews[draft.draft_id]?.image_data_url}
-                    alt={`待发布草稿封面-${draftCoverPreviews[draft.draft_id]?.template_name}`}
-                  />
-                </div>
-              ) : null}
-            </div>
+
+            {/* Action buttons */}
             <div className="xhs-pending-item__actions">
-              <Button variant="outline" onClick={onSaveDrafts}>
+              <Button variant="outline" size="sm" onClick={onSaveDrafts}>
                 保存修改
               </Button>
               <Button
                 variant="default"
+                size="sm"
                 onClick={() => {
                   onPublishDraft(draft.draft_id);
                 }}
@@ -115,6 +150,7 @@ export function XiaohongshuPendingDraftList({
               </Button>
               <Button
                 variant="destructive"
+                size="sm"
                 onClick={() => {
                   if (window.confirm("确定删除这条草稿？")) {
                     onDeleteDraft(draft.draft_id);
@@ -125,7 +161,8 @@ export function XiaohongshuPendingDraftList({
               </Button>
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );

@@ -4,7 +4,6 @@ import { BrowserStatusIndicator } from "./BrowserStatusIndicator";
 type AppSidebarRoute =
   | "chat"
   | "xiaohongshu"
-  | "vrm-generation"
   | "persona"
   | "memory"
   | "tools";
@@ -132,19 +131,6 @@ export function AppSidebar({
             <path d="M8 13h5" />
           </svg>
           <span>小红书经营</span>
-        </button>
-        <button
-          className={`app-sidebar__nav-item ${route === "vrm-generation" ? "app-sidebar__nav-item--active" : ""}`}
-          onClick={() => onNavigate("vrm-generation")}
-          type="button"
-        >
-          <svg className="app-sidebar__nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 3a7 7 0 0 0-7 7v3a7 7 0 0 0 14 0v-3a7 7 0 0 0-7-7z" />
-            <path d="M9 11h.01" />
-            <path d="M15 11h.01" />
-            <path d="M9.5 15c1.5 1 3.5 1 5 0" />
-          </svg>
-          <span>形象生成</span>
         </button>
         <button
           className={`app-sidebar__nav-item ${route === "tools" ? "app-sidebar__nav-item--active" : ""}`}

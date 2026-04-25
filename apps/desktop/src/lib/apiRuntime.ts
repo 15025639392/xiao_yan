@@ -214,6 +214,10 @@ export async function updateXhsWorkDomain(update: XhsWorkDomainUpdate): Promise<
   return patch<{ ok: boolean }>("/xhs-work-domain", update);
 }
 
+export async function regenerateDraft(): Promise<{ ok: boolean; status: string }> {
+  return post<{ ok: boolean; status: string }>("/xhs-work-domain/regenerate-draft", {});
+}
+
 export function wake(): Promise<BeingState> {
   return post<BeingState>("/lifecycle/wake");
 }

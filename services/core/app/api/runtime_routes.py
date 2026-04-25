@@ -279,6 +279,22 @@ def build_runtime_router() -> APIRouter:
             },
         }
 
+    @router.post("/xhs-work-domain/regenerate-draft")
+    def regenerate_xhs_draft(
+        state_store: StateStore = Depends(get_state_store),
+    ) -> dict:
+        being_state = state_store.get()
+        if being_state.xhs_work_domain is None:
+            being_state.xhs_work_domain = XhsWorkDomainState()
+        domain = being_state.xhs_work_domain
+        domain.state.status = XhsWorkStatus.SCOUTING
+        domain.state.current_focus = "重新生成草稿"
+        domain.state.current_bottleneck = ""
+        domain.state.next_recommended_action = ""
+        domain.state.review_session_id = ""
+        state_store.set(being_state)
+        return {"ok": True, "status": "scouting"}
+
     @router.patch("/xhs-work-domain")
     def patch_xhs_work_domain(
         update_req: XhsWorkDomainUpdateRequest,

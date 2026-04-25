@@ -110,6 +110,16 @@ export async function fsReadTextFile(relPath: string): Promise<string> {
   }
 }
 
+export async function fsReadBinaryFile(relPath: string): Promise<Uint8Array> {
+  ensureTauri();
+  try {
+    const bytes = await invoke<number[]>("fs_read_binary_file", { relPath });
+    return new Uint8Array(bytes);
+  } catch (e) {
+    throw new Error(toTauriErrorMessage(e));
+  }
+}
+
 export async function fsWriteTextFile(relPath: string, content: string): Promise<void> {
   ensureTauri();
   try {

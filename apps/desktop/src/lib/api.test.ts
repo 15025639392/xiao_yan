@@ -19,7 +19,6 @@ import {
   upsertChatFolderPermission,
   updateXhsWorkDomain,
   updatePersona,
-  updatePersonaFeatures,
   updatePersonality,
   updateSpeakingStyle,
 } from "./api";
@@ -41,7 +40,6 @@ describe("persona api methods", () => {
     await updatePersona({ name: "小晏" });
     await updatePersonality({ openness: 80 });
     await updateSpeakingStyle({ response_length: "short" });
-    await updatePersonaFeatures({ avatar_enabled: true });
     await resetPersona();
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -61,11 +59,6 @@ describe("persona api methods", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
-      "http://127.0.0.1:8000/persona/features",
-      expect.objectContaining({ method: "PUT" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
       "http://127.0.0.1:8000/persona/reset",
       expect.objectContaining({ method: "POST" }),
     );

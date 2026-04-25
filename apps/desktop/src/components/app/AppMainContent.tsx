@@ -10,7 +10,6 @@ import type {
 import type { AppRoute } from "../../lib/appRoutes";
 import { MemoryPage } from "../../pages/MemoryPage";
 import { XiaohongshuPage } from "../../pages/XiaohongshuPage";
-import { VrmGenerationPage } from "../../pages/VrmGenerationPage";
 
 type AppMainContentProps = {
   assistantName: string;
@@ -36,7 +35,6 @@ type AppMainContentProps = {
   onResume: (message: ChatEntry) => void;
   onRetry: (message: ChatEntry) => void;
   onSend: (options?: ChatSendOptions) => void;
-  onSetAvatarEnabled: (enabled: boolean) => void;
 };
 
 export function AppMainContent({
@@ -63,15 +61,12 @@ export function AppMainContent({
   onResume,
   onRetry,
   onSend,
-  onSetAvatarEnabled,
 }: AppMainContentProps) {
   if (route === "persona") {
     return (
       <PersonaPanel
         onPersonaUpdated={onPersonaUpdated}
         assistantName={assistantName}
-        avatarEnabled={persona?.features?.avatar_enabled ?? false}
-        onSetAvatarEnabled={onSetAvatarEnabled}
       />
     );
   }
@@ -82,10 +77,6 @@ export function AppMainContent({
 
   if (route === "xiaohongshu") {
     return <XiaohongshuPage assistantName={assistantName} />;
-  }
-
-  if (route === "vrm-generation") {
-    return <VrmGenerationPage assistantName={assistantName} />;
   }
 
   if (route === "tools") {

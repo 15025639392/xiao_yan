@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from pydantic.aliases import AliasChoices
 
 from app.api.deps import get_memory_repository, get_persona_service, get_state_store
 from app.domain.models import BeingState, FocusMode, WakeMode
@@ -40,13 +39,6 @@ class SpeakingStyleUpdateRequest(BaseModel):
     emoji_usage: str | None = None
     verbal_tics: list[str] | None = None
     response_length: str | None = None
-
-
-class PersonaFeaturesUpdateRequest(BaseModel):
-    avatar_enabled: bool | None = Field(
-        default=None,
-        validation_alias=AliasChoices("avatar_enabled", "desktop_pet_enabled"),
-    )
 
 
 class PersonaCreateFromTemplateRequest(BaseModel):
@@ -125,17 +117,6 @@ def build_persona_router() -> APIRouter:
         if not updates:
             raise HTTPException(status_code=400, detail="至少需要提供一个风格字段")
         updated = persona_service.update_speaking_style(**updates)
-        return {"success": True, "profile": updated.model_dump()}
-
-    @router.put("/persona/features")
-    def update_persona_features(
-        request: PersonaFeaturesUpdateRequest,
-        persona_service: PersonaService = Depends(get_persona_service),
-    ) -> dict:
-        updates = {k: v for k, v in request.model_dump().items() if v is not None}
-        if not updates:
-            raise HTTPException(status_code=400, detail="至少需要提供一个功能开关字段")
-        updated = persona_service.update_features(**updates)
         return {"success": True, "profile": updated.model_dump()}
 
     @router.post("/persona/reset")

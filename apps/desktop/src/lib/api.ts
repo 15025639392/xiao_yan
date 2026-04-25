@@ -4,7 +4,6 @@ export * from "./apiMemory";
 export * from "./apiPersona";
 export * from "./apiRuntime";
 export * from "./apiTools";
-export * from "./apiVrmGeneration";
 export * from "./apiXiaohongshu";
 
 import { BASE_URL, buildHttpError, get, post, put } from "./apiClient";

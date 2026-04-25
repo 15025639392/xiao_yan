@@ -1101,6 +1101,16 @@ fn fs_read_text_file(
 }
 
 #[tauri::command]
+fn fs_read_binary_file(
+    state: tauri::State<SharedFsAccessState>,
+    rel_path: String,
+) -> Result<Vec<u8>, String> {
+    let guard = state.lock().map_err(|_| "state poisoned".to_string())?;
+    let path = resolve_sandboxed_path(&guard, &rel_path)?;
+    fs::read(&path).map_err(|e| format!("read failed: {e}"))
+}
+
+#[tauri::command]
 fn fs_write_text_file(
     state: tauri::State<SharedFsAccessState>,
     rel_path: String,
@@ -1586,6 +1596,7 @@ fn main() {
             fs_clear_allowed_directory,
             fs_set_folder_permissions,
             fs_read_text_file,
+            fs_read_binary_file,
             fs_write_text_file,
             fs_list_dir,
             shell_run,

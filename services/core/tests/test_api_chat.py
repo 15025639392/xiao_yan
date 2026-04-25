@@ -2024,6 +2024,50 @@ def test_post_chat_updates_current_thought_after_reply():
         app.dependency_overrides.clear()
 
 
+def test_post_chat_wakes_sleeping_state_before_reply():
+    memory_repository = InMemoryMemoryRepository()
+    memory_repository.save_event(
+        MemoryEvent(kind="autobio", content="我刚睡前整理过一段新的自述。")
+    )
+    state_store = StateStore(
+        BeingState(
+            mode=WakeMode.SLEEPING,
+            focus_mode=FocusMode.SLEEPING,
+        ),
+        memory_repository=memory_repository,
+    )
+    gateway = StubGateway()
+
+    def override_gateway():
+        try:
+            yield gateway
+        finally:
+            gateway.close()
+
+    def override_memory_repository():
+        return memory_repository
+
+    def override_state_store():
+        return state_store
+
+    app.dependency_overrides[get_chat_gateway] = override_gateway
+    app.dependency_overrides[get_memory_repository] = override_memory_repository
+    app.dependency_overrides[get_state_store] = override_state_store
+
+    try:
+        client = TestClient(app)
+        response = client.post("/chat", json={"message": "醒醒，我想和你说句话"})
+        assert response.status_code == 200
+
+        assert state_store.get().mode == WakeMode.AWAKE
+        assert state_store.get().focus_mode == FocusMode.AUTONOMY
+        assert gateway.last_instructions is not None
+        assert "我醒了" in gateway.last_instructions
+        assert "睡前整理过一段新的自述" in gateway.last_instructions
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_chat_can_override_mempalace_adapter_dependency():
     class _StubMemPalaceAdapter:
         def search_context(

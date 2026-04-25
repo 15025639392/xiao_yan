@@ -426,7 +426,7 @@ def test_update_capability_shell_policy_rejects_unsupported_executable():
         },
     )
     assert response.status_code == 400
-    assert "unsupported value" in response.json()["detail"]
+    assert "requires 'git'" in response.json()["detail"]
 
 
 def test_get_and_update_capability_file_policy_config_with_history():

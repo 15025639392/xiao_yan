@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 from app.focus.models import FocusEffort
@@ -240,6 +241,79 @@ class XhsWorkDomainState(BaseModel):
     policy: XhsWorkPolicy = XhsWorkPolicy()
 
 
+# ── Upgrade Proposal ────────────────────────────────────────────────────────────
+
+
+class UpgradeProposalStatus(str, Enum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    IMPLEMENTED = "implemented"
+    ABANDONED = "abandoned"
+
+
+class UpgradeProposalCategory(str, Enum):
+    WORKFLOW_FIX = "workflow_fix"           # "哪里卡住了"
+    HABIT_ADJUSTMENT = "habit_adjustment"   # "节奏不对"
+    NEW_CAPABILITY = "new_capability"       # "想学新东西"
+    BOUNDARY_TUNING = "boundary_tuning"     # "想调整限制"
+
+
+class UpgradeProposalPriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class UpgradeProposal(BaseModel):
+    """小晏的自我升级计划书。
+
+    她自然表达感受，系统在背后自动分类和映射优先级。
+    分类服务于审批者，不侵入她的人格叙事。
+    """
+    proposal_id: str
+    created_at: datetime
+    status: UpgradeProposalStatus = UpgradeProposalStatus.DRAFT
+
+    # 她的人格化表达
+    her_voice: str = Field(description="她的自然语言描述，如'我觉得最近发布时总是卡在找按钮这一步'")
+
+    # 系统提取的结构化信息
+    motivation: str = Field(description="为什么现在提这个升级")
+    pain_points: list[str] = Field(default_factory=list)
+    observed_data: dict = Field(default_factory=dict, description="支撑数据：失败次数、耗时、相关事件摘要")
+
+    # 系统自动分类（非她填写）
+    category: UpgradeProposalCategory
+    target_domain: str = Field(description="目标领域，如 xiaohongshu / chat / memory / general")
+
+    # 优先级（系统根据分类+上下文自动推断，可人工覆盖）
+    suggested_priority: UpgradeProposalPriority = UpgradeProposalPriority.MEDIUM
+
+    # 可选的高级表达
+    expected_benefit: str | None = None
+    risk_concern: str | None = None
+    rollback_plan: str | None = None
+
+    # 防重复相关
+    content_fingerprint: str = Field(description="hash(category + target_domain + sorted(pain_points))")
+    implemented_at: datetime | None = None
+    observation_result: Literal["success", "partial", "failed", "unknown"] | None = None
+    observation_notes: str | None = None
+
+    # 关联
+    parent_proposal_id: str | None = None  # 如果是 follow-up，关联上一次的 plan
+
+    # 审批记录
+    approved_at: datetime | None = None
+    approved_by: str | None = None
+    rejected_at: datetime | None = None
+    rejected_by: str | None = None
+    reject_reason: str | None = None
+
+
 class BeingState(BaseModel):
     mode: WakeMode
     focus_mode: FocusMode = FocusMode.SLEEPING
@@ -253,6 +327,9 @@ class BeingState(BaseModel):
     browser_organ: BrowserOrganState | None = None
     browser_session: BrowserSessionState | None = None
     xhs_work_domain: XhsWorkDomainState | None = None
+    # 升级计划书历史（最近 50 条，用于防重复和状态查询）
+    upgrade_proposals: list[UpgradeProposal] = Field(default_factory=list)
+    last_upgrade_proposal_at: datetime | None = None
 
     @classmethod
     def default(cls) -> "BeingState":
