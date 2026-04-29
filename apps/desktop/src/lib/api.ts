@@ -5,6 +5,8 @@ export * from "./apiPersona";
 export * from "./apiRuntime";
 export * from "./apiTools";
 export * from "./apiXiaohongshu";
+export * from "./apiCreativeWriting";
+export * from "./apiUpgradeProposals";
 
 import { BASE_URL, buildHttpError, get, post, put } from "./apiClient";
 

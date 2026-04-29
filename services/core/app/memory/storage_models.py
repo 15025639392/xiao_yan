@@ -72,7 +72,21 @@ class MemoryEvent(BaseModel):
         default="internal",
         description="可见性：internal=系统内部，user=对用户可见",
     )
+    strength: Literal["faint", "weak", "normal", "vivid", "core"] | None = Field(
+        default=None,
+        description="记忆强度",
+    )
+    importance: int | None = Field(default=None, ge=0, le=10, description="重要性 0-10")
+    access_count: int = Field(default=0, ge=0, description="被检索/回忆的次数")
+    emotion_tag: Literal["positive", "negative", "neutral", "mixed"] | None = Field(
+        default=None,
+        description="情绪标签",
+    )
+    keywords: list[str] = Field(default_factory=list, description="关键词列表")
+    subject: str | None = Field(default=None, description="相关主体/实体")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_accessed_at: datetime | None = Field(default=None, description="最后访问时间")
+    expires_at: datetime | None = Field(default=None, description="过期时间（可选）")
     deleted_at: datetime | None = Field(default=None, description="软删除时间")
     entry_id: str = Field(
         default_factory=lambda: generate_memory_id(),
@@ -98,9 +112,18 @@ class MemoryEvent(BaseModel):
             namespace=default_namespace_for_kind(storage_kind),
             facet="semantic" if entry.kind == MemoryKind.SEMANTIC else None,
             source_ref=entry.source_context,
+            strength=entry.strength.value,
+            importance=entry.importance,
+            access_count=entry.access_count,
+            emotion_tag=entry.emotion_tag.value,
+            keywords=entry.keywords,
+            subject=entry.subject,
             created_at=entry.created_at,
+            last_accessed_at=entry.last_accessed_at,
+            expires_at=entry.expires_at,
             deleted_at=entry.deleted_at,
             entry_id=entry.id,
+            related_memory_ids=entry.related_memory_ids,
         )
 
     @model_validator(mode="after")
@@ -166,11 +189,30 @@ class MemoryEvent(BaseModel):
                     if isinstance(candidate_session_id, str) and candidate_session_id.strip():
                         self.reasoning_session_id = candidate_session_id.strip()
 
+        if self.strength is not None:
+            normalized_strength = self.strength.strip().lower()
+            self.strength = normalized_strength or None
+
+        if self.emotion_tag is not None:
+            normalized_emotion_tag = self.emotion_tag.strip().lower()
+            self.emotion_tag = normalized_emotion_tag or None
+
+        normalized_keywords: list[str] = []
+        for raw_keyword in self.keywords or []:
+            normalized_keyword = str(raw_keyword).strip()
+            if normalized_keyword and normalized_keyword not in normalized_keywords:
+                normalized_keywords.append(normalized_keyword)
+        self.keywords = normalized_keywords
+
+        if self.subject is not None:
+            normalized_subject = self.subject.strip()
+            self.subject = normalized_subject or None
+
         return self
 
     def to_entry(self):
         """从存储事件转换为 MemoryEntry。"""
-        from app.memory.models import MemoryEntry, MemoryKind
+        from app.memory.models import MemoryEmotion, MemoryEntry, MemoryKind, MemoryStrength
 
         kind_map = {
             "chat": MemoryKind.CHAT_RAW,
@@ -196,6 +238,9 @@ class MemoryEvent(BaseModel):
             MemoryKind.CHAT_RAW: 2,
         }.get(kind, 5)
 
+        strength = MemoryStrength(self.strength) if self.strength is not None else MemoryStrength.NORMAL
+        emotion_tag = MemoryEmotion(self.emotion_tag) if self.emotion_tag is not None else MemoryEmotion.NEUTRAL
+
         return MemoryEntry(
             id=self.entry_id,
             kind=kind,
@@ -203,8 +248,15 @@ class MemoryEvent(BaseModel):
             role=self.role,
             session_id=self.session_id,
             source_context=self.source_context,
+            strength=strength,
+            importance=self.importance if self.importance is not None else default_importance,
+            access_count=self.access_count,
+            emotion_tag=emotion_tag,
+            keywords=self.keywords,
+            subject=self.subject,
             created_at=self.created_at,
+            last_accessed_at=self.last_accessed_at,
+            expires_at=self.expires_at,
             deleted_at=self.deleted_at,
-            importance=default_importance,
             related_memory_ids=self.related_memory_ids,
         )

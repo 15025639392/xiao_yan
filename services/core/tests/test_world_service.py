@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.domain.models import BeingState, WakeMode
+from app.focus.effort import focus_hold_effort
 from app.world.service import WorldStateService
 
 
@@ -80,6 +81,31 @@ def test_world_state_uses_focus_subject_as_starting_focus():
     assert state.focus_tension == "medium"
     assert state.focus_stage == "start"
     assert state.focus_step == 1
+
+
+def test_world_state_moves_stale_focus_hold_to_consolidate():
+    service = WorldStateService()
+    now = datetime(2026, 4, 4, 14, 2)
+
+    state = service.bootstrap(
+        being_state=BeingState(
+            mode=WakeMode.AWAKE,
+            focus_subject={
+                "kind": "lingering",
+                "title": "你刚才说最近提不起劲",
+                "why_now": "这句话还挂在心里。",
+            },
+            focus_effort=focus_hold_effort(
+                focus_title="你刚才说最近提不起劲",
+                now=now - timedelta(seconds=61),
+            ),
+        ),
+        now=now,
+    )
+
+    assert state.mood == "calm"
+    assert state.focus_stage == "consolidate"
+    assert state.focus_step == 3
 
 
 def test_world_service_builds_tired_night_event_with_focus_context():

@@ -6,7 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.memory.mempalace_repository import MemPalaceMemoryRepository
-from app.memory.models import MemoryEvent
+from app.memory.models import MemoryEmotion, MemoryEvent, MemoryKind, MemoryStrength
+from app.memory.service import MemoryService
 from app.memory.repository import InMemoryMemoryRepository
 
 
@@ -98,6 +99,14 @@ def test_memory_event_rejects_invalid_namespace():
         MemoryEvent(kind="chat", role="user", content="hello", namespace="invalid_namespace")
 
 
+def test_memory_event_rejects_invalid_structured_memory_fields():
+    with pytest.raises(ValidationError):
+        MemoryEvent(kind="fact", content="坏强度", strength="forever")
+
+    with pytest.raises(ValidationError):
+        MemoryEvent(kind="emotional", content="坏情绪", emotion_tag="excited")
+
+
 def test_mempalace_repository_persists_events_across_instances():
     collection = _FakeCollection()
 
@@ -116,6 +125,30 @@ def test_mempalace_repository_persists_events_across_instances():
     assert recent[0].kind == "chat"
     assert recent[0].role == "user"
     assert recent[0].content == "你好，小燕"
+
+
+def test_memory_service_preserves_structured_fields_after_repository_roundtrip():
+    repo = InMemoryMemoryRepository()
+    service = MemoryService(repository=repo)
+
+    entry = service.create(
+        MemoryKind.FACT,
+        "用户偏好：喜欢先看方案再做决定",
+        strength=MemoryStrength.VIVID,
+        importance=9,
+        emotion_tag=MemoryEmotion.POSITIVE,
+        keywords=["方案", "决定", "方案"],
+        subject="用户偏好",
+    )
+
+    stored = service.get_by_id(entry.id)
+
+    assert stored is not None
+    assert stored.strength == MemoryStrength.VIVID
+    assert stored.importance == 9
+    assert stored.emotion_tag == MemoryEmotion.POSITIVE
+    assert stored.keywords == ["方案", "决定"]
+    assert stored.subject == "用户偏好"
 
 
 def test_in_memory_repository_returns_relevant_events_before_irrelevant_recent_ones():

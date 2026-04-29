@@ -23,7 +23,7 @@ class WorldStateService:
     ) -> WorldState:
         current_time = now or get_local_now()
         state = being_state or BeingState.default()
-        focus_stage, focus_step = _focus_stage_for(state)
+        focus_stage, focus_step = _focus_stage_for(state, current_time)
         time_of_day = _time_of_day(current_time.hour)
         energy = _energy_for(time_of_day, state)
         mood = _mood_for(state, energy, focus_stage)

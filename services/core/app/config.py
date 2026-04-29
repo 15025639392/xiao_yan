@@ -65,6 +65,14 @@ def get_capability_queue_storage_path() -> Path:
     return get_service_root() / ".data" / "capability_queue.json"
 
 
+def get_creative_writing_storage_dir() -> Path:
+    load_local_env()
+    configured = os.getenv("CREATIVE_WRITING_STORAGE_DIR")
+    if configured:
+        return Path(configured).expanduser()
+    return get_service_root() / ".data" / "creative_writing"
+
+
 def _read_positive_float_env(name: str, default: float, *, minimum: float) -> float:
     load_local_env()
     raw = os.getenv(name, "").strip()

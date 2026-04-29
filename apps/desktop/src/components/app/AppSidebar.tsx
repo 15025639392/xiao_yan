@@ -1,19 +1,15 @@
-import type { BrowserOrganState } from "../../lib/api";
-import { BrowserStatusIndicator } from "./BrowserStatusIndicator";
+import { BookOpenText, ClipboardList } from "lucide-react";
 
-type AppSidebarRoute =
-  | "chat"
-  | "xiaohongshu"
-  | "persona"
-  | "memory"
-  | "tools";
+import type { BrowserOrganState } from "../../lib/api";
+import type { AppRoute } from "../../lib/appRoutes";
+import { BrowserStatusIndicator } from "./BrowserStatusIndicator";
 
 type AppSidebarProps = {
   assistantName: string;
-  route: AppSidebarRoute;
+  route: AppRoute;
   showBrandMenu: boolean;
   theme: "dark" | "light";
-  onNavigate: (route: AppSidebarRoute) => void;
+  onNavigate: (route: AppRoute) => void;
   onShowBrandMenuChange: (open: boolean) => void;
   onToggleTheme: () => void;
   onShowAbout: () => void;
@@ -121,6 +117,14 @@ export function AppSidebar({
           <span>对话</span>
         </button>
         <button
+          className={`app-sidebar__nav-item ${route === "creative-writing" ? "app-sidebar__nav-item--active" : ""}`}
+          onClick={() => onNavigate("creative-writing")}
+          type="button"
+        >
+          <BookOpenText className="app-sidebar__nav-icon" size={18} />
+          <span>小说创作</span>
+        </button>
+        <button
           className={`app-sidebar__nav-item ${route === "xiaohongshu" ? "app-sidebar__nav-item--active" : ""}`}
           onClick={() => onNavigate("xiaohongshu")}
           type="button"
@@ -142,6 +146,14 @@ export function AppSidebar({
             <path d="M16 21v-6a1 1 0 0 1 1-1h6" />
           </svg>
           <span>外部能力</span>
+        </button>
+        <button
+          className={`app-sidebar__nav-item ${route === "upgrade-proposals" ? "app-sidebar__nav-item--active" : ""}`}
+          onClick={() => onNavigate("upgrade-proposals")}
+          type="button"
+        >
+          <ClipboardList className="app-sidebar__nav-icon" size={18} />
+          <span>升级计划</span>
         </button>
       </nav>
     </aside>

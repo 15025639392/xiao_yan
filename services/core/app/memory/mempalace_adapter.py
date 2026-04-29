@@ -98,6 +98,29 @@ class MemPalaceAdapter:
             logger.warning("MemPalace record exchange failed: %s", exc)
             return False
 
+    def record_assistant_message(
+        self,
+        assistant_response: str,
+        assistant_session_id: str | None = None,
+        request_key: str | None = None,
+    ) -> bool:
+        assistant_text = (assistant_response or "").strip()
+        if not assistant_text:
+            return False
+
+        try:
+            return self._write(
+                content=assistant_text,
+                source_context="xiaoyan_proactive_message",
+                session_id=assistant_session_id,
+                request_key=request_key,
+                reasoning_session_id=None,
+                reasoning_state=None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("MemPalace record assistant message failed: %s", exc)
+            return False
+
     def status_snapshot(self) -> dict:
         palace = Path(self.palace_path)
         return {

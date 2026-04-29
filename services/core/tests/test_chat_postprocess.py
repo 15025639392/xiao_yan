@@ -80,3 +80,30 @@ def test_finalize_chat_submission_does_not_fallback_without_focus_subject():
 
     latest_state = state_store.get()
     assert latest_state.focus_effort is None
+
+
+def test_finalize_chat_submission_mirrors_exchange_to_memory_repository():
+    memory_repository = InMemoryMemoryRepository()
+    state_store = StateStore(BeingState(mode=WakeMode.AWAKE), memory_repository=memory_repository)
+
+    finalize_chat_submission(
+        assistant_message_id="assistant_1",
+        chat_memory_runtime=_StubChatMemoryRuntime(),
+        logger=getLogger(__name__),
+        memory_repository=memory_repository,
+        reasoning=_build_reasoning(),
+        reasoning_state=None,
+        state_store=state_store,
+        submission=_build_submission(),
+        tracker=None,
+        user_message="你会主动找我吗",
+        output_text="会，但现在还需要把触达通道接好。",
+        request_key="request_1",
+    )
+
+    recent_chat = list(reversed(memory_repository.list_recent_chat(limit=10)))
+
+    assert [(event.role, event.content) for event in recent_chat] == [
+        ("user", "你会主动找我吗"),
+        ("assistant", "会，但现在还需要把触达通道接好。"),
+    ]

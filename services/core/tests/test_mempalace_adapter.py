@@ -257,6 +257,48 @@ def test_mempalace_adapter_record_exchange_calls_write_backend():
     assert captured["reasoning_state"] == "reasoning_42"
 
 
+def test_mempalace_adapter_record_assistant_message_writes_assistant_only_document():
+    captured: dict[str, str] = {}
+
+    def _stub_write(
+        *,
+        content: str,
+        source_context: str,
+        session_id: str | None,
+        request_key: str | None,
+        reasoning_session_id: str | None,
+        reasoning_state: dict | None,
+    ) -> bool:
+        captured["content"] = content
+        captured["source_context"] = source_context
+        captured["session_id"] = session_id or ""
+        captured["request_key"] = request_key or ""
+        captured["reasoning_session_id"] = reasoning_session_id or ""
+        captured["reasoning_state"] = "" if reasoning_state is None else "present"
+        return True
+
+    adapter = MemPalaceAdapter(
+        palace_path="/tmp/palace",
+        write_backend=_stub_write,
+    )
+
+    result = adapter.record_assistant_message(
+        "我刚刚又想到你提到的星星了。",
+        "assistant_proactive_1",
+        request_key="assistant_proactive_1",
+    )
+
+    assert result is True
+    assert captured == {
+        "content": "我刚刚又想到你提到的星星了。",
+        "source_context": "xiaoyan_proactive_message",
+        "session_id": "assistant_proactive_1",
+        "request_key": "assistant_proactive_1",
+        "reasoning_session_id": "",
+        "reasoning_state": "",
+    }
+
+
 def test_mempalace_adapter_does_not_fallback_to_local_history_when_write_backend_fails():
     def _broken_write(
         *,

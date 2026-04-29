@@ -6,6 +6,7 @@ from app.api.chat_reasoning import ChatReasoningController
 from app.focus.effort import chat_reply_effort
 from app.llm.schemas import ChatReasoningState, ChatSubmissionResult
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
+from app.memory.models import MemoryEvent
 from app.memory.observability import MemoryObservabilityTracker
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore

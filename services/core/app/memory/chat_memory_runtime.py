@@ -48,6 +48,14 @@ class ChatMemoryBackend(Protocol):
     ) -> bool:
         ...
 
+    def record_assistant_message(
+        self,
+        assistant_response: str,
+        assistant_session_id: str | None = None,
+        request_key: str | None = None,
+    ) -> bool:
+        ...
+
 
 class ChatMemoryRuntime:
     """Composes chat-specific memory retrieval/write behind a memory-layer boundary."""
@@ -119,6 +127,18 @@ class ChatMemoryRuntime:
             request_key=request_key,
             reasoning_session_id=reasoning_session_id,
             reasoning_state=reasoning_state,
+        )
+
+    def record_assistant_message(
+        self,
+        assistant_response: str,
+        assistant_session_id: str | None = None,
+        request_key: str | None = None,
+    ) -> bool:
+        return self.backend.record_assistant_message(
+            assistant_response,
+            assistant_session_id,
+            request_key=request_key,
         )
 
 def _split_context_budget(context_limit: int) -> tuple[int, int]:

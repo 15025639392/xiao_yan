@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from app.domain.models import BeingState, WakeMode
 from app.world.models import WorldState
+
+_FOCUS_DEEPEN_AFTER = timedelta(seconds=20)
+_FOCUS_CONSOLIDATE_AFTER = timedelta(seconds=60)
 
 
 def time_of_day(hour: int) -> str:
@@ -63,10 +68,30 @@ def event_lead(world_state: WorldState) -> str:
     return "我在感受这一刻的变化，"
 
 
-def focus_stage_for(state: BeingState) -> tuple[str, int | None]:
+def focus_stage_for(state: BeingState, now: datetime | None = None) -> tuple[str, int | None]:
     if state.focus_subject is None:
         return "none", None
+    if state.focus_effort is None:
+        return "start", 1
+
+    if state.focus_effort.action_kind == "consolidate":
+        return "consolidate", 3
+
+    current_time = now or datetime.now(tz=state.focus_effort.created_at.tzinfo)
+    focus_age = _elapsed_since(state.focus_effort.created_at, current_time)
+    if focus_age >= _FOCUS_CONSOLIDATE_AFTER:
+        return "consolidate", 3
+    if focus_age >= _FOCUS_DEEPEN_AFTER:
+        return "deepen", 2
     return "start", 1
+
+
+def _elapsed_since(start: datetime, end: datetime) -> timedelta:
+    if start.tzinfo is None and end.tzinfo is not None:
+        end = end.replace(tzinfo=None)
+    elif start.tzinfo is not None and end.tzinfo is None:
+        start = start.replace(tzinfo=None)
+    return max(timedelta(0), end - start)
 
 
 __all__ = [

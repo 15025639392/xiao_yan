@@ -21,6 +21,7 @@ from app.api.chat_context import (
 )
 from app.api.chat_runtime_helpers import get_observability_tracker
 from app.api.chat_skills import append_skill_context
+from app.chat.ai_collaboration_coach import append_ai_collaboration_coach_context
 from app.domain.models import BeingState, WakeMode
 from app.llm.gateway import ChatGateway
 from app.llm.schemas import ChatMessage
@@ -127,6 +128,7 @@ def prepare_route_chat_context(
         user_message=request_body.message,
         requested_skills=getattr(request_body, "skills", None),
     )
+    instructions = append_ai_collaboration_coach_context(instructions, user_message=request_body.message)
     return PreparedRouteChatContext(
         prepared_context=prepared_context,
         tracker=tracker,
@@ -179,6 +181,7 @@ def prepare_route_resume_context(
         user_time_of_day=request_body.user_time_of_day,
     )
     instructions = append_skill_context(instructions, user_message=request_body.message)
+    instructions = append_ai_collaboration_coach_context(instructions, user_message=request_body.message)
     return PreparedRouteChatContext(
         prepared_context=prepared_context,
         tracker=tracker,

@@ -1,14 +1,6 @@
-"""对话系统模块
+"""Chat-domain helpers.
 
-包含对话上下文构建、人格注入、情绪处理等功能
+The active chat route is implemented through ``app.api.chat_*`` modules.
 """
 
-from app.chat.context_builder import DialogueContextBuilder
-from app.chat.persona_injector import PersonaInjector
-from app.chat.emotion_handler import EmotionHandler
-
-__all__ = [
-    "DialogueContextBuilder",
-    "PersonaInjector",
-    "EmotionHandler",
-]
+__all__: list[str] = []

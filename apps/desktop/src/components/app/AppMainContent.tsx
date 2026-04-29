@@ -8,7 +8,9 @@ import type {
   PersonaProfile,
 } from "../../lib/api";
 import type { AppRoute } from "../../lib/appRoutes";
+import { CreativeWritingPage } from "../../pages/CreativeWritingPage";
 import { MemoryPage } from "../../pages/MemoryPage";
+import { UpgradeProposalsPage } from "../../pages/UpgradeProposalsPage";
 import { XiaohongshuPage } from "../../pages/XiaohongshuPage";
 
 type AppMainContentProps = {
@@ -75,12 +77,20 @@ export function AppMainContent({
     return <MemoryPage assistantName={assistantName} />;
   }
 
+  if (route === "creative-writing") {
+    return <CreativeWritingPage assistantName={assistantName} />;
+  }
+
   if (route === "xiaohongshu") {
     return <XiaohongshuPage assistantName={assistantName} />;
   }
 
   if (route === "tools") {
     return <ToolPanel />;
+  }
+
+  if (route === "upgrade-proposals") {
+    return <UpgradeProposalsPage />;
   }
 
   return (

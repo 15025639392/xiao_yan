@@ -19,8 +19,10 @@ from app.agent.loop_helpers import (
     find_latest_autobio_event as _find_latest_autobio_event,
     find_latest_inner_event as _find_latest_inner_event,
     find_latest_user_event as _find_latest_user_event,
+    has_recent_inner_step_memory as _has_recent_inner_step_memory,
     next_focus_mode as _next_focus_mode,
 )
+from app.agent.proactive_delivery import record_visible_proactive_message
 from app.upgrade_proposal.generator import (
     build_upgrade_proposal,
     detect_upgrade_signal,
@@ -31,7 +33,7 @@ from app.upgrade_proposal.helpers import (
 )
 from app.upgrade_proposal.models import UpgradeProposalStore
 from app.agent.xhs_workflow_engine import XhsWorkDomainEngine
-from app.domain.models import FocusSubject, WakeMode
+from app.domain.models import FocusSubject, WakeMode, XhsWorkStatus
 from app.memory.models import MemoryEntry, MemoryEvent, MemoryKind
 from app.memory.repository import MemoryRepository
 from app.runtime import StateStore
@@ -51,6 +53,7 @@ class AutonomyLoop:
         now_provider=None,
         world_state_service: WorldStateService | None = None,
         command_runner: CommandRunner | None = None,
+        chat_memory_runtime=None,
         gateway=None,
     ) -> None:
         self.state_store = state_store
@@ -60,6 +63,7 @@ class AutonomyLoop:
         self.command_runner = command_runner or CommandRunner(
             CommandSandbox.with_defaults(max_level=ToolSafetyLevel.SAFE)
         )
+        self.chat_memory_runtime = chat_memory_runtime
         self.gateway = gateway
         self.xhs_engine = XhsWorkDomainEngine(state_store, memory_repository, gateway)
         self.upgrade_store = UpgradeProposalStore(state_store)
@@ -73,14 +77,19 @@ class AutonomyLoop:
         xhs_action = self.xhs_engine.tick()
         state = self.state_store.get()  # re-read after engine may have updated state
 
-        # If xhs engine produced an action, create a focus_subject for it
-        if xhs_action is not None:
+        # If xhs engine is actively working, let it occupy focus. Manual review,
+        # idle, and blocked states remain in the XHS domain state but should not
+        # freeze Xiao Yan's whole autonomy loop.
+        if _should_hold_xhs_focus(xhs_action, state):
             state.focus_subject = FocusSubject(
                 kind="xhs_workflow",
                 title=xhs_action.title,
                 why_now=f"小红书工作流: {xhs_action.kind}",
             )
             state.last_proactive_at = self.now_provider()
+            self.state_store.set(state)
+        elif state.focus_subject is not None and state.focus_subject.kind == "xhs_workflow":
+            state = state.model_copy(update={"focus_subject": None, "focus_effort": None})
             self.state_store.set(state)
 
         now = self.now_provider()
@@ -139,8 +148,9 @@ class AutonomyLoop:
                 return self.state_store.set(next_state)
 
             next_state = state.model_copy(
-                update=focus_hold_update(
+                update=self._focus_hold_updates(
                     focus_title=focus_title,
+                    existing_focus_effort=state.focus_effort,
                     world_state=world_state,
                     chain_progress=None,
                     now=now,
@@ -198,6 +208,7 @@ class AutonomyLoop:
                     role="assistant",
                 )
                 self.memory_repository.save_event(MemoryEvent.from_entry(entry))
+                record_visible_proactive_message(self.chat_memory_runtime, proactive_message, now)
 
             next_state = state.model_copy(update=updates)
             return self.state_store.set(next_state)
@@ -231,6 +242,29 @@ class AutonomyLoop:
             stage=world_state.focus_stage if world_state.focus_stage != "none" else "direct",
         )
 
+    def _focus_hold_updates(
+        self,
+        *,
+        focus_title: str,
+        existing_focus_effort,
+        world_state,
+        chain_progress: str | None,
+        now: datetime,
+    ):
+        updates = focus_hold_update(
+            focus_title=focus_title,
+            world_state=world_state,
+            chain_progress=chain_progress,
+            now=now,
+        )
+        if (
+            existing_focus_effort is not None
+            and existing_focus_effort.action_kind == "focus_hold"
+            and existing_focus_effort.focus_title == focus_title
+        ):
+            updates["focus_effort"] = existing_focus_effort
+        return updates
+
     def _maybe_record_inner_stage_memory(self, state, recent_events, world_state, now: datetime) -> None:
         if world_state.focus_stage == "none" or world_state.focus_step is None:
             return
@@ -242,6 +276,8 @@ class AutonomyLoop:
         inner_memory = _build_inner_stage_memory(world_state, focus_title)
         latest_inner_event = _find_latest_inner_event(recent_events)
         if latest_inner_event is not None and latest_inner_event.content == inner_memory:
+            return
+        if _has_recent_inner_step_memory(recent_events, world_state.focus_step):
             return
 
         entry = MemoryEntry.create(
@@ -330,12 +366,14 @@ class AutonomyLoop:
         self.memory_repository.save_event(MemoryEvent.from_entry(entry))
 
         # 将 plan 设为 focus_subject（她会"惦记着"这件事）
-        state.focus_subject = FocusSubject(
+        focus_subject = FocusSubject(
             kind="upgrade_proposal",
             title=f"升级计划：{proposal.her_voice[:24]}...",
             why_now=f"等待审批：{proposal.proposal_id}",
+            source_ref=proposal.proposal_id,
         )
-        self.state_store.set(state)
+        current_state = self.state_store.get()
+        self.state_store.set(current_state.model_copy(update={"focus_subject": focus_subject}))
 
 
 def _resolve_focus_title(state) -> str | None:
@@ -343,6 +381,19 @@ def _resolve_focus_title(state) -> str | None:
         return None
     title = state.focus_subject.title.strip()
     return title or None
+
+
+def _should_hold_xhs_focus(xhs_action, state) -> bool:
+    if xhs_action is None or xhs_action.kind == "idle":
+        return False
+    domain = state.xhs_work_domain
+    if domain is None:
+        return False
+    return domain.state.status in {
+        XhsWorkStatus.SCOUTING,
+        XhsWorkStatus.DRAFTING,
+        XhsWorkStatus.PUBLISHING,
+    }
 
 
 def _action_command_for_focus(focus_title: str) -> str | None:

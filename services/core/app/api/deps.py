@@ -6,9 +6,12 @@ import httpx
 from fastapi import Depends, Request
 
 from app.config import (
+    get_creative_writing_storage_dir,
     get_chat_provider,
     get_llm_provider_configs,
 )
+from app.creative_writing.repository import FileCreativeWritingRepository
+from app.creative_writing.service import CreativeWritingService
 from app.llm.gateway import ChatGateway
 from app.memory.chat_memory_runtime import ChatMemoryBackend, ChatMemoryRuntime
 from app.memory.mempalace_adapter import MemPalaceAdapter
@@ -51,9 +54,36 @@ def get_mempalace_adapter(request: Request) -> ChatMemoryBackend:
 
 
 def get_chat_gateway() -> Generator[ChatGateway, None, None]:
+    gateway = _build_runtime_chat_gateway(required=True)
+    if gateway is None:
+        raise RuntimeError("no llm provider is configured")
+    try:
+        yield gateway
+    finally:
+        gateway.close()
+
+
+def get_optional_chat_gateway() -> Generator[ChatGateway | None, None, None]:
+    try:
+        gateway = _build_runtime_chat_gateway(required=False)
+    except Exception:
+        yield None
+        return
+    if gateway is None:
+        yield None
+        return
+    try:
+        yield gateway
+    finally:
+        gateway.close()
+
+
+def _build_runtime_chat_gateway(*, required: bool) -> ChatGateway | None:
     provider_catalog = get_llm_provider_configs()
     if not provider_catalog:
-        raise RuntimeError("no llm provider is configured")
+        if required:
+            raise RuntimeError("no llm provider is configured")
+        return None
 
     runtime_config = get_runtime_config()
     runtime_provider = runtime_config.chat_provider
@@ -71,15 +101,11 @@ def get_chat_gateway() -> Generator[ChatGateway, None, None]:
         runtime_config.chat_model = selected_provider.default_model
 
     http_client = httpx.Client(timeout=httpx.Timeout(runtime_config.chat_read_timeout_seconds, connect=10.0))
-    gateway = ChatGateway.from_provider_config(
+    return ChatGateway.from_provider_config(
         selected_provider,
         model=runtime_config.chat_model,
         http_client=http_client,
     )
-    try:
-        yield gateway
-    finally:
-        gateway.close()
 
 
 def get_memory_repository(request: Request) -> MemoryRepository:
@@ -124,3 +150,16 @@ def get_world_repository(request: Request) -> WorldRepository:
 
 def get_world_state_service() -> WorldStateService:
     return WorldStateService()
+
+
+def get_creative_writing_service(request: Request) -> CreativeWritingService:
+    service = getattr(request.app.state, "creative_writing_service", None)
+    if service is None:
+        repository = FileCreativeWritingRepository(get_creative_writing_storage_dir())
+        service = CreativeWritingService(
+            repository=repository,
+            persona_service=get_persona_service(request),
+            world_repository=get_world_repository(request),
+        )
+        request.app.state.creative_writing_service = service
+    return service

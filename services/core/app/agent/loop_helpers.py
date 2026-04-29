@@ -29,6 +29,13 @@ def find_latest_inner_event(recent_events):
     return None
 
 
+def has_recent_inner_step_memory(recent_events, focus_step: int) -> bool:
+    for event in reversed(recent_events):
+        if event.kind == "inner" and extract_focus_step(event.content) == focus_step:
+            return True
+    return False
+
+
 def find_latest_autobio_event(recent_events):
     for event in reversed(recent_events):
         if event.kind == "autobio":

@@ -254,7 +254,14 @@ class MemPalaceMemoryRepository:
             "role": event.role or "",
             "session_id": event.session_id or "",
             "source_context": event.source_context or "",
+            "strength": event.strength or "",
+            "importance": "" if event.importance is None else str(event.importance),
+            "emotion_tag": event.emotion_tag or "",
+            "keywords": ",".join(event.keywords),
+            "subject": event.subject or "",
             "created_at": event.created_at.isoformat(),
+            "last_accessed_at": event.last_accessed_at.isoformat() if event.last_accessed_at is not None else "",
+            "expires_at": event.expires_at.isoformat() if event.expires_at is not None else "",
             "deleted_at": event.deleted_at.isoformat() if event.deleted_at is not None else "",
         }
 

@@ -20,6 +20,12 @@ vi.mock("../../pages/MemoryPage", () => ({
 vi.mock("../../pages/XiaohongshuPage", () => ({
   XiaohongshuPage: () => <div>xiaohongshu</div>,
 }));
+vi.mock("../../pages/CreativeWritingPage", () => ({
+  CreativeWritingPage: () => <div>creative-writing</div>,
+}));
+vi.mock("../../pages/UpgradeProposalsPage", () => ({
+  UpgradeProposalsPage: () => <div>upgrade-proposals</div>,
+}));
 
 const state: BeingState = {
   mode: "awake",
@@ -62,4 +68,68 @@ test("renders persona panel for persona route", () => {
   );
 
   expect(screen.getByTestId("persona-panel")).toBeInTheDocument();
+});
+
+test("renders creative writing page for creative-writing route", () => {
+  render(
+    <AppMainContent
+      assistantName="小晏"
+      attachedFiles={[]}
+      attachedFolders={[]}
+      attachedImages={[]}
+      draft=""
+      focusGoalTitle={null}
+      focusContext={null}
+      isSending={false}
+      messages={[]}
+      persona={persona}
+      route="creative-writing"
+      state={state}
+      onDraftChange={() => undefined}
+      onPersonaUpdated={() => undefined}
+      onPickFile={() => undefined}
+      onPickFolder={() => undefined}
+      onPickImage={() => undefined}
+      onRemoveAttachedFile={() => undefined}
+      onRemoveAttachedFolder={() => undefined}
+      onRemoveAttachedImage={() => undefined}
+      onResume={() => undefined}
+      onRetry={() => undefined}
+      onSend={() => undefined}
+    />,
+  );
+
+  expect(screen.getByText("creative-writing")).toBeInTheDocument();
+});
+
+test("renders upgrade proposals page for upgrade-proposals route", () => {
+  render(
+    <AppMainContent
+      assistantName="小晏"
+      attachedFiles={[]}
+      attachedFolders={[]}
+      attachedImages={[]}
+      draft=""
+      focusGoalTitle={null}
+      focusContext={null}
+      isSending={false}
+      messages={[]}
+      persona={persona}
+      route="upgrade-proposals"
+      state={state}
+      onDraftChange={() => undefined}
+      onPersonaUpdated={() => undefined}
+      onPickFile={() => undefined}
+      onPickFolder={() => undefined}
+      onPickImage={() => undefined}
+      onRemoveAttachedFile={() => undefined}
+      onRemoveAttachedFolder={() => undefined}
+      onRemoveAttachedImage={() => undefined}
+      onResume={() => undefined}
+      onRetry={() => undefined}
+      onSend={() => undefined}
+    />,
+  );
+
+  expect(screen.getByText("upgrade-proposals")).toBeInTheDocument();
 });

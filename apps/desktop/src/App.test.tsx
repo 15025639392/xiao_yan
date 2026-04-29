@@ -193,7 +193,7 @@ test("redirects legacy history route to chat and keeps memory as secondary entry
   });
   fireEvent.click(screen.getByRole("button", { name: /小晏/ }));
   expect(screen.getByRole("button", { name: /回看记忆/ })).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "自由对话" })).toBeInTheDocument();
+  expect(screen.getByLabelText("对话输入")).toBeInTheDocument();
 });
 
 test("redirects legacy orchestrator route to chat", async () => {
@@ -205,7 +205,7 @@ test("redirects legacy orchestrator route to chat", async () => {
   await waitFor(() => {
     expect(window.location.hash).toBe("#/chat");
   });
-  expect(screen.getByRole("heading", { name: "自由对话" })).toBeInTheDocument();
+  expect(screen.getByLabelText("对话输入")).toBeInTheDocument();
 });
 
 test("redirects legacy capabilities route to tools", async () => {

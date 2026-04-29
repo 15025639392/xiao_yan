@@ -45,6 +45,7 @@ def ensure_runtime_initialized(target_app: FastAPI) -> None:
     loop = AutonomyLoop(
         state_store,
         memory_repository,
+        chat_memory_runtime=chat_memory_runtime,
         gateway=loop_gateway,
     )
     world_state_service = WorldStateService()
