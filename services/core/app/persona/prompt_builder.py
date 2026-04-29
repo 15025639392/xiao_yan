@@ -14,7 +14,6 @@ def build_chat_instructions(
     persona_system_prompt: str = "",
     relationship_summary: dict | None = None,
     memory_context: str | None = None,  # 记忆上下文（MemPalace 检索片段）
-    expression_style_context: str | None = None,  # 表达风格覆盖
     folder_permissions: list[tuple[str, str]] | None = None,  # 目录权限上下文
     current_time_context: str | None = None,
 ) -> str:
@@ -28,8 +27,6 @@ def build_chat_instructions(
         relationship_summary: 当前关系状态摘要（来自关系层记忆摘要）
         memory_context: 记忆上下文字符串（来自 MemPalaceAdapter）
                         包含长期语义检索片段
-        expression_style_context: 表达风格指令字符串（来自 ExpressionStyleMapper）
-                        告诉 LLM 当前情绪应该如何影响说话方式
         folder_permissions: 可访问目录权限列表，格式 [(path, access_level)]
     """
     if not persona_system_prompt.strip():
@@ -97,16 +94,6 @@ def build_chat_instructions(
                 permission_lines.append(f"- {folder_path}: read_only（只读）")
         guidance.extend(permission_lines)
 
-    browser_guidance = [
-        "你可以使用浏览器工具访问外部网页。当你打开一个URL时，browser_open 会同时返回页面文字内容和链接列表。",
-        "链接列表（links）包含页面所有链接的 text 和 url，可以根据这些链接继续浏览其他页面。",
-        "浏览节奏：先 browser_open 获得页面概览，再根据 links 选择感兴趣的方向继续浏览。",
-        "不需要单独再调 browser_snapshot —— 页面内容已随 browser_open 一起返回。",
-        "调用 browser_close 关闭浏览器会话。",
-        "每次浏览完成后，适当总结页面关键信息给用户。",
-    ]
-    guidance.extend(browser_guidance)
-
     if current_time_context:
         guidance.append(current_time_context)
 
@@ -115,10 +102,6 @@ def build_chat_instructions(
     # 追加记忆上下文
     if memory_context:
         result = f"{result}\n\n{memory_context}"
-
-    # 追加情绪驱动的表达风格指令
-    if expression_style_context:
-        result = f"{result}\n\n{expression_style_context}"
 
     return result
 

@@ -8,7 +8,6 @@ from app.focus.context import build_focus_context
 from app.llm.schemas import ChatMessage
 from app.memory.chat_memory_runtime import ChatMemoryRuntime
 from app.memory.observability import MemoryObservabilityTracker
-from app.persona.expression_mapper import ExpressionStyleMapper
 from app.persona.prompt_builder import build_chat_instructions
 from app.persona.service import PersonaService
 from app.utils.local_time import format_local_time_context
@@ -31,7 +30,6 @@ class PreparedChatContext:
     retrieval_failed: bool
     retrieval_attempted: bool
     persona_system_prompt: str
-    expression_style_context: str | None
 
 
 def prepare_chat_context(
@@ -45,11 +43,6 @@ def prepare_chat_context(
     focus_context = build_focus_context(state=state)
     persona_service.infer_chat_emotion(user_message)
     persona_system_prompt = persona_service.build_system_prompt()
-
-    current_emotion = persona_service.profile.emotion
-    style_mapper = ExpressionStyleMapper(personality=persona_service.profile.personality)
-    style_override = style_mapper.map_from_state(current_emotion)
-    expression_style_context = style_mapper.build_style_prompt(style_override)
 
     chat_messages, memory_context, retrieval_failed, retrieval_attempted = chat_memory_runtime.resolve_context(
         user_message=user_message,
@@ -67,7 +60,6 @@ def prepare_chat_context(
         retrieval_failed=retrieval_failed,
         retrieval_attempted=retrieval_attempted,
         persona_system_prompt=persona_system_prompt,
-        expression_style_context=expression_style_context or None,
     )
 
 
@@ -94,7 +86,6 @@ def build_base_chat_instructions(
         persona_system_prompt=prepared.persona_system_prompt,
         relationship_summary=None,
         memory_context=prepared.memory_context or None,
-        expression_style_context=prepared.expression_style_context,
         folder_permissions=folder_permissions,
         current_time_context=format_local_time_context(
             user_timezone=user_timezone,

@@ -58,7 +58,6 @@ def test_build_base_chat_instructions_exposes_focus_context_summary():
                 "核心价值：诚实、主动、有边界"
             ),
             "memory_context": "",
-            "expression_style_context": None,
         },
     )()
 

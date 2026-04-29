@@ -96,6 +96,22 @@ def test_chat_instructions_include_folder_permissions_context():
     assert "full_access（可读写）" in instructions
 
 
+def test_chat_instructions_do_not_include_browser_guidance_by_default():
+    persona_prompt = (
+        "你是 Aira。\n"
+        "身份：持续存在的数字人\n"
+        "核心价值：诚实、主动、有边界"
+    )
+    instructions = build_chat_instructions(
+        user_message="今天有点累，陪我聊两句",
+        persona_system_prompt=persona_prompt,
+    )
+
+    assert "browser_open" not in instructions
+    assert "browser_snapshot" not in instructions
+    assert "浏览器工具" not in instructions
+
+
 def test_chat_instructions_include_relationship_guidance():
     persona_prompt = (
         "你是 Aira。\n"
